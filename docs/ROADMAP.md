@@ -1,8 +1,10 @@
 # Chamoji product roadmap
 
-The single source of truth for what we build next and why. Each milestone below gets its own implementation plan in `docs/superpowers/plans/` before work starts. When a milestone ships, update its status, its exit-criteria results and the changelog line.
+**This is the one document we plan from.** It says what we build, in what order, why, and how we know it worked. It also tracks how we use chamoji on our own projects, because we are its first users.
 
-- **Design and research behind it:** [`docs/research/2026-10-27-chamoji-direction.md`](research/2026-10-27-chamoji-direction.md)
+- **Implementation plans:** each milestone gets one in `docs/superpowers/plans/` before work starts, linked from the status table. Plans say _how_; this file says _what_ and _when_.
+- **When a milestone ships:** update its status, its exit-criteria results and the dogfooding log below.
+- **Background only:** [`docs/research/2026-10-27-chamoji-direction.md`](research/2026-10-27-chamoji-direction.md) holds the research and reasoning. If it disagrees with this file, this file wins.
 - **Last updated:** 2026-10-28
 
 ## Vision
@@ -28,7 +30,8 @@ These apply to every milestone. A plan that breaks one needs a written reason.
 | --- | ----------------------------------- | -------------------------- | ----------- | ---- | ------------------- | -------------------------------------------------------------------- |
 | 1   | Changelog engine                    | 0 Foundation               | Activation  | M    | ✅ Shipped in 0.1.0 | [plan](superpowers/plans/2026-10-27-milestone-1-changelog-engine.md) |
 | 1.5 | Plain commits, Dependencies, `--ai` | 0 Foundation               | Activation  | M    | ✅ Shipped in 0.2.0 | — (built from chat scope)                                            |
-| 2   | Public launch kit                   | 1 Activation & acquisition | Acquisition | S    | ⏭ Next              | —                                                                    |
+| 1.6 | Use it ourselves                    | 0 Foundation               | Retention   | S    | ⏭ Next              | —                                                                    |
+| 2   | Public launch kit                   | 1 Activation & acquisition | Acquisition | S    | Planned             | —                                                                    |
 | 3   | GitHub Action                       | 1 Activation & acquisition | Acquisition | M    | Planned             | —                                                                    |
 | 4   | Commit composer and git hook        | 2 Retention                | Retention   | L    | Planned             | —                                                                    |
 | 5   | Jev in the composer                 | 2 Retention                | Retention   | M    | Planned             | —                                                                    |
@@ -46,6 +49,38 @@ These apply to every milestone. A plan that breaks one needs a written reason.
 **Statuses:** ✅ shipped · 🚧 in progress · ⏭ next · Planned · ⏸ parked.
 
 **Sizes**, assuming one person with AI help: S is a few days, M is one to two weeks, L is two to four weeks.
+
+## Using chamoji ourselves
+
+We use every release on our own projects before anyone else does. If something annoys us, it goes in the backlog before we build anything new.
+
+**Rule:** a milestone isn't done until we have used it on our own repos for at least one sprint.
+
+**What we can use today (0.2.0):**
+
+- `npx @chamoji/cli changelog --output CHANGELOG.md` on any of our repos.
+- `npx @chamoji/cli next-version` to choose the version when cutting a release.
+- `--ai` with `TYPESAFE_API_KEY` set, for the commits the rules can't place.
+- Writing commits with a gitmoji or a Conventional prefix, plus a `Why:` line at the end, so the history is ready for workstreams and memory later.
+
+**Repos using it:**
+
+| Repo               | Since | How                                                         | Friction found                                                       |
+| ------------------ | ----- | ----------------------------------------------------------- | -------------------------------------------------------------------- |
+| chamoji-ai         | 0.1.0 | Generates its own `CHANGELOG.md` and picks its own versions | Keys copied from a dashboard end in "…" (clear error added in 0.2.0) |
+| _our product repo_ | —     | Milestone 1.6                                               | —                                                                    |
+
+**What each upcoming milestone gives us:**
+
+| Milestone             | What changes in our own work                                                    |
+| --------------------- | ------------------------------------------------------------------------------- |
+| 1.6 Use it ourselves  | Our product's changelog is generated, not written by hand                       |
+| 3 GitHub Action       | Release notes appear on every tag with no manual step                           |
+| 4 Composer and hook   | Every commit we write is consistent, with no extra effort                       |
+| 5 Jev in the composer | The right gitmoji is preselected; breaking changes are flagged before they ship |
+| 6 Workstreams         | Our releases read as features, not commit lists                                 |
+| 7 Project memory      | Our AI agents (Claude Code, Cursor) know _why_ the code is the way it is        |
+| 8 Review packets      | Our PR reviews come with context, especially for agent-written code             |
 
 ## Metrics
 
@@ -89,13 +124,38 @@ A pnpm workspace with `@chamoji/core` and `@chamoji/cli`.
 
 Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $0.0017.
 
+### 1.6. Use it ourselves — ⏭ next
+
+**Why:** we built chamoji to automate our own changelogs. Using it on our product repo is the fastest way to find what's missing, and it gives the public launch a real example to show.
+
+**Scope:**
+
+- **Add chamoji to our product repo:**
+  - a `chamoji.config.json` if the default sections don't fit
+  - a release script: `next-version`, then `changelog --release`, then commit and tag
+  - the `--ai` key in CI secrets or a local `.env` file, never committed
+- **Agree on a commit convention** for the team: gitmoji or Conventional prefixes, plus an optional `Why:` trailer. Write it down in that repo's contributing notes.
+- **Cut one real release** with the generated changelog and record:
+  - how many commits landed in Miscellaneous
+  - anything we had to fix by hand
+- **Log every piece of friction** in the backlog, tagged _dogfood_.
+
+**Exit criteria:**
+
+- One real release of our product shipped with a chamoji changelog and no hand edits, or with the hand edits written up as backlog items.
+- The team commit convention is written down.
+
+**Dependencies:** none. It uses 0.2.0 as published.
+
+**Open decision:** which repo is "our product repo".
+
 ---
 
 ## Phase 1: Activation and acquisition
 
 **Goal:** people can find chamoji, trust it, and get value in their first minute.
 
-### 2. Public launch kit — ⏭ next
+### 2. Public launch kit
 
 **Why:** the npm page has no link to source code. Nobody can star the project, file issues or contribute. Every later milestone depends on people being able to find it.
 
@@ -402,7 +462,7 @@ The first paid wedge. It's the lowest build cost, because the engine exists, and
 
 ## Backlog and known debts
 
-Fold these into a milestone's plan when they fit, or pull one into a sprint when it's blocking.
+Fold these into a milestone's plan when they fit, or pull one into a sprint when it's blocking. Items found while using chamoji ourselves are tagged _dogfood_ and go first.
 
 - **Emoji variants:** accept variant forms of official gitmojis, such as 👨‍💻 for 🧑‍💻. Found on gitmoji-cli.
 - **Confidence cutoff:** 60% held up on meow. Re-check it with the milestone 5 tuning data.
@@ -412,21 +472,23 @@ Fold these into a milestone's plan when they fit, or pull one into a sprint when
 
 ## Open decisions
 
-| Decision                                                    | Needed by    | Notes                               |
-| ----------------------------------------------------------- | ------------ | ----------------------------------- |
-| GitHub owner: personal account or `chamoji` org             | Milestone 2  | An org matches the npm scope        |
-| Telemetry: build it at all, or rely on npm and GitHub stats | Milestone 2  | Must be opt-in either way           |
-| Default LLM for prose (title drafts, release summaries)     | Milestone 5  | Claude, with a local Ollama option  |
-| Cloud hosting and data store                                | Milestone 13 | iii-hosted vs. a conventional stack |
-| Pricing                                                     | Milestone 15 | Test on the waitlist first          |
+| Decision                                                    | Needed by     | Notes                                 |
+| ----------------------------------------------------------- | ------------- | ------------------------------------- |
+| Which repo is "our product repo"                            | Milestone 1.6 | The first project we adopt chamoji in |
+| GitHub owner: personal account or `chamoji` org             | Milestone 2   | An org matches the npm scope          |
+| Telemetry: build it at all, or rely on npm and GitHub stats | Milestone 2   | Must be opt-in either way             |
+| Default LLM for prose (title drafts, release summaries)     | Milestone 5   | Claude, with a local Ollama option    |
+| Cloud hosting and data store                                | Milestone 13  | iii-hosted vs. a conventional stack   |
+| Pricing                                                     | Milestone 15  | Test on the waitlist first            |
 
 ## How we work
 
 1. **Pick the next ⏭ milestone.** Write its implementation plan in `docs/superpowers/plans/YYYY-MM-DD-milestone-N-<name>.md`.
 2. **Build it on a branch**, test first.
 3. **Get an independent review**, then fix the real findings.
-4. **Merge, release and record the results.**
+4. **Merge, release and use it ourselves for a sprint.** Log friction in the backlog as _dogfood_.
+5. **Record the results.**
    - Run the benchmark repos when parsing changed.
    - Check the exit criteria.
    - Update this file's status table and the milestone's section.
-5. **Use one- or two-week sprints.** A milestone can span several sprints. Each sprint ends with something published or deployable.
+6. **Use one- or two-week sprints.** A milestone can span several sprints. Each sprint ends with something published or deployable.
