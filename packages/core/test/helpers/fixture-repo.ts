@@ -1,5 +1,5 @@
 import {execFile} from 'node:child_process';
-import {mkdtemp, rm} from 'node:fs/promises';
+import {mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {promisify} from 'node:util';
@@ -22,6 +22,10 @@ const DAY = 24 * 60 * 60 * 1000;
  */
 export async function createRepo(steps: RepoStep[]): Promise<FixtureRepo> {
 	const dir = await mkdtemp(path.join(tmpdir(), 'chamoji-fixture-'));
+	// An empty config file isolates the fixture from the developer's git
+	// config on every OS (/dev/null doesn't exist on Windows).
+	const emptyConfig = `${dir}.gitconfig`;
+	await writeFile(emptyConfig, '');
 	let commitCount = 0;
 
 	const git = async (args: string[], date?: string) => {
@@ -32,8 +36,8 @@ export async function createRepo(steps: RepoStep[]): Promise<FixtureRepo> {
 				...process.env,
 				GIT_AUTHOR_DATE: when,
 				GIT_COMMITTER_DATE: when,
-				GIT_CONFIG_GLOBAL: '/dev/null',
-				GIT_CONFIG_SYSTEM: '/dev/null',
+				GIT_CONFIG_GLOBAL: emptyConfig,
+				GIT_CONFIG_NOSYSTEM: '1',
 			},
 		});
 	};
@@ -84,7 +88,10 @@ export async function createRepo(steps: RepoStep[]): Promise<FixtureRepo> {
 
 	return {
 		dir,
-		cleanup: async () => rm(dir, {recursive: true, force: true}),
+		async cleanup() {
+			await rm(dir, {recursive: true, force: true});
+			await rm(emptyConfig, {force: true});
+		},
 	};
 }
 

@@ -83,21 +83,25 @@ test('the cache goes stale after 24 hours', () => {
 
 test('install kind comes from where chamoji runs', () => {
 	expect(
-		installKind(
-			'/Users/a/.npm/_npx/1a2b/node_modules/@chamoji/cli/dist/cli.js',
-			'/w',
-		),
+		installKind('/Users/a/.npm/_npx/1a2b/node_modules/.bin/chamoji', '/w'),
 	).toBe('npx');
 	expect(
 		installKind(
-			'/work/app/node_modules/@chamoji/cli/dist/cli.js',
-			'/work/app/src',
+			'C:\\Users\\a\\AppData\\Local\\npm-cache\\_npx\\1a2b\\node_modules\\.bin\\chamoji',
+			'/w',
+		),
+	).toBe('npx');
+	// path.resolve gives a drive letter on Windows, so both sides match there too.
+	expect(
+		installKind(
+			path.resolve('/work/app/node_modules/.bin/chamoji'),
+			path.resolve('/work/app/src'),
 		),
 	).toBe('project');
 	expect(
 		installKind(
-			'/usr/local/lib/node_modules/@chamoji/cli/dist/cli.js',
-			'/work/app',
+			path.resolve('/usr/local/lib/node_modules/@chamoji/cli/dist/cli.js'),
+			path.resolve('/work/app'),
 		),
 	).toBe('global');
 });
