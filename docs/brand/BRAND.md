@@ -111,7 +111,7 @@ GUI surfaces (the desktop app, Cloud pages and the website) render the foil live
 
 - **Style:** heavy, rounded and retro, with very wide letters. Upper and lower case share one design, so `chamoji` and `CHAMOJI` set the same.
 - **Character set:** 111 glyphs, with limited punctuation. Display only: never body text, labels, numbers in tables or anything people read at length.
-- **The font files aren't in git,** because it's a licensed font and this repo is public. See [`fonts/README.md`](fonts/README.md) for where the files live locally and how to ship the font inside an app.
+- **Licensing:** the license covers embedding the font in our app and website (confirmed 2026-10-28). The raw font files still aren't in git, because this repo is public and publishing them would redistribute the font. See [`fonts/README.md`](fonts/README.md) for where the files live locally and how to ship the font inside an app.
 - **CSS:**
 
   ```css

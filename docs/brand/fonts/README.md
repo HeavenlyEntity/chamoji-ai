@@ -14,7 +14,7 @@ docs/brand/fonts/MarowBlock-Regular.otf
 **Shipping it:**
 
 - **Apps:** embed the font in the built app or website, in the desktop bundle or as a self-hosted web font, as the font license allows. The font's embedding flag (OS/2 `fsType` 0) permits it.
-- **Before shipping:** confirm the license terms for the shipping surface: desktop app, website or Cloud.
+- **License confirmed (2026-10-28):** the Marow Block license covers embedding the font in our app and website. That includes the desktop app bundle, the website and the Cloud pages as a self-hosted web font.
 - **Never:** publish the raw font files in an npm package or in the repo.
 
 **Display only:** the font has 111 glyphs, its upper and lower case share one design, and some punctuation is limited. Use it for the logo, titles and empty states, not for body text or UI labels.
