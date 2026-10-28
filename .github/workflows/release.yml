@@ -37,13 +37,15 @@ jobs:
           ref: refs/tags/${{ env.TAG }}
           fetch-depth: 0
       - uses: pnpm/action-setup@v4
+      # No registry-url here: it writes an .npmrc with a placeholder
+      # NODE_AUTH_TOKEN, and npm then tries that token instead of trusted
+      # publishing (OIDC), which the registry rejects with a 404.
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
-          registry-url: https://registry.npmjs.org
       # Trusted publishing needs npm 11.5.1 or newer.
-      - run: npm install -g npm@latest
+      - run: npm install -g npm@latest && npm --version
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
       - run: pnpm test
