@@ -132,3 +132,18 @@ test('--help exits 0', async () => {
 	expect(code).toBe(0);
 	expect(stdout).toContain('$ chamoji next-version');
 });
+
+test('--ai without an API key exits 1 with a clear message', async () => {
+	repo = await createRepo(history);
+	const saved = process.env['TYPESAFE_API_KEY'];
+	delete process.env['TYPESAFE_API_KEY'];
+	try {
+		const {code, stderr} = await chamoji(['changelog', '--ai'], repo.dir);
+		expect(code).toBe(1);
+		expect(stderr).toContain('--ai needs a TypeSafe API key');
+	} finally {
+		if (saved !== undefined) {
+			process.env['TYPESAFE_API_KEY'] = saved;
+		}
+	}
+});

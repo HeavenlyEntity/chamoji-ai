@@ -4,9 +4,12 @@ import {
 	buildChangelog,
 	loadConfig,
 	render,
+	type CommitClassifier,
 	type OutputFormat,
 } from '@chamoji/core';
+import {TypeSafeClient} from '@typesafe-ai/sdk';
 import meow from 'meow';
+import {createJevClassifier} from './jev-classifier.js';
 
 export type Io = {
 	cwd: string;
@@ -29,6 +32,9 @@ const HELP = `
 	  --to       Ref to treat as the head of history (default: HEAD)
 	  --release  Name the unreleased section with this version
 	  --config   Config file (default: chamoji.config.json if present)
+	  --ai       Sort commits no rule can place with Jev (TypeSafe).
+	             Needs TYPESAFE_API_KEY. Sends commit subjects and the
+	             first 300 characters of bodies; never diffs or code.
 
 	Examples
 	  $ chamoji changelog --output CHANGELOG.md
@@ -58,6 +64,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
 			to: {type: 'string', default: 'HEAD'},
 			release: {type: 'string'},
 			config: {type: 'string'},
+			ai: {type: 'boolean'},
 			help: {type: 'boolean', shortFlag: 'h'},
 			version: {type: 'boolean', shortFlag: 'v'},
 		},
@@ -76,6 +83,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
 
 	const [command] = cli.input;
 	try {
+		const classify = flags.ai ? jevClassifier(io) : undefined;
 		switch (command) {
 			case 'changelog': {
 				const format = Object.hasOwn(FORMATS, flags.format)
@@ -94,6 +102,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
 					from: flags.from,
 					release: flags.release,
 					today: io.today,
+					classify,
 				});
 				const output = render(changelog, format);
 				if (flags.output) {
@@ -111,6 +120,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
 					cwd: io.cwd,
 					config: await loadConfig(io.cwd, flags.config),
 					to: flags.to,
+					classify,
 				});
 				const next = releases.find(
 					release => release.tag === null,
@@ -139,4 +149,18 @@ export async function run(argv: string[], io: Io): Promise<number> {
 		io.stderr(`chamoji: ${(error as Error).message}\n`);
 		return 1;
 	}
+}
+
+function jevClassifier(io: Io): CommitClassifier {
+	if (!process.env['TYPESAFE_API_KEY']?.trim()) {
+		throw new Error(
+			'--ai needs a TypeSafe API key: set TYPESAFE_API_KEY (get one at https://typesafe.ai)',
+		);
+	}
+
+	const client = new TypeSafeClient();
+	return createJevClassifier(
+		{systemOne: async request => client.systemOne(request)},
+		{report: line => io.stderr(`${line}\n`)},
+	);
 }

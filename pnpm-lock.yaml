@@ -29,6 +29,9 @@ importers:
       '@chamoji/core':
         specifier: workspace:*
         version: link:../core
+      '@typesafe-ai/sdk':
+        specifier: ^0.7.0
+        version: 0.7.0
       meow:
         specifier: ^14.1.0
         version: 14.1.0
@@ -174,6 +177,10 @@ packages:
 
   '@types/semver@7.8.0':
     resolution: {integrity: sha512-1mAINjtQCXXeLkJ9ehXkwOcBpqtLxiVtKhpUf83DdRNdQKV0iXZpaHYqRr7nj+wvxuJzoAmAwXI+sCNMv1CzLQ==}
+
+  '@typesafe-ai/sdk@0.7.0':
+    resolution: {integrity: sha512-Yg3OZArCQMJx98ut8QVkhx3rFo9ON7pz8Hjzv8c3FGz69Sk8jYftLOlz+Wf6kq6jol/1m08aBnjRAzJr2x3GoQ==}
+    engines: {node: '>=22'}
 
   '@vdemedes/prettier-config@2.0.1':
     resolution: {integrity: sha512-lcHyyLfS2ro282qsXKpxw+canUkOlFIGoanxt3BaNCm5K1NR8k4hGvYbFO54/+QWq12d0y/EYRz68yNQkqWFrw==}
@@ -537,6 +544,8 @@ snapshots:
       undici-types: 6.21.0
 
   '@types/semver@7.8.0': {}
+
+  '@typesafe-ai/sdk@0.7.0': {}
 
   '@vdemedes/prettier-config@2.0.1': {}
 
