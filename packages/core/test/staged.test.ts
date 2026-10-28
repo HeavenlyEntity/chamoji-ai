@@ -116,10 +116,15 @@ test('a rename is withheld when either name is', async () => {
 
 test('file names are literal paths, never pathspec patterns', async () => {
 	repo = await createRepo([{commit: '🎉 Init'}]);
-	await stage(repo.dir, {'.env.local': 'TOKEN=shh\n', '*': 'star\n'});
+	// As a pattern, `[.]env.local` matches `.env.local`; unlike `*`, Windows
+	// allows it as a file name.
+	await stage(repo.dir, {
+		'.env.local': 'TOKEN=shh\n',
+		'[.]env.local': 'pattern\n',
+	});
 	const staged = await readStagedChanges(repo.dir, {sendDiffs: true});
-	expect(staged.files.map(file => file.path)).toEqual(['*']);
-	expect(staged.diff).toContain('star');
+	expect(staged.files.map(file => file.path)).toEqual(['[.]env.local']);
+	expect(staged.diff).toContain('pattern');
 	expect(staged.diff).not.toContain('shh');
 });
 

@@ -226,9 +226,16 @@ test('advice that fails or comes too late changes nothing', async () => {
 	expect(failing.lastFrame()).not.toContain('suggested');
 	failing.unmount();
 
-	const slow = new Promise<Advice>(done => setTimeout(() => done(ADVICE), 120));
+	// Resolved only once the composer is up and its 40 ms wait is long over,
+	// so a slow machine can't make the advice arrive in time.
+	let resolve!: (advice: Advice) => void;
+	const slow = new Promise<Advice>(done => {
+		resolve = done;
+	});
 	const app = open({}, slow, 40);
-	await new Promise(done => setTimeout(done, 200));
+	await new Promise(done => setTimeout(done, 300));
+	resolve(ADVICE);
+	await tick();
 	await app.type('\u007F');
 	expect(app.lastFrame()).not.toContain('suggested');
 });
