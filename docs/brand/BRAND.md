@@ -4,7 +4,10 @@ The look for every chamoji surface: the editor extension (milestone 10), the des
 
 ![Chamoji logo](chamoji-logo.png)
 
-To see the effect rebuilt in CSS, with swatches and UI samples, open [`holo-preview.html`](holo-preview.html) in a browser.
+Two previews:
+
+- **`pnpm brand:preview`:** the live Iridescence foil, the logo plate and Marow Block.
+- **[`holo-preview.html`](holo-preview.html):** the CSS-only foil and swatches, which is the fallback.
 
 ## The chromatic effect
 
@@ -57,6 +60,44 @@ Use `background-size: 160% 100%`, and animate `background-position` slowly (abou
 | `--text`      | `#070708` | `#f5f5f7` |
 | `--muted`     | `#5b5b66` | `#a3a3b2` |
 
+### The foil in apps: Iridescence
+
+GUI surfaces (the desktop app, Cloud pages and the website) render the foil live with **Iridescence**, a WebGL2 shader component from [React Bits](https://reactbits.dev). It's tuned to the logo's pastels.
+
+- **Files:**
+  - [`components/Iridescence.tsx`](components/Iridescence.tsx): the component, unchanged apart from a license header.
+  - [`components/ChamojiFoil.tsx`](components/ChamojiFoil.tsx): `CHAMOJI_FOIL` (our props), `<ChamojiFoil>` (a foil surface with content on top) and `<ChamojiPlate>` (the 35° logo plate with the Marow Block wordmark).
+- **Our tuning:**
+
+  | Prop         | Value     |
+  | ------------ | --------- |
+  | `color`      | `#fff1ea` |
+  | `hueShift`   | -12       |
+  | `saturation` | 0.9       |
+  | `brightness` | 1.12      |
+  | `contrast`   | 0.9       |
+  | `speed`      | 0.35      |
+  | `scale`      | 1.25      |
+  | `stir`       | 0.4       |
+  | `sheen`      | 0.3       |
+  | `grain`      | 0.04      |
+
+  Keep `brightness` near 1.1. Higher values clip the folds to white, and the plate loses its edge against a white page.
+
+- **Fallback:** `<ChamojiFoil>` paints the CSS `--holo` gradient underneath the canvas. Where WebGL2 is unavailable, or before the first frame, the surface still shows the foil colours. The component already holds still under `prefers-reduced-motion`.
+- **Where to use it:**
+  - the logo plate
+  - hero and onboarding backgrounds
+  - the active-workstream badge (with `stir={0}`, `clickSwirl={false}` and `sheen={0}`)
+  - celebratory moments, such as shipping a workstream
+- **Where not to use it:**
+  - behind dense UI or text blocks
+  - for more than one animated foil in view at once; each one is a WebGL canvas
+  - in small controls, where the CSS gradient is cheaper and looks the same
+- **Styling:** the component uses six Tailwind classes. Apps without Tailwind add them as plain CSS; see `preview/index.html`.
+- **License:** React Bits is MIT + Commons Clause. We may use the component inside chamoji's own apps, including paid ones. We may not sell or redistribute the component itself, so never export it from a published package like `@chamoji/core` or `@chamoji/cli`. Keep it inside app code.
+- **Preview:** run `pnpm brand:preview`, then open `http://localhost:4173`. It shows the plate, a full-bleed foil, light and dark UI samples, and the display type. Marow Block appears only if the font files are in `docs/brand/fonts/`.
+
 ### Rules
 
 - **Foil is an accent, not a background.** Use it for the logo plate, primary buttons, focus rings, active-workstream borders, progress bars and empty-state art. Body text and dense UI sit on neutral surfaces.
@@ -66,23 +107,25 @@ Use `background-size: 160% 100%`, and animate `background-position` slowly (abou
 
 ## Typography
 
-**Wordmark:**
+**Display: Marow Block** (Regular, v1.000, by Ramandhani). The chamoji face for the wordmark, page titles, hero lines and empty states.
 
-- **Style:** a wide, monoline geometric sans in uppercase. It has open round bowls, square stroke ends and generous letter spacing.
-- **The O:** replaced by a lens mark, a ring with a solid centre and a horizontal bar.
-- **Mark:** a tilted smiley, a ring with two dots and an open mouth, cropped by the plate's top-right corner.
+- **Style:** heavy, rounded and retro, with very wide letters. Upper and lower case share one design, so `chamoji` and `CHAMOJI` set the same.
+- **Character set:** 111 glyphs, with limited punctuation. Display only: never body text, labels, numbers in tables or anything people read at length.
+- **The font files aren't in git,** because it's a licensed font and this repo is public. See [`fonts/README.md`](fonts/README.md) for where the files live locally and how to ship the font inside an app.
+- **CSS:**
 
-**The exact font isn't known yet.** The logo is a flattened PNG, and the old repo has no font files or design source. Closest freely licensed matches to try against it:
+  ```css
+  @font-face {
+  	font-family: 'Marow Block';
+  	src: url('/fonts/MarowBlock-Regular.ttf') format('truetype');
+  	font-display: swap;
+  }
+  --font-display: 'Marow Block', system-ui, sans-serif;
+  ```
 
-| Candidate                                                                    | Notes                                                  |
-| ---------------------------------------------------------------------------- | ------------------------------------------------------ |
-| [Syncopate](https://fonts.google.com/specimen/Syncopate)                     | Wide geometric caps; closest overall shape             |
-| [Lexend Zetta](https://fonts.google.com/specimen/Lexend+Zetta) / Lexend Giga | Very wide, monoline; good if Syncopate feels too heavy |
-| [Michroma](https://fonts.google.com/specimen/Michroma)                       | Wide and squarer; a fallback                           |
+**Interface text:** a readable sans for UI and body text, `system-ui` until the desktop design pass picks one. Code and terminal output use a monospace face.
 
-**Open item:** if the original design file exists (Figma, Canva or similar), take the font name from it. Then use that exact face, and keep the wordmark as an SVG traced from the source rather than as live text.
-
-**Interface text:** the wordmark face is for display only (the logo, page titles, empty states). UI and body text use a readable sans, with the system stack as a fallback. Code and terminal output use a monospace face. Settle both in the desktop app's design pass.
+**The original wordmark** (the thin, wide caps in `chamoji-logo.png`) is retired. Marow Block replaces it everywhere.
 
 ## Terminal
 
@@ -93,14 +136,19 @@ The CLI shows the same palette where the terminal supports it:
 
 ## Assets
 
-| File                | What it is                                                               |
-| ------------------- | ------------------------------------------------------------------------ |
-| `chamoji-logo.png`  | The original logo, 500 × 233 px, transparent background                  |
-| `holo-preview.html` | The foil plate, swatches, button, card and terminal samples in plain CSS |
+| File                         | What it is                                                                                  |
+| ---------------------------- | ------------------------------------------------------------------------------------------- |
+| `chamoji-logo.png`           | The original logo, 500 × 233 px, kept for reference. The wordmark is now set in Marow Block |
+| `fonts/`                     | Marow Block, local only (git-ignored); see `fonts/README.md`                                |
+| `components/Iridescence.tsx` | The React Bits foil shader                                                                  |
+| `components/ChamojiFoil.tsx` | Chamoji's tuning, the foil surface and the logo plate                                       |
+| `preview/`                   | Sources for `pnpm brand:preview`                                                            |
+| `holo-preview.html`          | The CSS-only foil, swatches and samples (the fallback)                                      |
 
 **Still needed** before milestone 10:
 
-- an SVG of the logo, the wordmark and the mark on its own
+- a new SVG logo: the foil plate with the Marow Block wordmark outlined as paths, so it renders without the font file
+- the mark on its own
 - app icons at 16–1024 px
 - a favicon
 - a social preview image (1280 × 640)

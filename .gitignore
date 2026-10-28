@@ -9,3 +9,11 @@ packages/cli/readme.md
 .env
 .env.*
 !.env.example
+
+# Licensed fonts are local only: see docs/brand/fonts/README.md
+docs/brand/fonts/*.ttf
+docs/brand/fonts/*.otf
+docs/brand/fonts/*.woff
+docs/brand/fonts/*.woff2
+# Generated brand preview
+docs/brand/.preview/

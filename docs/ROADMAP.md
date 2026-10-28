@@ -436,7 +436,7 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 
 ### 12. Desktop app (Tauri)
 
-**Look:** built on [`docs/brand/BRAND.md`](brand/BRAND.md): the holographic foil plate, the pastel stops and ink text, light and dark themes. Start with a design pass that settles the exact wordmark font and the UI type, and produces the missing SVG and icon assets.
+**Look:** built on [`docs/brand/BRAND.md`](brand/BRAND.md): the holographic foil plate, the pastel stops and ink text, light and dark themes. The foil is the `ChamojiFoil` preset over Iridescence, and the display type is Marow Block, embedded in the app bundle. Start with a design pass that picks the UI type and produces the missing SVG and icon assets.
 
 **Scope:**
 
@@ -510,7 +510,7 @@ Fold these into a milestone's plan when they fit, or pull one into a sprint when
 - **Confidence cutoff:** 60% held up on meow. Re-check it with the milestone 5 tuning data.
 - **Noise prefixes:** more wording-rule coverage for noisy prefixes, such as "Merge remote-tracking…" and "Squashed commit of…".
 - **Cloud data store:** choose one for the Cloud tier when milestone 13 is planned.
-- **Brand assets** (see `docs/brand/BRAND.md`): find the original wordmark font, and make an SVG logo, app icons, a favicon and a social preview image. Needed by milestone 2's readme and milestone 10.
+- **Brand assets** (see `docs/brand/BRAND.md`): the display font is Marow Block and the foil is Iridescence. Still to make: an SVG logo with the wordmark outlined, app icons, a favicon and a social preview image. Needed by milestone 2's readme and milestone 10.
 - **Windows:** the fixture repos and git argument handling haven't been tested there yet; milestone 2's CI will cover it.
 
 ## Open decisions

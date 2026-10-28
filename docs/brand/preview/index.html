@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Chamoji foil preview</title>
+		<script type="importmap">
+			{
+				"imports": {
+					"react": "https://esm.sh/react@18.3.1",
+					"react/jsx-runtime": "https://esm.sh/react@18.3.1/jsx-runtime",
+					"react-dom/client": "https://esm.sh/react-dom@18.3.1/client?deps=react@18.3.1"
+				}
+			}
+		</script>
+		<style>
+			@font-face {
+				font-family: 'Marow Block';
+				src: url('/fonts/MarowBlock-Regular.ttf') format('truetype');
+				font-display: swap;
+			}
+
+			:root {
+				--holo-peach: #fbcfb3;
+				--holo-pink: #faadc3;
+				--holo-orchid: #dfade5;
+				--holo-periwinkle: #bbbff2;
+				--holo-sky: #a8e2f6;
+				--holo-mint: #afeee5;
+				--holo-sage: #d5e1cb;
+				--ink: #070708;
+				--holo: linear-gradient(
+					115deg,
+					var(--holo-sage),
+					var(--holo-mint),
+					var(--holo-periwinkle),
+					var(--holo-sky),
+					var(--holo-orchid),
+					var(--holo-pink),
+					var(--holo-peach)
+				);
+				--font-display: 'Marow Block', system-ui, sans-serif;
+				--font-ui: system-ui, -apple-system, 'Segoe UI', sans-serif;
+			}
+
+			/* The six Tailwind utilities Iridescence uses, for pages without Tailwind. */
+			.relative {
+				position: relative;
+			}
+			.absolute {
+				position: absolute;
+			}
+			.inset-0 {
+				inset: 0;
+			}
+			.block {
+				display: block;
+			}
+			.h-full {
+				height: 100%;
+			}
+			.w-full {
+				width: 100%;
+			}
+			.overflow-hidden {
+				overflow: hidden;
+			}
+
+			* {
+				box-sizing: border-box;
+			}
+
+			body {
+				margin: 0;
+				background: #ffffff;
+				color: var(--ink);
+				font-family: var(--font-ui);
+			}
+
+			.hero {
+				height: 420px;
+			}
+
+			.hero-content {
+				height: 100%;
+				display: grid;
+				align-content: center;
+				gap: 28px;
+				padding: 0 16px;
+			}
+
+			.tagline {
+				margin: 0;
+				text-align: center;
+				font-size: 18px;
+				font-weight: 500;
+			}
+
+			.panel {
+				padding: 40px 16px;
+				max-width: 960px;
+				margin: 0 auto;
+			}
+
+			.panel.dark {
+				max-width: none;
+				background: #0b0b0f;
+				color: #f5f5f7;
+			}
+
+			.panel.dark > * {
+				max-width: 928px;
+				margin-left: auto;
+				margin-right: auto;
+			}
+
+			h2 {
+				font: 600 13px var(--font-ui);
+				letter-spacing: 0.08em;
+				text-transform: uppercase;
+				color: #77778a;
+				margin: 0 0 18px;
+			}
+
+			.row {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 16px;
+				align-items: center;
+			}
+
+			.foil-button {
+				border: 0;
+				border-radius: 999px;
+				padding: 13px 24px;
+				background: var(--holo);
+				background-size: 200% 100%;
+				color: var(--ink);
+				font: 600 15px var(--font-ui);
+				cursor: pointer;
+				transition: background-position 0.6s;
+			}
+
+			.foil-button:hover {
+				background-position: 100% 0;
+			}
+
+			.card {
+				display: grid;
+				gap: 4px;
+				padding: 16px 20px;
+				border-radius: 14px;
+				background: #f4f4f6;
+				min-width: 260px;
+			}
+
+			.dark .card {
+				background: #16161d;
+			}
+
+			.card small {
+				color: #77778a;
+			}
+
+			.bleed {
+				height: 260px;
+				border-radius: 20px;
+				background: transparent !important;
+			}
+
+			.badge {
+				border-radius: 999px;
+				height: 44px;
+				min-width: 220px;
+			}
+
+			.badge span {
+				display: grid;
+				place-items: center;
+				height: 100%;
+				padding: 0 20px;
+				color: var(--ink);
+				font: 600 14px var(--font-ui);
+			}
+
+			.display {
+				font-family: var(--font-display);
+				font-size: clamp(40px, 8vw, 72px);
+				margin: 0 0 8px;
+			}
+
+			.display.small {
+				font-size: clamp(22px, 4vw, 32px);
+				color: #5b5b66;
+			}
+		</style>
+	</head>
+	<body>
+		<div id="root"></div>
+		<script type="module" src="./main.js"></script>
+	</body>
+</html>
