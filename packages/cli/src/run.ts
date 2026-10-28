@@ -33,8 +33,9 @@ const HELP = `
 	  --release  Name the unreleased section with this version
 	  --config   Config file (default: chamoji.config.json if present)
 	  --ai       Sort commits no rule can place with Jev (TypeSafe).
-	             Needs TYPESAFE_API_KEY. Sends commit subjects and the
-	             first 300 characters of bodies; never diffs or code.
+	             Needs TYPESAFE_API_KEY. Sends up to 300 characters of
+	             each such commit's subject and body, with emails and
+	             trailer lines removed; never diffs, code or authors.
 
 	Examples
 	  $ chamoji changelog --output CHANGELOG.md
@@ -121,6 +122,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
 					config: await loadConfig(io.cwd, flags.config),
 					to: flags.to,
 					classify,
+					classifyReleases: 'unreleased',
 				});
 				const next = releases.find(
 					release => release.tag === null,

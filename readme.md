@@ -75,7 +75,8 @@ export TYPESAFE_API_KEY=...   # from https://typesafe.ai
 chamoji changelog --ai
 ```
 
-- **What is sent:** commit subjects and the first 300 characters of each body. Never diffs or code.
+- **What is sent:** only the commits no rule could sort, at most 300 characters each of subject and body, with email addresses and trailer lines such as `Signed-off-by:` removed. Never diffs, code or author details. `next-version --ai` sends only unreleased commits.
+- **If a request fails:** chamoji stops sending, keeps the picks it already has, and leaves the rest in Miscellaneous.
 - **What it never does:** override an emoji or type the author wrote, or mark a change as breaking. Only authors declare breaking changes.
 - **Without `--ai`:** chamoji makes no network calls.
 

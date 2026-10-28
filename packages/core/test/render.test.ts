@@ -277,3 +277,16 @@ test('dependency summary counts Dependabot group updates, not group names', () =
 test('dependency summary escapes markdown in names', () => {
 	expect(summary(['Bump [x](y) from 1.0.0 to 2.0.0'])).not.toContain('[x](');
 });
+
+test('AI-picked gitmojis are not shown as emojis either', () => {
+	const changelog = sample();
+	const picked = {
+		...commit('Accept camelCase flags'),
+		gitmoji: 'sparkles',
+		gitmojiSource: 'ai' as const,
+	};
+	changelog.releases[0]!.groups = groupCommits([picked], DEFAULT_GROUP_CONFIG);
+	expect(renderMarkdown(changelog)).toContain(
+		'### Added\n\n- Accept camelCase flags (',
+	);
+});

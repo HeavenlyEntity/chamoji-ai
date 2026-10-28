@@ -45,6 +45,11 @@ export type BuildChangelogOptions = {
 	 * sort. It never sees or overrides the others.
 	 */
 	classify?: CommitClassifier;
+	/**
+	 * Which commits `classify` sees: every release (default), or only the
+	 * unreleased section, which is all `next-version` needs.
+	 */
+	classifyReleases?: 'all' | 'unreleased';
 };
 
 export async function buildChangelog(
@@ -108,9 +113,13 @@ export async function buildChangelog(
 	}
 
 	if (options.classify) {
+		const scope =
+			options.classifyReleases === 'unreleased'
+				? pending.filter(item => item.isUnreleased)
+				: pending;
 		await applyClassifier(
 			options.classify,
-			pending.flatMap(item => item.commits),
+			scope.flatMap(item => item.commits),
 		);
 	}
 

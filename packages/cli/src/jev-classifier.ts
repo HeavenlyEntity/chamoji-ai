@@ -24,21 +24,30 @@ export type JevClassifierOptions = {
 	concurrency?: number;
 	/** Picks below this confidence are dropped and the commit stays unsorted. */
 	minConfidence?: number;
-	/** Receives a one-line summary when done. */
+	/** Receives one-line progress notes: failures and a final summary. */
 	report?: (line: string) => void;
 };
 
-/** Characters of each commit body sent; subjects are always sent whole. */
-const BODY_CHARS = 300;
+/** Characters of each subject and body sent. */
+const MAX_CHARS = 300;
+
+/**
+ * Upper bound on batch size. Each question repeats the ~75 gitmoji options
+ * (about 1.4k tokens), and a request may hold 64k tokens, state included.
+ */
+const MAX_BATCH = 30;
 
 const NONE = 'none';
 
 /**
- * Every gitmoji except 💥: an AI may sort a commit, but only its author can
- * declare a breaking change.
+ * Not offered: 💥, because only an author can declare a breaking change, and
+ * the codes the default config hides, so a wrong pick can't make a commit
+ * vanish from the changelog.
  */
+const NOT_OFFERED = new Set(['boom', 'bookmark', 'twisted_rightwards_arrows']);
+
 const CRITERIA: Record<string, string> = Object.fromEntries([
-	...GITMOJIS.filter(gitmoji => gitmoji.code !== 'boom').map(gitmoji => [
+	...GITMOJIS.filter(gitmoji => !NOT_OFFERED.has(gitmoji.code)).map(gitmoji => [
 		gitmoji.code,
 		gitmoji.description,
 	]),
@@ -64,6 +73,13 @@ export function createJevClassifier(
 		minConfidence = 0.6,
 		report,
 	} = options;
+	if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > MAX_BATCH) {
+		throw new RangeError(`batchSize must be an integer from 1 to ${MAX_BATCH}`);
+	}
+
+	if (!Number.isInteger(concurrency) || concurrency < 1) {
+		throw new RangeError('concurrency must be a positive integer');
+	}
 
 	const classifyBatch = async (batch: ParsedCommit[]) => {
 		const questions: Parameters<JevClient['systemOne']>[0]['questions'] = {};
@@ -78,8 +94,8 @@ export function createJevClassifier(
 		const {answers} = await client.systemOne({
 			state: {
 				commits: batch.map(commit => ({
-					subject: commit.subject,
-					body: commit.body.trim().slice(0, BODY_CHARS),
+					subject: redact(commit.subject).slice(0, MAX_CHARS),
+					body: redact(withoutTrailers(commit.body)).trim().slice(0, MAX_CHARS),
 				})),
 			},
 			questions,
@@ -108,11 +124,21 @@ export function createJevClassifier(
 
 		const result = new Map<string, string>();
 		let next = 0;
+		let sent = 0;
+		let failure: Error | undefined;
+		// `--ai` only improves the output, so a failed request stops further
+		// requests but keeps what earlier ones returned.
 		const worker = async () => {
-			while (next < batches.length) {
+			while (next < batches.length && !failure) {
 				const batch = batches[next++]!;
-				for (const [hash, code] of await classifyBatch(batch)) {
-					result.set(hash, code);
+				try {
+					for (const [hash, code] of await classifyBatch(batch)) {
+						result.set(hash, code);
+					}
+
+					sent += batch.length;
+				} catch (error) {
+					failure ??= error as Error;
 				}
 			}
 		};
@@ -120,9 +146,34 @@ export function createJevClassifier(
 		await Promise.all(
 			Array.from({length: Math.min(concurrency, batches.length)}, worker),
 		);
+		if (failure) {
+			report?.(
+				`Jev request failed (${failure.message}); ${commits.length - sent} commits left unsorted`,
+			);
+		}
+
 		report?.(
 			`Jev sorted ${result.size} of ${commits.length} commits no rule could place`,
 		);
 		return result;
 	};
+}
+
+const EMAIL = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
+const TRAILER_LINE = /^[\w-]+:\s/;
+
+/** Replaces email addresses, which often appear in commit text. */
+function redact(text: string): string {
+	return text.replaceAll(EMAIL, '<email>');
+}
+
+/** Drops the final paragraph when it is all `Key: value` trailer lines. */
+function withoutTrailers(body: string): string {
+	const paragraphs = body.trim().split(/\n\s*\n/);
+	const last = paragraphs.at(-1)?.split('\n') ?? [];
+	if (last.length > 0 && last.every(line => TRAILER_LINE.test(line.trim()))) {
+		paragraphs.pop();
+	}
+
+	return paragraphs.join('\n\n');
 }

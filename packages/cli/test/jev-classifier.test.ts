@@ -98,3 +98,88 @@ test('reports how many commits it sorted', async () => {
 	);
 	expect(reports).toEqual(['Jev sorted 1 of 4 commits no rule could place']);
 });
+
+test('merges picks from every batch', async () => {
+	const {client} = fakeClient(() => ({choice: 'bug', confidence: 0.9}));
+	const input = commits(60);
+	const result = await createJevClassifier(client, {batchSize: 25})(input);
+	expect(result.size).toBe(60);
+});
+
+test('caps subjects and strips trailers and emails before sending', async () => {
+	const {client, requests} = fakeClient(() => ({
+		choice: 'none',
+		confidence: 1,
+	}));
+	await createJevClassifier(client)([
+		commit('Long first paragraph '.repeat(50), {
+			body: 'Reason: talked to jane@corp.com about it.\n\nSigned-off-by: Jane Doe <jane@corp.com>\nCo-authored-by: Bob <bob@corp.com>\n',
+		}),
+	]);
+	const sent = (
+		requests[0]!.state as {commits: Array<{subject: string; body: string}>}
+	).commits[0]!;
+	expect(sent.subject.length).toBeLessThanOrEqual(300);
+	expect(sent.body).toBe('Reason: talked to <email> about it.');
+	expect(JSON.stringify(requests[0])).not.toContain('@corp.com');
+	expect(Object.keys(requests[0]!.state)).toEqual(['commits']);
+});
+
+test('a failed request stops further requests and keeps earlier picks', async () => {
+	let calls = 0;
+	const reports: string[] = [];
+	const client: JevClient = {
+		async systemOne(request) {
+			calls++;
+			if (calls === 2) {
+				throw new Error('429 rate limited');
+			}
+
+			const answers: Record<string, {choice: string; confidence: number}> = {};
+			for (const name of Object.keys(request.questions)) {
+				answers[name] = {choice: 'bug', confidence: 0.9};
+			}
+
+			return {answers};
+		},
+	};
+	const result = await createJevClassifier(client, {
+		batchSize: 10,
+		concurrency: 1,
+		report: line => reports.push(line),
+	})(commits(50));
+
+	expect(calls).toBe(2);
+	expect(result.size).toBe(10);
+	expect(reports).toEqual([
+		'Jev request failed (429 rate limited); 40 commits left unsorted',
+		'Jev sorted 10 of 50 commits no rule could place',
+	]);
+});
+
+test('empty input sends nothing', async () => {
+	const {client, requests} = fakeClient(() => ({choice: 'bug', confidence: 1}));
+	expect((await createJevClassifier(client)([])).size).toBe(0);
+	expect(requests).toHaveLength(0);
+});
+
+test('hidden and breaking gitmojis are not offered', async () => {
+	const {client, requests} = fakeClient(() => ({
+		choice: 'none',
+		confidence: 1,
+	}));
+	await createJevClassifier(client)(commits(1));
+	const criteria = Object.keys(
+		(requests[0]!.questions['commit_0'] as {criteria: object}).criteria,
+	);
+	for (const code of ['boom', 'bookmark', 'twisted_rightwards_arrows']) {
+		expect(criteria).not.toContain(code);
+	}
+});
+
+test('rejects batch sizes that would loop forever or overflow requests', () => {
+	const {client} = fakeClient(() => ({choice: 'none', confidence: 1}));
+	expect(() => createJevClassifier(client, {batchSize: 0})).toThrow();
+	expect(() => createJevClassifier(client, {batchSize: 31})).toThrow();
+	expect(() => createJevClassifier(client, {concurrency: 0})).toThrow();
+});

@@ -229,3 +229,22 @@ test('classifier picks of unknown codes or boom are ignored', async () => {
 	expect(releases[0]!.groups.map(g => g.group)).toEqual(['misc']);
 	expect(releases[0]!.bump).toBeNull();
 });
+
+test('classifyReleases unreleased only sends the unreleased commits', async () => {
+	repo = await createRepo([
+		{commit: 'Tidelift tasks'},
+		{tag: 'v1.0.0'},
+		{commit: 'Odd one'},
+	]);
+	const seen: string[] = [];
+	await buildChangelog({
+		cwd: repo.dir,
+		config,
+		classifyReleases: 'unreleased',
+		async classify(commits) {
+			seen.push(...commits.map(c => c.subject));
+			return new Map();
+		},
+	});
+	expect(seen).toEqual(['Odd one']);
+});
