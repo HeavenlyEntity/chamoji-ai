@@ -8,6 +8,7 @@ Thanks for helping. Chamoji writes its own changelog from this repo's history, s
 pnpm install
 pnpm test     # vitest
 pnpm check    # build, type-check (including tests) and prettier
+pnpm benchmark # Miscellaneous share on the benchmark repos
 ```
 
 Node.js 22 or newer and git are required. `packages/core` is the engine and `packages/cli` is the `chamoji` command. [`docs/ROADMAP.md`](docs/ROADMAP.md) says what we're building next.
