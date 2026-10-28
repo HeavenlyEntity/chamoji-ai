@@ -13,6 +13,7 @@
 		"check": "pnpm build && tsc -p tsconfig.test.json && prettier --check .",
 		"format": "prettier --write .",
 		"release": "pnpm build && node packages/cli/dist/cli.js release",
+		"benchmark": "pnpm build && node scripts/benchmark.mjs",
 		"brand:preview": "node scripts/brand-preview.mjs"
 	},
 	"devDependencies": {

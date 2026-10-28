@@ -17,3 +17,6 @@ docs/brand/fonts/*.woff
 docs/brand/fonts/*.woff2
 # Generated brand preview
 docs/brand/.preview/
+
+# Benchmark clones (pnpm benchmark)
+.benchmarks/

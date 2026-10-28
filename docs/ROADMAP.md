@@ -95,7 +95,7 @@ We track these from milestone 2 onward. The targets are hypotheses, revised as d
 | Retention   | Commits written with the composer each week                | Opt-in telemetry                                         | Grows week over week through phase 2           |
 | Expansion   | Teams on a paid Cloud plan                                 | Billing                                                  | 10 paying teams within 90 days of milestone 15 |
 
-**Benchmark repos:** gitmoji, gitmoji-cli, sindresorhus/meow and vitejs/vite. Add two more with messy, unstructured history in milestone 2. Every milestone that touches parsing reports before and after numbers on these repos.
+**Benchmark repos:** gitmoji, gitmoji-cli, sindresorhus/meow and vitejs/vite, plus jquery/jquery and moment/moment for messy, unstructured history. `pnpm benchmark` clones them and prints each one's Miscellaneous share. Every milestone that touches parsing reports before and after numbers on these repos.
 
 ---
 
@@ -180,7 +180,19 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 - ✅ **Old versions deprecated:** 0.1.0, 0.2.0 and npm's `0.0.0-stage` placeholder on both packages. Installing them prints an "update to the latest" warning.
 - ⬜ **Readme demo GIF.**
 - ✅ **Cloud waitlist page** is live at [chamoji-web.vercel.app](https://chamoji-web.vercel.app), built from the Claude Design [canvas](https://claude.ai/artifact/PZE5BypQRLgUjNH61ERMxc) (private) in the private `HeavenlyEntity/chamoji-web` repo. That repo holds the licensed fonts, art and React Bits Pro (agentframe) code, which can't live in this public repo. Emails go to Neon Postgres through the Vercel Marketplace, stored once each, whatever the capitalisation. Still to do: a custom domain, the Organization plan's contact email, and a Vercel Firewall rate limit if spam turns up.
-- ⬜ **Two messy benchmark repos.**
+- ✅ **Two messy benchmark repos:** jquery/jquery and moment/moment, measured with `pnpm benchmark` on 2026-10-28, without `--ai`, over each repo's whole history:
+
+  | Repo                     | Commits | Miscellaneous |
+  | ------------------------ | ------- | ------------- |
+  | carloscuesta/gitmoji     | 1308    | 2%            |
+  | carloscuesta/gitmoji-cli | 1167    | 1%            |
+  | sindresorhus/meow        | 160     | 18%           |
+  | vitejs/vite              | 8685    | 2%            |
+  | jquery/jquery            | 6545    | 42%           |
+  | moment/moment            | 3060    | 41%           |
+
+  The median is 10%, inside the 20% target. The two messy repos are the gap: jQuery's "Component: description" subjects and Moment's `[bugfix]` tags aren't read by any rule yet. That is the next parsing work, and the `--ai` comparison to make.
+
 - ✅ **New About text** on the repo, matching the readme.
 
 **What we learned getting the release to publish:**
