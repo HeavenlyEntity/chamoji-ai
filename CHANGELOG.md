@@ -10,6 +10,10 @@
 - ✨ Collapse dependency updates into one Dependencies line (d47b4bd)
 - ✨ Sort plain commit messages into sections with wording rules (7f6316a)
 
+### Changed
+
+- 🥅 Explain truncated or non-ASCII TypeSafe API keys (45e49d6)
+
 ### Fixed
 
 - 🐛 Keep dev-prefixed package names and count Dependabot group updates (322ceb0)
@@ -21,6 +25,7 @@
 
 ### Miscellaneous
 
+- 🙈 Ignore .env files (1a6bbae)
 - 📝 Position review packets against Graphite's current features (fc2087b)
 - 📝 Plan review packets and the editor extension (dd84b6f)
 
