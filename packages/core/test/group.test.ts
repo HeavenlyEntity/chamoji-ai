@@ -36,7 +36,7 @@ test('breaking sparkles goes to breaking_changes', () => {
 
 test('commits without a matching group go to misc', () => {
 	const groups = groupCommits(
-		[commit('Misc stuff'), commit('📝 Write docs')],
+		[commit('Misc stuff'), commit('💡 Comment the parser')],
 		DEFAULT_GROUP_CONFIG,
 	);
 	expect(ids(groups)).toEqual(['misc']);
@@ -64,4 +64,18 @@ test('dependency updates go to a collapsed Dependencies group', () => {
 	expect(ids(groups)).toEqual(['added', 'dependencies']);
 	expect(groups[1]).toMatchObject({label: 'Dependencies', collapse: true});
 	expect(groups[1]!.commits).toHaveLength(3);
+});
+
+test('docs commits get their own Documentation section', () => {
+	const groups = groupCommits(
+		[
+			commit('📝 Add the roadmap'),
+			commit('docs: explain --ai'),
+			commit('Update readme'),
+		],
+		DEFAULT_GROUP_CONFIG,
+	);
+	expect(groups.map(g => [g.group, g.label, g.commits.length])).toEqual([
+		['documentation', 'Documentation', 3],
+	]);
 });

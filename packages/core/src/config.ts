@@ -94,6 +94,7 @@ export const DEFAULT_GROUP_CONFIG: GroupConfig = [
 		label: 'Security',
 		emojis: ['lock', 'closed_lock_with_key', 'passport_control'],
 	},
+	{group: 'documentation', label: 'Documentation', emojis: ['memo']},
 	{
 		group: 'dependencies',
 		label: 'Dependencies',
@@ -116,7 +117,6 @@ export const DEFAULT_GROUP_CONFIG: GroupConfig = [
 		group: 'misc',
 		label: 'Miscellaneous',
 		emojis: [
-			'memo',
 			'bulb',
 			'rocket',
 			'construction',
