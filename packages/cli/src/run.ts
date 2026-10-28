@@ -9,6 +9,7 @@ import {
 	loadComposeConfig,
 	loadConfig,
 	openJudgmentCache,
+	readStagedChanges,
 	planRelease,
 	pushRelease,
 	ReleaseError,
@@ -16,12 +17,18 @@ import {
 	runGit,
 	shouldPrompt,
 	type CommitClassifier,
+	type ChamojiConfig,
 	type ComposeConfig,
 	type OutputFormat,
 	type ReadyPlan,
 } from '@chamoji/core';
 import {TypeSafeClient} from '@typesafe-ai/sdk';
 import meow from 'meow';
+import {
+	createCommitAdvisor,
+	type Advice,
+	type AdvisorClient,
+} from './advisor.js';
 import {compose} from './composer.js';
 import {readTypesafeKey} from './env.js';
 import {HookError, installHook, uninstallHook} from './hook.js';
@@ -45,10 +52,15 @@ export type Io = {
 	terminal?: () => ComposerTerminal | null;
 	/** Environment for the hook's CI check; defaults to process.env. */
 	env?: Record<string, string | undefined>;
+	/** Jev's commit advice; tests pass a fake. Defaults to the TypeSafe API. */
+	advise?: ReturnType<typeof createCommitAdvisor>;
 };
 
 export type ComposerTerminal = {
-	compose(config: ComposeConfig): Promise<string | null>;
+	compose(
+		config: ComposeConfig,
+		advice?: Promise<Advice | null>,
+	): Promise<string | null>;
 	close(): void;
 };
 
@@ -56,7 +68,7 @@ const realTerminal = (): ComposerTerminal | null => {
 	const terminal = openTerminal();
 	return terminal
 		? {
-				compose: async config => compose(config, terminal),
+				compose: async (config, advice) => compose(config, terminal, advice),
 				close: () => terminal.close(),
 			}
 		: null;
@@ -283,9 +295,10 @@ export async function run(argv: string[], io: Io): Promise<number> {
 			return PREFLIGHT_FAILED;
 		}
 
+		const advice = adviceFor(root, await loadConfig(root, flags.config), '');
 		let message: string | null;
 		try {
-			message = await terminal.compose(config);
+			message = await terminal.compose(config, advice);
 		} finally {
 			terminal.close();
 		}
@@ -353,7 +366,15 @@ export async function run(argv: string[], io: Io): Promise<number> {
 			const root = (
 				await runGit(['rev-parse', '--show-toplevel'], io.cwd)
 			).trim();
-			const message = await terminal.compose(await loadComposeConfig(root));
+			const draft =
+				original
+					.split('\n')
+					.find(line => line.trim() && !line.startsWith('#')) ?? '';
+			const advice = adviceFor(root, await loadConfig(root), draft);
+			const message = await terminal.compose(
+				await loadComposeConfig(root),
+				advice,
+			);
 			if (message === null) return 0;
 
 			// Keep git's comment lines, such as the list of changes, below the message.
@@ -371,6 +392,27 @@ export async function run(argv: string[], io: Io): Promise<number> {
 		} finally {
 			terminal?.close();
 		}
+	}
+
+	/**
+	 * Jev's advice on the staged change, when `ai.composer` is on and there's
+	 * a key; otherwise undefined. It's never awaited here: the composer shows
+	 * it if it arrives in time, and any failure just means no advice.
+	 */
+	function adviceFor(
+		root: string,
+		chamoji: ChamojiConfig,
+		draft: string,
+	): Promise<Advice | null> | undefined {
+		if (!chamoji.ai?.composer) return undefined;
+		const sendDiffs = chamoji.ai.sendDiffs;
+		return (async () => {
+			const advise = io.advise ?? (await realAdvisor(root));
+			if (!advise) return null;
+			const staged = await readStagedChanges(root, {sendDiffs});
+			if (staged.files.length === 0) return null;
+			return advise({staged, draft});
+		})().catch(() => null);
 	}
 
 	async function hook(action: string | undefined): Promise<number> {
@@ -567,6 +609,22 @@ function facts(plan: ReadyPlan, files: string[]) {
 		files,
 		warnings: plan.warnings,
 	};
+}
+
+/** The commit advisor on the TypeSafe API, or null without a key. */
+async function realAdvisor(
+	cwd: string,
+): Promise<ReturnType<typeof createCommitAdvisor> | null> {
+	const key = await readTypesafeKey(cwd, process.env);
+	if (!key || /[^\x21-\x7E]/.test(key)) return null;
+	const client = new TypeSafeClient({apiKey: key});
+	return createCommitAdvisor({
+		// The advisor asks only choice and noul questions, so box answers never come back.
+		systemOne: async request =>
+			(await client.systemOne(
+				request as Parameters<typeof client.systemOne>[0],
+			)) as unknown as Awaited<ReturnType<AdvisorClient['systemOne']>>,
+	});
 }
 
 async function jevClassifier(io: Io): Promise<CommitClassifier> {

@@ -1,6 +1,7 @@
 import {DEFAULT_COMPOSE_CONFIG, type ComposeConfig} from '@chamoji/core';
 import {render} from 'ink-testing-library';
 import {afterEach, expect, test, vi} from 'vitest';
+import type {Advice} from '../src/advisor.js';
 import {Composer} from '../src/composer.js';
 
 const ENTER = '\r';
@@ -17,7 +18,11 @@ afterEach(() => {
 	cleanup = undefined;
 });
 
-function open(config: Partial<ComposeConfig> = {}) {
+function open(
+	config: Partial<ComposeConfig> = {},
+	advice?: Promise<Advice | null>,
+	adviceTimeoutMs?: number,
+) {
 	const onSubmit = vi.fn();
 	const onCancel = vi.fn();
 	const app = render(
@@ -25,6 +30,8 @@ function open(config: Partial<ComposeConfig> = {}) {
 			config={{...DEFAULT_COMPOSE_CONFIG, ...config}}
 			onSubmit={onSubmit}
 			onCancel={onCancel}
+			advice={advice}
+			adviceTimeoutMs={adviceTimeoutMs}
 		/>,
 	);
 	cleanup = app.unmount;
@@ -106,4 +113,87 @@ test('emojiFormat code writes the shortcode', async () => {
 	});
 	await app.type('bug', ENTER, 'fix it', ENTER, ENTER, ENTER);
 	expect(app.onSubmit).toHaveBeenCalledWith(':bug: Fix it');
+});
+
+const ADVICE: Advice = {
+	gitmojis: [
+		{code: 'sparkles', probability: 0.8},
+		{code: 'memo', probability: 0.1},
+		{code: 'recycle', probability: 0.05},
+	],
+	breaking: 0.1,
+	split: 0.1,
+};
+
+test('advice that arrives first puts its gitmojis at the top, preselected', async () => {
+	const app = open(
+		{scopePrompt: false, messagePrompt: false},
+		Promise.resolve(ADVICE),
+	);
+	await tick();
+	const frame = app.lastFrame()!;
+	expect(frame).toContain('suggested');
+	expect(frame.indexOf('sparkles')).toBeLessThan(frame.indexOf('memo'));
+	expect(frame.indexOf('memo')).toBeLessThan(frame.indexOf('recycle'));
+	expect(frame.indexOf('recycle')).toBeLessThan(frame.indexOf(' art '));
+	await app.type(ENTER, 'add export', ENTER, ENTER, ENTER);
+	expect(app.onSubmit).toHaveBeenCalledWith('✨ Add export');
+});
+
+test('advice that arrives after typing leaves the list alone', async () => {
+	let resolve!: (advice: Advice) => void;
+	const late = new Promise<Advice>(done => {
+		resolve = done;
+	});
+	const app = open({}, late);
+	await app.type('b');
+	resolve(ADVICE);
+	await tick();
+	await app.type('\u007F');
+	expect(app.lastFrame()).not.toContain('suggested');
+});
+
+test('a likely breaking change shows a hint, and the default stays No', async () => {
+	const app = open(
+		{scopePrompt: false, messagePrompt: false},
+		Promise.resolve({...ADVICE, breaking: 0.82}),
+	);
+	await tick();
+	await app.type(ENTER, 'drop the v1 api', ENTER, ENTER);
+	expect(app.lastFrame()).toContain('may be breaking (82%)');
+	await app.type(ENTER);
+	expect(app.onSubmit).toHaveBeenCalledWith('✨ Drop the v1 api');
+});
+
+test('an uncertain breaking probability shows nothing', async () => {
+	const app = open(
+		{scopePrompt: false, messagePrompt: false},
+		Promise.resolve({...ADVICE, breaking: 0.55}),
+	);
+	await tick();
+	await app.type(ENTER, 'tweak', ENTER, ENTER);
+	expect(app.lastFrame()).not.toContain('may be breaking');
+});
+
+test('mixed changes show a split hint on the title step', async () => {
+	const app = open(
+		{scopePrompt: false},
+		Promise.resolve({...ADVICE, split: 0.86}),
+	);
+	await tick();
+	await app.type(ENTER);
+	expect(app.lastFrame()).toContain('mix unrelated work');
+});
+
+test('advice that fails or comes too late changes nothing', async () => {
+	const failing = open({}, Promise.reject(new Error('offline')));
+	await tick();
+	expect(failing.lastFrame()).not.toContain('suggested');
+	failing.unmount();
+
+	const slow = new Promise<Advice>(done => setTimeout(() => done(ADVICE), 120));
+	const app = open({}, slow, 40);
+	await new Promise(done => setTimeout(done, 200));
+	await app.type('\u007F');
+	expect(app.lastFrame()).not.toContain('suggested');
 });

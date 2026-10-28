@@ -1,6 +1,6 @@
 import {access, constants, mkdir, readFile, writeFile} from 'node:fs/promises';
 import path from 'node:path';
-import {afterEach, expect, test} from 'vitest';
+import {afterEach, expect, test, vi} from 'vitest';
 import {
 	createRepo,
 	gitOutput,
@@ -291,4 +291,120 @@ test('chamoji commit needs a terminal, and cancelling commits nothing', async ()
 	);
 	expect(cancelled.code).toBe(1);
 	expect(await gitOutput(repo.dir, ['rev-parse', 'HEAD'])).toBe(before);
+});
+
+// --- Jev's advice, wired into commit and hook run ---
+
+function capturingTerminal(message: string | null) {
+	const seen: Array<Promise<unknown> | undefined> = [];
+	return {
+		seen,
+		terminal: () => ({
+			async compose(_config: unknown, advice?: Promise<unknown>) {
+				seen.push(advice);
+				return message;
+			},
+			close() {},
+		}),
+	};
+}
+
+const ADVICE = {
+	gitmojis: [{code: 'sparkles', probability: 0.9}],
+	breaking: 0.1,
+	split: 0.1,
+};
+
+async function withAdvisor(
+	argv: string[],
+	cwd: string,
+	terminal: () => unknown,
+	advise: (input: unknown) => Promise<unknown>,
+) {
+	return run(argv, {
+		cwd,
+		stdout() {},
+		stderr() {},
+		terminal: terminal as never,
+		env: {},
+		advise: advise as never,
+	});
+}
+
+test('with ai.composer on, the composer gets advice on the staged change', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await writeFile(
+		path.join(repo.dir, 'chamoji.config.json'),
+		'{"ai": {"composer": true}}',
+	);
+	await writeFile(path.join(repo.dir, 'export.ts'), 'export {};\n');
+	await writeFile(path.join(repo.dir, '.env'), 'TOKEN=shh\n');
+	await gitOutput(repo.dir, ['add', '-A']);
+	const inputs: unknown[] = [];
+	const capture = capturingTerminal('✨ Add export');
+	const code = await withAdvisor(
+		['commit'],
+		repo.dir,
+		capture.terminal,
+		async input => {
+			inputs.push(input);
+			return ADVICE;
+		},
+	);
+	expect(code).toBe(0);
+	expect(await capture.seen[0]).toEqual(ADVICE);
+	const {staged} = inputs[0] as {
+		staged: {files: Array<{path: string}>; withheld: number};
+	};
+	expect(staged.files.map(file => file.path).sort()).toEqual([
+		'chamoji.config.json',
+		'export.ts',
+	]);
+	expect(staged.withheld).toBe(1);
+	expect(JSON.stringify(inputs)).not.toContain('shh');
+});
+
+test('hook run passes the draft title to the advisor', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await writeFile(
+		path.join(repo.dir, 'chamoji.config.json'),
+		'{"ai": {"composer": true}}',
+	);
+	await gitOutput(repo.dir, ['add', '-A']);
+	const file = await messageFile(repo.dir, `add the export\n${TEMPLATE}`);
+	const inputs: unknown[] = [];
+	const capture = capturingTerminal(null);
+	await withAdvisor(
+		['hook', 'run', file],
+		repo.dir,
+		capture.terminal,
+		async input => {
+			inputs.push(input);
+			return ADVICE;
+		},
+	);
+	await capture.seen[0];
+	expect(inputs[0]).toMatchObject({draft: 'add the export'});
+});
+
+test('without ai.composer there is no advice, and a failing advisor means none', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await writeFile(path.join(repo.dir, 'a.ts'), 'export {};\n');
+	await gitOutput(repo.dir, ['add', '-A']);
+	const off = capturingTerminal(null);
+	const advise = vi.fn(async () => ADVICE);
+	await withAdvisor(['commit'], repo.dir, off.terminal, advise);
+	expect(off.seen[0]).toBeUndefined();
+	expect(advise).not.toHaveBeenCalled();
+
+	await writeFile(
+		path.join(repo.dir, 'chamoji.config.json'),
+		'{"ai": {"composer": true}}',
+	);
+	await gitOutput(repo.dir, ['add', '-A']);
+	const failing = capturingTerminal(null);
+	await withAdvisor(['commit'], repo.dir, failing.terminal, async () => {
+		throw new Error('offline');
+	});
+	expect(await failing.seen[0]).toBeNull();
 });

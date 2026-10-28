@@ -1,11 +1,14 @@
 import {
 	formatCommitMessage,
+	getGitmoji,
 	searchGitmojis,
 	type ComposeConfig,
 	type CommitDraft,
+	type GitmojiInfo,
 } from '@chamoji/core';
 import {Box, render, Text, useInput} from 'ink';
-import {useState} from 'react';
+import {useEffect, useRef, useState} from 'react';
+import {HINT_THRESHOLD, type Advice} from './advisor.js';
 
 type Step =
 	'gitmoji' | 'scope' | 'title' | 'body' | 'why' | 'breaking' | 'breakingText';
@@ -22,17 +25,29 @@ const PROMPTS: Record<Step, string> = {
 
 const LIST_SIZE = 7;
 
+/** How long the composer waits for Jev's advice before carrying on without it. */
+const ADVICE_TIMEOUT_MS = 2000;
+
 export type ComposerProps = {
 	config: ComposeConfig;
 	onSubmit: (message: string) => void;
 	onCancel: () => void;
+	/** Jev's advice, when AI is on. The composer never waits for it. */
+	advice?: Promise<Advice | null>;
+	adviceTimeoutMs?: number;
 };
 
 /**
  * The commit composer: pick a gitmoji, then scope, title, body, why and
  * breaking. Enter moves on, Esc goes back, Ctrl-C cancels.
  */
-export function Composer({config, onSubmit, onCancel}: ComposerProps) {
+export function Composer({
+	config,
+	onSubmit,
+	onCancel,
+	advice: pendingAdvice,
+	adviceTimeoutMs = ADVICE_TIMEOUT_MS,
+}: ComposerProps) {
 	const steps: Step[] = [
 		'gitmoji',
 		...(config.scopePrompt ? (['scope'] as const) : []),
@@ -53,8 +68,44 @@ export function Composer({config, onSubmit, onCancel}: ComposerProps) {
 	});
 	const [selected, setSelected] = useState(0);
 	const [gitmoji, setGitmoji] = useState<string | null>(null);
+	const [advice, setAdvice] = useState<Advice | null>(null);
+	// Suggestions reorder the list only if they arrive before any keypress,
+	// so the list never moves under someone who has started typing.
+	const [suggestFirst, setSuggestFirst] = useState(false);
+	const touched = useRef(false);
 
-	const matches = searchGitmojis(text.gitmoji, 20);
+	useEffect(() => {
+		if (!pendingAdvice) return;
+		let live = true;
+		const timer = setTimeout(() => {
+			live = false;
+		}, adviceTimeoutMs);
+		pendingAdvice
+			.then(result => {
+				if (!live || !result) return;
+				setAdvice(result);
+				setSuggestFirst(!touched.current);
+			})
+			.catch(() => undefined);
+		return () => {
+			live = false;
+			clearTimeout(timer);
+		};
+	}, [pendingAdvice, adviceTimeoutMs]);
+
+	const suggested: GitmojiInfo[] =
+		advice && suggestFirst && text.gitmoji === ''
+			? advice.gitmojis.flatMap(item => getGitmoji(item.code) ?? [])
+			: [];
+	const suggestedCodes = new Set(suggested.map(item => item.code));
+	const matches = [
+		...suggested,
+		...searchGitmojis(text.gitmoji, 20).filter(
+			item => !suggestedCodes.has(item.code),
+		),
+	].slice(0, 20);
+	const hint = (value: number | undefined) =>
+		value !== undefined && value >= HINT_THRESHOLD;
 	const draft = (breaking?: string | boolean): CommitDraft => ({
 		gitmoji: gitmoji ?? 'sparkles',
 		scope: text.scope,
@@ -80,6 +131,7 @@ export function Composer({config, onSubmit, onCancel}: ComposerProps) {
 	};
 
 	useInput((input, key) => {
+		touched.current = true;
 		if (key.ctrl && input === 'c') {
 			onCancel();
 			return;
@@ -162,6 +214,20 @@ export function Composer({config, onSubmit, onCancel}: ComposerProps) {
 					</Text>
 				)}
 			</Box>
+			{step === 'title' && hint(advice?.split) && (
+				<Text color="yellow">
+					Jev thinks these changes mix unrelated work; consider committing them
+					separately.
+				</Text>
+			)}
+			{(step === 'breaking' || step === 'breakingText') &&
+				hint(advice?.breaking) && (
+					<Text color="yellow">
+						Jev thinks this may be breaking (
+						{Math.round((advice?.breaking ?? 0) * 100)}%). It's your call; the
+						default is still No.
+					</Text>
+				)}
 			{step === 'gitmoji' &&
 				(visible.length > 0 ? (
 					visible.map((item, index) => {
@@ -171,6 +237,9 @@ export function Composer({config, onSubmit, onCancel}: ComposerProps) {
 								{active ? '❯ ' : '  '}
 								{item.emoji} {item.code.padEnd(28)}
 								<Text dimColor>{item.description}</Text>
+								{suggestedCodes.has(item.code) && (
+									<Text color="magenta"> suggested</Text>
+								)}
 							</Text>
 						);
 					})
@@ -190,6 +259,7 @@ export type ComposeStreams = {
 export async function compose(
 	config: ComposeConfig,
 	streams: ComposeStreams,
+	advice?: Promise<Advice | null>,
 ): Promise<string | null> {
 	return new Promise(resolve => {
 		let done = false;
@@ -205,6 +275,7 @@ export async function compose(
 				config={config}
 				onSubmit={message => finish(message)}
 				onCancel={() => finish(null)}
+				advice={advice}
 			/>,
 			{
 				stdin: streams.stdin,
