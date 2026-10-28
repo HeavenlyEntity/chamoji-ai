@@ -216,6 +216,15 @@ GUI surfaces (the desktop app, Cloud pages and the website) render the foil live
 
 ## React Bits
 
+**The agentframe template** (React Bits Pro, commercial license) is the model for how the website tells its story.
+
+- **Patterns borrowed for chamoji,** in chamoji's brand:
+  - its run walkthrough: stage cards joined by connectors, a dot travelling between stages, the active stage lighting up, numbered tabs that take over from the auto-loop, and a pause when the walkthrough is offscreen or the viewer prefers reduced motion
+  - fade-up reveals as you scroll
+  - copy-feedback buttons
+- **On the waitlist page,** this is the "Commits in. Context out." section: 01 Commit as usual → 02 Chamoji sorts → 03 Release ships.
+- **License limit:** the license allows use and modification in our own commercial projects. It forbids redistributing the source. So code copied from agentframe may go into **private** repositories only, such as the waitlist and Cloud site, and **never into this public repo**.
+
 **Iridescence** is already in use (see above).
 
 **More React Bits components** can be installed in the Vercel build with the React Bits key kept in `.env.local`. Never commit the key.

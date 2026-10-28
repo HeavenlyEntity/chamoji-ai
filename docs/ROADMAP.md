@@ -179,7 +179,7 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 - ✅ **v0.4.0** was published by `release.yml` through npm trusted publishing, with SLSA provenance on both packages. The npm pages link to GitHub.
 - ✅ **Old versions deprecated:** 0.1.0, 0.2.0 and npm's `0.0.0-stage` placeholder on both packages. Installing them prints an "update to the latest" warning.
 - ⬜ **Readme demo GIF.**
-- 🚧 **Cloud waitlist page:** designed in Claude Design ([canvas](https://claude.ai/artifact/PZE5BypQRLgUjNH61ERMxc), private), with the page and a 1200 × 630 share card. Next: iterate on the design, then build and deploy on Vercel with real email capture.
+- 🚧 **Cloud waitlist page:** designed in Claude Design ([canvas](https://claude.ai/artifact/PZE5BypQRLgUjNH61ERMxc), private), with the page and a 1200 × 630 share card. Next: iterate on the design, then build and deploy on Vercel with real email capture, from a **private** repo. The site reuses licensed React Bits Pro (agentframe) code and assets, which can't live in this public repo.
 - ⬜ **Two messy benchmark repos.**
 - ✅ **New About text** on the repo, matching the readme.
 
