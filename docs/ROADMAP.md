@@ -32,7 +32,7 @@ These apply to every milestone. A plan that breaks one needs a written reason.
 | 1   | Changelog engine                    | 0 Foundation               | Activation  | M    | ✅ Shipped in 0.1.0 | [plan](superpowers/plans/2026-10-27-milestone-1-changelog-engine.md)   |
 | 1.5 | Plain commits, Dependencies, `--ai` | 0 Foundation               | Activation  | M    | ✅ Shipped in 0.2.0 | — (built from chat scope)                                              |
 | 1.6 | Use it ourselves                    | 0 Foundation               | Retention   | S    | ✅ Shipped in 0.3.0 | [plan](superpowers/plans/2026-10-28-milestone-1.6-use-it-ourselves.md) |
-| 2   | Public launch kit                   | 1 Activation & acquisition | Acquisition | S    | ⏭ Next              | —                                                                      |
+| 2   | Public launch kit                   | 1 Activation & acquisition | Acquisition | S    | ⏭ Next              | [plan](superpowers/plans/2026-10-28-milestone-2-public-launch-kit.md)  |
 | 3   | GitHub Action                       | 1 Activation & acquisition | Acquisition | M    | Planned             | —                                                                      |
 | 4   | Commit composer and git hook        | 2 Retention                | Retention   | L    | Planned             | —                                                                      |
 | 5   | Jev in the composer                 | 2 Retention                | Retention   | M    | Planned             | —                                                                      |
