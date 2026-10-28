@@ -71,13 +71,14 @@ git tag "v$version"
 Some messages are too vague for rules, such as "Accept camelCase flags" or "Tidelift tasks". `--ai` sends just those commits to [Jev](https://typesafe.ai), TypeSafe's fast classification model. It picks a gitmoji for each one. Picks below 60% confidence are dropped, and those commits stay in Miscellaneous.
 
 ```bash
-export TYPESAFE_API_KEY=...   # from https://typesafe.ai
+export TYPESAFE_API_KEY=...   # from https://typesafe.ai, or put it in .env.local
 chamoji changelog --ai
 ```
 
 - **What is sent:** only the commits no rule could sort, at most 300 characters each of subject and body, with email addresses and trailer lines such as `Signed-off-by:` removed. Never diffs, code or author details. `next-version --ai` sends only unreleased commits.
 - **If a request fails:** chamoji stops sending, keeps the picks it already has, and leaves the rest in Miscellaneous.
 - **What it never does:** override an emoji or type the author wrote, or mark a change as breaking. Only authors declare breaking changes.
+- **Where the key comes from:** the `TYPESAFE_API_KEY` environment variable, or else that one line from `.env.local` or `.env` in the current folder. No other variable in those files is read.
 - **Without `--ai`:** chamoji makes no network calls.
 
 ## Config

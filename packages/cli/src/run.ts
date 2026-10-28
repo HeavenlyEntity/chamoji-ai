@@ -9,6 +9,7 @@ import {
 } from '@chamoji/core';
 import {TypeSafeClient} from '@typesafe-ai/sdk';
 import meow from 'meow';
+import {readTypesafeKey} from './env.js';
 import {createJevClassifier} from './jev-classifier.js';
 
 export type Io = {
@@ -33,7 +34,8 @@ const HELP = `
 	  --release  Name the unreleased section with this version
 	  --config   Config file (default: chamoji.config.json if present)
 	  --ai       Sort commits no rule can place with Jev (TypeSafe).
-	             Needs TYPESAFE_API_KEY. Sends up to 300 characters of
+	             Needs TYPESAFE_API_KEY, from the environment or from
+	             .env.local / .env here. Sends up to 300 characters of
 	             each such commit's subject and body, with emails and
 	             trailer lines removed; never diffs, code or authors.
 
@@ -84,7 +86,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
 
 	const [command] = cli.input;
 	try {
-		const classify = flags.ai ? jevClassifier(io) : undefined;
+		const classify = flags.ai ? await jevClassifier(io) : undefined;
 		switch (command) {
 			case 'changelog': {
 				const format = Object.hasOwn(FORMATS, flags.format)
@@ -153,11 +155,11 @@ export async function run(argv: string[], io: Io): Promise<number> {
 	}
 }
 
-function jevClassifier(io: Io): CommitClassifier {
-	const key = process.env['TYPESAFE_API_KEY']?.trim();
+async function jevClassifier(io: Io): Promise<CommitClassifier> {
+	const key = await readTypesafeKey(io.cwd, process.env);
 	if (!key) {
 		throw new Error(
-			'--ai needs a TypeSafe API key: set TYPESAFE_API_KEY (get one at https://typesafe.ai)',
+			'--ai needs a TypeSafe API key: set TYPESAFE_API_KEY in the environment or in .env.local (get one at https://typesafe.ai)',
 		);
 	}
 
@@ -171,7 +173,7 @@ function jevClassifier(io: Io): CommitClassifier {
 		);
 	}
 
-	const client = new TypeSafeClient();
+	const client = new TypeSafeClient({apiKey: key});
 	return createJevClassifier(
 		{systemOne: async request => client.systemOne(request)},
 		{report: line => io.stderr(`${line}\n`)},
