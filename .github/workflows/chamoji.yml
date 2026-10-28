@@ -1,0 +1,34 @@
+name: chamoji
+
+# chamoji's own GitHub Action, run on this repo from the local build:
+# a changelog preview comment on every PR, and release notes on every v* tag.
+on:
+  pull_request:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: chamoji-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - uses: ./
+        with:
+          cli: node packages/cli/dist/cli.js

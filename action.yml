@@ -1,0 +1,61 @@
+name: chamoji changelog
+description: Release notes, PR changelog previews and one-step releases from your commits, with chamoji.
+author: HeavenlyEntity
+branding:
+  icon: book-open
+  color: purple
+
+inputs:
+  mode:
+    description: >-
+      auto (default) writes release notes on a tag push and a changelog preview
+      comment on a pull request. Or set notes, comment, or release (cuts a
+      release with `chamoji release --push`).
+    default: auto
+  chamoji-version:
+    description: '@chamoji/cli version to run with npx.'
+    default: latest
+  cli:
+    description: Command that runs chamoji instead of npx, such as `node packages/cli/dist/cli.js`.
+    default: ''
+  release-version:
+    description: release mode only. The version to release; empty lets chamoji pick it from the commits.
+    default: ''
+  ai:
+    description: Sort vague commits with Jev (needs typesafe-api-key).
+    default: 'false'
+  typesafe-api-key:
+    description: TypeSafe API key, for ai.
+    default: ''
+  github-token:
+    description: >-
+      Token for gh. notes and release need contents write; comment needs
+      pull-requests write.
+    default: ${{ github.token }}
+
+outputs:
+  version:
+    description: The tag that was released or given notes.
+    value: ${{ steps.run.outputs.version }}
+  notes-file:
+    description: notes mode only. Path to the release notes.
+    value: ${{ steps.run.outputs.notes-file }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+    - id: run
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/action/run.sh"
+      env:
+        CHAMOJI_MODE: ${{ inputs.mode }}
+        CHAMOJI_VERSION: ${{ inputs.chamoji-version }}
+        CHAMOJI_CLI: ${{ inputs.cli }}
+        CHAMOJI_RELEASE_VERSION: ${{ inputs.release-version }}
+        CHAMOJI_AI: ${{ inputs.ai }}
+        TYPESAFE_API_KEY: ${{ inputs.typesafe-api-key }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        GH_REPO: ${{ github.repository }}

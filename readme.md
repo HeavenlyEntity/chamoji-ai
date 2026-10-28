@@ -75,6 +75,41 @@ It does, in order:
 
 `--trailer "Key: value"` adds trailer lines to the release commit, `--json` prints the result for scripts, and `--ai` works as it does for `changelog`. Exit codes: 0 released, 3 nothing to release, 2 a check failed (the message says which), 1 anything else.
 
+## GitHub Action
+
+The Action does three jobs:
+
+- **Release notes:** on every pushed tag, it writes that tag's notes to its GitHub Release.
+- **PR preview:** on every pull request, it keeps one comment up to date with the changelog lines the PR adds and the version merging it would make.
+- **Releases:** on request, it cuts the whole release with `chamoji release`.
+
+```yaml
+# .github/workflows/changelog.yml
+name: changelog
+on:
+  pull_request:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write # release notes
+  pull-requests: write # the PR comment
+jobs:
+  chamoji:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # chamoji reads every commit and tag
+      - uses: HeavenlyEntity/chamoji-ai@main
+```
+
+To release at the press of a button, add a `workflow_dispatch` workflow with `with: {mode: release}`. It takes an optional `release-version`. It commits `CHANGELOG.md` and the version bumps, then pushes the tag and creates the GitHub Release. Other inputs:
+
+- `ai: true` with `typesafe-api-key: ${{ secrets.TYPESAFE_API_KEY }}` sorts vague commits.
+- `chamoji-version` pins the CLI.
+
+On PRs from forks the token can't comment, so the preview goes to the job summary instead.
+
 ## Release from your coding agent
 
 The `chamoji-release` skill teaches Claude Code, Codex, Cursor and other coding agents to cut a release the way the flow above does. Ask for "a release" or "release notes", and the agent:

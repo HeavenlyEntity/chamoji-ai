@@ -276,9 +276,15 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 
   `--dry-run` and `--json` are for agents and CI. It ports the script the `chamoji-release` agent skill was tested with, and chamoji-ai's own `pnpm release` now runs it.
 
-- ⬜ **After 0.5.0 is on npm:**
-  - point the skill and its CI recipe at `npx @chamoji/cli release`, and drop the skill's bundled script
-  - build the Action itself on top of the command
+- ✅ **The Action** (`action.yml` at the repo root, logic in `action/run.sh`):
+  - release notes on every pushed tag
+  - one PR comment, kept up to date, with the lines the PR adds and the next version
+  - an optional `mode: release`
+  - built on a new `changelog --since <ref>`
+  - tested against fixture repos with a fake `gh`
+  - chamoji runs it on its own PRs and tags from the local build (`.github/workflows/chamoji.yml`)
+- ⬜ **Exit criteria still to see on GitHub:** a real PR comment updating in place, and notes on a real tag (v0.5.0).
+- ⬜ **After 0.5.0 is on npm:** point the skill at `npx @chamoji/cli release`, recommend `@v0.5.0` instead of `@main` in the readme, and list the Action on the Marketplace.
 
 **Why:** distribution. Every repo that adds the Action shows chamoji in its workflows and release notes. gitmoji-changelog users asked for one (its issue #143).
 
