@@ -43,3 +43,15 @@ export {
 } from './release.js';
 export type * from './types.js';
 export {bumpFor, nextVersion} from './version.js';
+export {
+	DEFAULT_COMPOSE_CONFIG,
+	loadComposeConfig,
+	type ComposeConfig,
+} from './compose/config.js';
+export {shouldPrompt, type HookInput} from './compose/hook.js';
+export {
+	formatCommitMessage,
+	type CommitDraft,
+	type FormatOptions,
+} from './compose/message.js';
+export {searchGitmojis} from './compose/search.js';
