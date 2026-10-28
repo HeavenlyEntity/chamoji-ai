@@ -84,26 +84,3 @@ test('typo fixes are documentation, not bug fixes', () => {
 	expect(documentation?.emojis).toContain('pencil2');
 	expect(fixed?.emojis).not.toContain('pencil2');
 });
-
-test('the ai block opts in to composer advice and diffs', async () => {
-	const dir = await mkdtemp(path.join(tmpdir(), 'chamoji-ai-config-'));
-	try {
-		await writeFile(
-			path.join(dir, 'chamoji.config.json'),
-			'{"ai": {"composer": true}}',
-		);
-		expect((await loadConfig(dir)).ai).toEqual({
-			composer: true,
-			sendDiffs: false,
-		});
-		await writeFile(path.join(dir, 'chamoji.config.json'), '{}');
-		expect((await loadConfig(dir)).ai).toBeUndefined();
-		await writeFile(
-			path.join(dir, 'chamoji.config.json'),
-			'{"ai": {"composer": "yes"}}',
-		);
-		await expect(loadConfig(dir)).rejects.toThrow('ai must be');
-	} finally {
-		await rm(dir, {recursive: true, force: true});
-	}
-});

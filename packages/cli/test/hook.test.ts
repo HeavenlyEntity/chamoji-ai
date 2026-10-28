@@ -331,12 +331,9 @@ async function withAdvisor(
 	});
 }
 
-test('with ai.composer on, the composer gets advice on the staged change', async () => {
+test('with chamoji.composer on in git config, the composer gets advice on the staged change', async () => {
 	repo = await createRepo([{commit: '🎉 Init'}]);
-	await writeFile(
-		path.join(repo.dir, 'chamoji.config.json'),
-		'{"ai": {"composer": true}}',
-	);
+	await gitOutput(repo.dir, ['config', 'chamoji.composer', 'true']);
 	await writeFile(path.join(repo.dir, 'export.ts'), 'export {};\n');
 	await writeFile(path.join(repo.dir, '.env'), 'TOKEN=shh\n');
 	await gitOutput(repo.dir, ['add', '-A']);
@@ -356,20 +353,15 @@ test('with ai.composer on, the composer gets advice on the staged change', async
 	const {staged} = inputs[0] as {
 		staged: {files: Array<{path: string}>; withheld: number};
 	};
-	expect(staged.files.map(file => file.path).sort()).toEqual([
-		'chamoji.config.json',
-		'export.ts',
-	]);
+	expect(staged.files.map(file => file.path)).toEqual(['export.ts']);
 	expect(staged.withheld).toBe(1);
 	expect(JSON.stringify(inputs)).not.toContain('shh');
 });
 
 test('hook run passes the draft title to the advisor', async () => {
 	repo = await createRepo([{commit: '🎉 Init'}]);
-	await writeFile(
-		path.join(repo.dir, 'chamoji.config.json'),
-		'{"ai": {"composer": true}}',
-	);
+	await gitOutput(repo.dir, ['config', 'chamoji.composer', 'true']);
+	await writeFile(path.join(repo.dir, 'export.ts'), 'export {};\n');
 	await gitOutput(repo.dir, ['add', '-A']);
 	const file = await messageFile(repo.dir, `add the export\n${TEMPLATE}`);
 	const inputs: unknown[] = [];
@@ -387,7 +379,7 @@ test('hook run passes the draft title to the advisor', async () => {
 	expect(inputs[0]).toMatchObject({draft: 'add the export'});
 });
 
-test('without ai.composer there is no advice, and a failing advisor means none', async () => {
+test('without the git config there is no advice, and a failing advisor means none', async () => {
 	repo = await createRepo([{commit: '🎉 Init'}]);
 	await writeFile(path.join(repo.dir, 'a.ts'), 'export {};\n');
 	await gitOutput(repo.dir, ['add', '-A']);
@@ -397,14 +389,25 @@ test('without ai.composer there is no advice, and a failing advisor means none',
 	expect(off.seen[0]).toBeUndefined();
 	expect(advise).not.toHaveBeenCalled();
 
-	await writeFile(
-		path.join(repo.dir, 'chamoji.config.json'),
-		'{"ai": {"composer": true}}',
-	);
+	await gitOutput(repo.dir, ['config', 'chamoji.composer', 'true']);
 	await gitOutput(repo.dir, ['add', '-A']);
 	const failing = capturingTerminal(null);
 	await withAdvisor(['commit'], repo.dir, failing.terminal, async () => {
 		throw new Error('offline');
 	});
 	expect(await failing.seen[0]).toBeNull();
+});
+
+test('a repository can’t switch the advice on from its own files', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await writeFile(
+		path.join(repo.dir, 'chamoji.config.json'),
+		'{"ai": {"composer": true, "sendDiffs": true}}',
+	);
+	await gitOutput(repo.dir, ['add', '-A']);
+	const capture = capturingTerminal(null);
+	const advise = vi.fn(async () => ADVICE);
+	await withAdvisor(['commit'], repo.dir, capture.terminal, advise);
+	expect(capture.seen[0]).toBeUndefined();
+	expect(advise).not.toHaveBeenCalled();
 });

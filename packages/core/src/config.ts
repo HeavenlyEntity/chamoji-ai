@@ -1,6 +1,6 @@
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
-import type {AiConfig, ChamojiConfig, GroupConfig} from './types.js';
+import type {ChamojiConfig, GroupConfig} from './types.js';
 
 export const CONFIG_FILE = 'chamoji.config.json';
 
@@ -182,12 +182,10 @@ export async function loadConfig(
 		throw new Error(`Invalid config ${file}: expected an object or an array`);
 	}
 
-	const {groups, repositoryUrl, ai} = data as Record<string, unknown>;
+	const {groups, repositoryUrl} = data as Record<string, unknown>;
 	if (repositoryUrl !== undefined && typeof repositoryUrl !== 'string') {
 		throw new Error(`Invalid config ${file}: repositoryUrl must be a string`);
 	}
-
-	const aiConfig = ai === undefined ? undefined : validateAi(ai, file);
 
 	return {
 		groups:
@@ -195,27 +193,7 @@ export async function loadConfig(
 				? DEFAULT_GROUP_CONFIG
 				: validateGroups(groups, file),
 		...(repositoryUrl ? {repositoryUrl} : {}),
-		...(aiConfig ? {ai: aiConfig} : {}),
 	};
-}
-
-function validateAi(value: unknown, file: string): AiConfig {
-	const {composer = false, sendDiffs = false} = (value ?? {}) as Record<
-		string,
-		unknown
-	>;
-	if (
-		typeof value !== 'object' ||
-		value === null ||
-		typeof composer !== 'boolean' ||
-		typeof sendDiffs !== 'boolean'
-	) {
-		throw new Error(
-			`Invalid config ${file}: ai must be {composer?: boolean, sendDiffs?: boolean}`,
-		);
-	}
-
-	return {composer, sendDiffs};
 }
 
 function validateGroups(value: unknown, file: string): GroupConfig {

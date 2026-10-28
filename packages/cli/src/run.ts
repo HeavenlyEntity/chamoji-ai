@@ -17,7 +17,6 @@ import {
 	runGit,
 	shouldPrompt,
 	type CommitClassifier,
-	type ChamojiConfig,
 	type ComposeConfig,
 	type OutputFormat,
 	type ReadyPlan,
@@ -295,7 +294,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
 			return PREFLIGHT_FAILED;
 		}
 
-		const advice = adviceFor(root, await loadConfig(root, flags.config), '');
+		const advice = adviceFor(root, await readAiSettings(root), '');
 		let message: string | null;
 		try {
 			message = await terminal.compose(config, advice);
@@ -370,7 +369,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
 				original
 					.split('\n')
 					.find(line => line.trim() && !line.startsWith('#')) ?? '';
-			const advice = adviceFor(root, await loadConfig(root), draft);
+			const advice = adviceFor(root, await readAiSettings(root), draft);
 			const message = await terminal.compose(
 				await loadComposeConfig(root),
 				advice,
@@ -395,17 +394,18 @@ export async function run(argv: string[], io: Io): Promise<number> {
 	}
 
 	/**
-	 * Jev's advice on the staged change, when `ai.composer` is on and there's
-	 * a key; otherwise undefined. It's never awaited here: the composer shows
-	 * it if it arrives in time, and any failure just means no advice.
+	 * Jev's advice on the staged change, when the user turned it on in git
+	 * config and there's a key; otherwise undefined. It's never awaited here:
+	 * the composer shows it if it arrives in time, and any failure just means
+	 * no advice.
 	 */
 	function adviceFor(
 		root: string,
-		chamoji: ChamojiConfig,
+		settings: AiSettings,
 		draft: string,
 	): Promise<Advice | null> | undefined {
-		if (!chamoji.ai?.composer) return undefined;
-		const sendDiffs = chamoji.ai.sendDiffs;
+		if (!settings.composer) return undefined;
+		const {sendDiffs} = settings;
 		return (async () => {
 			const advise = io.advise ?? (await realAdvisor(root));
 			if (!advise) return null;
@@ -611,11 +611,32 @@ function facts(plan: ReadyPlan, files: string[]) {
 	};
 }
 
-/** The commit advisor on the TypeSafe API, or null without a key. */
+export type AiSettings = {composer: boolean; sendDiffs: boolean};
+
+/**
+ * The composer's AI opt-ins, from git config (`chamoji.composer`,
+ * `chamoji.sendDiffs`), never from files in the repository: a cloned repo
+ * must not be able to switch on sending your changes anywhere.
+ */
+async function readAiSettings(cwd: string): Promise<AiSettings> {
+	const flag = async (key: string) =>
+		(
+			await runGit(['config', '--type=bool', '--get', key], cwd).catch(() => '')
+		).trim() === 'true';
+	return {
+		composer: await flag('chamoji.composer'),
+		sendDiffs: await flag('chamoji.sendDiffs'),
+	};
+}
+
+/**
+ * The commit advisor on the TypeSafe API, or null without a key. The key
+ * comes from the environment, or a .env file git doesn't track.
+ */
 async function realAdvisor(
 	cwd: string,
 ): Promise<ReturnType<typeof createCommitAdvisor> | null> {
-	const key = await readTypesafeKey(cwd, process.env);
+	const key = await readTypesafeKey(cwd, process.env, {untrackedOnly: true});
 	if (!key || /[^\x21-\x7E]/.test(key)) return null;
 	const client = new TypeSafeClient({apiKey: key});
 	return createCommitAdvisor({

@@ -51,15 +51,6 @@ export type GroupConfig = GroupConfigItem[];
 export type ChamojiConfig = {
 	groups: GroupConfig;
 	repositoryUrl?: string;
-	/** Opt-ins for AI at commit time; both default to off. */
-	ai?: AiConfig;
-};
-
-export type AiConfig = {
-	/** Ask Jev for gitmoji, breaking and split advice in the composer. */
-	composer: boolean;
-	/** Send the staged diff text too, not just paths and line counts. */
-	sendDiffs: boolean;
 };
 
 export type Group = {
