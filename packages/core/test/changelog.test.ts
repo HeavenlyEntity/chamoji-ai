@@ -1,7 +1,7 @@
 import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {afterEach, expect, test} from 'vitest';
+import {afterEach, expect, test, vi} from 'vitest';
 import {buildChangelog} from '../src/changelog.js';
 import {DEFAULT_GROUP_CONFIG} from '../src/config.js';
 import type {Release} from '../src/types.js';
@@ -84,6 +84,32 @@ test('release option names and dates the unreleased section', async () => {
 		today: '2026-10-27',
 	});
 	expect(releases[0]).toMatchObject({version: '1.0.1', date: '2026-10-27'});
+});
+
+test('a tag keeps the date --release gave it in a negative-offset zone', async () => {
+	// 21:01 in UTC-7 is already the next day in UTC.
+	const releasedAt = '2026-10-27T21:01:00-07:00';
+	repo = await createRepo([{commit: '✨ Add', date: releasedAt}]);
+
+	vi.useFakeTimers({toFake: ['Date']});
+	vi.setSystemTime(new Date(releasedAt));
+	try {
+		const before = await buildChangelog({
+			cwd: repo.dir,
+			config,
+			release: '1.0.0',
+		});
+		expect(before.releases[0]!.date).toBe('2026-10-28');
+	} finally {
+		vi.useRealTimers();
+	}
+
+	await gitOutput(repo.dir, ['tag', 'v1.0.0']);
+	const after = await buildChangelog({cwd: repo.dir, config});
+	expect(after.releases[0]).toMatchObject({
+		version: 'v1.0.0',
+		date: '2026-10-28',
+	});
 });
 
 test('from option stops before that tag', async () => {

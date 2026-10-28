@@ -106,7 +106,8 @@ export async function readCommits(
 
 /**
  * Semver tags reachable from `to`, newest first. `date` is the tagged
- * commit's committer date, so annotated and lightweight tags agree.
+ * commit's committer date, so annotated and lightweight tags agree, in UTC
+ * so it matches the date `--release` writes.
  */
 export async function listReleaseTags(
 	cwd: string,
@@ -126,7 +127,11 @@ export async function listReleaseTags(
 		.filter(Boolean)
 		.map(line => {
 			const [name, direct, dereferenced] = line.split(FIELD);
-			return {name: name!, date: dereferenced || direct || ''};
+			const date = dereferenced || direct;
+			return {
+				name: name!,
+				date: date ? new Date(date).toISOString() : '',
+			};
 		})
 		.filter(tag => semver.valid(tag.name) !== null)
 		.sort((a, b) => semver.rcompare(a.name, b.name));

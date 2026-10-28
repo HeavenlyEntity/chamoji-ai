@@ -32,7 +32,7 @@
 - 👷 Add CI and a release workflow with npm provenance ([f26f1c8](https://github.com/HeavenlyEntity/chamoji-ai/commit/f26f1c8d80d71bd49e9573bf61c9f3ae3176df2d))
 - ✅ Make test fixtures and path tests work on Windows ([c147eed](https://github.com/HeavenlyEntity/chamoji-ai/commit/c147eedc664375b28051502c69ebe82afd0be842))
 
-## [v0.3.0](https://github.com/HeavenlyEntity/chamoji-ai/compare/v0.2.0...v0.3.0) - 2026-10-27
+## [v0.3.0](https://github.com/HeavenlyEntity/chamoji-ai/compare/v0.2.0...v0.3.0) - 2026-10-28
 
 ### Added
 
@@ -54,7 +54,7 @@
 - 📝 Make the roadmap our single plan and add the dogfooding track ([dd806ab](https://github.com/HeavenlyEntity/chamoji-ai/commit/dd806ab473f8739d632033c8831e4e4233e4301d))
 - 📝 Add the product roadmap ([5dd4b77](https://github.com/HeavenlyEntity/chamoji-ai/commit/5dd4b77108b81d5640b5fd25b9b1dfe33ab140ef))
 
-## [v0.2.0](https://github.com/HeavenlyEntity/chamoji-ai/compare/v0.1.0...v0.2.0) - 2026-10-27
+## [v0.2.0](https://github.com/HeavenlyEntity/chamoji-ai/compare/v0.1.0...v0.2.0) - 2026-10-28
 
 ### Added
 
@@ -87,7 +87,7 @@
 
 - 🙈 Ignore .env files ([1a6bbae](https://github.com/HeavenlyEntity/chamoji-ai/commit/1a6bbae0e555ae4148c41750910ac3f0194aa653))
 
-## v0.1.0 - 2026-10-27
+## v0.1.0 - 2026-10-28
 
 ### Added
 
