@@ -6,3 +6,6 @@ coverage
 *.tgz
 packages/*/LICENSE
 packages/cli/readme.md
+.env
+.env.*
+!.env.example
