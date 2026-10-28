@@ -54,10 +54,27 @@ process.on('uncaughtException', error => {
 	process.exit(error instanceof Stop ? error.code : 1);
 });
 
-function run(command, args, {allowFail = false} = {}) {
+// Commands run without a shell, so no argument is ever parsed as shell syntax. The one
+// exception is chamoji on Windows (`shell: true` below): npx and npm-installed commands are
+// .cmd files there, and Node starts those only through cmd.exe.
+// NoDefaultCurrentDirectoryInExePath stops Windows from running a git.exe or chamoji.cmd
+// that sits in the repo itself.
+const childEnv = windows
+	? {...process.env, NoDefaultCurrentDirectoryInExePath: '1'}
+	: process.env;
+// What cmd.exe may see in an argument: letters, digits and . _ @ / : = + -
+const SHELL_SAFE = /^[\w.@/:=+-]+$/;
+
+function run(command, args, {allowFail = false, shell = false} = {}) {
+	if (shell) {
+		const unsafe = args.find(arg => !SHELL_SAFE.test(arg));
+		if (unsafe !== undefined)
+			stop(`refusing to pass ${JSON.stringify(unsafe)} through the shell`);
+	}
 	const result = spawnSync(command, args, {
 		encoding: 'utf8',
-		shell: windows,
+		shell,
+		env: childEnv,
 		maxBuffer: 64 * 1024 * 1024,
 	});
 	if (result.error && !allowFail) stop(`${command}: ${result.error.message}`);
@@ -74,10 +91,10 @@ const gitTry = (...args) => run('git', args, {allowFail: true});
 
 // chamoji: a global install if there is one, else the published package via npx.
 const chamojiBase =
-	run('chamoji', ['--version'], {allowFail: true}).status === 0
+	run('chamoji', ['--version'], {allowFail: true, shell: windows}).status === 0
 		? ['chamoji', []]
 		: ['npx', ['--yes', '@chamoji/cli@latest']];
-const chamoji = (args, options) =>
+const chamoji = (args, options = {}) =>
 	run(
 		chamojiBase[0],
 		[
@@ -86,7 +103,7 @@ const chamoji = (args, options) =>
 			...(flags.ai ? ['--ai'] : []),
 			'--no-update-check',
 		],
-		options,
+		{...options, shell: windows},
 	);
 
 // 1. Preflight.
@@ -175,6 +192,11 @@ if (version) {
 	if (next.status !== 0)
 		stop(`chamoji next-version failed:\n${next.stderr.trim()}`);
 	version = next.stdout.trim();
+	if (!SEMVER.test(version)) {
+		stop(
+			`chamoji next-version printed ${JSON.stringify(version)}, not a version`,
+		);
+	}
 }
 
 tag = `${prefix}${version}`;
