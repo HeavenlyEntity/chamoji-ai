@@ -127,7 +127,7 @@ GUI surfaces (the desktop app, Cloud pages and the website) render the foil live
 
 - **Style:** a clean, bold grotesque with full Latin, including accented letters, so names like "Café" and "Ñandú" render properly.
 - **Weight:** only Bold (700) is here. Declare it with `font-weight: 700` so browsers don't fake a bold on top of it.
-- **Licensing:** the font files are local only, like Marow Block (see [`fonts/README.md`](fonts/README.md)). Its built-in embedding flag is "preview & print" (OS/2 `fsType` 4), which is stricter than Marow Block's. Check that its license covers embedding in the app and website before shipping.
+- **Licensing:** the license covers embedding the font in our app and website (confirmed 2026-10-28). The font files stay local only, like Marow Block's (see [`fonts/README.md`](fonts/README.md)).
 - **CSS:**
 
   ```css
