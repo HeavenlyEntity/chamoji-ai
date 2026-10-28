@@ -177,7 +177,7 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 - ✅ **Public repo** at [github.com/HeavenlyEntity/chamoji-ai](https://github.com/HeavenlyEntity/chamoji-ai): code of conduct, security policy, issue and PR templates, the foil logo and badges.
 - ✅ **CI** is green on Linux, macOS and Windows with Node 22 and 24.
 - ✅ **v0.4.0** was published by `release.yml` through npm trusted publishing, with SLSA provenance on both packages. The npm pages link to GitHub.
-- ⬜ **`npm deprecate`** on versions below 0.3.0 (maintainer).
+- ✅ **Old versions deprecated:** 0.1.0, 0.2.0 and npm's `0.0.0-stage` placeholder on both packages. Installing them prints an "update to the latest" warning.
 - ⬜ **Readme demo GIF.**
 - ⬜ **Cloud waitlist page** on Vercel.
 - ⬜ **Two messy benchmark repos.**
