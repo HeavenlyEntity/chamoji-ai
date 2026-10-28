@@ -17,6 +17,7 @@ import {
 import {TypeSafeClient} from '@typesafe-ai/sdk';
 import meow from 'meow';
 import {readTypesafeKey} from './env.js';
+import {HookError, installHook, uninstallHook} from './hook.js';
 import {createJevClassifier} from './jev-classifier.js';
 import type {UpdateCheck} from './update-check.js';
 
@@ -59,6 +60,8 @@ const HELP = `
 	                                   (exits 3 when no release is needed)
 	  $ chamoji release [version]      Cut a release: CHANGELOG.md, version
 	                                   bumps, release commit and tag
+	  $ chamoji hook install           Offer the composer on a plain
+	                                   \`git commit\` (uninstall to remove)
 
 	Options
 	  --format   markdown (default), md, json or html
@@ -215,6 +218,10 @@ export async function run(argv: string[], io: Io): Promise<number> {
 					return await release(cli.input[1], classify);
 				}
 
+				case 'hook': {
+					return await hook(cli.input[1]);
+				}
+
 				default: {
 					io.stderr(
 						`${command ? `chamoji: unknown command "${command}"\n` : ''}${cli.help}\n`,
@@ -225,6 +232,57 @@ export async function run(argv: string[], io: Io): Promise<number> {
 		} catch (error) {
 			io.stderr(`chamoji: ${(error as Error).message}\n`);
 			return error instanceof ReleaseError ? PREFLIGHT_FAILED : 1;
+		}
+	}
+
+	async function hook(action: string | undefined): Promise<number> {
+		switch (action) {
+			case 'install': {
+				try {
+					const result = await installHook(io.cwd);
+					if (result.status === 'snippet') {
+						io.stdout(
+							`core.hooksPath is ${result.hooksPath}, so chamoji didn't write a hook there. ${result.snippet}\n`,
+						);
+					} else {
+						const what =
+							result.replaced === 'gitmoji'
+								? "Replaced gitmoji-cli's hook"
+								: result.replaced === 'chamoji'
+									? 'Updated the hook'
+									: 'Installed the hook';
+						io.stdout(
+							`${what}: ${result.path}\nA plain \`git commit\` now opens the composer; -m, merges, amends and rebases are left alone.\n`,
+						);
+					}
+
+					return 0;
+				} catch (error) {
+					if (error instanceof HookError) {
+						io.stderr(`chamoji: ${error.message}\n`);
+						return PREFLIGHT_FAILED;
+					}
+
+					throw error;
+				}
+			}
+
+			case 'uninstall': {
+				const removed = await uninstallHook(io.cwd);
+				io.stdout(
+					removed
+						? 'Removed the chamoji hook.\n'
+						: 'There was no chamoji hook to remove.\n',
+				);
+				return 0;
+			}
+
+			default: {
+				io.stderr(
+					`chamoji: hook needs install, uninstall or run${action ? `, not "${action}"` : ''}\n`,
+				);
+				return PREFLIGHT_FAILED;
+			}
 		}
 	}
 
