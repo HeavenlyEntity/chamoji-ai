@@ -144,3 +144,24 @@ test('render dispatches by format', () => {
 	expect(render(changelog, 'html')).toBe(renderHtml(changelog));
 	expect(render(changelog, 'json')).toBe(renderJson(changelog));
 });
+
+test('markdown leaves code spans untouched', () => {
+	const changelog = sample();
+	changelog.releases[0]!.groups = groupCommits(
+		[commit('🐛 Handle `Array<string>` input')],
+		DEFAULT_GROUP_CONFIG,
+	);
+	expect(renderMarkdown(changelog)).toContain('Handle `Array<string>` input');
+});
+
+test('markdown neutralizes links and images in commit text', () => {
+	const changelog = sample();
+	changelog.releases[0]!.groups = groupCommits(
+		[commit('🐛 See [x](https://evil.example) ![](https://t.example/p.gif)')],
+		DEFAULT_GROUP_CONFIG,
+	);
+	const markdown = renderMarkdown(changelog);
+	expect(markdown).not.toContain('[x](');
+	expect(markdown).not.toContain('![](');
+	expect(markdown).toContain('\\[x\\](https://evil.example)');
+});

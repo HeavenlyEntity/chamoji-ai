@@ -1,6 +1,10 @@
 import {afterEach, expect, test} from 'vitest';
 import {listReleaseTags, readCommits, toWebUrl} from '../src/git.js';
-import {createRepo, type FixtureRepo} from './helpers/fixture-repo.js';
+import {
+	createRepo,
+	gitOutput,
+	type FixtureRepo,
+} from './helpers/fixture-repo.js';
 
 let repo: FixtureRepo | undefined;
 
@@ -56,4 +60,17 @@ test('listReleaseTags keeps semver tags sorted newest first', async () => {
 	const tags = await listReleaseTags(repo.dir, 'HEAD');
 	expect(tags.map(tag => tag.name)).toEqual(['v1.0.0', 'v1.0.0-rc.1']);
 	expect(tags[0]!.date).toMatch(/^2026-01-02/);
+});
+
+test('a branch with the same name as a tag does not hide the tag', async () => {
+	repo = await createRepo([{commit: '✨ Add'}, {tag: 'v1.0.0'}]);
+	await gitOutput(repo.dir, ['branch', 'v1.0.0']);
+
+	const tags = await listReleaseTags(repo.dir, 'HEAD');
+	expect(tags.map(tag => tag.name)).toEqual(['v1.0.0']);
+});
+
+test('readCommits does not treat the range as an option', async () => {
+	repo = await createRepo([{commit: '✨ Add'}]);
+	await expect(readCommits(repo.dir, '--all')).rejects.toThrow();
 });

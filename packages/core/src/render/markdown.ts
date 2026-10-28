@@ -8,8 +8,22 @@ import {
 	splitIssues,
 } from './shared.js';
 
+/**
+ * Makes commit text inert outside code spans: no raw HTML, and no links or
+ * images, since squash-merged PR titles can come from anyone.
+ */
 const escapeMarkdown = (text: string) =>
-	text.replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+	text
+		.replaceAll(/[\\[\]]/g, char => `\\${char}`)
+		.replaceAll('<', '&lt;')
+		.replaceAll('>', '&gt;');
+
+/** Splits text into `code spans` (kept verbatim) and the parts between. */
+const splitCodeSpans = (text: string) =>
+	text
+		.split(/(`[^`\n]+`)/)
+		.filter(part => part.length > 0)
+		.map(part => ({text: part, code: /^`[^`\n]+`$/.test(part)}));
 
 export function renderMarkdown(changelog: Changelog): string {
 	const url = safeRepositoryUrl(changelog);
@@ -36,11 +50,17 @@ export function renderMarkdown(changelog: Changelog): string {
 function renderCommit(commit: ParsedCommit, url: string | undefined): string {
 	const emoji = emojiFor(commit);
 	const scope = commit.scope ? `**${escapeMarkdown(commit.scope)}:** ` : '';
-	const description = splitIssues(commit.description)
-		.map(part =>
-			part.issue && url
-				? `[${part.text}](${issueLink(part.issue, url)})`
-				: escapeMarkdown(part.text),
+	const description = splitCodeSpans(commit.description)
+		.map(span =>
+			span.code
+				? span.text
+				: splitIssues(span.text)
+						.map(part =>
+							part.issue && url
+								? `[${part.text}](${issueLink(part.issue, url)})`
+								: escapeMarkdown(part.text),
+						)
+						.join(''),
 		)
 		.join('');
 	const hash = url

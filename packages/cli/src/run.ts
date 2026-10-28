@@ -20,6 +20,7 @@ const HELP = `
 	Usage
 	  $ chamoji changelog [options]    Generate a changelog from git history
 	  $ chamoji next-version [options] Print the next semver version
+	                                   (exits 3 when no release is needed)
 
 	Options
 	  --format   markdown (default), md, json or html
@@ -31,9 +32,11 @@ const HELP = `
 
 	Examples
 	  $ chamoji changelog --output CHANGELOG.md
-	  $ chamoji changelog --release $(chamoji next-version) --output CHANGELOG.md
+	  $ version=$(chamoji next-version) && chamoji changelog --release "$version" -o CHANGELOG.md
 	  $ chamoji changelog --format html --output changelog.html
 `;
+
+export const NO_RELEASE_NEEDED = 3;
 
 const FORMATS: Record<string, OutputFormat> = {
 	markdown: 'markdown',
@@ -75,7 +78,9 @@ export async function run(argv: string[], io: Io): Promise<number> {
 	try {
 		switch (command) {
 			case 'changelog': {
-				const format = FORMATS[flags.format];
+				const format = Object.hasOwn(FORMATS, flags.format)
+					? FORMATS[flags.format]
+					: undefined;
 				if (!format) {
 					throw new Error(
 						`Unknown format "${flags.format}" (use markdown, json or html)`,
@@ -107,8 +112,19 @@ export async function run(argv: string[], io: Io): Promise<number> {
 					config: await loadConfig(io.cwd, flags.config),
 					to: flags.to,
 				});
-				const unreleased = releases.find(release => release.tag === null);
-				io.stdout(`${unreleased?.nextVersion ?? 'none'}\n`);
+				const next = releases.find(
+					release => release.tag === null,
+				)?.nextVersion;
+				if (!next) {
+					// Non-zero and silent on stdout, so `$(chamoji next-version)` in a
+					// release script stops instead of producing a release called "none".
+					io.stderr(
+						'chamoji: no release needed (no commits since the last tag imply a version bump)\n',
+					);
+					return NO_RELEASE_NEEDED;
+				}
+
+				io.stdout(`${next}\n`);
 				return 0;
 			}
 

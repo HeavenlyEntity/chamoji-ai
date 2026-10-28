@@ -53,6 +53,10 @@ export type Group = {
 export type Release = {
 	/** Tag name, the `--release` version, or `Unreleased`. */
 	version: string;
+	/**
+	 * The release's tag. For a `--release` section, the tag it will get
+	 * (e.g. `v1.2.0`); null for an unnamed Unreleased section.
+	 */
 	tag: string | null;
 	previousTag: string | null;
 	/** `YYYY-MM-DD`, or null for an undated Unreleased section. */

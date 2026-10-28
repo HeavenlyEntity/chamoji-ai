@@ -1,3 +1,4 @@
+import semver from 'semver';
 import {
 	assertGitRepo,
 	assertRevision,
@@ -9,6 +10,17 @@ import {groupCommits} from './group.js';
 import {parseCommit} from './parse.js';
 import type {ChamojiConfig, Changelog, RawCommit, Release} from './types.js';
 import {bumpFor, nextVersion} from './version.js';
+
+/** The tag a `--release` version will get, following the latest tag's `v` style. */
+function futureTag(release: string, latestTag: string | null): string {
+	if (release.startsWith('v')) {
+		return release;
+	}
+
+	return latestTag === null || latestTag.startsWith('v')
+		? `v${release}`
+		: release;
+}
 
 export type BuildChangelogOptions = {
 	cwd: string;
@@ -28,6 +40,10 @@ export async function buildChangelog(
 ): Promise<Changelog> {
 	const {cwd, config, to = 'HEAD', from, release} = options;
 	const today = options.today ?? new Date().toISOString().slice(0, 10);
+
+	if (release !== undefined && semver.valid(release) === null) {
+		throw new Error(`Invalid release version: ${release}`);
+	}
 
 	await assertGitRepo(cwd);
 	await assertRevision(cwd, to);
@@ -59,7 +75,7 @@ export async function buildChangelog(
 			makeRelease(
 				{
 					version: release ?? 'Unreleased',
-					tag: null,
+					tag: release ? futureTag(release, latest) : null,
 					previousTag: latest,
 					date: release ? today : null,
 				},

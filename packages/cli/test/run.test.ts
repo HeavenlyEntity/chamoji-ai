@@ -76,9 +76,26 @@ test('next-version prints the minor bump', async () => {
 	});
 });
 
-test('next-version prints none when nothing needs releasing', async () => {
-	repo = await createRepo([{commit: '✨ Add'}, {tag: 'v1.0.0'}]);
-	expect((await chamoji(['next-version'], repo.dir)).stdout).toBe('none\n');
+test('next-version exits 3 with no output when nothing needs releasing', async () => {
+	repo = await createRepo([
+		{commit: '✨ Add'},
+		{tag: 'v1.0.0'},
+		{commit: '📝 Docs only'},
+	]);
+	const {code, stdout, stderr} = await chamoji(['next-version'], repo.dir);
+	expect(code).toBe(3);
+	expect(stdout).toBe('');
+	expect(stderr).toContain('no release needed');
+});
+
+test('format names are not looked up on the object prototype', async () => {
+	repo = await createRepo(history);
+	const {code, stderr} = await chamoji(
+		['changelog', '--format', 'constructor'],
+		repo.dir,
+	);
+	expect(code).toBe(1);
+	expect(stderr).toContain('Unknown format "constructor"');
 });
 
 test('unknown format exits 1 with a message', async () => {

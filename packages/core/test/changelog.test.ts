@@ -143,3 +143,25 @@ test('outside a git repo throws a clear error', async () => {
 		await rm(dir, {recursive: true, force: true});
 	}
 });
+
+test('release option links to the tag the release will get', async () => {
+	repo = await createRepo([
+		{commit: '✨ Add'},
+		{tag: 'v1.0.0'},
+		{commit: '🐛 Fix'},
+	]);
+
+	const {releases} = await buildChangelog({
+		cwd: repo.dir,
+		config,
+		release: '1.0.1',
+	});
+	expect(releases[0]).toMatchObject({tag: 'v1.0.1', previousTag: 'v1.0.0'});
+});
+
+test('release option must be a semver version', async () => {
+	repo = await createRepo([{commit: '✨ Add'}]);
+	await expect(
+		buildChangelog({cwd: repo.dir, config, release: 'none'}),
+	).rejects.toThrow('Invalid release version: none');
+});

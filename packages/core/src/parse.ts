@@ -19,15 +19,33 @@ const TYPE_TO_GITMOJI: Record<string, string> = {
 const CONVENTIONAL_PREFIX = /^(\w+)(?:\(([^)]+)\))?(!)?:\s*/;
 const GITMOJI_CLI_SCOPE = /^\(([^)]+)\):\s*/;
 const BREAKING_FOOTER = /^BREAKING[ -]CHANGE:/m;
+const GIT_REVERT = /^Revert "(.+)"$/;
 
 export function parseCommit(raw: RawCommit): ParsedCommit {
+	const revert = GIT_REVERT.exec(raw.subject.trim());
+	if (revert) {
+		// `git revert` quotes the original subject; classify by the revert, not
+		// by the reverted commit's gitmoji.
+		const original = parseCommit({...raw, subject: revert[1]!, body: ''});
+		return {
+			...original,
+			body: raw.body,
+			gitmoji: 'rewind',
+			type: null,
+			description: `Revert "${original.description}"`,
+			breaking: BREAKING_FOOTER.test(raw.body),
+		};
+	}
+
 	let text = normalizeEmoji(raw.subject).trim();
 	let type: string | null = null;
 	let scope: string | null = null;
 	let bang = false;
 
 	const prefix = CONVENTIONAL_PREFIX.exec(text);
-	if (prefix && prefix[1]!.toLowerCase() in TYPE_TO_GITMOJI) {
+	// Known types always count; any other word counts only with a `!`, so
+	// prose like "Note: …" is left alone.
+	if (prefix && (prefix[1]!.toLowerCase() in TYPE_TO_GITMOJI || prefix[3])) {
 		type = prefix[1]!.toLowerCase();
 		scope = prefix[2] ?? null;
 		bang = Boolean(prefix[3]);
@@ -50,7 +68,7 @@ export function parseCommit(raw: RawCommit): ParsedCommit {
 	}
 
 	if (!gitmoji && type) {
-		gitmoji = TYPE_TO_GITMOJI[type]!;
+		gitmoji = TYPE_TO_GITMOJI[type] ?? null;
 	}
 
 	const {trailers: rawTrailers, ...rest} = raw;

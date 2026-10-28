@@ -95,3 +95,36 @@ test('emoji later in subject is still found', () => {
 		description: 'Fix in parser',
 	});
 });
+
+test('FE0F variants leave no stray selector in the description', () => {
+	// The gitmojis package stores 🚑 with U+FE0F; commits often omit it.
+	expect(parseCommit(raw('🚑️ Fix outage'))).toMatchObject({
+		gitmoji: 'ambulance',
+		description: 'Fix outage',
+	});
+	expect(parseCommit(raw('🚑 Fix outage')).gitmoji).toBe('ambulance');
+	expect(parseCommit(raw('⚡️ Speed up parser')).description).toBe(
+		'Speed up parser',
+	);
+});
+
+test('git revert subjects are reverts, not the quoted gitmoji', () => {
+	expect(parseCommit(raw('Revert "✨ Add login"'))).toMatchObject({
+		gitmoji: 'rewind',
+		description: 'Revert "Add login"',
+		breaking: false,
+	});
+	expect(parseCommit(raw('Revert "💥 Drop node 18"')).breaking).toBe(false);
+});
+
+test('bang marks breaking for any conventional type', () => {
+	expect(parseCommit(raw('deps!: Drop node 18'))).toMatchObject({
+		type: 'deps',
+		description: 'Drop node 18',
+		breaking: true,
+	});
+	expect(parseCommit(raw('Note: keep this text'))).toMatchObject({
+		type: null,
+		description: 'Note: keep this text',
+	});
+});

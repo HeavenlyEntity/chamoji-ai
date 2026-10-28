@@ -22,8 +22,17 @@ export async function runGit(args: string[], cwd: string): Promise<string> {
 export async function assertGitRepo(cwd: string): Promise<void> {
 	try {
 		await runGit(['rev-parse', '--is-inside-work-tree'], cwd);
-	} catch {
-		throw new Error(`Not a git repository: ${cwd}`);
+	} catch (error) {
+		const {code, stderr} = error as NodeJS.ErrnoException & {stderr?: string};
+		if (code === 'ENOENT') {
+			throw new Error('git is not installed or not on PATH');
+		}
+
+		if (stderr?.includes('not a git repository')) {
+			throw new Error(`Not a git repository: ${cwd}`);
+		}
+
+		throw new Error(stderr?.trim() || (error as Error).message);
 	}
 }
 
@@ -55,7 +64,15 @@ export async function readCommits(
 		'%(trailers:only,unfold)',
 	].join('%x1f');
 	const stdout = await runGit(
-		['log', '--no-merges', `--format=${format}%x1e`, range, '--'],
+		[
+			'log',
+			'--no-merges',
+			'--no-show-signature',
+			`--format=${format}%x1e`,
+			'--end-of-options',
+			range,
+			'--',
+		],
 		cwd,
 	);
 
@@ -98,9 +115,8 @@ export async function listReleaseTags(
 	const stdout = await runGit(
 		[
 			'tag',
-			'--merged',
-			to,
-			'--format=%(refname:short)%1f%(committerdate:iso-strict)%1f%(*committerdate:iso-strict)',
+			`--merged=${to}`,
+			'--format=%(refname:strip=2)%1f%(committerdate:iso-strict)%1f%(*committerdate:iso-strict)',
 		],
 		cwd,
 	);
