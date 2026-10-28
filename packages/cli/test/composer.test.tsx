@@ -117,7 +117,7 @@ test('emojiFormat code writes the shortcode', async () => {
 
 const ADVICE: Advice = {
 	gitmojis: [
-		{code: 'sparkles', probability: 0.8},
+		{code: 'sparkles', probability: 0.92},
 		{code: 'memo', probability: 0.1},
 		{code: 'recycle', probability: 0.05},
 	],
@@ -140,6 +140,40 @@ test('advice that arrives first puts its gitmojis at the top, preselected', asyn
 	expect(app.onSubmit).toHaveBeenCalledWith('✨ Add export');
 });
 
+test('less certain advice keeps the usual order and shows a hint instead', async () => {
+	const app = open(
+		{scopePrompt: false, messagePrompt: false},
+		Promise.resolve({
+			...ADVICE,
+			gitmojis: [
+				{code: 'memo', probability: 0.6},
+				{code: 'wrench', probability: 0.2},
+				{code: 'bug', probability: 0.1},
+			],
+		}),
+	);
+	await tick();
+	const frame = app.lastFrame()!;
+	expect(frame).toContain('Jev suggests');
+	expect(frame).toContain('📝 memo');
+	expect(frame).not.toContain(' suggested');
+	await app.type(ENTER, 'tidy up', ENTER, ENTER, ENTER);
+	expect(app.onSubmit).toHaveBeenCalledWith('🎨 Tidy up');
+});
+
+test('the hint goes away once a search is typed', async () => {
+	const app = open(
+		{},
+		Promise.resolve({
+			...ADVICE,
+			gitmojis: [{code: 'memo', probability: 0.6}],
+		}),
+	);
+	await tick();
+	await app.type('bug');
+	expect(app.lastFrame()).not.toContain('Jev suggests');
+});
+
 test('advice that arrives after typing leaves the list alone', async () => {
 	let resolve!: (advice: Advice) => void;
 	const late = new Promise<Advice>(done => {
@@ -151,6 +185,7 @@ test('advice that arrives after typing leaves the list alone', async () => {
 	await tick();
 	await app.type('\u007F');
 	expect(app.lastFrame()).not.toContain('suggested');
+	expect(app.lastFrame()).not.toContain('Jev suggests');
 });
 
 test('a likely breaking change shows a hint, and the default stays No', async () => {

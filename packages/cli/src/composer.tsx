@@ -8,7 +8,7 @@ import {
 } from '@chamoji/core';
 import {Box, render, Text, useInput} from 'ink';
 import {useEffect, useRef, useState} from 'react';
-import {HINT_THRESHOLD, type Advice} from './advisor.js';
+import {HINT_THRESHOLD, PRESELECT_THRESHOLD, type Advice} from './advisor.js';
 
 type Step =
 	'gitmoji' | 'scope' | 'title' | 'body' | 'why' | 'breaking' | 'breakingText';
@@ -93,10 +93,13 @@ export function Composer({
 		};
 	}, [pendingAdvice, adviceTimeoutMs]);
 
-	const suggested: GitmojiInfo[] =
+	const advised: GitmojiInfo[] =
 		advice && suggestFirst && text.gitmoji === ''
 			? advice.gitmojis.flatMap(item => getGitmoji(item.code) ?? [])
 			: [];
+	const confident =
+		(advice?.gitmojis[0]?.probability ?? 0) >= PRESELECT_THRESHOLD;
+	const suggested = confident ? advised : [];
 	const suggestedCodes = new Set(suggested.map(item => item.code));
 	const matches = [
 		...suggested,
@@ -228,6 +231,12 @@ export function Composer({
 						default is still No.
 					</Text>
 				)}
+			{step === 'gitmoji' && !confident && advised.length > 0 && (
+				<Text color="magenta">
+					Jev suggests{' '}
+					{advised.map(item => `${item.emoji} ${item.code}`).join(' · ')}
+				</Text>
+			)}
 			{step === 'gitmoji' &&
 				(visible.length > 0 ? (
 					visible.map((item, index) => {

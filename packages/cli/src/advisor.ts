@@ -36,10 +36,26 @@ export type Advice = {
  */
 export const HINT_THRESHOLD = 0.7;
 
+/**
+ * The composer moves Jev's gitmojis to the top, the first one selected, only
+ * when the top pick is at least this likely; otherwise it lists them in a
+ * hint. Before the title is written Jev sees only the file list, and on the
+ * eval's commits other than ⬆️ bumps its top pick was right 53% of the time
+ * at 0.7 and 74% at 0.9 (scripts/jev-eval.mjs --files-only --no-bumps).
+ */
+export const PRESELECT_THRESHOLD = 0.9;
+
 /** Names the questions below; change it whenever they change. */
-export const ADVICE_VERSION = 'jev-latest:advice-v1';
+export const ADVICE_VERSION = 'jev-latest:advice-v2';
 
 const NONE = 'none';
+
+// The official description reads as "any changed files" when there's no
+// title yet, which pulled most file-list-only commits to 📦️.
+const SHARPER: Record<string, string> = {
+	package:
+		'Add or update compiled files, vendored code or a published package build; not ordinary source, config or docs edits.',
+};
 
 // Not offered: 💥 (only the author declares a breaking change; that's the
 // breaking question's job, as a hint) and the codes hidden from changelogs.
@@ -48,16 +64,21 @@ const NOT_OFFERED = new Set(['boom', 'bookmark', 'twisted_rightwards_arrows']);
 const CRITERIA: Record<string, string> = Object.fromEntries([
 	...GITMOJIS.filter(gitmoji => !NOT_OFFERED.has(gitmoji.code)).map(gitmoji => [
 		gitmoji.code,
-		gitmoji.description,
+		SHARPER[gitmoji.code] ?? gitmoji.description,
 	]),
 	[NONE, 'None of these fit, or the changes are too unclear to tell.'],
 ]);
+
+// Added only when there's no title yet; with a title it cost accuracy.
+const FILES_ONLY =
+	'There is no title yet, so judge from which files changed and how: only docs, tests, CI, dependencies or config point to those gitmojis, ' +
+	'new source files to a feature, small edits to existing source to a fix or a tweak. ';
 
 /**
  * Asks Jev, in one request, which gitmoji fits the staged change, whether
  * it looks breaking and whether it mixes unrelated work. It sees file paths,
  * line counts and the draft title, and the diff only when the caller passes
- * one (`ai.sendDiffs`).
+ * one (`chamoji.sendDiffs`).
  */
 export function createCommitAdvisor(client: AdvisorClient) {
 	return async (input: {
@@ -78,7 +99,9 @@ export function createCommitAdvisor(client: AdvisorClient) {
 					instructions:
 						'A developer is about to commit the changes listed in `files` (path, status, and lines added and deleted)' +
 						", titled `draftTitle` if that isn't empty, with the changes themselves in `diff` when it is present. " +
-						`Which gitmoji would they put at the start of the commit's title to say what kind of change it is? Pick ${NONE} if nothing fits or it's too unclear to tell.`,
+						"Which gitmoji would they put at the start of the commit's title to say what kind of change it is? " +
+						(draft.trim() ? '' : FILES_ONLY) +
+						`Pick ${NONE} if nothing fits or it's too unclear to tell.`,
 					criteria: CRITERIA,
 				},
 				breaking: {
