@@ -32,7 +32,7 @@ These apply to every milestone. A plan that breaks one needs a written reason.
 | 1   | Changelog engine                    | 0 Foundation               | Activation  | M    | ✅ Shipped in 0.1.0                      | [plan](superpowers/plans/2026-10-27-milestone-1-changelog-engine.md)   |
 | 1.5 | Plain commits, Dependencies, `--ai` | 0 Foundation               | Activation  | M    | ✅ Shipped in 0.2.0                      | — (built from chat scope)                                              |
 | 1.6 | Use it ourselves                    | 0 Foundation               | Retention   | S    | ✅ Shipped in 0.3.0                      | [plan](superpowers/plans/2026-10-28-milestone-1.6-use-it-ourselves.md) |
-| 2   | Public launch kit                   | 1 Activation & acquisition | Acquisition | S    | 🚧 In progress (0.4.0 shipped)           | [plan](superpowers/plans/2026-10-28-milestone-2-public-launch-kit.md)  |
+| 2   | Public launch kit                   | 1 Activation & acquisition | Acquisition | S    | ✅ Done (all items shipped)              | [plan](superpowers/plans/2026-10-28-milestone-2-public-launch-kit.md)  |
 | 3   | GitHub Action                       | 1 Activation & acquisition | Acquisition | M    | 🚧 In progress (`chamoji release` built) | [plan](superpowers/plans/2026-10-28-milestone-3a-release-command.md)   |
 | 4   | Commit composer and git hook        | 2 Retention                | Retention   | L    | Planned                                  | —                                                                      |
 | 5   | Jev in the composer                 | 2 Retention                | Retention   | M    | Planned                                  | —                                                                      |
@@ -169,7 +169,7 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 
 **Goal:** people can find chamoji, trust it, and get value in their first minute.
 
-### 2. Public launch kit — 🚧 in progress
+### 2. Public launch kit — ✅ done
 
 **Progress (2026-10-28):**
 
@@ -178,7 +178,7 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 - ✅ **CI** is green on Linux, macOS and Windows with Node 22 and 24.
 - ✅ **v0.4.0** was published by `release.yml` through npm trusted publishing, with SLSA provenance on both packages. The npm pages link to GitHub.
 - ✅ **Old versions deprecated:** 0.1.0, 0.2.0 and npm's `0.0.0-stage` placeholder on both packages. Installing them prints an "update to the latest" warning.
-- ⬜ **Readme demo GIF.**
+- ✅ **Readme demo GIF** (`docs/demo.gif`): a messy plain-message log, chamoji sorting it, then `chamoji release`. Re-render it with `vhs docs/demo/demo.tape` after `pnpm build`.
 - ✅ **Cloud waitlist page** is live at [chamoji-web.vercel.app](https://chamoji-web.vercel.app), built from the Claude Design [canvas](https://claude.ai/artifact/PZE5BypQRLgUjNH61ERMxc) (private) in the private `HeavenlyEntity/chamoji-web` repo. That repo holds the licensed fonts, art and React Bits Pro (agentframe) code, which can't live in this public repo. Emails go to Neon Postgres through the Vercel Marketplace, stored once each, whatever the capitalisation. Still to do: a custom domain, the Organization plan's contact email, and a Vercel Firewall rate limit if spam turns up.
 - ✅ **Two messy benchmark repos:** jquery/jquery and moment/moment, measured with `pnpm benchmark` on 2026-10-28, without `--ai`, over each repo's whole history:
 

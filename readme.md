@@ -11,6 +11,8 @@
 
 <p align="center"><strong>Every commit explains itself.</strong></p>
 
+<p align="center"><img src="docs/demo.gif" alt="chamoji sorting a plain, messy git log into changelog sections, then cutting the release" width="720"></p>
+
 # chamoji
 
 Changelogs from your git history, however your team writes commits:
