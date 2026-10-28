@@ -56,6 +56,29 @@ test.each([
 	['init', 'tada'],
 	['Close #14 PR: Add description option. Fixes #12', 'sparkles'],
 	['Switch from `loud-rejection` to `hard-rejection`', 'wrench'],
+	// Renovate's default titles.
+	['Update dependency vite to v7.1.0', 'arrow_up'],
+	['Update all non-major dependencies', 'arrow_up'],
+	['Pin dependency foo to 1.2.3', 'pushpin'],
+	['Lock file maintenance', 'arrow_up'],
+	['Update actions/checkout action to v4', 'arrow_up'],
+	['Upgrade react from 18.2.0 to 19.0.0', 'arrow_up'],
+	// Words that only look like a rule's verb or topic.
+	['Dropdown menu closes on scroll', null],
+	['Fixture data for parser', null],
+	['Changelog for 1.2', null],
+	['Release workflow: fix npm provenance', null],
+	['Handle new webhook event types', null],
+	['New Crowdin translations', null],
+	['Fix crash when docs array is empty', 'bug'],
+	['Add typo-tolerant search', 'sparkles'],
+	['Fix flaky performance run', 'bug'],
+	['Add missing await', 'bug'],
+	['Target node 22 in tsconfig', null],
+	['Bump minimum Node version to 18', null],
+	['Update docs from mkdocs to docusaurus', 'memo'],
+	['Upgrade CI from Travis to GitHub Actions', 'wrench'],
+	['Upgrade to TypeScript 5', 'arrow_up'],
 ])('%s → %s', (subject, expected) => {
 	expect(inferGitmoji(subject)).toBe(expected);
 });

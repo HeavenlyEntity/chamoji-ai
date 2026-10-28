@@ -1,6 +1,6 @@
 # chamoji
 
-Changelogs from your git history. Chamoji reads [gitmoji](https://gitmoji.dev) and [Conventional Commits](https://www.conventionalcommits.org) messages, groups them into Keep a Changelog sections, and suggests the next semver version.
+Changelogs from your git history. Chamoji reads [gitmoji](https://gitmoji.dev), [Conventional Commits](https://www.conventionalcommits.org) and plain messages like "Fix crash on startup". It groups them into Keep a Changelog sections and suggests the next semver version.
 
 ## Install
 
@@ -32,6 +32,7 @@ chamoji next-version                       # e.g. 1.3.0
 | `--to <ref>`          | Ref to treat as the head of history (default `HEAD`)                                                                                                    |
 | `--release <version>` | Name and date the unreleased section, e.g. when cutting a release. Its compare link targets the tag it will get (`v<version>` when your tags use a `v`) |
 | `--config <file>`     | Config file (default `chamoji.config.json` when present)                                                                                                |
+| `--ai`                | Sort the commits no rule can place with [Jev](https://typesafe.ai) (see below)                                                                          |
 
 Typical release flow:
 
@@ -54,9 +55,29 @@ git tag "v$version"
   - `✨ (auth): Add login`
   - `feat(auth): ✨ Add login`
   - `feat: Add login`. A Conventional type without an emoji maps to one: `feat`→✨, `fix`→🐛, `docs`→📝, and so on.
+- **Plain messages** are sorted by their wording:
+  - "Add …" goes to Added, "Fix …" to Fixed, "Remove …" to Removed, "Deprecate …" to Deprecated.
+  - Messages about docs, typos, tests, CI, performance, security and refactoring each go to their own section.
+  - Version-only commits (`1.2.1`, `Release 3.0.0`) are hidden.
+  - "Require Node.js 20" counts as a breaking change.
+  - Chamoji doesn't add emojis to plain messages, so they appear as written.
+- **Dependency updates** (⬆️ ⬇️ 📌 ➕ ➖, `chore(deps):`, `fix(deps):` and Dependabot or Renovate subjects) are collapsed into a single line, such as `⬆️ 47 dependency updates: jest, vite, … and 12 more`. The JSON output keeps every commit.
 - **Breaking changes** are 💥, a `!` after any type (`feat!:`, `deps!:`), or a `BREAKING CHANGE:` footer. They are listed under Breaking changes and give a major bump.
 - **The next version** comes from each gitmoji's `semver` field (✨ minor, 🐛 patch, …).
 - **Commit trailers** (`Key: value` lines at the end of a message) are parsed and included in the JSON output.
+
+## Sorting the rest with AI (`--ai`)
+
+Some messages are too vague for rules, such as "Accept camelCase flags" or "Tidelift tasks". `--ai` sends just those commits to [Jev](https://typesafe.ai), TypeSafe's fast classification model. It picks a gitmoji for each one. Picks below 60% confidence are dropped, and those commits stay in Miscellaneous.
+
+```bash
+export TYPESAFE_API_KEY=...   # from https://typesafe.ai
+chamoji changelog --ai
+```
+
+- **What is sent:** commit subjects and the first 300 characters of each body. Never diffs or code.
+- **What it never does:** override an emoji or type the author wrote, or mark a change as breaking. Only authors declare breaking changes.
+- **Without `--ai`:** chamoji makes no network calls.
 
 ## Config
 
@@ -80,7 +101,7 @@ git tag "v$version"
 ```
 
 - `repositoryUrl` defaults to the `origin` remote. It is used for commit, issue (`#12`) and compare links.
-- `groups` replaces the default sections. Emojis are gitmoji codes without colons. Commits that match no group go to `misc` when that group exists. Hidden groups are left out of the output.
+- `groups` replaces the default sections. Emojis are gitmoji codes without colons. Commits that match no group go to `misc` when that group exists. Hidden groups are left out of the output, and `"collapse": true` renders a group as one summary line, as the default Dependencies group does.
 - A plain JSON array of groups, the older format, is also accepted.
 
 ## Development
