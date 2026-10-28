@@ -20,31 +20,31 @@ These apply to every milestone. A plan that breaks one needs a written reason.
 1. **The deterministic path always works.** Every feature works offline and without an API key. AI only ranks, suggests or fills gaps, and a person can override it in one keystroke.
 2. **AI never decides for the author.** It never declares a breaking change, overrides what an author wrote, or approves a review.
 3. **Context lives in git.** Trailers, notes and refs travel with the repo and work with any host. No platform lock-in.
-4. **Send as little as possible.** Network calls are opt-in and minimal, and what's sent is documented. Never send diffs or code without an explicit, separate opt-in.
+4. **Send as little as possible.** Network calls are opt-in and minimal, and what's sent is documented. Never send diffs or code without an explicit, separate opt-in. The one exception is the update check (milestone 2): at most once a day, to the npm registry only, sending nothing about the user or their repo, and easy to turn off.
 5. **Developers never pay. The people downstream of their commits do.** The paid tier sells distribution, team-wide sharing and hosting, not the core tool.
 6. **Measure, then build.** Every milestone has exit criteria with numbers. We follow the _Software as a Science_ levers in order: acquisition and activation, then retention, then expansion.
 
 ## Status
 
-| #   | Milestone                           | Phase                      | Lever       | Size | Status              | Plan                                                                 |
-| --- | ----------------------------------- | -------------------------- | ----------- | ---- | ------------------- | -------------------------------------------------------------------- |
-| 1   | Changelog engine                    | 0 Foundation               | Activation  | M    | ✅ Shipped in 0.1.0 | [plan](superpowers/plans/2026-10-27-milestone-1-changelog-engine.md) |
-| 1.5 | Plain commits, Dependencies, `--ai` | 0 Foundation               | Activation  | M    | ✅ Shipped in 0.2.0 | — (built from chat scope)                                            |
-| 1.6 | Use it ourselves                    | 0 Foundation               | Retention   | S    | ⏭ Next              | —                                                                    |
-| 2   | Public launch kit                   | 1 Activation & acquisition | Acquisition | S    | Planned             | —                                                                    |
-| 3   | GitHub Action                       | 1 Activation & acquisition | Acquisition | M    | Planned             | —                                                                    |
-| 4   | Commit composer and git hook        | 2 Retention                | Retention   | L    | Planned             | —                                                                    |
-| 5   | Jev in the composer                 | 2 Retention                | Retention   | M    | Planned             | —                                                                    |
-| 6   | Workstreams                         | 3 Differentiation          | Retention   | L    | Planned             | —                                                                    |
-| 7   | Project memory                      | 3 Differentiation          | Retention   | L    | Planned             | —                                                                    |
-| 8   | Review packets                      | 3 Differentiation          | Expansion   | L    | Planned             | —                                                                    |
-| 9   | Retroactive grouping                | 3 Differentiation          | Activation  | M    | Planned             | —                                                                    |
-| 10  | Editor extension                    | 4 Surfaces                 | Acquisition | L    | Planned             | —                                                                    |
-| 11  | Local daemon on iii                 | 4 Surfaces                 | Retention   | M    | Planned             | —                                                                    |
-| 12  | Desktop app (Tauri)                 | 4 Surfaces                 | Retention   | L    | Planned             | —                                                                    |
-| 13  | Cloud: hosted release notes         | 5 Expansion                | Expansion   | L    | Planned             | —                                                                    |
-| 14  | Cloud: team memory and review       | 5 Expansion                | Expansion   | L    | Planned             | —                                                                    |
-| 15  | Cloud: billing and organizations    | 5 Expansion                | Expansion   | M    | Planned             | —                                                                    |
+| #   | Milestone                           | Phase                      | Lever       | Size | Status              | Plan                                                                   |
+| --- | ----------------------------------- | -------------------------- | ----------- | ---- | ------------------- | ---------------------------------------------------------------------- |
+| 1   | Changelog engine                    | 0 Foundation               | Activation  | M    | ✅ Shipped in 0.1.0 | [plan](superpowers/plans/2026-10-27-milestone-1-changelog-engine.md)   |
+| 1.5 | Plain commits, Dependencies, `--ai` | 0 Foundation               | Activation  | M    | ✅ Shipped in 0.2.0 | — (built from chat scope)                                              |
+| 1.6 | Use it ourselves                    | 0 Foundation               | Retention   | S    | ✅ Shipped in 0.3.0 | [plan](superpowers/plans/2026-10-28-milestone-1.6-use-it-ourselves.md) |
+| 2   | Public launch kit                   | 1 Activation & acquisition | Acquisition | S    | ⏭ Next              | —                                                                      |
+| 3   | GitHub Action                       | 1 Activation & acquisition | Acquisition | M    | Planned             | —                                                                      |
+| 4   | Commit composer and git hook        | 2 Retention                | Retention   | L    | Planned             | —                                                                      |
+| 5   | Jev in the composer                 | 2 Retention                | Retention   | M    | Planned             | —                                                                      |
+| 6   | Workstreams                         | 3 Differentiation          | Retention   | L    | Planned             | —                                                                      |
+| 7   | Project memory                      | 3 Differentiation          | Retention   | L    | Planned             | —                                                                      |
+| 8   | Review packets                      | 3 Differentiation          | Expansion   | L    | Planned             | —                                                                      |
+| 9   | Retroactive grouping                | 3 Differentiation          | Activation  | M    | Planned             | —                                                                      |
+| 10  | Editor extension                    | 4 Surfaces                 | Acquisition | L    | Planned             | —                                                                      |
+| 11  | Local daemon on iii                 | 4 Surfaces                 | Retention   | M    | Planned             | —                                                                      |
+| 12  | Desktop app (Tauri)                 | 4 Surfaces                 | Retention   | L    | Planned             | —                                                                      |
+| 13  | Cloud: hosted release notes         | 5 Expansion                | Expansion   | L    | Planned             | —                                                                      |
+| 14  | Cloud: team memory and review       | 5 Expansion                | Expansion   | L    | Planned             | —                                                                      |
+| 15  | Cloud: billing and organizations    | 5 Expansion                | Expansion   | M    | Planned             | —                                                                      |
 
 **Statuses:** ✅ shipped · 🚧 in progress · ⏭ next · Planned · ⏸ parked.
 
@@ -65,10 +65,9 @@ We use every release on our own projects before anyone else does. If something a
 
 **Repos using it:**
 
-| Repo               | Since | How                                                         | Friction found                                                       |
-| ------------------ | ----- | ----------------------------------------------------------- | -------------------------------------------------------------------- |
-| chamoji-ai         | 0.1.0 | Generates its own `CHANGELOG.md` and picks its own versions | Keys copied from a dashboard end in "…" (clear error added in 0.2.0) |
-| _our product repo_ | —     | Milestone 1.6                                               | —                                                                    |
+| Repo                          | Since | How                                                                                                                                          | Friction found                |
+| ----------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| chamoji-ai (our product repo) | 0.1.0 | Generates its own `CHANGELOG.md`; since 0.3.0, `pnpm release` picks the version, bumps both packages, writes the changelog, commits and tags | See the milestone 1.6 results |
 
 **What each upcoming milestone gives us:**
 
@@ -124,7 +123,7 @@ A pnpm workspace with `@chamoji/core` and `@chamoji/cli`.
 
 Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $0.0017.
 
-### 1.6. Use it ourselves — ⏭ next
+### 1.6. Use it ourselves — ✅ shipped in 0.3.0
 
 **Why:** we built chamoji to automate our own changelogs. Using it on our product repo is the fastest way to find what's missing, and it gives the public launch a real example to show.
 
@@ -147,7 +146,21 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 
 **Dependencies:** none. It uses 0.2.0 as published.
 
-**Open decision:** which repo is "our product repo".
+**Decided:** our product repo is chamoji-ai itself.
+
+**Results:**
+
+| Friction we hit                                                                       | Fix                                                                                                           | Shipped |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ------- |
+| A TypeSafe key copied from the dashboard ended in "…" and failed with a cryptic error | Clear "looks truncated" error, key never printed                                                              | 0.2.0   |
+| `--ai` couldn't use the key in `.env.local`; it had to be passed by hand              | `TYPESAFE_API_KEY` is read from `.env.local` or `.env`, and only that variable                                | 0.3.0   |
+| `.env.local` wasn't git-ignored                                                       | `.env` and `.env.*` are ignored                                                                               | 0.3.0   |
+| Version bumps, changelog and tag were done by hand, in three steps that could drift   | `pnpm release` (with `--dry-run`); it refuses dirty trees and non-main branches, and undoes itself on failure | 0.3.0   |
+| 📝 docs commits filled Miscellaneous (7 of 27 commits)                                | A default Documentation section; Miscellaneous is now 1 of 31                                                 | 0.3.0   |
+
+- **Commit convention:** written down in [`CONTRIBUTING.md`](../CONTRIBUTING.md).
+- **Release v0.3.0:** cut with `pnpm release`, with no hand edits to the generated changelog.
+- **Still manual:** publishing (`pnpm publish -r`). The release workflow in milestone 2 replaces it.
 
 ---
 
@@ -155,11 +168,33 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 
 **Goal:** people can find chamoji, trust it, and get value in their first minute.
 
-### 2. Public launch kit
+### 2. Public launch kit — ⏭ next
 
-**Why:** the npm page has no link to source code. Nobody can star the project, file issues or contribute. Every later milestone depends on people being able to find it.
+**Why:**
+
+- **Nobody can find or follow chamoji yet.** The npm page has no link to source code, so nobody can star the project, file issues or contribute. Every later milestone depends on people being able to find it.
+- **People already using it don't know when it improves.** Each release fixes real problems, and users have no way to hear about the fixes.
 
 **Scope:**
+
+- **Update notice, done first.** When a newer version of `@chamoji/cli` is out, tell the user, once, after their command finishes:
+
+  ```
+  chamoji 0.4.0 is available (you have 0.3.0): npm i -g @chamoji/cli@latest
+  ```
+
+  - **When it checks:** at most once every 24 hours. The result is cached in the user config directory (`~/.config/chamoji/update-check.json`, or the platform equivalent).
+  - **It never slows a command down.** The check runs in the background with a short timeout. Its result is shown on the next run if it isn't ready yet. A failed or offline check stays silent.
+  - **It never interferes with output.** The notice goes to stderr only, never stdout, so `--format json`, pipes and `$(chamoji next-version)` are unaffected.
+  - **Where it stays off:**
+    - in CI (`CI` is set) and when stderr isn't a terminal
+    - with `NO_UPDATE_NOTIFIER` or `CHAMOJI_NO_UPDATE_CHECK=1`
+    - with `--no-update-check`
+  - **Install command shown:** matched to how chamoji was run. `npx` users are told about `npx @chamoji/cli@latest`, global installs about `npm i -g`, and project installs about updating `package.json`.
+  - **Implementation:** a small module of our own, or `update-notifier`, which gitmoji-cli uses. Choose in the plan, weighing dependency size.
+  - **What it sends:** a single GET request to `registry.npmjs.org` for the package's latest version, and nothing else. The readme says so.
+
+- **Reach users of the old versions.** 0.1.0 and 0.2.0 have no update check, so they can't be told this way. Instead, `npm deprecate @chamoji/cli@"<0.3.0"` with an "update to the latest" message, which npm shows whenever someone installs those versions. Then, once the update check ships, put a note in the release notes.
 
 - **Public GitHub repo.**
   - `repository`, `homepage` and `bugs` fields in both packages.
@@ -180,6 +215,8 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 
 **Exit criteria:**
 
+- A user on the previous version sees one update notice after a command, in a terminal. They see none in CI, in `--format json` output, or with the notice turned off. Tests cover each case.
+- `npm install @chamoji/cli@0.1.0` shows the deprecation message.
 - The repo is public and CI is green on all three operating systems.
 - 0.2.1 is published by the release workflow with provenance.
 - The npm page links to GitHub.
@@ -472,14 +509,13 @@ Fold these into a milestone's plan when they fit, or pull one into a sprint when
 
 ## Open decisions
 
-| Decision                                                    | Needed by     | Notes                                 |
-| ----------------------------------------------------------- | ------------- | ------------------------------------- |
-| Which repo is "our product repo"                            | Milestone 1.6 | The first project we adopt chamoji in |
-| GitHub owner: personal account or `chamoji` org             | Milestone 2   | An org matches the npm scope          |
-| Telemetry: build it at all, or rely on npm and GitHub stats | Milestone 2   | Must be opt-in either way             |
-| Default LLM for prose (title drafts, release summaries)     | Milestone 5   | Claude, with a local Ollama option    |
-| Cloud hosting and data store                                | Milestone 13  | iii-hosted vs. a conventional stack   |
-| Pricing                                                     | Milestone 15  | Test on the waitlist first            |
+| Decision                                                    | Needed by    | Notes                               |
+| ----------------------------------------------------------- | ------------ | ----------------------------------- |
+| GitHub owner: personal account or `chamoji` org             | Milestone 2  | An org matches the npm scope        |
+| Telemetry: build it at all, or rely on npm and GitHub stats | Milestone 2  | Must be opt-in either way           |
+| Default LLM for prose (title drafts, release summaries)     | Milestone 5  | Claude, with a local Ollama option  |
+| Cloud hosting and data store                                | Milestone 13 | iii-hosted vs. a conventional stack |
+| Pricing                                                     | Milestone 15 | Test on the waitlist first          |
 
 ## How we work
 
