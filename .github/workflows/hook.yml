@@ -1,0 +1,75 @@
+name: Hook
+
+# End-to-end checks of the commit hook with real git: the composer in a
+# terminal, `git commit -m` left alone, and commits without a terminal,
+# from each shell and through husky and lefthook (scripts/hook-e2e.py).
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  shells:
+    name: ${{ matrix.os }} · ${{ matrix.shell }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        shell: [bash, zsh, fish, pwsh]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Install the shell
+        if: runner.os == 'Linux' && (matrix.shell == 'zsh' || matrix.shell == 'fish')
+        run: sudo apt-get update && sudo apt-get install -y ${{ matrix.shell }}
+      - name: Install fish
+        if: runner.os == 'macOS' && matrix.shell == 'fish'
+        run: brew install fish
+      - run: python3 scripts/hook-e2e.py --shell ${{ matrix.shell }}
+
+  managers:
+    name: ubuntu-latest · ${{ matrix.manager }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        manager: [husky, lefthook]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: python3 scripts/hook-e2e.py --shell bash --manager ${{ matrix.manager }}
+
+  # Windows has no pseudo-terminal for Python, so only the checks that must
+  # never block: -m and commits without a terminal, from PowerShell.
+  windows:
+    name: windows-latest · pwsh
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: python scripts/hook-e2e.py --shell pwsh --no-tty
