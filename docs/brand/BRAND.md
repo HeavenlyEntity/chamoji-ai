@@ -140,16 +140,32 @@ GUI surfaces (the desktop app, Cloud pages and the website) render the foil live
   --font-ui: 'Tansa', system-ui, -apple-system, 'Segoe UI', sans-serif;
   ```
 
+**Headline: Know** (Regular, v1.002, by Perfectype / Setyo Wati). A clean sans for the headlines people must read at a glance: the hero line and the closing call to action. It's set like the display face (capitals, a hairline stroke under the fill), only in Know.
+
+- **Weight:** only Regular (400) is here. Declare `font-weight: 400`.
+- **Licensing:** the license covers embedding the font in our app and website (confirmed 2026-10-27). The files stay local only, like the other faces' (see [`fonts/README.md`](fonts/README.md)).
+
+  ```css
+  @font-face {
+  	font-family: 'Know';
+  	src: url('/fonts/Know-Regular.ttf') format('truetype');
+  	font-weight: 400;
+  	font-display: swap;
+  }
+  --font-headline: 'Know', system-ui, sans-serif;
+  ```
+
 **Body copy:** descriptions, help text, commit bodies and anything longer than a line use `--font-body` (`system-ui`, -apple-system, 'Segoe UI', sans-serif). It stays there until Tansa's Regular or Medium weights are added; Bold is too heavy for paragraphs.
 
 **Code and terminal output:** a monospace face.
 
-| Role                                    | Token            | Face             |
-| --------------------------------------- | ---------------- | ---------------- |
-| Wordmark, titles, hero lines            | `--font-display` | Marow Block      |
-| Buttons, tabs, labels, headings, badges | `--font-ui`      | Tansa Bold       |
-| Paragraphs and help text                | `--font-body`    | System sans      |
-| Code, hashes, terminal                  | `--font-mono`    | System monospace |
+| Role                                    | Token             | Face             |
+| --------------------------------------- | ----------------- | ---------------- |
+| Wordmark, titles, empty states          | `--font-display`  | Marow Block      |
+| Hero and closing headlines              | `--font-headline` | Know             |
+| Buttons, tabs, labels, headings, badges | `--font-ui`       | Tansa Bold       |
+| Paragraphs and help text                | `--font-body`     | System sans      |
+| Code, hashes, terminal                  | `--font-mono`     | System monospace |
 
 **The original wordmark** (the thin, wide caps in `chamoji-logo.png`) is retired. Marow Block replaces it everywhere.
 
@@ -240,7 +256,7 @@ The CLI shows the same palette where the terminal supports it:
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `chamoji-plate.png`          | The official logo: the foil plate with the Marow Block wordmark, 994 × 324 px, transparent. Regenerate with `scripts/render-logo.py` (a numpy port of the Iridescence shader with the `CHAMOJI_FOIL` settings) |
 | `chamoji-logo.png`           | The original logo, 500 × 233 px, kept for reference. The wordmark is now set in Marow Block                                                                                                                    |
-| `fonts/`                     | Marow Block, local only (git-ignored); see `fonts/README.md`                                                                                                                                                   |
+| `fonts/`                     | Marow Block, Tansa Bold and Know, local only (git-ignored); see `fonts/README.md`                                                                                                                              |
 | `components/Iridescence.tsx` | The React Bits foil shader                                                                                                                                                                                     |
 | `components/ChamojiFoil.tsx` | Chamoji's tuning, the foil surface and the logo plate                                                                                                                                                          |
 | `preview/`                   | Sources for `pnpm brand:preview`                                                                                                                                                                               |
