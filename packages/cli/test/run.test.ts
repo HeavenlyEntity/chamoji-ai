@@ -184,3 +184,17 @@ test('--ai uses a key from .env.local in the repo', async () => {
 		}
 	}
 });
+
+test('changelog --since previews only the commits after a ref', async () => {
+	repo = await createRepo([...history, {commit: '🐛 Fix search'}]);
+	const {code, stdout} = await chamoji(
+		['changelog', '--since', 'HEAD~1', '--format', 'json'],
+		repo.dir,
+	);
+	expect(code).toBe(0);
+	const {releases} = JSON.parse(stdout);
+	expect(releases).toHaveLength(1);
+	expect(releases[0].groups.map((g: {label: string}) => g.label)).toEqual([
+		'Fixed',
+	]);
+});

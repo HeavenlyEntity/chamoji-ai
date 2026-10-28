@@ -274,3 +274,35 @@ test('classifyReleases unreleased only sends the unreleased commits', async () =
 	});
 	expect(seen).toEqual(['Odd one']);
 });
+
+test('since lists only the commits after a ref, as one section', async () => {
+	repo = await createRepo([
+		{commit: '🎉 Init'},
+		{tag: 'v1.0.0'},
+		{commit: '✨ Add A'},
+		{commit: '🐛 Fix B'},
+		{commit: '✨ Add C'},
+	]);
+	const {releases} = await buildChangelog({
+		cwd: repo.dir,
+		config,
+		since: 'HEAD~2',
+	});
+	expect(releases).toHaveLength(1);
+	expect(releases[0]).toMatchObject({version: 'Unreleased', tag: null});
+	const descriptions = releases[0]!.groups.flatMap(group =>
+		group.commits.map(commit => commit.description),
+	);
+	expect(descriptions.sort()).toEqual(['Add C', 'Fix B']);
+	expect(releases[0]!.nextVersion).toBe('1.1.0');
+});
+
+test('since rejects an unknown ref and the flags it cannot combine with', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}, {commit: '✨ Add A'}]);
+	await expect(
+		buildChangelog({cwd: repo.dir, config, since: 'nope'}),
+	).rejects.toThrow('Unknown revision: nope');
+	await expect(
+		buildChangelog({cwd: repo.dir, config, since: 'HEAD~1', release: '1.0.0'}),
+	).rejects.toThrow(/--since.*--from or --release/);
+});

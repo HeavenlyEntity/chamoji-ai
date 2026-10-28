@@ -66,6 +66,8 @@ const HELP = `
 	  --from     Leave out this release tag and everything older
 	  --to       Ref to treat as the head of history (default: HEAD)
 	  --release  Name the unreleased section with this version
+	  --since    Only the commits after this ref, as one section (for
+	             previewing a branch: --since origin/main)
 	  --config   Config file (default: chamoji.config.json if present)
 	  --ai       Sort commits no rule can place with Jev (TypeSafe).
 	             Needs TYPESAFE_API_KEY, from the environment or from
@@ -113,6 +115,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
 			from: {type: 'string'},
 			to: {type: 'string', default: 'HEAD'},
 			release: {type: 'string'},
+			since: {type: 'string'},
 			config: {type: 'string'},
 			ai: {type: 'boolean'},
 			updateCheck: {type: 'boolean', default: true},
@@ -169,6 +172,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
 						to: flags.to,
 						from: flags.from,
 						release: flags.release,
+						since: flags.since,
 						today: io.today,
 						classify,
 					});

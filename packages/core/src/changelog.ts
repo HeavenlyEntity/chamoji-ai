@@ -38,6 +38,12 @@ export type BuildChangelogOptions = {
 	from?: string;
 	/** Version to give the Unreleased section, dated `today`. */
 	release?: string;
+	/**
+	 * Only the commits after this ref (`since..to`), as one Unreleased
+	 * section, whatever the tags. For previews such as "what this branch
+	 * adds"; its `nextVersion` is the bump those commits imply on the last tag.
+	 */
+	since?: string;
 	/** `YYYY-MM-DD`; defaults to the current UTC date. */
 	today?: string;
 	/**
@@ -62,8 +68,17 @@ export async function buildChangelog(
 		throw new Error(`Invalid release version: ${release}`);
 	}
 
+	const {since} = options;
+	if (since !== undefined && (from !== undefined || release !== undefined)) {
+		throw new Error("--since can't be combined with --from or --release");
+	}
+
 	await assertGitRepo(cwd);
 	await assertRevision(cwd, to);
+	if (since !== undefined) {
+		await assertRevision(cwd, since);
+	}
+
 	const tags = await listReleaseTags(cwd, to);
 	if (from && !tags.some(tag => tag.name === from)) {
 		throw new Error(`Unknown release tag for --from: ${from}`);
@@ -76,7 +91,14 @@ export async function buildChangelog(
 	};
 	const pending: Pending[] = [];
 	const latest = tags[0]?.name ?? null;
-	const unreleased = await readCommits(cwd, latest ? `${latest}..${to}` : to);
+	const unreleased = await readCommits(
+		cwd,
+		since === undefined
+			? latest
+				? `${latest}..${to}`
+				: to
+			: `${since}..${to}`,
+	);
 	if (unreleased.length > 0) {
 		pending.push({
 			fields: {
@@ -90,7 +112,7 @@ export async function buildChangelog(
 		});
 	}
 
-	for (const [index, tag] of tags.entries()) {
+	for (const [index, tag] of since === undefined ? tags.entries() : []) {
 		if (tag.name === from) {
 			break;
 		}

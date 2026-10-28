@@ -51,6 +51,7 @@ chamoji release                            # cut a release (see below)
 | `--from <tag>`        | Leave out this release and everything older                                                                                                             |
 | `--to <ref>`          | Ref to treat as the head of history (default `HEAD`)                                                                                                    |
 | `--release <version>` | Name and date the unreleased section, e.g. when cutting a release. Its compare link targets the tag it will get (`v<version>` when your tags use a `v`) |
+| `--since <ref>`       | Only the commits after this ref, as one Unreleased section, to preview a branch: `--since origin/main`                                                  |
 | `--config <file>`     | Config file (default `chamoji.config.json` when present)                                                                                                |
 | `--ai`                | Sort the commits no rule can place with [Jev](https://typesafe.ai) (see below)                                                                          |
 
