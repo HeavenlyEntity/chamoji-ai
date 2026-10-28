@@ -225,10 +225,12 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 
 **Dependencies:** none.
 
-**Open decisions:**
+**Decided (2026-10-28):**
 
-- Which GitHub owner (personal account or a `chamoji` org).
-- The waitlist host.
+- **Repo:** `github.com/HeavenlyEntity/chamoji-ai`.
+- **Telemetry:** none. Retention is read from npm downloads, Action installs and GitHub activity, and the telemetry item above is dropped.
+- **Waitlist:** a branded page on Vercel.
+- **Publishing:** 0.3.0 isn't published on its own. v0.4.0 is the first release published by CI, with provenance.
 
 ### 3. GitHub Action
 
@@ -516,13 +518,13 @@ Fold these into a milestone's plan when they fit, or pull one into a sprint when
 
 ## Open decisions
 
-| Decision                                                    | Needed by    | Notes                               |
-| ----------------------------------------------------------- | ------------ | ----------------------------------- |
-| GitHub owner: personal account or `chamoji` org             | Milestone 2  | An org matches the npm scope        |
-| Telemetry: build it at all, or rely on npm and GitHub stats | Milestone 2  | Must be opt-in either way           |
-| Default LLM for prose (title drafts, release summaries)     | Milestone 5  | Claude, with a local Ollama option  |
-| Cloud hosting and data store                                | Milestone 13 | iii-hosted vs. a conventional stack |
-| Pricing                                                     | Milestone 15 | Test on the waitlist first          |
+| Decision                                                | Needed by    | Notes                                                                                                                            |
+| ------------------------------------------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| ~~GitHub owner~~                                        | Milestone 2  | **Decided 2026-10-28:** `HeavenlyEntity/chamoji-ai` (personal account; can move to an org later, and GitHub redirects old links) |
+| ~~Telemetry~~                                           | Milestone 2  | **Decided 2026-10-28:** no telemetry. We use npm downloads, GitHub stars and Action installs                                     |
+| Default LLM for prose (title drafts, release summaries) | Milestone 5  | Claude, with a local Ollama option                                                                                               |
+| Cloud hosting and data store                            | Milestone 13 | iii-hosted vs. a conventional stack                                                                                              |
+| Pricing                                                 | Milestone 15 | Test on the waitlist first                                                                                                       |
 
 ## How we work
 

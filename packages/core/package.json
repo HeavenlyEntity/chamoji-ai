@@ -3,6 +3,15 @@
 	"version": "0.3.0",
 	"description": "Changelog engine for gitmoji and Conventional Commits",
 	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/HeavenlyEntity/chamoji-ai.git",
+		"directory": "packages/core"
+	},
+	"homepage": "https://github.com/HeavenlyEntity/chamoji-ai#readme",
+	"bugs": {
+		"url": "https://github.com/HeavenlyEntity/chamoji-ai/issues"
+	},
 	"type": "module",
 	"engines": {
 		"node": ">=22"
