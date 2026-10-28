@@ -13,8 +13,15 @@ const RULES: Array<[RegExp, string]> = [
 	// Version-only and release commits (hidden by default).
 	[/^v?\d+\.\d+\.\d+\S*$/, 'bookmark'],
 	[
-		/^(?:release|releasing|prepare release(?: for)?|bump version(?: to)?)\s+v?\d|^(?:release|bump version)$/i,
+		/^(?:release|releasing|prepare release(?: for)?|bump(?:ing|ed)? version(?: to)?)\s+v?\d|^(?:release|bump version)$/i,
 		'bookmark',
+	],
+	[/^tagging\s+(?:the\s+)?v?\d/i, 'bookmark'],
+	[/^updat(?:e|es|ed|ing)\s+(?:the\s+)?source version\b/i, 'bookmark'],
+	[/^build(?:ing)?\s+v?\d+\.\d+/i, 'bookmark'],
+	[
+		/^(?:merge\s+(?:commit|branch|pull request|remote-tracking branch|tag)\b|squashed commit of\b)/i,
+		'twisted_rightwards_arrows',
 	],
 	[/^(?:initial commit|init)\b/i, 'tada'],
 	[/^\[breaking\]/i, 'boom'],
@@ -64,6 +71,7 @@ const RULES: Array<[RegExp, string]> = [
 	[/^add(?:s|ed)?\s+missing\b/i, 'bug'],
 
 	// The leading verb.
+	[/^revert(?:s|ed|ing)?\b/i, 'rewind'],
 	[
 		/^(?:add(?:s|ed|ing)?|implement(?:s|ed|ing)?|introduc(?:e|es|ed|ing)|creat(?:e|es|ed|ing)|support(?:s|ed|ing)?|export(?:s|ed|ing)?|allow(?:s|ed|ing)?|enabl(?:e|es|ed|ing))\b/i,
 		'sparkles',
@@ -84,13 +92,17 @@ const RULES: Array<[RegExp, string]> = [
 	],
 	[/^downgrad(?:e|es|ed|ing)\b/i, 'arrow_down'],
 	[
-		/^(?:updat(?:e|es|ed|ing)|upgrad(?:e|es|ed|ing)|improv(?:e|es|ed|ing)|chang(?:e|es|ed|ing)|tweak(?:s|ed|ing)?|meta|use|replac(?:e|es|ed|ing)|rewrit(?:e|es|ing|ten)|migrat(?:e|es|ed|ing)|make|ensure|switch(?:es|ed|ing)?)\b/i,
+		/^(?:updat(?:e|es|ed|ing)|upgrad(?:e|es|ed|ing)|improv(?:e|es|ed|ing)|chang(?:e|es|ed|ing)|tweak(?:s|ed|ing)?|meta|use|replac(?:e|es|ed|ing)|rewrit(?:e|es|ing|ten)|migrat(?:e|es|ed|ing)|mak(?:e|es|ing)|made|ensure|switch(?:es|ed|ing)?)\b/i,
 		'wrench',
 	],
 ];
 
-/** Prefixes that say nothing about the change, like "Close #14 PR: ". */
-const NOISE_PREFIX = /^(?:close[sd]?\s+#\d+\s+pr:\s*)/i;
+/**
+ * Prefixes that say nothing about the change, like "Close #14 PR: " or
+ * jQuery's "Landing pull request 512. ".
+ */
+const NOISE_PREFIX =
+	/^(?:close[sd]?\s+#\d+\s+pr:\s*|landing\s+pull\s+request\s+#?\d+\.?\s*)/i;
 
 export function inferGitmoji(subject: string): string | null {
 	const text = subject.trim().replace(NOISE_PREFIX, '');

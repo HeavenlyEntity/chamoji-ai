@@ -145,8 +145,12 @@ Or try it without installing anything: [open a Claude Code session with the rele
   - `feat: Add login`. A Conventional type without an emoji maps to one: `feat`→✨, `fix`→🐛, `docs`→📝, and so on.
 - **Plain messages** are sorted by their wording:
   - "Add …" goes to Added, "Fix …" to Fixed, "Remove …" to Removed, "Deprecate …" to Deprecated.
-  - Messages about docs, typos, tests, CI, performance, security and refactoring each go to their own section.
-  - Version-only commits (`1.2.1`, `Release 3.0.0`) are hidden.
+  - Messages about docs, tests, CI, performance, security and refactoring each go to their own section. Typo fixes count as documentation.
+  - Version-only commits and release chores are hidden, such as `1.2.1`, `Release 3.0.0`, "Tagging the 3.7.1 release" and "Build 2.29.4". So are merge leftovers like "Merge commit…" and "Squashed commit of…".
+- **Component and tag prefixes** are read through to the subject behind them:
+  - `Core: Fix the ready handler` is a fix, with `Core` as its scope. When the rest says nothing, the subject is left as written, so prose like "Note: …" isn't touched.
+  - `[bugfix]`, `[feature]`, `[tests]`, `[docs]` and similar tags pick the section on their own.
+  - Other tags, such as `[locale]` or `[pkg]`, become the scope, and the subject behind them picks the section.
   - "Require Node.js 20" counts as a breaking change.
   - Chamoji doesn't add emojis to plain messages, so they appear as written.
 - **CI and test commits** (👷 💚 ✅ 🧪, `ci:`, `test:`, "Fix CI") go under Maintenance, so internal work doesn't read as new features.

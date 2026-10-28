@@ -191,7 +191,18 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
   | jquery/jquery            | 6545    | 42%           |
   | moment/moment            | 3060    | 41%           |
 
-  The median is 10%, inside the 20% target. The two messy repos are the gap: jQuery's "Component: description" subjects and Moment's `[bugfix]` tags aren't read by any rule yet. That is the next parsing work, and the `--ai` comparison to make.
+  The median is 10%, inside the 20% target. The two messy repos were the gap, so a parsing pass after 0.5.0 targeted them:
+  - it reads `Component: description` and `[tag] description` prefixes through to the subject behind them
+  - it hides release chores and merge leftovers
+  - it adds the "Made"/"Makes" and hand-written "Revert …" verbs
+  - it moves ✏️ typo fixes to Documentation
+
+  | Repo          | Before | After |
+  | ------------- | ------ | ----- |
+  | jquery/jquery | 42%    | 31%   |
+  | moment/moment | 41%    | 28%   |
+
+  The other four didn't move. Both are still above the 25% "first run is useful" line. The rest is mostly subjects with no verb rule, such as "Don't …", "Only …" or "Bug 1234 …", and is the `--ai` comparison to make next.
 
 - ✅ **New About text** on the repo, matching the readme.
 
@@ -567,7 +578,7 @@ Fold these into a milestone's plan when they fit, or pull one into a sprint when
 - **Downloads badge:** add the npm downloads badge back to the readme once shields.io has data for `@chamoji/cli`. It shows "package not found or too new" until then.
 - **Emoji variants:** accept variant forms of official gitmojis, such as 👨‍💻 for 🧑‍💻. Found on gitmoji-cli.
 - **Confidence cutoff:** 60% held up on meow. Re-check it with the milestone 5 tuning data.
-- **Noise prefixes:** more wording-rule coverage for noisy prefixes, such as "Merge remote-tracking…" and "Squashed commit of…".
+- ~~**Noise prefixes:**~~ "Merge remote-tracking…", "Squashed commit of…" and jQuery's "Landing pull request…" are handled since the post-0.5.0 parsing pass.
 - **Cloud data store:** choose one for the Cloud tier when milestone 13 is planned.
 - **Brand assets** (see `docs/brand/BRAND.md`): the display font is Marow Block and the foil is Iridescence. Still to make: an SVG logo with the wordmark outlined, app icons, a favicon and a social preview image. Needed by milestone 2's readme and milestone 10.
 - **Windows:** the fixture repos and git argument handling haven't been tested there yet; milestone 2's CI will cover it.

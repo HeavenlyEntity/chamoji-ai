@@ -128,3 +128,103 @@ test('bang marks breaking for any conventional type', () => {
 		description: 'Note: keep this text',
 	});
 });
+
+test('a Component: prefix becomes the scope, and the rest picks the section', () => {
+	expect(
+		parseCommit(raw('Core: Refactor loops to avoid going behind array bounds')),
+	).toMatchObject({
+		gitmoji: 'recycle',
+		gitmojiSource: 'rule',
+		scope: 'Core',
+		description: 'Refactor loops to avoid going behind array bounds',
+		type: null,
+	});
+	expect(parseCommit(raw('CSS:Tests: Fix tests under CSS Zoom'))).toMatchObject(
+		{
+			gitmoji: 'white_check_mark',
+			scope: 'CSS:Tests',
+			description: 'Fix tests under CSS Zoom',
+		},
+	);
+	expect(parseCommit(raw('No ticket: Fix a crash in .ready()'))).toMatchObject({
+		gitmoji: 'bug',
+		scope: 'No ticket',
+	});
+});
+
+test('a Component: prefix is left alone when the rest says nothing', () => {
+	expect(parseCommit(raw('Note: this is how it works'))).toMatchObject({
+		gitmoji: null,
+		scope: null,
+		description: 'Note: this is how it works',
+	});
+});
+
+test('a kind [tag] picks the section on its own', () => {
+	expect(
+		parseCommit(raw('[bugfix] Validate timezone offset range (#6446)')),
+	).toMatchObject({
+		gitmoji: 'bug',
+		scope: null,
+		description: 'Validate timezone offset range (#6446)',
+	});
+	expect(
+		parseCommit(raw('[feature] Add internal date-default hook')),
+	).toMatchObject({gitmoji: 'sparkles'});
+	expect(parseCommit(raw('[tests] Fix format test date input'))).toMatchObject({
+		gitmoji: 'white_check_mark',
+	});
+	expect(parseCommit(raw('[new locale] ps: Pashto (#6000)'))).toMatchObject({
+		gitmoji: 'sparkles',
+		scope: 'new locale',
+		description: 'ps: Pashto (#6000)',
+	});
+});
+
+test('an area [tag] becomes the scope, and the rest picks the section', () => {
+	expect(
+		parseCommit(raw('[locale] Fix Uzbek past relative time')),
+	).toMatchObject({
+		gitmoji: 'bug',
+		scope: 'locale',
+		description: 'Fix Uzbek past relative time',
+	});
+	expect(parseCommit(raw('[locale] fil: Fix metadata comment'))).toMatchObject({
+		gitmoji: 'bug',
+		scope: 'locale',
+		description: 'fil: Fix metadata comment',
+	});
+	expect(parseCommit(raw('[locale] Uzbek month names'))).toMatchObject({
+		gitmoji: 'globe_with_meridians',
+		scope: 'locale',
+	});
+});
+
+test('another [tag] is read through to the subject behind it', () => {
+	expect(
+		parseCommit(raw('[misc] Clarify locale and format identifiers')),
+	).toMatchObject({
+		gitmoji: null,
+		description: '[misc] Clarify locale and format identifiers',
+	});
+	expect(parseCommit(raw('[pkg] Build 2.31.0 (#6452)'))).toMatchObject({
+		gitmoji: 'bookmark',
+		scope: 'pkg',
+	});
+	expect(parseCommit(raw('[breaking] Drop IE support'))).toMatchObject({
+		gitmoji: 'boom',
+		breaking: true,
+	});
+});
+
+test('Conventional types and gitmojis still win over the new prefixes', () => {
+	expect(parseCommit(raw('fix(core): Refactor loops'))).toMatchObject({
+		gitmoji: 'bug',
+		gitmojiSource: 'type',
+		scope: 'core',
+	});
+	expect(parseCommit(raw('✨ [bugfix] Add a thing'))).toMatchObject({
+		gitmoji: 'sparkles',
+		gitmojiSource: 'gitmoji',
+	});
+});
