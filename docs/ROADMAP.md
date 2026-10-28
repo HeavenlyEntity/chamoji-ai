@@ -536,13 +536,13 @@ Fold these into a milestone's plan when they fit, or pull one into a sprint when
 
 ## Open decisions
 
-| Decision                                                | Needed by    | Notes                                                                                                                            |
-| ------------------------------------------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------- |
-| ~~GitHub owner~~                                        | Milestone 2  | **Decided 2026-10-28:** `HeavenlyEntity/chamoji-ai` (personal account; can move to an org later, and GitHub redirects old links) |
-| ~~Telemetry~~                                           | Milestone 2  | **Decided 2026-10-28:** no telemetry. We use npm downloads, GitHub stars and Action installs                                     |
-| Default LLM for prose (title drafts, release summaries) | Milestone 5  | Claude, with a local Ollama option                                                                                               |
-| Cloud hosting and data store                            | Milestone 13 | iii-hosted vs. a conventional stack                                                                                              |
-| Pricing                                                 | Milestone 15 | Test on the waitlist first                                                                                                       |
+| Decision                                                | Needed by    | Notes                                                                                                                                             |
+| ------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ~~GitHub owner~~                                        | Milestone 2  | **Decided 2026-10-28:** `HeavenlyEntity/chamoji-ai` (personal account; can move to an org later, and GitHub redirects old links)                  |
+| ~~Telemetry~~                                           | Milestone 2  | **Decided 2026-10-28:** no telemetry. We use npm downloads, GitHub stars and Action installs                                                      |
+| Default LLM for prose (title drafts, release summaries) | Milestone 5  | Claude, with a local Ollama option                                                                                                                |
+| Cloud hosting and data store                            | Milestone 13 | iii-hosted vs. a conventional stack                                                                                                               |
+| Pricing                                                 | Milestone 15 | **2026-10-28:** test it with the waitlist before setting a price. The waitlist page shows `[PRICE]` per repository per month, unlimited teammates |
 
 ## How we work
 
