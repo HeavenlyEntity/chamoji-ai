@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Chamoji holo preview</title>
+		<style>
+			:root {
+				--holo-peach: #fbcfb3;
+				--holo-pink: #faadc3;
+				--holo-orchid: #dfade5;
+				--holo-periwinkle: #bbbff2;
+				--holo-sky: #a8e2f6;
+				--holo-mint: #afeee5;
+				--holo-sage: #d5e1cb;
+				--ink: #070708;
+				--surface: #ffffff;
+				--surface-2: #f4f4f6;
+				--text: #070708;
+				--muted: #5b5b66;
+				--holo: linear-gradient(
+					115deg,
+					var(--holo-sage),
+					var(--holo-mint),
+					var(--holo-periwinkle),
+					var(--holo-sky),
+					var(--holo-orchid),
+					var(--holo-pink),
+					var(--holo-peach),
+					var(--holo-sage)
+				);
+				--skew: -35deg;
+			}
+
+			@media (prefers-color-scheme: dark) {
+				:root:not([data-theme='light']) {
+					--surface: #0b0b0f;
+					--surface-2: #16161d;
+					--text: #f5f5f7;
+					--muted: #a3a3b2;
+				}
+			}
+
+			:root[data-theme='dark'] {
+				--surface: #0b0b0f;
+				--surface-2: #16161d;
+				--text: #f5f5f7;
+				--muted: #a3a3b2;
+			}
+
+			* {
+				box-sizing: border-box;
+			}
+
+			body {
+				margin: 0;
+				background: var(--surface);
+				color: var(--text);
+				font-family: 'Syncopate', 'Lexend', system-ui, sans-serif;
+			}
+
+			main {
+				max-width: 960px;
+				margin: 0 auto;
+				padding: 48px 16px;
+				display: grid;
+				gap: 48px;
+			}
+
+			h1,
+			h2 {
+				font-weight: 400;
+				letter-spacing: 0.08em;
+				text-transform: uppercase;
+			}
+
+			h2 {
+				font-size: 14px;
+				color: var(--muted);
+				margin: 0 0 16px;
+			}
+
+			p,
+			code {
+				font-family: system-ui, sans-serif;
+			}
+
+			/* The logo plate: a 35° parallelogram of holographic foil. */
+			.plate {
+				position: relative;
+				height: 160px;
+				margin: 0 64px;
+				transform: skewX(var(--skew));
+				background: var(--holo);
+				background-size: 160% 100%;
+				animation: sheen 9s ease-in-out infinite alternate;
+				overflow: hidden;
+			}
+
+			/* Thin-film interference rings, strongest on the left like the logo. */
+			.plate::before {
+				content: '';
+				position: absolute;
+				inset: 0;
+				background: repeating-radial-gradient(
+					ellipse 140% 90% at -25% 55%,
+					var(--holo-pink) 0 5px,
+					var(--holo-peach) 5px 10px,
+					var(--holo-sage) 10px 15px,
+					var(--holo-mint) 15px 20px,
+					var(--holo-sky) 20px 25px,
+					var(--holo-periwinkle) 25px 30px,
+					var(--holo-orchid) 30px 35px
+				);
+				mask-image: linear-gradient(90deg, #000 0%, #000 18%, transparent 42%);
+				opacity: 0.9;
+			}
+
+			.wordmark {
+				position: absolute;
+				inset: 0;
+				display: grid;
+				place-items: center;
+				transform: skewX(calc(var(--skew) * -1));
+				color: var(--ink);
+				font-size: clamp(28px, 7vw, 64px);
+				letter-spacing: 0.12em;
+			}
+
+			@keyframes sheen {
+				from {
+					background-position: 0% 50%;
+				}
+				to {
+					background-position: 100% 50%;
+				}
+			}
+
+			@media (prefers-reduced-motion: reduce) {
+				.plate {
+					animation: none;
+				}
+			}
+
+			.swatches {
+				display: grid;
+				grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+				gap: 12px;
+			}
+
+			.swatch {
+				border-radius: 12px;
+				overflow: hidden;
+				background: var(--surface-2);
+				font-size: 13px;
+			}
+
+			.swatch div {
+				height: 72px;
+			}
+
+			.swatch p {
+				margin: 8px 10px 10px;
+			}
+
+			/* UI samples: holo is an accent on neutral surfaces, never body text. */
+			.ui {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 16px;
+				align-items: center;
+			}
+
+			.button {
+				border: 0;
+				border-radius: 999px;
+				padding: 12px 22px;
+				background: var(--holo);
+				background-size: 200% 100%;
+				color: var(--ink);
+				font:
+					600 15px system-ui,
+					sans-serif;
+				cursor: pointer;
+				transition: background-position 0.6s;
+			}
+
+			.button:hover {
+				background-position: 100% 0;
+			}
+
+			.card {
+				position: relative;
+				padding: 18px 20px;
+				border-radius: 14px;
+				background: var(--surface-2);
+				font:
+					15px system-ui,
+					sans-serif;
+				min-width: 260px;
+			}
+
+			.card::before {
+				content: '';
+				position: absolute;
+				inset: 0;
+				border-radius: inherit;
+				padding: 1.5px;
+				background: var(--holo);
+				mask:
+					linear-gradient(#000 0 0) content-box,
+					linear-gradient(#000 0 0);
+				mask-composite: exclude;
+			}
+
+			.card small {
+				color: var(--muted);
+			}
+
+			.terminal {
+				background: #0b0b0f;
+				color: #f5f5f7;
+				border-radius: 12px;
+				padding: 18px 20px;
+				font:
+					14px/1.6 ui-monospace,
+					'SF Mono',
+					Menlo,
+					monospace;
+				overflow-x: auto;
+			}
+
+			.terminal .banner {
+				background: var(--holo);
+				-webkit-background-clip: text;
+				background-clip: text;
+				color: transparent;
+				font-weight: 700;
+			}
+		</style>
+	</head>
+	<body>
+		<main>
+			<section>
+				<h2>Logo plate, rebuilt in CSS</h2>
+				<div class="plate"><div class="wordmark">CHAMOJI</div></div>
+			</section>
+
+			<section>
+				<h2>Original logo</h2>
+				<img
+					src="chamoji-logo.png"
+					alt="Chamoji logo"
+					width="500"
+					height="233"
+					style="max-width: 100%; height: auto"
+				/>
+			</section>
+
+			<section>
+				<h2>Holo stops</h2>
+				<div class="swatches">
+					<div class="swatch">
+						<div style="background: var(--holo-sage)"></div>
+						<p>Sage<br /><code>#d5e1cb</code></p>
+					</div>
+					<div class="swatch">
+						<div style="background: var(--holo-mint)"></div>
+						<p>Mint<br /><code>#afeee5</code></p>
+					</div>
+					<div class="swatch">
+						<div style="background: var(--holo-periwinkle)"></div>
+						<p>Periwinkle<br /><code>#bbbff2</code></p>
+					</div>
+					<div class="swatch">
+						<div style="background: var(--holo-sky)"></div>
+						<p>Sky<br /><code>#a8e2f6</code></p>
+					</div>
+					<div class="swatch">
+						<div style="background: var(--holo-orchid)"></div>
+						<p>Orchid<br /><code>#dfade5</code></p>
+					</div>
+					<div class="swatch">
+						<div style="background: var(--holo-pink)"></div>
+						<p>Pink<br /><code>#faadc3</code></p>
+					</div>
+					<div class="swatch">
+						<div style="background: var(--holo-peach)"></div>
+						<p>Peach<br /><code>#fbcfb3</code></p>
+					</div>
+					<div class="swatch">
+						<div style="background: var(--ink)"></div>
+						<p>Ink<br /><code>#070708</code></p>
+					</div>
+				</div>
+			</section>
+
+			<section>
+				<h2>UI accents</h2>
+				<div class="ui">
+					<button class="button">Ship workstream</button>
+					<div class="card">
+						<strong>🔐 Auth revamp</strong><br />
+						<small>12 commits · 3 PRs · ready to ship</small>
+					</div>
+				</div>
+			</section>
+
+			<section>
+				<h2>Terminal</h2>
+				<div class="terminal">
+					<span class="banner">chamoji</span> changelog --release v0.4.0<br />
+					✨ 3 added · 🐛 5 fixed · ⬆️ 12 dependency updates<br />
+					Wrote CHANGELOG.md
+				</div>
+			</section>
+		</main>
+	</body>
+</html>

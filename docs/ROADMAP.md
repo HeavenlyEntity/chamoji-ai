@@ -5,6 +5,7 @@
 - **Implementation plans:** each milestone gets one in `docs/superpowers/plans/` before work starts, linked from the status table. Plans say _how_; this file says _what_ and _when_.
 - **When a milestone ships:** update its status, its exit-criteria results and the dogfooding log below.
 - **Background only:** [`docs/research/2026-10-27-chamoji-direction.md`](research/2026-10-27-chamoji-direction.md) holds the research and reasoning. If it disagrees with this file, this file wins.
+- **Look and feel:** [`docs/brand/BRAND.md`](brand/BRAND.md) sets the colours, the holographic foil effect, the type and the rules for every visual surface.
 - **Last updated:** 2026-10-28
 
 ## Vision
@@ -396,6 +397,8 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 
 ### 10. Editor extension
 
+**Look:** follow [`docs/brand/BRAND.md`](brand/BRAND.md). The foil effect is for the sidebar header, the active-workstream badge and primary actions; everything else follows the editor's own theme.
+
 **Scope:**
 
 - **One extension**, published to the VS Code Marketplace and Open VSX (Cursor, Windsurf, VSCodium). It provides:
@@ -432,6 +435,8 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 **Dependencies:** milestone 7.
 
 ### 12. Desktop app (Tauri)
+
+**Look:** built on [`docs/brand/BRAND.md`](brand/BRAND.md): the holographic foil plate, the pastel stops and ink text, light and dark themes. Start with a design pass that settles the exact wordmark font and the UI type, and produces the missing SVG and icon assets.
 
 **Scope:**
 
@@ -505,6 +510,7 @@ Fold these into a milestone's plan when they fit, or pull one into a sprint when
 - **Confidence cutoff:** 60% held up on meow. Re-check it with the milestone 5 tuning data.
 - **Noise prefixes:** more wording-rule coverage for noisy prefixes, such as "Merge remote-tracking…" and "Squashed commit of…".
 - **Cloud data store:** choose one for the Cloud tier when milestone 13 is planned.
+- **Brand assets** (see `docs/brand/BRAND.md`): find the original wordmark font, and make an SVG logo, app icons, a favicon and a social preview image. Needed by milestone 2's readme and milestone 10.
 - **Windows:** the fixture repos and git argument handling haven't been tested there yet; milestone 2's CI will cover it.
 
 ## Open decisions
