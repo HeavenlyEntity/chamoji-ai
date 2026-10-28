@@ -26,7 +26,7 @@ Chamoji groups them into readable sections, collapses dependency noise into one 
 ## Install
 
 ```bash
-npm install --global @chamoji/cli
+npm i -g @chamoji/cli
 ```
 
 Or run it without installing: `npx @chamoji/cli changelog`.
