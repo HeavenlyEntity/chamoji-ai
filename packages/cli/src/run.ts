@@ -154,9 +154,20 @@ export async function run(argv: string[], io: Io): Promise<number> {
 }
 
 function jevClassifier(io: Io): CommitClassifier {
-	if (!process.env['TYPESAFE_API_KEY']?.trim()) {
+	const key = process.env['TYPESAFE_API_KEY']?.trim();
+	if (!key) {
 		throw new Error(
 			'--ai needs a TypeSafe API key: set TYPESAFE_API_KEY (get one at https://typesafe.ai)',
+		);
+	}
+
+	// Keys copied from a dashboard often end in "…"; headers can't carry it.
+	const invalid = /[^\x21-\x7E]/.exec(key);
+	if (invalid) {
+		throw new Error(
+			invalid[0] === '\u2026'
+				? 'TYPESAFE_API_KEY contains "…", so it looks truncated; copy the full key again'
+				: 'TYPESAFE_API_KEY contains a character that is not plain ASCII; copy the full key again',
 		);
 	}
 

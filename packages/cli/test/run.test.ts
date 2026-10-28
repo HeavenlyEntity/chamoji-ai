@@ -147,3 +147,23 @@ test('--ai without an API key exits 1 with a clear message', async () => {
 		}
 	}
 });
+
+test('--ai with a truncated API key explains the problem', async () => {
+	repo = await createRepo(history);
+	const saved = process.env['TYPESAFE_API_KEY'];
+	process.env['TYPESAFE_API_KEY'] = 'tsk_abc…';
+	try {
+		const {code, stderr} = await chamoji(['changelog', '--ai'], repo.dir);
+		expect(code).toBe(1);
+		expect(stderr).toContain(
+			'TYPESAFE_API_KEY contains "…", so it looks truncated',
+		);
+		expect(stderr).not.toContain('tsk_abc');
+	} finally {
+		if (saved === undefined) {
+			delete process.env['TYPESAFE_API_KEY'];
+		} else {
+			process.env['TYPESAFE_API_KEY'] = saved;
+		}
+	}
+});
