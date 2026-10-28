@@ -75,3 +75,12 @@ test('explicit missing file is an error', async () => {
 		'Config file not found',
 	);
 });
+
+test('typo fixes are documentation, not bug fixes', () => {
+	const documentation = DEFAULT_GROUP_CONFIG.find(
+		group => group.group === 'documentation',
+	);
+	const fixed = DEFAULT_GROUP_CONFIG.find(group => group.group === 'fixed');
+	expect(documentation?.emojis).toContain('pencil2');
+	expect(fixed?.emojis).not.toContain('pencil2');
+});

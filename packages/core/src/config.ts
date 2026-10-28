@@ -78,7 +78,7 @@ export const DEFAULT_GROUP_CONFIG: GroupConfig = [
 		emojis: [
 			'bug',
 			'ambulance',
-			'pencil2',
+
 			'adhesive_bandage',
 			'apple',
 			'penguin',
@@ -92,7 +92,11 @@ export const DEFAULT_GROUP_CONFIG: GroupConfig = [
 		label: 'Security',
 		emojis: ['lock', 'closed_lock_with_key', 'passport_control'],
 	},
-	{group: 'documentation', label: 'Documentation', emojis: ['memo']},
+	{
+		group: 'documentation',
+		label: 'Documentation',
+		emojis: ['memo', 'pencil2'],
+	},
 	{
 		group: 'maintenance',
 		label: 'Maintenance',
