@@ -1,0 +1,31 @@
+name: Bug report
+description: Something chamoji did wrong
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: chamoji version
+      description: Output of `chamoji --version`
+    validations:
+      required: true
+  - type: textarea
+    id: ran
+    attributes:
+      label: What you ran
+      description: The exact command, plus your chamoji.config.json if you use one.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and what happened instead
+      description: For changelog problems, paste the commit subjects involved (`git log --format=%s -n 20`).
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: OS, Node and git versions
+      placeholder: macOS 26, Node 22.20, git 2.49
