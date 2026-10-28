@@ -102,7 +102,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # chamoji reads every commit and tag
-      - uses: HeavenlyEntity/chamoji-ai@main
+      - uses: HeavenlyEntity/chamoji-ai@v0.5.0
 ```
 
 To release at the press of a button, add a `workflow_dispatch` workflow with `with: {mode: release}`. It takes an optional `release-version`. It commits `CHANGELOG.md` and the version bumps, then pushes the tag and creates the GitHub Release. Other inputs:
