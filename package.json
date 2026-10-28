@@ -11,7 +11,8 @@
 		"build": "pnpm -r build",
 		"test": "vitest run",
 		"check": "pnpm build && tsc -p tsconfig.test.json && prettier --check .",
-		"format": "prettier --write ."
+		"format": "prettier --write .",
+		"release": "node scripts/release.mjs"
 	},
 	"devDependencies": {
 		"@types/node": "^22.19.0",
