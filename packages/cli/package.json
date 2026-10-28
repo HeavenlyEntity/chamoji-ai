@@ -1,0 +1,23 @@
+{
+	"name": "chamoji-ai",
+	"version": "0.1.0",
+	"description": "Changelogs from gitmoji and Conventional Commits",
+	"license": "MIT",
+	"type": "module",
+	"engines": {
+		"node": ">=22"
+	},
+	"bin": {
+		"chamoji": "./dist/cli.js"
+	},
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "tsc -p ."
+	},
+	"dependencies": {
+		"@chamoji/core": "workspace:*",
+		"meow": "^14.1.0"
+	}
+}

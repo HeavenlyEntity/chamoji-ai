@@ -1,0 +1,29 @@
+{
+	"name": "@chamoji/core",
+	"version": "0.1.0",
+	"description": "Changelog engine for gitmoji and Conventional Commits",
+	"license": "MIT",
+	"type": "module",
+	"engines": {
+		"node": ">=22"
+	},
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "tsc -p ."
+	},
+	"dependencies": {
+		"gitmojis": "^3.15.0",
+		"semver": "^7.7.3"
+	},
+	"devDependencies": {
+		"@types/semver": "^7.7.1"
+	}
+}
