@@ -50,7 +50,7 @@ pnpm build && node packages/cli/dist/cli.js changelog | head -40
 ## Pull requests
 
 - Write tests first, then make them pass, and keep `pnpm check` green.
-- If you change commit parsing, run chamoji on the benchmark repos listed in the roadmap, and put the before and after numbers in the PR.
+- If you change commit parsing, run `pnpm benchmark` before and after, and put both tables in the PR. It clones the benchmark repos listed in the roadmap and prints each one's Miscellaneous share.
 - Never commit secrets. `.env` and `.env.*` files are git-ignored; put `TYPESAFE_API_KEY` in `.env.local`.
 
 ## Releases (maintainers)
