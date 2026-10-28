@@ -165,3 +165,15 @@ test('markdown neutralizes links and images in commit text', () => {
 	expect(markdown).not.toContain('![](');
 	expect(markdown).toContain('\\[x\\](https://evil.example)');
 });
+
+test('markdown escapes stray backticks so they cannot open a code span', () => {
+	const changelog = sample();
+	changelog.releases[0]!.groups = groupCommits(
+		[commit('🐛 Fix ``<img src=x onerror=alert(1)>`x` here')],
+		DEFAULT_GROUP_CONFIG,
+	);
+	const markdown = renderMarkdown(changelog);
+	// The lone backtick is escaped; only the balanced `…` pair stays a span.
+	expect(markdown).toContain('Fix \\``<img src=x onerror=alert(1)>`x\\` here');
+	expect(markdown).not.toMatch(/(^|[^`\\])``<img/);
+});

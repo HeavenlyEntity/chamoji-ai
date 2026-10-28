@@ -10,15 +10,21 @@ import {
 
 /**
  * Makes commit text inert outside code spans: no raw HTML, and no links or
- * images, since squash-merged PR titles can come from anyone.
+ * images, since squash-merged PR titles can come from anyone. Backticks are
+ * escaped too: any left here are unpaired, and an unpaired run could open a
+ * code span a Markdown parser sees differently from `splitCodeSpans`.
  */
 const escapeMarkdown = (text: string) =>
 	text
-		.replaceAll(/[\\[\]]/g, char => `\\${char}`)
+		.replaceAll(/[\\[\]`]/g, char => `\\${char}`)
 		.replaceAll('<', '&lt;')
 		.replaceAll('>', '&gt;');
 
-/** Splits text into `code spans` (kept verbatim) and the parts between. */
+/**
+ * Splits text into single-backtick `code spans` and the parts between. A span
+ * holds no backticks, so emitting it as-is is safe once the surrounding text
+ * has its stray backticks escaped.
+ */
 const splitCodeSpans = (text: string) =>
 	text
 		.split(/(`[^`\n]+`)/)
