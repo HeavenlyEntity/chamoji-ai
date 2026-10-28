@@ -3,3 +3,6 @@ dist
 .DS_Store
 *.tsbuildinfo
 coverage
+*.tgz
+packages/*/LICENSE
+packages/cli/readme.md

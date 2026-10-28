@@ -5,8 +5,10 @@ Changelogs from your git history. Chamoji reads [gitmoji](https://gitmoji.dev) a
 ## Install
 
 ```bash
-npm install --global chamoji-ai
+npm install --global @chamoji/cli
 ```
+
+Or run it without installing: `npx @chamoji/cli changelog`.
 
 Requires Node.js 22 or newer and git.
 
@@ -17,37 +19,42 @@ chamoji changelog                          # Markdown to stdout
 chamoji changelog --output CHANGELOG.md    # write a file
 chamoji changelog --format html --output changelog.html
 chamoji changelog --format json            # machine-readable
-chamoji next-version                       # e.g. 1.3.0, or "none"
+chamoji next-version                       # e.g. 1.3.0
 ```
 
-| Option                | Meaning                                                           |
-| --------------------- | ----------------------------------------------------------------- |
-| `--format`            | `markdown` (default), `md`, `json` or `html`                      |
-| `--output`, `-o`      | Write to a file instead of stdout                                 |
-| `--from <tag>`        | Leave out this release and everything older                       |
-| `--to <ref>`          | Ref to treat as the head of history (default `HEAD`)              |
-| `--release <version>` | Name and date the unreleased section, e.g. when cutting a release |
-| `--config <file>`     | Config file (default `chamoji.config.json` when present)          |
+`next-version` exits with code 3 and prints nothing to stdout when no commit since the last tag implies a version bump (only docs, tests or refactors, say).
+
+| Option                | Meaning                                                                                                                                                 |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--format`            | `markdown` (default), `md`, `json` or `html`                                                                                                            |
+| `--output`, `-o`      | Write to a file instead of stdout                                                                                                                       |
+| `--from <tag>`        | Leave out this release and everything older                                                                                                             |
+| `--to <ref>`          | Ref to treat as the head of history (default `HEAD`)                                                                                                    |
+| `--release <version>` | Name and date the unreleased section, e.g. when cutting a release. Its compare link targets the tag it will get (`v<version>` when your tags use a `v`) |
+| `--config <file>`     | Config file (default `chamoji.config.json` when present)                                                                                                |
 
 Typical release flow:
 
 ```bash
-version=$(chamoji next-version)
+set -e
+version=$(chamoji next-version)   # stops here when nothing needs releasing
 chamoji changelog --release "$version" --output CHANGELOG.md
-git commit -am "🔖 Release v$version" && git tag "v$version"
+git commit -am "🔖 Release v$version"
+git tag "v$version"
 ```
 
 ## How commits are read
 
 - **Releases** are semver tags reachable from `--to` (`v1.2.0` or `1.2.0`, prereleases included), ordered by semver. Commits after the newest tag form the Unreleased section.
 - **Merge commits** are skipped.
+- **`git revert` commits** (`Revert "✨ Add login"`) are listed as ⏪ reverts, not by the emoji of the commit they undo.
 - **The gitmoji** can be a character (`✨`, with or without the invisible U+FE0F variation selector) or a shortcode (`:sparkles:`). Chamoji uses the earliest one in the subject. The list comes from the official [`gitmojis`](https://www.npmjs.com/package/gitmojis) package.
 - **These subject forms all work:**
   - `✨ Add login`
   - `✨ (auth): Add login`
   - `feat(auth): ✨ Add login`
   - `feat: Add login`. A Conventional type without an emoji maps to one: `feat`→✨, `fix`→🐛, `docs`→📝, and so on.
-- **Breaking changes** are 💥, a `!` after the type (`feat!:`), or a `BREAKING CHANGE:` footer. They are listed under Breaking changes and give a major bump.
+- **Breaking changes** are 💥, a `!` after any type (`feat!:`, `deps!:`), or a `BREAKING CHANGE:` footer. They are listed under Breaking changes and give a major bump.
 - **The next version** comes from each gitmoji's `semver` field (✨ minor, 🐛 patch, …).
 - **Commit trailers** (`Key: value` lines at the end of a message) are parsed and included in the JSON output.
 

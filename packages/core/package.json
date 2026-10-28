@@ -14,10 +14,12 @@
 		}
 	},
 	"files": [
-		"dist"
+		"dist",
+		"!dist/**/*.map"
 	],
 	"scripts": {
-		"build": "tsc -p ."
+		"build": "tsc -p .",
+		"prepack": "tsc -p . && cp ../../LICENSE ."
 	},
 	"dependencies": {
 		"gitmojis": "^3.15.0",
@@ -25,5 +27,15 @@
 	},
 	"devDependencies": {
 		"@types/semver": "^7.7.1"
+	},
+	"keywords": [
+		"changelog",
+		"gitmoji",
+		"conventional-commits",
+		"semver",
+		"git"
+	],
+	"publishConfig": {
+		"access": "public"
 	}
 }

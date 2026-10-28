@@ -10,7 +10,7 @@
 	"scripts": {
 		"build": "pnpm -r build",
 		"test": "vitest run",
-		"check": "pnpm build && prettier --check .",
+		"check": "pnpm build && tsc -p tsconfig.test.json && prettier --check .",
 		"format": "prettier --write ."
 	},
 	"devDependencies": {

@@ -1,5 +1,5 @@
 {
-	"name": "chamoji-ai",
+	"name": "@chamoji/cli",
 	"version": "0.1.0",
 	"description": "Changelogs from gitmoji and Conventional Commits",
 	"license": "MIT",
@@ -11,13 +11,26 @@
 		"chamoji": "./dist/cli.js"
 	},
 	"files": [
-		"dist"
+		"dist",
+		"!dist/**/*.map"
 	],
 	"scripts": {
-		"build": "tsc -p ."
+		"build": "tsc -p .",
+		"prepack": "tsc -p . && cp ../../readme.md ../../LICENSE ."
 	},
 	"dependencies": {
 		"@chamoji/core": "workspace:*",
 		"meow": "^14.1.0"
+	},
+	"keywords": [
+		"changelog",
+		"gitmoji",
+		"conventional-commits",
+		"semver",
+		"release",
+		"cli"
+	],
+	"publishConfig": {
+		"access": "public"
 	}
 }
