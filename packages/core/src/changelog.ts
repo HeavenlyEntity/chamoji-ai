@@ -6,9 +6,16 @@ import {
 	listReleaseTags,
 	readCommits,
 } from './git.js';
+import {getGitmoji} from './gitmojis.js';
 import {groupCommits} from './group.js';
 import {parseCommit} from './parse.js';
-import type {ChamojiConfig, Changelog, RawCommit, Release} from './types.js';
+import type {
+	ChamojiConfig,
+	Changelog,
+	CommitClassifier,
+	ParsedCommit,
+	Release,
+} from './types.js';
 import {bumpFor, nextVersion} from './version.js';
 
 /** The tag a `--release` version will get, following the latest tag's `v` style. */
@@ -33,6 +40,11 @@ export type BuildChangelogOptions = {
 	release?: string;
 	/** `YYYY-MM-DD`; defaults to the current UTC date. */
 	today?: string;
+	/**
+	 * Optional AI step for commits no gitmoji, type or wording rule could
+	 * sort. It never sees or overrides the others.
+	 */
+	classify?: CommitClassifier;
 };
 
 export async function buildChangelog(
@@ -52,37 +64,25 @@ export async function buildChangelog(
 		throw new Error(`Unknown release tag for --from: ${from}`);
 	}
 
-	const makeRelease = (
-		fields: Pick<Release, 'version' | 'tag' | 'previousTag' | 'date'>,
-		raw: RawCommit[],
-		isUnreleased: boolean,
-	): Release => {
-		const commits = raw.map(parseCommit);
-		const bump = bumpFor(commits);
-		return {
-			...fields,
-			bump,
-			nextVersion: isUnreleased ? nextVersion(fields.previousTag, bump) : null,
-			groups: groupCommits(commits, config.groups),
-		};
+	type Pending = {
+		fields: Pick<Release, 'version' | 'tag' | 'previousTag' | 'date'>;
+		commits: ParsedCommit[];
+		isUnreleased: boolean;
 	};
-
-	const releases: Release[] = [];
+	const pending: Pending[] = [];
 	const latest = tags[0]?.name ?? null;
 	const unreleased = await readCommits(cwd, latest ? `${latest}..${to}` : to);
 	if (unreleased.length > 0) {
-		releases.push(
-			makeRelease(
-				{
-					version: release ?? 'Unreleased',
-					tag: release ? futureTag(release, latest) : null,
-					previousTag: latest,
-					date: release ? today : null,
-				},
-				unreleased,
-				true,
-			),
-		);
+		pending.push({
+			fields: {
+				version: release ?? 'Unreleased',
+				tag: release ? futureTag(release, latest) : null,
+				previousTag: latest,
+				date: release ? today : null,
+			},
+			commits: unreleased.map(parseCommit),
+			isUnreleased: true,
+		});
 	}
 
 	for (const [index, tag] of tags.entries()) {
@@ -95,20 +95,59 @@ export async function buildChangelog(
 			cwd,
 			previousTag ? `${previousTag}..${tag.name}` : tag.name,
 		);
-		releases.push(
-			makeRelease(
-				{
-					version: tag.name,
-					tag: tag.name,
-					previousTag,
-					date: tag.date.slice(0, 10) || null,
-				},
-				raw,
-				false,
-			),
+		pending.push({
+			fields: {
+				version: tag.name,
+				tag: tag.name,
+				previousTag,
+				date: tag.date.slice(0, 10) || null,
+			},
+			commits: raw.map(parseCommit),
+			isUnreleased: false,
+		});
+	}
+
+	if (options.classify) {
+		await applyClassifier(
+			options.classify,
+			pending.flatMap(item => item.commits),
 		);
 	}
 
+	const releases = pending.map(({fields, commits, isUnreleased}): Release => {
+		const bump = bumpFor(commits);
+		return {
+			...fields,
+			bump,
+			nextVersion: isUnreleased ? nextVersion(fields.previousTag, bump) : null,
+			groups: groupCommits(commits, config.groups),
+		};
+	});
+
 	const repositoryUrl = config.repositoryUrl ?? (await getRemoteWebUrl(cwd));
 	return {...(repositoryUrl ? {repositoryUrl} : {}), releases};
+}
+
+/**
+ * Runs the classifier on unsorted commits and applies its picks in place.
+ * Unknown codes are ignored, and so is `boom`: only authors declare breaking
+ * changes.
+ */
+async function applyClassifier(
+	classify: CommitClassifier,
+	commits: ParsedCommit[],
+): Promise<void> {
+	const unsorted = commits.filter(commit => commit.gitmojiSource === null);
+	if (unsorted.length === 0) {
+		return;
+	}
+
+	const picks = await classify(unsorted);
+	for (const commit of unsorted) {
+		const code = picks.get(commit.hash);
+		if (code && code !== 'boom' && getGitmoji(code)) {
+			commit.gitmoji = code;
+			commit.gitmojiSource = 'ai';
+		}
+	}
 }

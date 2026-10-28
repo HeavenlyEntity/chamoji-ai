@@ -165,3 +165,67 @@ test('release option must be a semver version', async () => {
 		buildChangelog({cwd: repo.dir, config, release: 'none'}),
 	).rejects.toThrow('Invalid release version: none');
 });
+
+test('classifier only sees unsorted commits and its picks are applied', async () => {
+	repo = await createRepo([
+		{commit: '✨ Add search'},
+		{commit: 'Add filters'},
+		{commit: 'Accept camelCase flags in strict mode'},
+		{commit: 'Tidelift tasks'},
+	]);
+
+	const seen: string[] = [];
+	const {releases} = await buildChangelog({
+		cwd: repo.dir,
+		config,
+		async classify(commits) {
+			seen.push(...commits.map(c => c.subject));
+			const accept = commits.find(c => c.subject.startsWith('Accept'))!;
+			return new Map([[accept.hash, 'sparkles']]);
+		},
+	});
+
+	expect(seen.sort()).toEqual([
+		'Accept camelCase flags in strict mode',
+		'Tidelift tasks',
+	]);
+	const added = releases[0]!.groups.find(g => g.group === 'added')!;
+	expect(added.commits.map(c => [c.subject, c.gitmojiSource])).toEqual([
+		['Accept camelCase flags in strict mode', 'ai'],
+		['Add filters', 'rule'],
+		['✨ Add search', 'gitmoji'],
+	]);
+	const misc = releases[0]!.groups.find(g => g.group === 'misc')!;
+	expect(misc.commits.map(c => c.subject)).toEqual(['Tidelift tasks']);
+	expect(releases[0]!.bump).toBe('minor');
+});
+
+test('classifier is not called when every commit is sorted', async () => {
+	repo = await createRepo([{commit: '✨ Add search'}]);
+	let calls = 0;
+	await buildChangelog({
+		cwd: repo.dir,
+		config,
+		async classify() {
+			calls++;
+			return new Map();
+		},
+	});
+	expect(calls).toBe(0);
+});
+
+test('classifier picks of unknown codes or boom are ignored', async () => {
+	repo = await createRepo([{commit: 'Tidelift tasks'}, {commit: 'Odd one'}]);
+	const {releases} = await buildChangelog({
+		cwd: repo.dir,
+		config,
+		async classify(commits) {
+			return new Map([
+				[commits[0]!.hash, 'boom'],
+				[commits[1]!.hash, 'not_a_gitmoji'],
+			]);
+		},
+	});
+	expect(releases[0]!.groups.map(g => g.group)).toEqual(['misc']);
+	expect(releases[0]!.bump).toBeNull();
+});

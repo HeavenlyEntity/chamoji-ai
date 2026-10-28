@@ -80,3 +80,11 @@ export type Changelog = {
 	repositoryUrl?: string;
 	releases: Release[];
 };
+
+/**
+ * Picks gitmoji codes for commits chamoji could not sort. Returns a map from
+ * commit hash to code, for the commits it is confident about.
+ */
+export type CommitClassifier = (
+	commits: ParsedCommit[],
+) => Promise<Map<string, string>>;
