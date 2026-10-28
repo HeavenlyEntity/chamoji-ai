@@ -63,6 +63,26 @@ git commit -am "🔖 Release v$version"
 git tag "v$version"
 ```
 
+## Release from your coding agent
+
+The `chamoji-release` skill teaches Claude Code, Codex, Cursor and other coding agents to cut a release the way the flow above does. Ask for "a release" or "release notes", and the agent:
+
+- picks the version from the commits
+- writes the new `CHANGELOG.md` section, keeping a hand-written changelog intact
+- bumps the manifest version
+- makes the release commit and tag
+- shows you the notes and asks before it pushes
+
+It can also set up a GitHub Actions workflow, so releases and notes happen without anyone at a keyboard.
+
+Install it into your project:
+
+```bash
+npx skills add HeavenlyEntity/chamoji-ai --skill chamoji-release
+```
+
+Or try it without installing anything: [open a Claude Code session with the release prompt filled in](https://claude.ai/code?prompt=Cut%20a%20release%20of%20this%20repo%20with%20chamoji.%20Follow%20the%20skill%20at%20https%3A%2F%2Fraw.githubusercontent.com%2FHeavenlyEntity%2Fchamoji-ai%2Fmain%2Fskills%2Fchamoji-release%2FSKILL.md%3A%20pick%20the%20version%20from%20the%20commits%2C%20update%20CHANGELOG.md%2C%20bump%20the%20version%2C%20then%20commit%20and%20tag.%20Show%20me%20the%20release%20notes%20and%20ask%20before%20you%20push.). Pick your repository there, then press send.
+
 ## How commits are read
 
 - **Releases** are semver tags reachable from `--to` (`v1.2.0` or `1.2.0`, prereleases included), ordered by semver. Commits after the newest tag form the Unreleased section.
