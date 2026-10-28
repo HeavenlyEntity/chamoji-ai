@@ -206,7 +206,20 @@ Implementation notes:
 - A GitHub Action posts the packet as one PR comment and updates it on each push.
 - The same packet shows in the editor extension and the desktop app.
 
-**Relationship to Graphite:** it's a complement, not a competitor. A stack orders review; a workstream explains intent and can span several stacks or PRs. Reading Graphite stack metadata, so a packet can follow a stack, is a later integration to research. I haven't checked what Graphite exposes.
+**Relationship to [Graphite](https://graphite.com)** (checked 2026-10-27):
+
+- **What Graphite already does:**
+  - Stacked PRs through its `gt` CLI and a [VS Code extension](https://graphite.com/docs/vs-code-extension), published to both the VS Code Marketplace and Open VSX.
+  - A stack-aware merge queue.
+  - **AI Reviews**, which flag bugs and suggest fixes on every PR.
+  - **Graphite Chat**, which explains changes and applies fixes on the PR page.
+  - Cursor Cloud Agents inside Graphite.
+- **So "AI comments on the PR" is already taken.** Chamoji shouldn't compete there. Its edge is the part Graphite doesn't cover:
+  - **Intent that lives in git.** Trailers and `refs/chamoji/memory` work with any host and survive squash merges. They don't depend on a platform.
+  - **Workstreams span stacks.** A stack orders review; a workstream explains a goal across several stacks, PRs and releases, and flows into the changelog.
+  - **Attention routing, not more comments.** The packet tells the human what to read first and what was claimed vs. done, rather than adding another reviewer voice.
+  - **Free, open source and local-first.** It runs offline without an account.
+- **Integration:** a packet should be able to follow a Graphite stack. Graphite's public pages don't document how stack metadata is stored or exposed, so that needs research in `gt`'s docs or source before milestone 6.
 
 ## 5d. Editor extension (VS Code, Cursor, Windsurf)
 
