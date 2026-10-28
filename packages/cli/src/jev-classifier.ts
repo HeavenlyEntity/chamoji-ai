@@ -1,8 +1,15 @@
 import {
 	GITMOJIS,
 	type CommitClassifier,
+	type JudgmentCache,
 	type ParsedCommit,
 } from '@chamoji/core';
+
+/**
+ * Names the question and options below. Change it whenever they change, so
+ * cached judgments from the old question are never reused.
+ */
+export const JUDGMENT_VERSION = 'jev-latest:gitmoji-v1';
 
 /** The slice of the TypeSafe client this classifier uses (easy to fake in tests). */
 export type JevClient = {
@@ -26,6 +33,8 @@ export type JevClassifierOptions = {
 	minConfidence?: number;
 	/** Receives one-line progress notes: failures and a final summary. */
 	report?: (line: string) => void;
+	/** Judgments from earlier runs; commits found here aren't sent again. */
+	cache?: JudgmentCache;
 };
 
 /** Characters of each subject and body sent. */
@@ -72,6 +81,7 @@ export function createJevClassifier(
 		// A starting point; tune it against labelled history.
 		minConfidence = 0.6,
 		report,
+		cache,
 	} = options;
 	if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > MAX_BATCH) {
 		throw new RangeError(`batchSize must be an integer from 1 to ${MAX_BATCH}`);
@@ -104,12 +114,11 @@ export function createJevClassifier(
 		const picks: Array<[string, string]> = [];
 		for (const [index, commit] of batch.entries()) {
 			const answer = answers[`commit_${index}`];
-			if (
-				answer &&
-				answer.choice !== NONE &&
-				answer.confidence >= minConfidence
-			) {
-				picks.push([commit.hash, answer.choice]);
+			if (!answer) continue;
+			const gitmoji = answer.choice === NONE ? null : answer.choice;
+			cache?.set(commit.hash, {gitmoji, confidence: answer.confidence});
+			if (gitmoji && answer.confidence >= minConfidence) {
+				picks.push([commit.hash, gitmoji]);
 			}
 		}
 
@@ -117,12 +126,23 @@ export function createJevClassifier(
 	};
 
 	return async commits => {
-		const batches: ParsedCommit[][] = [];
-		for (let start = 0; start < commits.length; start += batchSize) {
-			batches.push(commits.slice(start, start + batchSize));
+		const result = new Map<string, string>();
+		const unknown: ParsedCommit[] = [];
+		for (const commit of commits) {
+			const known = cache?.get(commit.hash);
+			if (!known) {
+				unknown.push(commit);
+			} else if (known.gitmoji && known.confidence >= minConfidence) {
+				result.set(commit.hash, known.gitmoji);
+			}
 		}
 
-		const result = new Map<string, string>();
+		const cached = commits.length - unknown.length;
+		const batches: ParsedCommit[][] = [];
+		for (let start = 0; start < unknown.length; start += batchSize) {
+			batches.push(unknown.slice(start, start + batchSize));
+		}
+
 		let next = 0;
 		let sent = 0;
 		let failure: Error | undefined;
@@ -148,12 +168,13 @@ export function createJevClassifier(
 		);
 		if (failure) {
 			report?.(
-				`Jev request failed (${failure.message}); ${commits.length - sent} commits left unsorted`,
+				`Jev request failed (${failure.message}); ${unknown.length - sent} commits left unsorted`,
 			);
 		}
 
+		await cache?.save().catch(() => undefined);
 		report?.(
-			`Jev sorted ${result.size} of ${commits.length} commits no rule could place`,
+			`Jev sorted ${result.size} of ${commits.length} commits no rule could place${cached ? ` (${cached} from the cache, not asked again)` : ''}`,
 		);
 		return result;
 	};

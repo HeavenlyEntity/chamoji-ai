@@ -183,3 +183,89 @@ test('rejects batch sizes that would loop forever or overflow requests', () => {
 	expect(() => createJevClassifier(client, {batchSize: 31})).toThrow();
 	expect(() => createJevClassifier(client, {concurrency: 0})).toThrow();
 });
+
+/** An in-memory JudgmentCache that counts saves. */
+function memoryCache() {
+	const judgments = new Map<
+		string,
+		{gitmoji: string | null; confidence: number}
+	>();
+	let saves = 0;
+	return {
+		judgments,
+		saves: () => saves,
+		cache: {
+			get: (hash: string) => judgments.get(hash),
+			set(
+				hash: string,
+				judgment: {gitmoji: string | null; confidence: number},
+			) {
+				judgments.set(hash, judgment);
+			},
+			async save() {
+				saves++;
+			},
+		},
+	};
+}
+
+test('a second run with the cache asks nothing and gives the same picks', async () => {
+	const {client, requests} = fakeClient(index => ({
+		choice: index % 2 ? 'none' : 'bug',
+		confidence: 0.9,
+	}));
+	const memory = memoryCache();
+	const input = commits(6);
+	const first = await createJevClassifier(client, {cache: memory.cache})(input);
+	expect(requests).toHaveLength(1);
+	expect(memory.judgments.size).toBe(6);
+	expect(memory.saves()).toBe(1);
+
+	const second = await createJevClassifier(client, {cache: memory.cache})(
+		input,
+	);
+	expect(requests).toHaveLength(1);
+	expect([...second]).toEqual([...first]);
+});
+
+test('only commits missing from the cache are sent', async () => {
+	const {client, requests} = fakeClient(() => ({
+		choice: 'sparkles',
+		confidence: 0.9,
+	}));
+	const memory = memoryCache();
+	const input = commits(4);
+	memory.cache.set(input[0]!.hash, {gitmoji: 'bug', confidence: 0.95});
+	memory.cache.set(input[1]!.hash, {gitmoji: null, confidence: 0.5});
+	const result = await createJevClassifier(client, {cache: memory.cache})(
+		input,
+	);
+	expect(requests).toHaveLength(1);
+	expect(Object.keys(requests[0]!.questions)).toHaveLength(2);
+	expect(result.get(input[0]!.hash)).toBe('bug');
+	expect(result.has(input[1]!.hash)).toBe(false);
+	expect(result.get(input[2]!.hash)).toBe('sparkles');
+});
+
+test('cached picks still respect minConfidence', async () => {
+	const {client} = fakeClient(() => ({choice: 'bug', confidence: 0.9}));
+	const memory = memoryCache();
+	const [only] = commits(1);
+	memory.cache.set(only!.hash, {gitmoji: 'bug', confidence: 0.5});
+	const result = await createJevClassifier(client, {
+		cache: memory.cache,
+		minConfidence: 0.6,
+	})([only!]);
+	expect(result.size).toBe(0);
+});
+
+test('a failed request caches nothing for its commits', async () => {
+	const memory = memoryCache();
+	const client: JevClient = {
+		async systemOne() {
+			throw new Error('rate limited');
+		},
+	};
+	await createJevClassifier(client, {cache: memory.cache})(commits(3));
+	expect(memory.judgments.size).toBe(0);
+});

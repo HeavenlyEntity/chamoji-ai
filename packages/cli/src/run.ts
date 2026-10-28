@@ -8,6 +8,7 @@ import {
 	buildChangelog,
 	loadComposeConfig,
 	loadConfig,
+	openJudgmentCache,
 	planRelease,
 	pushRelease,
 	ReleaseError,
@@ -24,7 +25,7 @@ import meow from 'meow';
 import {compose} from './composer.js';
 import {readTypesafeKey} from './env.js';
 import {HookError, installHook, uninstallHook} from './hook.js';
-import {createJevClassifier} from './jev-classifier.js';
+import {createJevClassifier, JUDGMENT_VERSION} from './jev-classifier.js';
 import {openTerminal} from './tty.js';
 import type {UpdateCheck} from './update-check.js';
 
@@ -587,8 +588,12 @@ async function jevClassifier(io: Io): Promise<CommitClassifier> {
 	}
 
 	const client = new TypeSafeClient({apiKey: key});
+	// Outside a repository there's nowhere to keep judgments, so none are cached.
+	const cache = await openJudgmentCache(io.cwd, JUDGMENT_VERSION).catch(
+		() => undefined,
+	);
 	return createJevClassifier(
 		{systemOne: async request => client.systemOne(request)},
-		{report: line => io.stderr(`${line}\n`)},
+		{report: line => io.stderr(`${line}\n`), cache},
 	);
 }
