@@ -508,6 +508,7 @@ The first paid wedge. It's the lowest build cost, because the engine exists, and
 
 Fold these into a milestone's plan when they fit, or pull one into a sprint when it's blocking. Items found while using chamoji ourselves are tagged _dogfood_ and go first.
 
+- **Downloads badge:** add the npm downloads badge back to the readme once shields.io has data for `@chamoji/cli`. It shows "package not found or too new" until then.
 - **Emoji variants:** accept variant forms of official gitmojis, such as 👨‍💻 for 🧑‍💻. Found on gitmoji-cli.
 - **Confidence cutoff:** 60% held up on meow. Re-check it with the milestone 5 tuning data.
 - **Noise prefixes:** more wording-rule coverage for noisy prefixes, such as "Merge remote-tracking…" and "Squashed commit of…".
