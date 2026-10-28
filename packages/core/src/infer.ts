@@ -7,7 +7,8 @@ const RULES: Array<[RegExp, string]> = [
 	// Version-only and release commits.
 	[/^v?\d+\.\d+\.\d+\S*$/, 'bookmark'],
 	[/^(?:release|releasing|prepare release|bump version)\b/i, 'bookmark'],
-	[/^initial commit\b/i, 'tada'],
+	[/^(?:initial commit|init)\b/i, 'tada'],
+	[/^\[breaking\]/i, 'boom'],
 
 	// Dependency updates, including Dependabot and Renovate subjects.
 	[
@@ -15,11 +16,16 @@ const RULES: Array<[RegExp, string]> = [
 		'arrow_up',
 	],
 	[/^(?:bump|update|upgrade|pin)\s+\S+\s+from\s+\S+\s+to\s+\S+/i, 'arrow_up'],
+	[/^bump\s+\S+/i, 'arrow_up'],
 	[/^(?:require|target|drop support for)\s+node(?:\.js)?\s*\d+/i, 'boom'],
 
 	// Topics that outrank the leading verb.
 	[/\bsecurity\b|\bvulnerab|\bcve-\d+/i, 'lock'],
-	[/\b(?:readme|docs?|documentation)\b/i, 'memo'],
+	[/\b(?:readme|docs?|documentation)\b|^document\w*\b/i, 'memo'],
+	[
+		/^(?:minor\s+)?(?:code\s+style|minor\s+code|style)\s+tweaks?\b|^minor\s+code\s+tweaks?\b/i,
+		'art',
+	],
 	[/\btypos?\b/i, 'pencil2'],
 	[/^fix(?:es|ed)?\s+(?:the\s+)?ci\b/i, 'green_heart'],
 	[
@@ -44,13 +50,16 @@ const RULES: Array<[RegExp, string]> = [
 	[/^(?:upgrad\w*)\b/i, 'arrow_up'],
 	[/^(?:downgrad\w*)\b/i, 'arrow_down'],
 	[
-		/^(?:updat\w*|improv\w*|chang\w*|tweak\w*|meta|use|replac\w*|rewrit\w*|migrat\w*|make|ensure)\b/i,
+		/^(?:updat\w*|improv\w*|chang\w*|tweak\w*|meta|use|replac\w*|rewrit\w*|migrat\w*|make|ensure|switch\w*)\b/i,
 		'wrench',
 	],
 ];
 
+/** Prefixes that say nothing about the change, like "Close #14 PR: ". */
+const NOISE_PREFIX = /^(?:close[sd]?\s+#\d+\s+pr:\s*)/i;
+
 export function inferGitmoji(subject: string): string | null {
-	const text = subject.trim();
+	const text = subject.trim().replace(NOISE_PREFIX, '');
 	for (const [pattern, code] of RULES) {
 		if (pattern.test(text)) {
 			return code;

@@ -47,6 +47,15 @@ test.each([
 	['Release 3.0.0', 'bookmark'],
 	['Initial commit', 'tada'],
 	['Fix security issue in token parsing', 'lock'],
+	['Document ES Modules usage (#147)', 'memo'],
+	['bump `camelcase-keys`', 'arrow_up'],
+	['bump AVA', 'arrow_up'],
+	['[BREAKING] ES2015ify - Now requires Node.js >=4', 'boom'],
+	['Minor code tweaks', 'art'],
+	['Code style tweaks', 'art'],
+	['init', 'tada'],
+	['Close #14 PR: Add description option. Fixes #12', 'sparkles'],
+	['Switch from `loud-rejection` to `hard-rejection`', 'wrench'],
 ])('%s → %s', (subject, expected) => {
 	expect(inferGitmoji(subject)).toBe(expected);
 });
