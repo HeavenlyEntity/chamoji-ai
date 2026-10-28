@@ -182,6 +182,45 @@ Implementation notes:
 
 **Honest limits:** an embedding is not "compressed memory": you can't reconstruct the text from it, so the text has to be kept somewhere. Keeping the text in git is what makes "nothing gets lost" true.
 
+## 5c. Review packets: better human-in-the-loop review
+
+**Problem:** Graphite and GitHub's stacked PRs make review _faster_ by splitting work into small PRs in review order. What they don't solve is _context_. The reviewer still chases the why across commits, tickets and chat. With AI agents writing more of the code, the reviewer often doesn't even know what the agent was asked to do.
+
+**Idea:** for any workstream or commit range, chamoji assembles a **review packet**. It's a single page that brings the context to the reviewer. AI never approves anything; it decides _where the human's attention goes_.
+
+| Section                   | Source                                                                               | How it's built                                                                          |
+| ------------------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| **Goal and decisions**    | Workstream metadata + `refs/chamoji/memory`                                          | Plain text, no AI                                                                       |
+| **Per-commit intent**     | Intent-card trailers (`Why`, `Constraint`, `Gotcha`)                                 | Plain text; commits missing a why are flagged                                           |
+| **Reading order**         | Commits grouped by the files and symbols they touch, not by time                     | Code (file overlap), optionally Jev to order clusters                                   |
+| **Needs human eyes**      | Each hunk scored for review risk: auth, migrations, money, public API, deleted tests | Jev `score` + `noul` per hunk; boilerplate collapsed, risky hunks expanded              |
+| **Claim check**           | Does the diff actually do what the commit's `Why` says?                              | Jev `noul` per claim (the citation-check pattern); mismatches flagged, never auto-fixed |
+| **AI-authored work**      | Commits with an agent trailer, plus the agent's own session card                     | Shows what the human asked for next to what the agent did                               |
+| **Since you last looked** | A per-reviewer watermark                                                             | Only new commits on a second pass                                                       |
+
+**Feedback loop:** when a reviewer dismisses a flag or catches something the packet missed, that becomes labelled data. It tunes the thresholds on our own history; it doesn't retrain anything.
+
+**Delivery:**
+
+- `chamoji review <workstream|range>` writes Markdown or HTML.
+- A GitHub Action posts the packet as one PR comment and updates it on each push.
+- The same packet shows in the editor extension and the desktop app.
+
+**Relationship to Graphite:** it's a complement, not a competitor. A stack orders review; a workstream explains intent and can span several stacks or PRs. Reading Graphite stack metadata, so a packet can follow a stack, is a later integration to research. I haven't checked what Graphite exposes.
+
+## 5d. Editor extension (VS Code, Cursor, Windsurf)
+
+Yes, this belongs in the plan. The editor is where developers commit and review, so it's the highest-traffic surface after the CLI.
+
+- **One extension, two registries.** Publish to the VS Code Marketplace _and_ [Open VSX](https://open-vsx.org), which is what Cursor, Windsurf and VSCodium install from. It's the same `.vsix`.
+- **Same engine.** The extension is a thin UI over `@chamoji/core` (or the local iii daemon when it's running), so nothing is reimplemented.
+- **Features, in order of value:**
+  1. A commit helper in the Source Control panel: ranked gitmoji, the active workstream and a "why?" field, which fill the commit message box.
+  2. A workstream sidebar with the active workstream in the status bar.
+  3. A "why" hover on any line: blame → that commit's intent card and workstream.
+  4. A review packet view for the current branch or PR.
+- **Agents in Cursor and Claude Code** get the same context through `chamoji mcp`. The extension covers the human; MCP covers the agent.
+
 ## 6. GUI: Tauri 2 (recommended) vs Electron
 
 **Recommendation: Tauri 2**, with the Node engine as a sidecar.
@@ -260,12 +299,14 @@ Checked against the GitHub API and npm on 2026-10-27. Items marked [unverified] 
 
 ## 8. Suggested first milestones
 
-1. **Fix and restructure** (no AI): monorepo split, working `chamoji changelog` with full gitmoji list, trailers, tests on fixture repos.
+1. ✅ **Fix and restructure** (no AI): monorepo split, working `chamoji changelog` with full gitmoji list, trailers, tests on fixture repos. Published as `@chamoji/core` and `@chamoji/cli` 0.1.0.
 2. **`chamoji commit`**: Ink composer + `prepare-commit-msg` hook; deterministic gitmoji search.
 3. **Jev judgments** in the composer (gitmoji ranking, breaking-change check).
 4. **Workstreams**: trailers + `.chamoji/workstreams.yml` + `ws` commands + Highlights in the changelog.
 5. **Project memory**: intent-card trailers, `refs/chamoji/memory`, archive-not-delete, `chamoji mcp`.
-6. **`chamoji group`** retroactive AI grouping with notes; local vector index + Jev rerank.
-7. **iii spike, then `chamoji daemon`**: register the core functions through `iii-sdk`. Background indexing queue, state triggers, MCP worker.
-8. **Tauri desktop board** talking to the local iii engine.
-9. **Paid cloud**: the same worker on hosted iii with database/storage workers for team memory sync.
+6. **Review packets** (5c): `chamoji review` + GitHub Action PR comment. Deterministic sections first, then Jev risk scoring and claim checks.
+7. **Editor extension** (5d): VS Code Marketplace + Open VSX (Cursor, Windsurf). Commit helper, workstream sidebar, "why" hover, packet view.
+8. **`chamoji group`**: retroactive AI grouping with notes; local vector index + Jev rerank.
+9. **iii spike, then `chamoji daemon`**: register the core functions through `iii-sdk`. Background indexing queue, state triggers, MCP worker. The extension and desktop app use it when it's running.
+10. **Tauri desktop board** talking to the local iii engine.
+11. **Paid cloud**: the same worker on hosted iii with database/storage workers for team memory sync and shared review packets.
