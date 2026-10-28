@@ -50,3 +50,18 @@ test('without a misc group unmatched commits are dropped', () => {
 	);
 	expect(ids(groups)).toEqual(['added']);
 });
+
+test('dependency updates go to a collapsed Dependencies group', () => {
+	const groups = groupCommits(
+		[
+			commit('⬆️ Bump jest from 30.3.0 to 30.5.0 (#1569)'),
+			commit('chore(deps): update rollup'),
+			commit('Update dependencies'),
+			commit('✨ Add login'),
+		],
+		DEFAULT_GROUP_CONFIG,
+	);
+	expect(ids(groups)).toEqual(['added', 'dependencies']);
+	expect(groups[1]).toMatchObject({label: 'Dependencies', collapse: true});
+	expect(groups[1]!.commits).toHaveLength(3);
+});

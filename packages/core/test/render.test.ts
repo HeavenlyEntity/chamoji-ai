@@ -177,3 +177,59 @@ test('markdown escapes stray backticks so they cannot open a code span', () => {
 	expect(markdown).toContain('Fix \\``<img src=x onerror=alert(1)>`x\\` here');
 	expect(markdown).not.toMatch(/(^|[^`\\])``<img/);
 });
+
+const dependencyChangelog = (): Changelog => ({
+	releases: [
+		{
+			version: 'v2.0.0',
+			tag: 'v2.0.0',
+			previousTag: null,
+			date: '2026-02-01',
+			bump: 'patch',
+			nextVersion: null,
+			groups: groupCommits(
+				[
+					commit('⬆️ Bump jest from 30.3.0 to 30.5.0 (#1569)'),
+					commit('⬆️ Bump jest from 30.5.0 to 30.5.2 (#1574)'),
+					commit('chore(deps): update dependency vite to v7.1.0'),
+					commit('Bump @babel/core from 7.29.0 to 7.29.6'),
+					commit('Bump fast-uri from 3.1.7 to 3.1.8'),
+					commit('Bump prettier from 3.8.1 to 3.8.3'),
+					commit('Bump turbo from 2.9.3 to 2.9.14'),
+					commit('Bump semver from 7.7.2 to 7.7.3'),
+					commit('Update dependencies'),
+				],
+				DEFAULT_GROUP_CONFIG,
+			),
+		},
+	],
+});
+
+test('markdown collapses dependency updates into one line', () => {
+	expect(renderMarkdown(dependencyChangelog())).toContain(
+		'### Dependencies\n\n- ⬆️ 9 dependency updates: jest, vite, @babel/core, fast-uri, prettier and 2 more\n',
+	);
+});
+
+test('html collapses dependency updates into one line', () => {
+	expect(renderHtml(dependencyChangelog())).toContain(
+		'<li>⬆️ 9 dependency updates: jest, vite, @babel/core, fast-uri, prettier and 2 more</li>',
+	);
+});
+
+test('json keeps every dependency commit', () => {
+	const json = JSON.parse(renderJson(dependencyChangelog()));
+	expect(json.releases[0].groups[0].commits).toHaveLength(9);
+});
+
+test('guessed gitmojis are not shown as emojis', () => {
+	const changelog = sample();
+	changelog.releases[0]!.groups = groupCommits(
+		[commit('Add search'), commit('feat: Add filters'), commit('✨ Add sort')],
+		DEFAULT_GROUP_CONFIG,
+	);
+	const markdown = renderMarkdown(changelog);
+	expect(markdown).toContain('- Add search (');
+	expect(markdown).toContain('- ✨ Add filters (');
+	expect(markdown).toContain('- ✨ Add sort (');
+});

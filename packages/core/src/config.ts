@@ -19,7 +19,6 @@ export const DEFAULT_GROUP_CONFIG: GroupConfig = [
 			'white_check_mark',
 			'construction_worker',
 			'chart_with_upwards_trend',
-			'heavy_plus_sign',
 			'loud_sound',
 			'globe_with_meridians',
 			'camera_flash',
@@ -43,9 +42,6 @@ export const DEFAULT_GROUP_CONFIG: GroupConfig = [
 			'zap',
 			'lipstick',
 			'rotating_light',
-			'arrow_down',
-			'arrow_up',
-			'pushpin',
 			'recycle',
 			'wrench',
 			'rewind',
@@ -75,7 +71,7 @@ export const DEFAULT_GROUP_CONFIG: GroupConfig = [
 	{
 		group: 'removed',
 		label: 'Removed',
-		emojis: ['fire', 'heavy_minus_sign', 'mute', 'coffin'],
+		emojis: ['fire', 'mute', 'coffin'],
 	},
 	{
 		group: 'fixed',
@@ -97,6 +93,18 @@ export const DEFAULT_GROUP_CONFIG: GroupConfig = [
 		group: 'security',
 		label: 'Security',
 		emojis: ['lock', 'closed_lock_with_key', 'passport_control'],
+	},
+	{
+		group: 'dependencies',
+		label: 'Dependencies',
+		emojis: [
+			'arrow_up',
+			'arrow_down',
+			'pushpin',
+			'heavy_plus_sign',
+			'heavy_minus_sign',
+		],
+		collapse: true,
 	},
 	{
 		group: 'useless',

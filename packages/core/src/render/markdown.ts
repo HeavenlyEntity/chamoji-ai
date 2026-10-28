@@ -1,11 +1,13 @@
 import type {Changelog, ParsedCommit} from '../types.js';
 import {
 	commitLink,
+	DEPENDENCY_EMOJI,
 	emojiFor,
 	issueLink,
 	releaseLink,
 	safeRepositoryUrl,
 	splitIssues,
+	summarizeDependencies,
 } from './shared.js';
 
 /**
@@ -42,8 +44,14 @@ export function renderMarkdown(changelog: Changelog): string {
 
 		for (const group of release.groups) {
 			lines.push(`### ${group.label}`, '');
-			for (const commit of group.commits) {
-				lines.push(`- ${renderCommit(commit, url)}`);
+			if (group.collapse) {
+				lines.push(
+					`- ${DEPENDENCY_EMOJI} ${escapeMarkdown(summarizeDependencies(group.commits))}`,
+				);
+			} else {
+				for (const commit of group.commits) {
+					lines.push(`- ${renderCommit(commit, url)}`);
+				}
 			}
 
 			lines.push('');

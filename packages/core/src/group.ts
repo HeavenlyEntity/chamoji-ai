@@ -37,6 +37,7 @@ export function groupCommits(
 		.map(item => ({
 			group: item.group,
 			label: item.label,
+			...(item.collapse ? {collapse: true} : {}),
 			commits: buckets.get(item.group)!,
 		}));
 }

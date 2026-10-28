@@ -42,6 +42,8 @@ export type GroupConfigItem = {
 	emojis: string[];
 	/** Hidden groups are matched but left out of the output. */
 	hidden?: boolean;
+	/** Render the group as one summary line (used for dependency updates). */
+	collapse?: boolean;
 };
 
 export type GroupConfig = GroupConfigItem[];
@@ -54,6 +56,7 @@ export type ChamojiConfig = {
 export type Group = {
 	group: string;
 	label: string;
+	collapse?: boolean;
 	commits: ParsedCommit[];
 };
 

@@ -1,11 +1,13 @@
 import type {Changelog, ParsedCommit} from '../types.js';
 import {
 	commitLink,
+	DEPENDENCY_EMOJI,
 	emojiFor,
 	issueLink,
 	releaseLink,
 	safeRepositoryUrl,
 	splitIssues,
+	summarizeDependencies,
 } from './shared.js';
 
 const ESCAPES: Record<string, string> = {
@@ -54,8 +56,14 @@ export function renderHtml(changelog: Changelog): string {
 
 		for (const group of release.groups) {
 			out.push(`<h3>${escapeHtml(group.label)}</h3>`, '<ul>');
-			for (const commit of group.commits) {
-				out.push(`<li>${renderCommit(commit, url)}</li>`);
+			if (group.collapse) {
+				out.push(
+					`<li>${DEPENDENCY_EMOJI} ${escapeHtml(summarizeDependencies(group.commits))}</li>`,
+				);
+			} else {
+				for (const commit of group.commits) {
+					out.push(`<li>${renderCommit(commit, url)}</li>`);
+				}
 			}
 
 			out.push('</ul>');
