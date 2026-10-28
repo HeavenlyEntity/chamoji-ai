@@ -1,0 +1,53 @@
+name: Release
+
+# Publishes both packages to npm when a v* tag is pushed (made by `pnpm release`).
+# Uses npm trusted publishing (OIDC): no npm token is stored. Each package must
+# list this repo and this workflow as its trusted publisher on npmjs.com.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      # Trusted publishing needs npm 11.5.1 or newer.
+      - run: npm install -g npm@latest
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm test
+
+      - name: Check the tag matches both package versions
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          for pkg in packages/core packages/cli; do
+            version=$(node -p "require('./$pkg/package.json').version")
+            if [ "$version" != "$tag" ]; then
+              echo "::error::$pkg is $version but the tag is v$tag"
+              exit 1
+            fi
+          done
+
+      # pnpm pack swaps workspace:* for real versions; npm publish then adds
+      # provenance. Core goes first because the CLI depends on it.
+      - name: Publish
+        run: |
+          mkdir -p dist-packages
+          for pkg in packages/core packages/cli; do
+            (cd "$pkg" && pnpm pack --pack-destination ../../dist-packages)
+          done
+          npm publish dist-packages/chamoji-core-*.tgz --provenance --access public
+          npm publish dist-packages/chamoji-cli-*.tgz --provenance --access public
