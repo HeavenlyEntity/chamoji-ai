@@ -187,32 +187,28 @@ GUI surfaces (the desktop app, Cloud pages and the website) render the foil live
 
 ## Icons
 
-**Source:** the licensed "computer programming" icon pack: 50 filled icons with outlines, kept locally. Like the fonts, the original and recoloured files **stay out of git**, because publishing them would redistribute the pack.
+**Source:** [Phosphor](https://phosphoricons.com) **duotone** icons, taken from [Iconify](https://icon-sets.iconify.design/ph/) (`ph:<name>-duotone`). Phosphor is MIT-licensed, so the SVGs can live in the public repo and need no credit on the page. The licensed "computer programming" pack used earlier is retired.
 
-**Recolouring:** the icons are recoloured to the foil palette before use.
+**Styling:** each icon is inlined as SVG, never loaded as an image or icon font.
 
-| Pack colours | Foil colour        |
-| ------------ | ------------------ |
-| Blues        | periwinkle and sky |
-| Reds         | pink               |
-| Yellows      | peach              |
-| Greens       | mint               |
-| Whites       | white              |
-| Outlines     | ink                |
+- The outline layer is ink (`#070708`).
+- The duotone layer (Phosphor's 20%-opacity shape) is filled at full opacity with the foil gradient: sage → mint → periwinkle → sky → orchid → pink → peach, running top-left to bottom-right (`<linearGradient id="holo">`, defined once per page).
+- The result reads as ink drawn over foil, like the logo.
 
-**Use them sparingly:** only next to copy they illustrate, at 26–42 px, on a light tile (`#f6f5fb`) so the ink outlines also read on dark surfaces. On the waitlist page:
+**Use them sparingly:** only next to copy they illustrate, at 18–42 px, on a light tile (`#f6f5fb`) so the ink outlines also read on dark surfaces. On the waitlist page:
 
-| Copy              | Icon                                   |
-| ----------------- | -------------------------------------- |
-| CLI card          | command line                           |
-| Cloud page card   | website                                |
-| Release notes     | new features                           |
-| Context insurance | security shield                        |
-| Review packets    | scope                                  |
-| CLI plan          | command                                |
-| Team plan         | cloud computing                        |
-| Organization plan | cloud folders                          |
-| FAQ               | command, coding, shield, AI, checklist |
+| Copy                        | Icon (`ph:…-duotone`)                                                  |
+| --------------------------- | ---------------------------------------------------------------------- |
+| Commit stage, commits FAQ   | `git-commit`                                                           |
+| CHANGELOG stage             | `scroll`                                                               |
+| CLI card, CLI plan, CLI FAQ | `terminal-window`                                                      |
+| Cloud page card             | `cloud`                                                                |
+| Hosted release notes        | `globe`                                                                |
+| Context insurance           | `brain`                                                                |
+| Review packets              | `git-pull-request`                                                     |
+| Team plan                   | `users-three`                                                          |
+| Organization plan           | `buildings`                                                            |
+| FAQ                         | `shield-check` (code), `sparkle` (AI), `calendar-check` (early access) |
 
 ## React Bits
 
