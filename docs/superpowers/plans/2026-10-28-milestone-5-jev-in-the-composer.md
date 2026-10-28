@@ -13,7 +13,9 @@
   - **split:** a Noul, "Do the staged changes mix unrelated changes?"
 - **The judgment cache:** `.git/chamoji/cache.json`, read and written by `packages/core/src/cache.ts`. It's keyed by commit hash and versioned by model and question set. `createJevClassifier` reads it before asking, and records every answer, including "none".
 - **The composer:** it renders at once and receives the suggestion when it arrives. If the user hasn't typed a search yet, the top three gitmojis move to the head of the list, preselected. Breaking and split show as hints on their steps, and never as decisions. After 2 seconds without an answer, it carries on without one.
-- **Settings in `chamoji.config.json`:** `"ai": {"composer": true, "sendDiffs": false}`. The key comes from `TYPESAFE_API_KEY`, or that line in `.env.local` or `.env`, as with `--ai`.
+- **Settings in git config:** `chamoji.composer` and `chamoji.sendDiffs`, both off by default, set per repository or with `--global`. The key comes from `TYPESAFE_API_KEY`, or that line in an untracked `.env.local` or `.env`.
+
+> **Changed during the build:** the settings first lived in an `ai` block of `chamoji.config.json`. They moved to git config so a cloned repository can't switch on sending its own staged changes, and a tracked `.env` is no longer read for the key. After the eval (Task 6), the composer preselects only when the top pick is at least 90% likely (`PRESELECT_THRESHOLD`), and otherwise lists the three suggestions as a hint.
 
 **Tech stack:** as milestone 4, plus `@typesafe-ai/sdk` 0.7 with `choice`, `noul`, and Choice `probabilities`.
 
@@ -21,10 +23,10 @@
 
 ## Global constraints
 
-- **Principle 1:** with no key, `ai.composer` off, or no network, the composer behaves exactly as in milestone 4.
+- **Principle 1:** with no key, `chamoji.composer` off, or no network, the composer behaves exactly as in milestone 4.
 - **Principle 2:** the gitmoji suggestion is a preselection the user can change in one keystroke. Breaking is a hint on the breaking step, never a pre-answered yes. Split is a hint only.
 - **Principle 4:** by default only file paths, line counts and the draft title are sent.
-  - The diff text is sent only with `ai.sendDiffs: true`, at most 200 lines per file and 2,000 in all.
+  - The diff text is sent only with `chamoji.sendDiffs` set to true, at most 200 lines per file and 2,000 in all.
   - Paths matching the denylist are never sent, not even their names: `.env*`, `*.pem`, `*.key`, `*.p12`, `id_rsa*`, `*secret*`, and the lockfiles (`package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `Cargo.lock`, `poetry.lock`, `composer.lock`, `Gemfile.lock`).
   - The request says how many files were withheld.
 - **The cache stores judgments only,** never commit text: `{gitmoji, confidence, model, version}` per hash.
@@ -114,10 +116,9 @@ The request is one `systemOne` call. Its state is `{files, withheldFiles, draftT
 **Files:**
 
 - Modify `packages/cli/src/composer.tsx`: an `advice?: Promise<Advice | null>` prop.
-- Modify `run.ts`: build the advice for `commit` and `hook run` when `ai.composer` is on and there's a key.
-- Modify `packages/core/src/config.ts`: the `ai` block of `chamoji.config.json`.
+- Modify `run.ts`: build the advice for `commit` and `hook run` when `chamoji.composer` is on and there's a key. `readAiSettings(cwd)` reads both settings with `git config --type=bool`.
 
-Tests: `composer.test.tsx` and `config.test.ts`.
+Tests: `composer.test.tsx` and `hook.test.ts`.
 
 - [ ] **Tests:**
   - advice that resolves before any typing puts its three gitmojis first, with the first selected and marked "suggested"
@@ -126,7 +127,7 @@ Tests: `composer.test.tsx` and `config.test.ts`.
   - breaking at 0.55 shows nothing
   - split at 0.8 shows a hint on the title step
   - advice that rejects, or takes longer than 2 seconds, leaves the composer as it was
-  - the config reads `ai.composer` and `ai.sendDiffs`, defaulting to false
+  - setting `chamoji.composer` in git config turns the advice on; a repository's own files can't
 - [ ] **Commit** `✨ Preselect Jev's gitmoji in the composer`
 
 ### Task 6: Measure and tune
@@ -141,7 +142,7 @@ Tests: `composer.test.tsx` and `config.test.ts`.
   - top-3 at least 80%
   - p95 under 300 ms from a warm start
   - a second `changelog --ai` run on meow makes no requests
-- [ ] **Tune** `minConfidence` from the eval's calibration if it shows a better cutoff.
+- [ ] **Tune** `minConfidence` from the eval's calibration if it shows a better cutoff. `--no-bumps` measures the commits other than ⬆️ bumps on their own, as they're most of these repos' history.
 - [ ] **Docs:** a readme section on composer AI, what's sent, and the opt-ins. The roadmap gets the numbers.
 - [ ] **Commit** `📝 Measure Jev in the composer and document it`
 

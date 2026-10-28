@@ -110,6 +110,25 @@ Enter moves on, Esc goes back and Ctrl-C cancels. It writes `✨ (auth): Add log
 
 Without a config, chamoji writes the emoji character and asks for a scope.
 
+### Suggestions from Jev
+
+With your opt-in, the composer asks [Jev](https://typesafe.ai) about the staged changes as it opens. It takes about 100 ms, and the composer never waits more than 2 seconds for it.
+
+```bash
+git config --global chamoji.composer true   # or without --global, for one repository
+git config --global chamoji.sendDiffs true  # optional: send the diff too
+```
+
+- **The gitmoji:** Jev's three likeliest gitmojis appear as a hint above the list. When it's very sure (90% or more), they move to the top instead, and the first is selected. Typing a search, or any key pressed before the answer arrives, keeps the list as it was.
+- **Breaking:** when Jev thinks the change may break something (70% or more), the last step says so. The default is still No; only you declare a breaking change.
+- **Split:** when the staged changes look like unrelated pieces of work, the title step suggests committing them separately.
+
+**What is sent:** the staged files' paths, with each one's status and the lines added and deleted, and the message's first line when `git commit` already has one. With `chamoji.sendDiffs`, the staged diff goes too: at most 200 lines per file and 2,000 in all, with private keys and common token formats replaced by `<redacted>`.
+
+**What is never sent:** secrets files and lockfiles, not even their names. That covers `.env*`, `.envrc`, `.npmrc`, `.netrc`, `credentials*`, `id_*` keys, `*.pem`, `*.key`, `*.p12`, `*.tfvars` and similar, any path containing "secret", and lockfiles. The request says only how many files were left out.
+
+**The opt-in lives in git config,** not in a file in the repository, so a repository you clone can't switch it on for you. The key comes from `TYPESAFE_API_KEY`, or that line in an untracked `.env.local` or `.env`.
+
 ## Cutting a release
 
 ```bash
@@ -225,6 +244,7 @@ chamoji changelog --ai
 - **If a request fails:** chamoji stops sending, keeps the picks it already has, and leaves the rest in Miscellaneous.
 - **What it never does:** override an emoji or type the author wrote, or mark a change as breaking. Only authors declare breaking changes.
 - **Where the key comes from:** the `TYPESAFE_API_KEY` environment variable, or else that one line from `.env.local` or `.env` in the current folder. No other variable in those files is read.
+- **Asking once:** Jev's answers are kept in `.git/chamoji/cache.json`, keyed by commit, so the next run doesn't ask about those commits again. The file holds only each commit's pick and confidence.
 - **Without `--ai`:** chamoji makes no network calls.
 
 ## Update notice

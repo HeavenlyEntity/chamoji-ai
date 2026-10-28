@@ -27,25 +27,25 @@ These apply to every milestone. A plan that breaks one needs a written reason.
 
 ## Status
 
-| #   | Milestone                           | Phase                      | Lever       | Size | Status                                         | Plan                                                                   |
-| --- | ----------------------------------- | -------------------------- | ----------- | ---- | ---------------------------------------------- | ---------------------------------------------------------------------- |
-| 1   | Changelog engine                    | 0 Foundation               | Activation  | M    | ✅ Shipped in 0.1.0                            | [plan](superpowers/plans/2026-10-27-milestone-1-changelog-engine.md)   |
-| 1.5 | Plain commits, Dependencies, `--ai` | 0 Foundation               | Activation  | M    | ✅ Shipped in 0.2.0                            | — (built from chat scope)                                              |
-| 1.6 | Use it ourselves                    | 0 Foundation               | Retention   | S    | ✅ Shipped in 0.3.0                            | [plan](superpowers/plans/2026-10-28-milestone-1.6-use-it-ourselves.md) |
-| 2   | Public launch kit                   | 1 Activation & acquisition | Acquisition | S    | ✅ Done (all items shipped)                    | [plan](superpowers/plans/2026-10-28-milestone-2-public-launch-kit.md)  |
-| 3   | GitHub Action                       | 1 Activation & acquisition | Acquisition | M    | ✅ Shipped in 0.5.0 (Marketplace listing left) | [plan](superpowers/plans/2026-10-28-milestone-3a-release-command.md)   |
-| 4   | Commit composer and git hook        | 2 Retention                | Retention   | L    | 🚧 Built, release pending                      | [plan](superpowers/plans/2026-10-28-milestone-4-commit-composer.md)    |
-| 5   | Jev in the composer                 | 2 Retention                | Retention   | M    | Planned                                        | —                                                                      |
-| 6   | Workstreams                         | 3 Differentiation          | Retention   | L    | Planned                                        | —                                                                      |
-| 7   | Project memory                      | 3 Differentiation          | Retention   | L    | Planned                                        | —                                                                      |
-| 8   | Review packets                      | 3 Differentiation          | Expansion   | L    | Planned                                        | —                                                                      |
-| 9   | Retroactive grouping                | 3 Differentiation          | Activation  | M    | Planned                                        | —                                                                      |
-| 10  | Editor extension                    | 4 Surfaces                 | Acquisition | L    | Planned                                        | —                                                                      |
-| 11  | Local daemon on iii                 | 4 Surfaces                 | Retention   | M    | Planned                                        | —                                                                      |
-| 12  | Desktop app (Tauri)                 | 4 Surfaces                 | Retention   | L    | Planned                                        | —                                                                      |
-| 13  | Cloud: hosted release notes         | 5 Expansion                | Expansion   | L    | Planned                                        | —                                                                      |
-| 14  | Cloud: team memory and review       | 5 Expansion                | Expansion   | L    | Planned                                        | —                                                                      |
-| 15  | Cloud: billing and organizations    | 5 Expansion                | Expansion   | M    | Planned                                        | —                                                                      |
+| #   | Milestone                           | Phase                      | Lever       | Size | Status                                         | Plan                                                                    |
+| --- | ----------------------------------- | -------------------------- | ----------- | ---- | ---------------------------------------------- | ----------------------------------------------------------------------- |
+| 1   | Changelog engine                    | 0 Foundation               | Activation  | M    | ✅ Shipped in 0.1.0                            | [plan](superpowers/plans/2026-10-27-milestone-1-changelog-engine.md)    |
+| 1.5 | Plain commits, Dependencies, `--ai` | 0 Foundation               | Activation  | M    | ✅ Shipped in 0.2.0                            | — (built from chat scope)                                               |
+| 1.6 | Use it ourselves                    | 0 Foundation               | Retention   | S    | ✅ Shipped in 0.3.0                            | [plan](superpowers/plans/2026-10-28-milestone-1.6-use-it-ourselves.md)  |
+| 2   | Public launch kit                   | 1 Activation & acquisition | Acquisition | S    | ✅ Done (all items shipped)                    | [plan](superpowers/plans/2026-10-28-milestone-2-public-launch-kit.md)   |
+| 3   | GitHub Action                       | 1 Activation & acquisition | Acquisition | M    | ✅ Shipped in 0.5.0 (Marketplace listing left) | [plan](superpowers/plans/2026-10-28-milestone-3a-release-command.md)    |
+| 4   | Commit composer and git hook        | 2 Retention                | Retention   | L    | 🚧 Built, release pending                      | [plan](superpowers/plans/2026-10-28-milestone-4-commit-composer.md)     |
+| 5   | Jev in the composer                 | 2 Retention                | Retention   | M    | 🚧 Built, release pending                      | [plan](superpowers/plans/2026-10-28-milestone-5-jev-in-the-composer.md) |
+| 6   | Workstreams                         | 3 Differentiation          | Retention   | L    | Planned                                        | —                                                                       |
+| 7   | Project memory                      | 3 Differentiation          | Retention   | L    | Planned                                        | —                                                                       |
+| 8   | Review packets                      | 3 Differentiation          | Expansion   | L    | Planned                                        | —                                                                       |
+| 9   | Retroactive grouping                | 3 Differentiation          | Activation  | M    | Planned                                        | —                                                                       |
+| 10  | Editor extension                    | 4 Surfaces                 | Acquisition | L    | Planned                                        | —                                                                       |
+| 11  | Local daemon on iii                 | 4 Surfaces                 | Retention   | M    | Planned                                        | —                                                                       |
+| 12  | Desktop app (Tauri)                 | 4 Surfaces                 | Retention   | L    | Planned                                        | —                                                                       |
+| 13  | Cloud: hosted release notes         | 5 Expansion                | Expansion   | L    | Planned                                        | —                                                                       |
+| 14  | Cloud: team memory and review       | 5 Expansion                | Expansion   | L    | Planned                                        | —                                                                       |
+| 15  | Cloud: billing and organizations    | 5 Expansion                | Expansion   | M    | Planned                                        | —                                                                       |
 
 **Statuses:** ✅ shipped · 🚧 in progress · ⏭ next · Planned · ⏸ parked.
 
@@ -384,10 +384,10 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
   - "is this breaking?"
   - "should this be split?"
 - **Diff privacy:**
-  - diff content is sent only with a separate opt-in (`ai.sendDiffs`)
+  - diff content is sent only with a separate opt-in (`chamoji.sendDiffs`)
   - by default, only file paths and stats are sent
   - a path denylist (`.env*`, keys, lockfiles)
-- **A judgment cache** in `.git/chamoji/cache`, keyed by commit hash or diff hash. `changelog --ai` then stops re-asking about old commits.
+- **A judgment cache** in `.git/chamoji/cache.json`, keyed by commit hash. `changelog --ai` then stops re-asking about old commits.
 - **Tune the confidence cutoffs** on labelled history: the gitmoji repos' own emojis serve as the labels.
 - **Optional prose:** a pluggable LLM drafts the title, using Claude or a local model through Ollama.
 
@@ -398,6 +398,23 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 - A second `changelog --ai` run makes no requests for commits it already sorted.
 
 **Dependencies:** milestone 4.
+
+**Progress:** built, not yet released. Prose title drafts are left for later.
+
+- **The opt-in is git config,** `chamoji.composer` and `chamoji.sendDiffs`, not `chamoji.config.json`. A file in the repository would let a cloned repository send your staged changes on its own say.
+- **Measured** with `scripts/jev-eval.mjs` on 200 labelled commits from the gitmoji and gitmoji-cli repos. Latency was p50 about 100 ms, p95 120–150 ms with 4 requests in flight.
+
+  | Commits                      | Jev sees            | Top-1 | Top-3 |
+  | ---------------------------- | ------------------- | ----- | ----- |
+  | All (about 80% are ⬆️ bumps) | file list           | 80%   | 89%   |
+  | All                          | file list and title | 93%   | 96%   |
+  | Not ⬆️ bumps (`--no-bumps`)  | file list           | 26%   | 44%   |
+  | Not ⬆️ bumps                 | file list and title | 47%   | 72%   |
+
+- **Against the exit criteria:** latency and the cache pass. A second `changelog --ai` on meow sent no requests. Top-3 passes on the whole history, but not on commits other than dependency bumps: 44% from the file list, 72% with the title. Some of that is label noise, as "Add raycast to related tools page" is 📝 in that repo. Still, the gap is real.
+- **What the composer does with it:** the gitmoji step comes before the title, so Jev sees only the file list there. Its top pick is preselected only at 90% or more; on non-bump commits that was right 74% of the time, against 53% at 70%. Below that, the three suggestions show as a hint and the list keeps its order.
+- **Tuning so far:** the official 📦️ description, "Add or update compiled files or packages", drew most file-list-only commits to 📦️ (top-1 7%). A narrower description, plus guidance used only when there's no title, raised that to 80% without hurting the with-title numbers. The 60% cutoff for `--ai` is unchanged: the eval measures the advisor, which asks a different question from the changelog classifier.
+- **Open question:** asking for the title before the gitmoji would give Jev the title, and the 72% top-3 instead of 44%. That changes the order gitmoji-cli users know.
 
 ---
 
