@@ -15,6 +15,8 @@ These apply to both:
 
 ## Release workflow
 
+Copy `scripts/release.mjs` from this skill into the repo, for example as `scripts/release.mjs`, so CI runs a reviewed copy rather than whatever is on the internet that day. Then:
+
 ```yaml
 name: Release
 
@@ -38,56 +40,25 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-
-      - name: Pick the version
-        id: pick
-        env:
-          REQUESTED: ${{ inputs.version }}
-        run: |
-          if [ -n "$REQUESTED" ]; then
-            echo "version=$REQUESTED" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          set +e
-          version=$(npx --yes @chamoji/cli@latest next-version)
-          code=$?
-          set -e
-          if [ "$code" -eq 3 ]; then
-            echo "Nothing to release since the last tag."
-            exit 0
-          fi
-          [ "$code" -eq 0 ] || exit "$code"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      - name: Changelog, commit, tag, release
-        if: steps.pick.outputs.version != ''
-        env:
-          VERSION: ${{ steps.pick.outputs.version }}
+      - env:
+          VERSION: ${{ inputs.version }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -e
-          tag="v$VERSION"   # drop the v if the repo's tags have none
-          last=$(git tag --list --sort=-v:refname | head -n 1)
-          npx --yes @chamoji/cli@latest changelog --release "$tag" --output CHANGELOG.md
-          npx --yes @chamoji/cli@latest changelog ${last:+--from "$last"} --release "$tag" \
-            | sed '1{/^# Changelog$/d}' > "$RUNNER_TEMP/notes.md"
-          npm version "$VERSION" --no-git-tag-version   # or the repo's own version bump
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add CHANGELOG.md package.json package-lock.json 2>/dev/null || git add CHANGELOG.md package.json
-          git commit -m "🔖 Release $tag"
-          git tag -a "$tag" -m "$tag"
-          git push origin HEAD "$tag"
-          gh release create "$tag" --title "$tag" --notes-file "$RUNNER_TEMP/notes.md"
+          set +e
+          node scripts/release.mjs --push ${VERSION:+--version "$VERSION"}
+          code=$?
+          [ "$code" -eq 3 ] && exit 0   # nothing to release
+          exit "$code"
 ```
 
 Adapting it:
 
-- **Release on every push to main:** add `push: { branches: [main] }` under `on:`. Exit code 3 keeps docs-only and test-only pushes from cutting a release. The bot's own release commit doesn't retrigger the workflow, because it is pushed with `GITHUB_TOKEN`.
-- **Not a JavaScript package:** replace the `npm version` line with whatever bumps the manifest (`cargo set-version`, a `sed` on `pyproject.toml`), or delete it.
-- **Conventional Commits repo:** use `chore(release): 🔖 $tag` as the commit subject.
-- **Protected main:** have the job open a pull request instead, for example with `gh pr create`, and tag once it merges.
-- **Vague commits:** add `--ai` to both `changelog` calls and set `TYPESAFE_API_KEY` as a repository secret under `env:`.
+- **Release on every push to main:** add `push: { branches: [main] }` under `on:`. Exit code 3 keeps docs-only and test-only pushes from cutting a release, and the bot's own push doesn't retrigger the workflow, because it uses `GITHUB_TOKEN`.
+- **Protected main:** the bot can't push to main. Run the script without `--push` on a new branch, open a pull request with `gh pr create`, and push the tag once it merges.
+- **Vague commits:** add `--ai`, and set `TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}` under `env:`.
+- **Other manifests:** the script bumps `package.json`, `package-lock.json`, `pyproject.toml` and `Cargo.toml`. For anything else, add a step before it that edits the version, and commit it as part of the release.
 
 ## Notes workflow
 
