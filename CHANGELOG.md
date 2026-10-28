@@ -1,6 +1,28 @@
 # Changelog
 
-## v0.2.0 - 2026-10-28
+## v0.3.0 - 2026-10-28
+
+### Added
+
+- ✨ Read TYPESAFE_API_KEY from .env.local or .env (65262b6)
+
+### Changed
+
+- 🔨 Add pnpm release script (dfe9fe1)
+
+### Fixed
+
+- 🐛 Make pnpm release atomic, strict about flags, and Windows-safe (2c40d7f)
+
+### Documentation
+
+- 📝 Record milestone 1.6 results and plan the update notice (e5c7454)
+- 📝 Add a contributing guide and a default Documentation section (24901e0)
+- 📝 Plan milestone 1.6: use chamoji on its own repo (acff618)
+- 📝 Make the roadmap our single plan and add the dogfooding track (dd806ab)
+- 📝 Add the product roadmap (5dd4b77)
+
+## v0.2.0 - 2026-10-27
 
 ### Added
 
@@ -23,11 +45,15 @@
 
 - 🔒️ Send less to Jev and fail safely (4124a2f)
 
+### Documentation
+
+- 📝 Update changelog for v0.2.0 (3896372)
+- 📝 Position review packets against Graphite's current features (fc2087b)
+- 📝 Plan review packets and the editor extension (dd84b6f)
+
 ### Miscellaneous
 
 - 🙈 Ignore .env files (1a6bbae)
-- 📝 Position review packets against Graphite's current features (fc2087b)
-- 📝 Plan review packets and the editor extension (dd84b6f)
 
 ## v0.1.0 - 2026-10-27
 
@@ -54,6 +80,6 @@
 
 - 🔒️ Escape stray backticks in Markdown commit text (e006665)
 
-### Miscellaneous
+### Documentation
 
 - 📝 Add generated changelog (5ff690f)
