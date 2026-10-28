@@ -123,7 +123,33 @@ GUI surfaces (the desktop app, Cloud pages and the website) render the foil live
   --font-display: 'Marow Block', system-ui, sans-serif;
   ```
 
-**Interface text:** a readable sans for UI and body text, `system-ui` until the desktop design pass picks one. Code and terminal output use a monospace face.
+**Interface: Tansa Bold** (v1.000, by Panca Hasan / Drizy Font). The face for UI elements: buttons, tabs, navigation, badges, labels, section headings, card titles and short UI lines.
+
+- **Style:** a clean, bold grotesque with full Latin, including accented letters, so names like "Café" and "Ñandú" render properly.
+- **Weight:** only Bold (700) is here. Declare it with `font-weight: 700` so browsers don't fake a bold on top of it.
+- **Licensing:** the font files are local only, like Marow Block (see [`fonts/README.md`](fonts/README.md)). Its built-in embedding flag is "preview & print" (OS/2 `fsType` 4), which is stricter than Marow Block's. Check that its license covers embedding in the app and website before shipping.
+- **CSS:**
+
+  ```css
+  @font-face {
+  	font-family: 'Tansa';
+  	src: url('/fonts/Tansa-Bold.ttf') format('truetype');
+  	font-weight: 700;
+  	font-display: swap;
+  }
+  --font-ui: 'Tansa', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  ```
+
+**Body copy:** descriptions, help text, commit bodies and anything longer than a line use `--font-body` (`system-ui`, -apple-system, 'Segoe UI', sans-serif). It stays there until Tansa's Regular or Medium weights are added; Bold is too heavy for paragraphs.
+
+**Code and terminal output:** a monospace face.
+
+| Role                                    | Token            | Face             |
+| --------------------------------------- | ---------------- | ---------------- |
+| Wordmark, titles, hero lines            | `--font-display` | Marow Block      |
+| Buttons, tabs, labels, headings, badges | `--font-ui`      | Tansa Bold       |
+| Paragraphs and help text                | `--font-body`    | System sans      |
+| Code, hashes, terminal                  | `--font-mono`    | System monospace |
 
 **The original wordmark** (the thin, wide caps in `chamoji-logo.png`) is retired. Marow Block replaces it everywhere.
 

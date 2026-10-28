@@ -42,6 +42,22 @@ function Preview() {
 			</section>
 
 			<section className="panel">
+				<h2>UI type: Tansa Bold</h2>
+				<nav className="tabs">
+					<span className="tab active">Workstreams</span>
+					<span className="tab">Changelog</span>
+					<span className="tab">Review</span>
+					<span className="tab">Memory</span>
+				</nav>
+				<p className="ui-sample">Ship workstream · 12 commits · v0.4.0</p>
+				<p className="body-sample">
+					Body copy stays in the system font until Tansa's lighter weights are
+					added: long descriptions, help text and commit bodies read better in a
+					regular weight.
+				</p>
+			</section>
+
+			<section className="panel">
 				<h2>Display type: Marow Block</h2>
 				<p className="display">chamoji 0.4.0</p>
 				<p className="display small">workstreams · memory · review</p>

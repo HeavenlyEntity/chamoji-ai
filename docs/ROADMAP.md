@@ -436,7 +436,7 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 
 ### 12. Desktop app (Tauri)
 
-**Look:** built on [`docs/brand/BRAND.md`](brand/BRAND.md): the holographic foil plate, the pastel stops and ink text, light and dark themes. The foil is the `ChamojiFoil` preset over Iridescence, and the display type is Marow Block, embedded in the app bundle. Start with a design pass that picks the UI type and produces the missing SVG and icon assets.
+**Look:** built on [`docs/brand/BRAND.md`](brand/BRAND.md): the holographic foil plate, the pastel stops and ink text, light and dark themes. The foil is the `ChamojiFoil` preset over Iridescence, the display type is Marow Block and the UI type is Tansa Bold, both embedded in the app bundle. Start with a design pass that adds Tansa's lighter weights for body copy, if available, and produces the missing SVG and icon assets.
 
 **Scope:**
 
