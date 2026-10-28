@@ -181,7 +181,7 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 - ⬜ **Readme demo GIF.**
 - ⬜ **Cloud waitlist page** on Vercel.
 - ⬜ **Two messy benchmark repos.**
-- ⬜ **New About text** on the repo, to match the readme.
+- ✅ **New About text** on the repo, matching the readme.
 
 **What we learned getting the release to publish:**
 
