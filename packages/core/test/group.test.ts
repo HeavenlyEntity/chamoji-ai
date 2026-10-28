@@ -79,3 +79,23 @@ test('docs commits get their own Documentation section', () => {
 		['documentation', 'Documentation', 3],
 	]);
 });
+
+test('CI and test commits go to Maintenance, not Added', () => {
+	const groups = groupCommits(
+		[
+			commit('👷 Add CI'),
+			commit('✅ Add tests for the parser'),
+			commit('💚 Fix the CI build'),
+			commit('🧪 Add a failing test'),
+			commit('ci: run on Windows'),
+			commit('test: cover reverts'),
+			commit('Fix CI'),
+			commit('✨ Add search'),
+		],
+		DEFAULT_GROUP_CONFIG,
+	);
+	expect(groups.map(g => [g.group, g.label, g.commits.length])).toEqual([
+		['added', 'Added', 1],
+		['maintenance', 'Maintenance', 7],
+	]);
+});

@@ -5,9 +5,11 @@ import type {ChamojiConfig, GroupConfig} from './types.js';
 export const CONFIG_FILE = 'chamoji.config.json';
 
 /**
- * Keep a Changelog style sections. Every official gitmoji appears exactly once
- * (enforced by a test). The retired `apple`, `penguin`, `checkered_flag`,
- * `robot` and `green_apple` codes stay under Fixed for older histories.
+ * Keep a Changelog style sections, plus Documentation, Maintenance (CI and
+ * tests) and a collapsed Dependencies line. Every official gitmoji appears
+ * exactly once (enforced by a test). The retired `apple`, `penguin`,
+ * `checkered_flag`, `robot` and `green_apple` codes stay under Fixed for
+ * older histories.
  */
 export const DEFAULT_GROUP_CONFIG: GroupConfig = [
 	{
@@ -16,14 +18,11 @@ export const DEFAULT_GROUP_CONFIG: GroupConfig = [
 		emojis: [
 			'sparkles',
 			'tada',
-			'white_check_mark',
-			'construction_worker',
 			'chart_with_upwards_trend',
 			'loud_sound',
 			'globe_with_meridians',
 			'camera_flash',
 			'seedling',
-			'test_tube',
 			'necktie',
 			'triangular_flag_on_post',
 			'egg',
@@ -79,7 +78,6 @@ export const DEFAULT_GROUP_CONFIG: GroupConfig = [
 		emojis: [
 			'bug',
 			'ambulance',
-			'green_heart',
 			'pencil2',
 			'adhesive_bandage',
 			'apple',
@@ -95,6 +93,16 @@ export const DEFAULT_GROUP_CONFIG: GroupConfig = [
 		emojis: ['lock', 'closed_lock_with_key', 'passport_control'],
 	},
 	{group: 'documentation', label: 'Documentation', emojis: ['memo']},
+	{
+		group: 'maintenance',
+		label: 'Maintenance',
+		emojis: [
+			'construction_worker',
+			'green_heart',
+			'white_check_mark',
+			'test_tube',
+		],
+	},
 	{
 		group: 'dependencies',
 		label: 'Dependencies',

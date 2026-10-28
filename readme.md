@@ -61,6 +61,7 @@ git tag "v$version"
   - Version-only commits (`1.2.1`, `Release 3.0.0`) are hidden.
   - "Require Node.js 20" counts as a breaking change.
   - Chamoji doesn't add emojis to plain messages, so they appear as written.
+- **CI and test commits** (👷 💚 ✅ 🧪, `ci:`, `test:`, "Fix CI") go under Maintenance, so internal work doesn't read as new features.
 - **Dependency updates** (⬆️ ⬇️ 📌 ➕ ➖, `chore(deps):`, `fix(deps):` and Dependabot or Renovate subjects) are collapsed into a single line, such as `⬆️ 47 dependency updates: jest, vite, … and 12 more`. The JSON output keeps every commit.
 - **Breaking changes** are 💥, a `!` after any type (`feat!:`, `deps!:`), or a `BREAKING CHANGE:` footer. They are listed under Breaking changes and give a major bump.
 - **The next version** comes from each gitmoji's `semver` field (✨ minor, 🐛 patch, …).
