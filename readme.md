@@ -1,6 +1,26 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/HeavenlyEntity/chamoji-ai/main/docs/brand/chamoji-plate.png" alt="chamoji" width="560">
+</p>
+
+<p align="center">
+  <a href="https://github.com/HeavenlyEntity/chamoji-ai/actions/workflows/ci.yml"><img src="https://github.com/HeavenlyEntity/chamoji-ai/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://www.npmjs.com/package/@chamoji/cli"><img src="https://img.shields.io/npm/v/@chamoji/cli?color=bbbff2&label=npm" alt="npm version"></a>
+  <a href="https://www.npmjs.com/package/@chamoji/cli"><img src="https://img.shields.io/npm/dm/@chamoji/cli?color=afeee5" alt="npm downloads"></a>
+  <a href="https://www.npmjs.com/package/@chamoji/cli"><img src="https://img.shields.io/node/v/@chamoji/cli?color=faadc3" alt="Node version"></a>
+  <a href="https://github.com/HeavenlyEntity/chamoji-ai/blob/main/LICENSE"><img src="https://img.shields.io/github/license/HeavenlyEntity/chamoji-ai?color=fbcfb3" alt="MIT license"></a>
+</p>
+
+<p align="center"><strong>Every commit explains itself.</strong></p>
+
 # chamoji
 
-Changelogs from your git history. Chamoji reads [gitmoji](https://gitmoji.dev), [Conventional Commits](https://www.conventionalcommits.org) and plain messages like "Fix crash on startup". It groups them into Keep a Changelog sections and suggests the next semver version.
+Changelogs from your git history, however your team writes commits:
+
+- emoji commits in the [gitmoji](https://gitmoji.dev) convention (`✨ Add login`)
+- [Conventional Commits](https://www.conventionalcommits.org) (`feat: add login`)
+- plain messages (`Add login`)
+
+Chamoji groups them into readable sections, collapses dependency noise into one line, can sort vague commits with AI, and suggests the next semver version. It's its own engine, not a wrapper around gitmoji tools; gitmoji is one of the commit styles it understands.
 
 ## Install
 

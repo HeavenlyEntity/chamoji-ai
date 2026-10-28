@@ -162,18 +162,19 @@ The CLI shows the same palette where the terminal supports it:
 
 ## Assets
 
-| File                         | What it is                                                                                  |
-| ---------------------------- | ------------------------------------------------------------------------------------------- |
-| `chamoji-logo.png`           | The original logo, 500 × 233 px, kept for reference. The wordmark is now set in Marow Block |
-| `fonts/`                     | Marow Block, local only (git-ignored); see `fonts/README.md`                                |
-| `components/Iridescence.tsx` | The React Bits foil shader                                                                  |
-| `components/ChamojiFoil.tsx` | Chamoji's tuning, the foil surface and the logo plate                                       |
-| `preview/`                   | Sources for `pnpm brand:preview`                                                            |
-| `holo-preview.html`          | The CSS-only foil, swatches and samples (the fallback)                                      |
+| File                         | What it is                                                                                                                                                                                                     |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `chamoji-plate.png`          | The official logo: the foil plate with the Marow Block wordmark, 994 × 324 px, transparent. Regenerate with `scripts/render-logo.py` (a numpy port of the Iridescence shader with the `CHAMOJI_FOIL` settings) |
+| `chamoji-logo.png`           | The original logo, 500 × 233 px, kept for reference. The wordmark is now set in Marow Block                                                                                                                    |
+| `fonts/`                     | Marow Block, local only (git-ignored); see `fonts/README.md`                                                                                                                                                   |
+| `components/Iridescence.tsx` | The React Bits foil shader                                                                                                                                                                                     |
+| `components/ChamojiFoil.tsx` | Chamoji's tuning, the foil surface and the logo plate                                                                                                                                                          |
+| `preview/`                   | Sources for `pnpm brand:preview`                                                                                                                                                                               |
+| `holo-preview.html`          | The CSS-only foil, swatches and samples (the fallback)                                                                                                                                                         |
 
 **Still needed** before milestone 10:
 
-- a new SVG logo: the foil plate with the Marow Block wordmark outlined as paths, so it renders without the font file
+- an SVG version of `chamoji-plate.png`, with the wordmark outlined as paths
 - the mark on its own
 - app icons at 16–1024 px
 - a favicon
