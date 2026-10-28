@@ -27,6 +27,7 @@ const RULES: Array<[RegExp, string]> = [
 		'arrow_up',
 	],
 	[/^lock\s?file maintenance\b/i, 'arrow_up'],
+	[/^bump\s+the\s+\S+\s+group\b/i, 'arrow_up'],
 	[/^update\s+\S+\s+(?:action|monorepo|docker tag|digest)\b/i, 'arrow_up'],
 	[
 		new RegExp(
@@ -36,7 +37,10 @@ const RULES: Array<[RegExp, string]> = [
 		'arrow_up',
 	],
 	[/^bump\s+`?[@\w./-]+`?\s*$/i, 'arrow_up'],
-	[new RegExp(String.raw`^upgrad(?:e|es|ed|ing)\b.*\s${VERSION}`, 'i'), 'arrow_up'],
+	[
+		new RegExp(String.raw`^upgrad(?:e|es|ed|ing)\b.*\s${VERSION}`, 'i'),
+		'arrow_up',
+	],
 
 	// Topics, only when they are what the subject is about.
 	[/^(?:\w+\s+){0,2}(?:the\s+)?(?:readme|docs?|documentation)\b/i, 'memo'],
@@ -47,16 +51,16 @@ const RULES: Array<[RegExp, string]> = [
 		/^(?:add|adds|added|improve|update|fix)\s+(?:more\s+)?tests?\b|^tests?\b/i,
 		'white_check_mark',
 	],
-	[/^fix(?:es|ed|ing)?\b.*\b(?:security|vulnerabilit(?:y|ies)|cve-\d+)/i, 'lock'],
+	[
+		/^fix(?:es|ed|ing)?\b.*\b(?:security|vulnerabilit(?:y|ies)|cve-\d+)/i,
+		'lock',
+	],
 	[/^(?:security|cve-\d+)\b/i, 'lock'],
 	[
 		/^(?:improve|boost|increase)\s+(?:\w+\s+)?(?:performance|perf|speed)\b|^(?:optimi[sz]e[sd]?|speed\s+up)\b|^make\b.*\bfaster\b/i,
 		'zap',
 	],
-	[
-		/^(?:minor\s+)?(?:code\s+style|minor\s+code|style)\s+tweaks?\b/i,
-		'art',
-	],
+	[/^(?:minor\s+)?(?:code\s+style|minor\s+code|style)\s+tweaks?\b/i, 'art'],
 	[/^add(?:s|ed)?\s+missing\b/i, 'bug'],
 
 	// The leading verb.

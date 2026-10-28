@@ -233,3 +233,47 @@ test('guessed gitmojis are not shown as emojis', () => {
 	expect(markdown).toContain('- ✨ Add filters (');
 	expect(markdown).toContain('- ✨ Add sort (');
 });
+
+const summary = (subjects: string[]) =>
+	renderMarkdown({
+		releases: [
+			{
+				version: 'v1.0.0',
+				tag: 'v1.0.0',
+				previousTag: null,
+				date: null,
+				bump: null,
+				nextVersion: null,
+				groups: groupCommits(
+					subjects.map(s => commit(s)),
+					DEFAULT_GROUP_CONFIG,
+				),
+			},
+		],
+	})
+		.split('\n')
+		.find(line => line.startsWith('- ⬆️'));
+
+test('dependency summary keeps names that start with dev', () => {
+	expect(
+		summary([
+			'Bump devalue from 5.1.0 to 5.1.1',
+			'Bump devtools-protocol from 0.0.1 to 0.0.2',
+			'Update dev dependency eslint to v9',
+		]),
+	).toBe('- ⬆️ 3 dependency updates: devalue, devtools-protocol, eslint');
+});
+
+test('dependency summary counts Dependabot group updates, not group names', () => {
+	expect(
+		summary([
+			'Bump the minor-and-patch group with 5 updates',
+			'Bump the npm_and_yarn group across 2 directories with 3 updates',
+			'Bump jest from 30.3.0 to 30.5.0',
+		]),
+	).toBe('- ⬆️ 9 dependency updates: jest');
+});
+
+test('dependency summary escapes markdown in names', () => {
+	expect(summary(['Bump [x](y) from 1.0.0 to 2.0.0'])).not.toContain('[x](');
+});

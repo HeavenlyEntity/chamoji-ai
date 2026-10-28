@@ -46,25 +46,37 @@ export function emojiFor(commit: ParsedCommit): string {
 }
 
 const DEPENDENCY_NAME =
-	/^(?:bump|update|upgrade|downgrade|pin)\s+(?:the\s+)?(?:dev-?)?(?:dependency\s+)?([@\w./-]+)/i;
+	/^(?:bump|update|upgrade|downgrade|pin)\s+(?:the\s+)?(?:(?:dev[- ]?)?dependency\s+)?([@\w./-]+)/i;
 const NOT_A_NAME = /^(?:dependencies|deps|dev|all|minor|patch|major)$/i;
+/** Dependabot grouped updates: "Bump the npm group … with 5 updates". */
+const DEPENDABOT_GROUP =
+	/^bump\s+the\s+\S+\s+group\b.*?\bwith\s+(\d+)\s+updates?\b/i;
 const SHOWN_NAMES = 5;
 
 /**
  * One-line summary of a collapsed group of dependency updates, e.g.
  * `9 dependency updates: jest, vite, … and 2 more`. Names come from
- * Dependabot/Renovate-style subjects.
+ * Dependabot/Renovate-style subjects; a Dependabot group PR counts as the
+ * number of updates it bundles.
  */
 export function summarizeDependencies(commits: ParsedCommit[]): string {
 	const names = new Set<string>();
+	let updates = 0;
 	for (const commit of commits) {
+		const group = DEPENDABOT_GROUP.exec(commit.description);
+		if (group) {
+			updates += Number(group[1]);
+			continue;
+		}
+
+		updates++;
 		const name = DEPENDENCY_NAME.exec(commit.description)?.[1];
 		if (name && !NOT_A_NAME.test(name)) {
 			names.add(name);
 		}
 	}
 
-	const count = `${commits.length} dependency update${commits.length === 1 ? '' : 's'}`;
+	const count = `${updates} dependency update${updates === 1 ? '' : 's'}`;
 	if (names.size === 0) {
 		return count;
 	}
