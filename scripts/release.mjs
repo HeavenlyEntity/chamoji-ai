@@ -5,9 +5,11 @@
 //   pnpm release [--dry-run] [--trailer "Key: value"]...
 import {execFileSync, spawnSync} from 'node:child_process';
 import {readFileSync, writeFileSync} from 'node:fs';
+import {createRequire} from 'node:module';
 import path from 'node:path';
 import process from 'node:process';
 import {fileURLToPath} from 'node:url';
+import {parseArgs} from 'node:util';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const cli = path.join(root, 'packages/cli/dist/cli.js');
@@ -15,11 +17,34 @@ const packages = ['packages/core/package.json', 'packages/cli/package.json'];
 const changelog = 'CHANGELOG.md';
 const NOTHING_TO_RELEASE = 3;
 
-const args = process.argv.slice(2);
-const dryRun = args.includes('--dry-run');
-const trailers = args.flatMap((arg, index) =>
-	arg === '--trailer' && args[index + 1] ? ['--trailer', args[index + 1]] : [],
-);
+// Tools run through Node rather than through pnpm/npx shims, so this works
+// on Windows too, where those are .cmd files.
+const require = createRequire(path.join(root, 'package.json'));
+const tsc = require.resolve('typescript/bin/tsc');
+const prettier = require.resolve('prettier/bin/prettier.cjs');
+
+const fail = (message, code = 1) => {
+	console.error(`release: ${message}`);
+	process.exit(code);
+};
+
+// Strict, so a typo like --dryrun stops instead of cutting a real release.
+let flags;
+try {
+	({values: flags} = parseArgs({
+		options: {
+			'dry-run': {type: 'boolean', default: false},
+			trailer: {type: 'string', multiple: true, default: []},
+		},
+	}));
+} catch (error) {
+	fail(
+		`${error.message}\nusage: pnpm release [--dry-run] [--trailer "Key: value"]...`,
+	);
+}
+
+const dryRun = flags['dry-run'];
+const trailers = flags.trailer.flatMap(trailer => ['--trailer', trailer]);
 
 const run = (command, commandArgs, options = {}) =>
 	execFileSync(command, commandArgs, {
@@ -28,11 +53,6 @@ const run = (command, commandArgs, options = {}) =>
 		stdio: ['ignore', 'pipe', 'inherit'],
 		...options,
 	});
-
-const fail = (message, code = 1) => {
-	console.error(`release: ${message}`);
-	process.exit(code);
-};
 
 // 1. Check everything before changing anything.
 if (run('git', ['status', '--porcelain']).trim()) {
@@ -48,7 +68,11 @@ if (branch !== 'main') {
 	}
 }
 
-run('pnpm', ['build'], {stdio: ['ignore', 'ignore', 'inherit']});
+for (const project of ['packages/core', 'packages/cli']) {
+	run(process.execPath, [tsc, '-p', project], {
+		stdio: ['ignore', 'inherit', 'inherit'],
+	});
+}
 
 const next = spawnSync(process.execPath, [cli, 'next-version'], {
 	cwd: root,
@@ -80,8 +104,10 @@ if (dryRun) {
 	process.exit(0);
 }
 
-// 3. Write files, then commit and tag. Undo the file changes on failure.
+// 3. Write files, commit, tag. Any failure undoes everything: the tree was
+// clean when we started, so resetting to the starting commit loses nothing.
 const touched = [changelog, ...packages];
+const start = run('git', ['rev-parse', 'HEAD']).trim();
 try {
 	writeFileSync(path.join(root, changelog), markdown);
 	for (const file of packages) {
@@ -93,17 +119,24 @@ try {
 		);
 	}
 
-	run('pnpm', ['exec', 'prettier', '--write', ...touched], {
+	run(process.execPath, [prettier, '--write', ...touched], {
 		stdio: ['ignore', 'ignore', 'inherit'],
 	});
 	run('git', ['add', ...touched]);
 	run('git', ['commit', '-q', '-m', `🔖 Release ${tag}`, ...trailers]);
+	run('git', ['tag', '-a', tag, '-m', tag]);
 } catch (error) {
-	run('git', ['restore', '--staged', '--worktree', '--', ...touched]);
+	try {
+		run('git', ['reset', '-q', '--hard', start]);
+	} catch (undoError) {
+		fail(
+			`release failed (${error.message}) and could not be undone (${undoError.message}); reset to ${start} by hand`,
+		);
+	}
+
 	fail(`release failed and was undone: ${error.message}`);
 }
 
-run('git', ['tag', '-a', tag, '-m', tag]);
 console.log(`Released ${tag} locally. Next:
 
   git push --follow-tags

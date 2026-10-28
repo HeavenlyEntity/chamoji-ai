@@ -1,4 +1,4 @@
-import {mkdtemp, readFile, rm} from 'node:fs/promises';
+import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {afterEach, expect, test} from 'vitest';
@@ -163,6 +163,23 @@ test('--ai with a truncated API key explains the problem', async () => {
 		if (saved === undefined) {
 			delete process.env['TYPESAFE_API_KEY'];
 		} else {
+			process.env['TYPESAFE_API_KEY'] = saved;
+		}
+	}
+});
+
+test('--ai uses a key from .env.local in the repo', async () => {
+	repo = await createRepo([{commit: 'Tidelift tasks'}]);
+	await writeFile(path.join(repo.dir, '.env.local'), 'TYPESAFE_API_KEY=bad…\n');
+	const saved = process.env['TYPESAFE_API_KEY'];
+	delete process.env['TYPESAFE_API_KEY'];
+	try {
+		// The truncated-key check proves the file's key reached the client setup.
+		const {code, stderr} = await chamoji(['changelog', '--ai'], repo.dir);
+		expect(code).toBe(1);
+		expect(stderr).toContain('looks truncated');
+	} finally {
+		if (saved !== undefined) {
 			process.env['TYPESAFE_API_KEY'] = saved;
 		}
 	}

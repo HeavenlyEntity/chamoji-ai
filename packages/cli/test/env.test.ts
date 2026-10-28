@@ -48,10 +48,22 @@ test('other variables are never loaded into the environment', async () => {
 		path.join(dir, '.env.local'),
 		'GITHUB_TOKEN=secret\nTYPESAFE_API_KEY=key\n',
 	);
+	const before = {...process.env};
 	const env: NodeJS.ProcessEnv = {};
-	await readTypesafeKey(dir, env);
+	expect(await readTypesafeKey(dir, env)).toBe('key');
 	expect(env).toEqual({});
-	expect(process.env['GITHUB_TOKEN']).not.toBe('secret');
+	expect(process.env).toEqual(before);
+});
+
+test('a file with only other variables gives undefined', async () => {
+	await writeFile(path.join(dir, '.env.local'), 'GITHUB_TOKEN=secret\n');
+	expect(await readTypesafeKey(dir, {})).toBeUndefined();
+});
+
+test('an empty value in .env.local falls through to .env', async () => {
+	await writeFile(path.join(dir, '.env.local'), 'TYPESAFE_API_KEY=  \n');
+	await writeFile(path.join(dir, '.env'), 'TYPESAFE_API_KEY=from-env-file\n');
+	expect(await readTypesafeKey(dir, {})).toBe('from-env-file');
 });
 
 test('missing files and empty values give undefined', async () => {
