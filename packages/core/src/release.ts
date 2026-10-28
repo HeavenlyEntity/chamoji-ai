@@ -1,4 +1,4 @@
-import {readFile} from 'node:fs/promises';
+import {readFile, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import semver from 'semver';
 import {buildChangelog} from './changelog.js';
@@ -264,6 +264,58 @@ export async function planRelease(
 		start: await git('rev-parse', 'HEAD'),
 		warnings,
 	};
+}
+
+/**
+ * Writes the plan's changes, commits them with the release subject (and any
+ * trailers) and makes the annotated tag. If anything fails before the tag
+ * exists, the repository is reset to where it started and the error says so.
+ */
+export async function applyRelease(
+	plan: ReadyPlan,
+	options: {trailers?: string[]} = {},
+): Promise<{commit: string}> {
+	const git = async (...args: string[]) =>
+		(await runGit(args, plan.root)).trim();
+	try {
+		for (const change of plan.changes) {
+			await writeFile(path.join(plan.root, change.file), change.text);
+		}
+
+		await git('add', '--', ...plan.changes.map(change => change.file));
+		await git(
+			'commit',
+			'--quiet',
+			'-m',
+			plan.subject,
+			...(options.trailers ?? []).flatMap(trailer => ['--trailer', trailer]),
+		);
+		await git('tag', '-a', plan.tag, '-m', plan.tag);
+	} catch (error) {
+		await git('tag', '-d', plan.tag).catch(() => undefined);
+		await git('reset', '--quiet', '--hard', plan.start).catch(() => undefined);
+		throw new Error(
+			`${gitMessage(error)}\nRolled back to ${plan.start.slice(0, 7)}; nothing was released.`,
+		);
+	}
+
+	return {commit: await git('rev-parse', '--short', 'HEAD')};
+}
+
+/** Pushes HEAD and the release tag, by name, to origin. A failure keeps the local release. */
+export async function pushRelease(plan: ReadyPlan): Promise<void> {
+	try {
+		await runGit(['push', '--quiet', 'origin', 'HEAD', plan.tag], plan.root);
+	} catch (error) {
+		throw new Error(
+			`released ${plan.tag} locally, but the push failed; the release commit and tag are kept:\n${gitMessage(error)}`,
+		);
+	}
+}
+
+function gitMessage(error: unknown): string {
+	const {stderr, message} = error as Error & {stderr?: string};
+	return stderr?.trim() || message;
 }
 
 function stripTitle(markdown: string): string {

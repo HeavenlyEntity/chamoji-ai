@@ -1,11 +1,14 @@
-import {writeFile} from 'node:fs/promises';
+import {chmod, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {afterEach, expect, test} from 'vitest';
 import {DEFAULT_GROUP_CONFIG} from '../src/config.js';
 import {
+	applyRelease,
 	bumpManifest,
 	insertSection,
 	planRelease,
+	pushRelease,
 	releaseSubject,
 	tagPrefix,
 	type ReleaseOptions,
@@ -305,4 +308,98 @@ test('planRelease stops off the default branch unless told otherwise', async () 
 	await expect(plan(repo.dir, {anyBranch: true})).resolves.toMatchObject({
 		status: 'ready',
 	});
+});
+
+// --- applyRelease and pushRelease ---
+
+async function releasable(files: Record<string, string> = {}) {
+	const repo = await repoWith(widgets, files);
+	await gitOutput(repo.dir, ['config', 'user.name', 'Dev']);
+	await gitOutput(repo.dir, ['config', 'user.email', 'dev@example.com']);
+	return repo;
+}
+
+const head = async (dir: string, format = '%s') =>
+	(await gitOutput(dir, ['log', '-1', `--format=${format}`])).trim();
+
+test('applyRelease writes, commits and tags the release', async () => {
+	const repo = await releasable({
+		'package.json': '{\n\t"version": "1.2.0"\n}\n',
+	});
+	const result = await ready(repo.dir);
+	const {commit} = await applyRelease(result);
+	expect(await head(repo.dir)).toBe('🔖 Release v1.3.0');
+	expect(commit).toBe(await head(repo.dir, '%h'));
+	expect((await gitOutput(repo.dir, ['cat-file', '-t', 'v1.3.0'])).trim()).toBe(
+		'tag',
+	);
+	expect(
+		(await gitOutput(repo.dir, ['rev-list', '-n1', 'v1.3.0'])).trim(),
+	).toBe(await head(repo.dir, '%H'));
+	expect((await gitOutput(repo.dir, ['status', '--porcelain'])).trim()).toBe(
+		'',
+	);
+	expect(await readFile(path.join(repo.dir, 'package.json'), 'utf8')).toContain(
+		'"version": "1.3.0"',
+	);
+	expect(await readFile(path.join(repo.dir, 'CHANGELOG.md'), 'utf8')).toContain(
+		'## v1.3.0 - 2026-10-28',
+	);
+});
+
+test('applyRelease adds trailers to the release commit', async () => {
+	const repo = await releasable();
+	await applyRelease(await ready(repo.dir), {
+		trailers: ['Co-Authored-By: A <a@example.com>'],
+	});
+	expect(await head(repo.dir, '%B')).toContain(
+		'Co-Authored-By: A <a@example.com>',
+	);
+});
+
+test('applyRelease rolls back when the commit fails', async () => {
+	const repo = await releasable();
+	const hook = path.join(repo.dir, '.git', 'hooks', 'pre-commit');
+	await writeFile(hook, '#!/bin/sh\necho "hook says no" >&2\nexit 1\n');
+	await chmod(hook, 0o755);
+	const result = await ready(repo.dir);
+	await expect(applyRelease(result)).rejects.toThrow(/rolled back/i);
+	expect(await head(repo.dir, '%H')).toBe(result.start);
+	expect((await gitOutput(repo.dir, ['tag', '--list', 'v1.3.0'])).trim()).toBe(
+		'',
+	);
+	expect((await gitOutput(repo.dir, ['status', '--porcelain'])).trim()).toBe(
+		'',
+	);
+});
+
+test('pushRelease pushes HEAD and the tag, and a failed push keeps the release', async () => {
+	const repo = await releasable();
+	const remote = await mkdtemp(path.join(tmpdir(), 'chamoji-remote-'));
+	try {
+		await gitOutput(remote, ['init', '-q', '--bare']);
+		await gitOutput(repo.dir, ['remote', 'add', 'origin', remote]);
+		const result = await ready(repo.dir, {fetch: false});
+		await applyRelease(result);
+		await pushRelease(result);
+		const refs = await gitOutput(remote, [
+			'for-each-ref',
+			'--format=%(refname)',
+		]);
+		expect(refs).toContain('refs/tags/v1.3.0');
+		expect(refs).toContain('refs/heads/main');
+
+		await gitOutput(repo.dir, [
+			'remote',
+			'set-url',
+			'origin',
+			`${remote}-missing`,
+		]);
+		await expect(pushRelease(result)).rejects.toThrow(/kept/);
+		expect(
+			(await gitOutput(repo.dir, ['tag', '--list', 'v1.3.0'])).trim(),
+		).toBe('v1.3.0');
+	} finally {
+		await rm(remote, {recursive: true, force: true});
+	}
 });

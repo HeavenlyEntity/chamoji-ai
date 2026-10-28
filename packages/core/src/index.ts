@@ -29,9 +29,11 @@ export {
 export {
 	CHANGELOG_FILE,
 	ReleaseError,
+	applyRelease,
 	bumpManifest,
 	insertSection,
 	planRelease,
+	pushRelease,
 	releaseSubject,
 	tagPrefix,
 	type FileChange,
