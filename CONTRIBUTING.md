@@ -56,11 +56,11 @@ pnpm build && node packages/cli/dist/cli.js changelog | head -40
 ## Releases (maintainers)
 
 ```bash
-pnpm release --dry-run   # shows the next version and its changelog section
-pnpm release             # bumps both packages, writes CHANGELOG.md, commits and tags
+pnpm release --dry-run   # builds, then shows the next version and its changelog section
+pnpm release             # builds, then runs `chamoji release`: CHANGELOG.md, both packages, commit and tag
 git push --follow-tags
 pnpm publish -r
 ```
 
-- `pnpm release` runs only on `main`, with a clean working tree.
+- `pnpm release` is `chamoji release` from this checkout, so it runs only on `main` (origin's default), with a clean working tree.
 - It picks the version with `chamoji next-version`. When nothing since the last tag needs a release, it stops with exit code 3 and changes nothing.

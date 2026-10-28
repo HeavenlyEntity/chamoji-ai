@@ -39,6 +39,7 @@ chamoji changelog --output CHANGELOG.md    # write a file
 chamoji changelog --format html --output changelog.html
 chamoji changelog --format json            # machine-readable
 chamoji next-version                       # e.g. 1.3.0
+chamoji release                            # cut a release (see below)
 ```
 
 `next-version` exits with code 3 and prints nothing to stdout when no commit since the last tag implies a version bump (only docs, tests or refactors, say).
@@ -53,15 +54,25 @@ chamoji next-version                       # e.g. 1.3.0
 | `--config <file>`     | Config file (default `chamoji.config.json` when present)                                                                                                |
 | `--ai`                | Sort the commits no rule can place with [Jev](https://typesafe.ai) (see below)                                                                          |
 
-Typical release flow:
+## Cutting a release
 
 ```bash
-set -e
-version=$(chamoji next-version)   # stops here when nothing needs releasing
-chamoji changelog --release "$version" --output CHANGELOG.md
-git commit -am "🔖 Release v$version"
-git tag "v$version"
+chamoji release --dry-run   # the version and notes it would release; changes nothing
+chamoji release             # CHANGELOG.md, version bumps, release commit and tag
+chamoji release 2.0.0-rc.1  # a version you choose, such as a prerelease
+chamoji release --push      # also push the commit and tag, and create the GitHub release
 ```
+
+It does, in order:
+
+1. **Checks:** a clean working tree, origin's default branch (`--any-branch` to skip that check), and the full history. A shallow clone is unshallowed and tags are fetched first.
+2. **Version:** the one `next-version` picks, or the one you give. The tag follows your tags' style, `v1.4.0` or `1.4.0`.
+3. **CHANGELOG.md:** chamoji's section for the release goes above the last one, below any `Unreleased` section, and older entries are left exactly as they are. A repo without the file gets one written from the whole history.
+4. **Version bumps:** every tracked `package.json`, `package-lock.json`, `pyproject.toml` or `Cargo.toml` that carries the previous version.
+5. **Commit and tag:** a release commit in your repo's style (`🔖 Release v1.4.0`, `chore(release): 🔖 v1.4.0` or `Release v1.4.0`), which chamoji leaves out of later changelogs, and an annotated tag. If anything fails before the tag exists, the repo is reset to where it started.
+6. **With `--push`:** it pushes `HEAD` and that one tag, then runs `gh release create` with the notes when the [GitHub CLI](https://cli.github.com) is installed. A failed push keeps the local release.
+
+`--trailer "Key: value"` adds trailer lines to the release commit, `--json` prints the result for scripts, and `--ai` works as it does for `changelog`. Exit codes: 0 released, 3 nothing to release, 2 a check failed (the message says which), 1 anything else.
 
 ## Release from your coding agent
 
