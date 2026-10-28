@@ -42,6 +42,7 @@ chamoji changelog --format html --output changelog.html
 chamoji changelog --format json            # machine-readable
 chamoji next-version                       # e.g. 1.3.0
 chamoji release                            # cut a release (see below)
+chamoji commit                             # write a commit (see below)
 ```
 
 `next-version` exits with code 3 and prints nothing to stdout when no commit since the last tag implies a version bump (only docs, tests or refactors, say).
@@ -56,6 +57,58 @@ chamoji release                            # cut a release (see below)
 | `--since <ref>`       | Only the commits after this ref, as one Unreleased section, to preview a branch: `--since origin/main`                                                  |
 | `--config <file>`     | Config file (default `chamoji.config.json` when present)                                                                                                |
 | `--ai`                | Sort the commits no rule can place with [Jev](https://typesafe.ai) (see below)                                                                          |
+
+## Writing commits
+
+The changelog is only as good as the commits. The composer helps write commits that sort themselves.
+
+```bash
+chamoji commit           # compose a commit
+chamoji commit -a        # and include every tracked change
+chamoji hook install     # offer the composer on a plain `git commit`
+chamoji hook uninstall
+```
+
+The composer asks for:
+
+1. **A gitmoji,** from a search list. Type `bug`, `fix` or a few letters such as `spk`, and pick with the arrow keys.
+2. **The scope**
+3. **The title**
+4. **A body**
+5. **Why?** This is kept as a `Why:` trailer.
+6. **Whether it breaks anything.** If it does, it adds a `BREAKING CHANGE:` trailer.
+
+Enter moves on, Esc goes back and Ctrl-C cancels. It writes `✨ (auth): Add login`, or `:sparkles: (auth): Add login` with `emojiFormat: "code"`.
+
+**The hook** opens the same composer when you run `git commit` with no message. It stays out of the way:
+
+- It never runs for `git commit -m` or `-F`, merges, squashes, amends or rebases.
+- It never runs when the message already has a gitmoji.
+- It never runs in CI, or without a terminal, as with an editor's commit button.
+- Ctrl-C keeps git's own message, so the hook never blocks a commit.
+
+**Hook managers:**
+
+- **husky:** `chamoji hook install` prints the line to add to `.husky/prepare-commit-msg`: `chamoji hook run "$@"`.
+- **lefthook:** add this to `lefthook.yml`:
+
+  ```yaml
+  prepare-commit-msg:
+    commands:
+      chamoji:
+        run: chamoji hook run {1} {2} {3}
+        interactive: true
+  ```
+
+**Switching from gitmoji-cli:** run `chamoji hook install`. It replaces gitmoji-cli's hook, and leaves any other hook alone. Your settings carry over. chamoji reads `.gitmojirc.json`, or the `gitmoji` key in `package.json`, for these keys:
+
+- `emojiFormat`
+- `scopePrompt`
+- `messagePrompt`
+- `capitalizeTitle`
+- `autoAdd`, which stages everything first
+
+Without a config, chamoji writes the emoji character and asks for a scope.
 
 ## Cutting a release
 

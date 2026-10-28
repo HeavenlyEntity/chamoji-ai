@@ -34,7 +34,7 @@ These apply to every milestone. A plan that breaks one needs a written reason.
 | 1.6 | Use it ourselves                    | 0 Foundation               | Retention   | S    | ✅ Shipped in 0.3.0                            | [plan](superpowers/plans/2026-10-28-milestone-1.6-use-it-ourselves.md) |
 | 2   | Public launch kit                   | 1 Activation & acquisition | Acquisition | S    | ✅ Done (all items shipped)                    | [plan](superpowers/plans/2026-10-28-milestone-2-public-launch-kit.md)  |
 | 3   | GitHub Action                       | 1 Activation & acquisition | Acquisition | M    | ✅ Shipped in 0.5.0 (Marketplace listing left) | [plan](superpowers/plans/2026-10-28-milestone-3a-release-command.md)   |
-| 4   | Commit composer and git hook        | 2 Retention                | Retention   | L    | Planned                                        | —                                                                      |
+| 4   | Commit composer and git hook        | 2 Retention                | Retention   | L    | 🚧 Built, release pending                      | [plan](superpowers/plans/2026-10-28-milestone-4-commit-composer.md)    |
 | 5   | Jev in the composer                 | 2 Retention                | Retention   | M    | Planned                                        | —                                                                      |
 | 6   | Workstreams                         | 3 Differentiation          | Retention   | L    | Planned                                        | —                                                                      |
 | 7   | Project memory                      | 3 Differentiation          | Retention   | L    | Planned                                        | —                                                                      |
@@ -326,6 +326,24 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 **Goal:** chamoji is in the path of every commit, not only every release.
 
 ### 4. Commit composer and git hook
+
+**Progress (2026-10-28):** built, waiting for its release.
+
+- ✅ **`chamoji commit`** with the Ink composer:
+  - gitmoji search, then scope, title, body, why and breaking
+  - Enter moves on, Esc goes back, Ctrl-C cancels
+  - `emojiFormat`
+  - a `Why:` trailer
+- ✅ **`chamoji hook install` / `uninstall`** for `prepare-commit-msg`, with gitmoji-cli's edge cases:
+  - it skips -m, merges, squashes, amends, rebases, CI, messages that already have a gitmoji, and anything without a terminal
+  - Ctrl-C never blocks the commit
+  - it opens `/dev/tty` itself (CONIN$ on Windows)
+- ✅ **One-command switch:** install replaces gitmoji-cli's hook and reads `.gitmojirc.json` and the `gitmoji` key in `package.json`.
+- ✅ **husky and lefthook:** install prints the line, or the `lefthook.yml` snippet, to add.
+- ✅ **Exit-criteria checks:** `scripts/hook-e2e.py` makes real commits through the hook. The Hook workflow runs it for bash, zsh, fish and PowerShell on Linux and macOS, for husky and lefthook, and on Windows without a terminal.
+  - Passed locally for bash, zsh, husky and lefthook.
+  - fish and PowerShell are checked by the workflow's first run.
+  - The interactive composer on Windows (CONIN$) isn't covered by a test yet.
 
 **Why:** running a changelog happens once per release, which is too rare to build a habit. Writing commits happens every day.
 
