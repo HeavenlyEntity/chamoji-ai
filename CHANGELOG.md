@@ -1,5 +1,23 @@
 # Changelog
 
+## [v0.6.0](https://github.com/HeavenlyEntity/chamoji-ai/compare/v0.5.0...v0.6.0) - 2026-10-28
+
+### Added
+
+- ✨ Read Component: and \[tag\] prefixes in plain commit subjects ([b41685b](https://github.com/HeavenlyEntity/chamoji-ai/commit/b41685b8930865be210830ab7dac4dc65a446a23))
+
+### Changed
+
+- ⚡️ Point the release skill at chamoji release and the Action ([67087a5](https://github.com/HeavenlyEntity/chamoji-ai/commit/67087a52fe1d13ca41b2138fa02a6bda6f9e3e77))
+
+### Fixed
+
+- 🐛 File typo fixes under Documentation, not Fixed ([a4e2f58](https://github.com/HeavenlyEntity/chamoji-ai/commit/a4e2f58b238e2cb8fa3afb75e6c2f7886a2549e7))
+
+### Documentation
+
+- 📝 Record 0.5.0 and the Action's exit criteria as met ([dfe4f77](https://github.com/HeavenlyEntity/chamoji-ai/commit/dfe4f7763a3fc9b095f81a03085e04fdc6ee7c15))
+
 ## [v0.5.0](https://github.com/HeavenlyEntity/chamoji-ai/compare/v0.4.0...v0.5.0) - 2026-10-28
 
 ### Added
