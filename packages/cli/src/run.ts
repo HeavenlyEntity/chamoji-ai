@@ -1,24 +1,31 @@
 import {execFile} from 'node:child_process';
-import {writeFile} from 'node:fs/promises';
+import {existsSync} from 'node:fs';
+import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {
 	applyRelease,
 	buildChangelog,
+	loadComposeConfig,
 	loadConfig,
 	planRelease,
 	pushRelease,
 	ReleaseError,
 	render,
 	runGit,
+	shouldPrompt,
 	type CommitClassifier,
+	type ComposeConfig,
 	type OutputFormat,
 	type ReadyPlan,
 } from '@chamoji/core';
 import {TypeSafeClient} from '@typesafe-ai/sdk';
 import meow from 'meow';
+import {compose} from './composer.js';
 import {readTypesafeKey} from './env.js';
 import {HookError, installHook, uninstallHook} from './hook.js';
 import {createJevClassifier} from './jev-classifier.js';
+import {openTerminal} from './tty.js';
 import type {UpdateCheck} from './update-check.js';
 
 export type Io = {
@@ -33,6 +40,25 @@ export type Io = {
 	gh?: GhRunner;
 	/** `release` fetches tags from origin first; tests turn it off. Default true. */
 	fetchTags?: boolean;
+	/** The terminal the composer runs on, or null when there is none; tests pass a fake. */
+	terminal?: () => ComposerTerminal | null;
+	/** Environment for the hook's CI check; defaults to process.env. */
+	env?: Record<string, string | undefined>;
+};
+
+export type ComposerTerminal = {
+	compose(config: ComposeConfig): Promise<string | null>;
+	close(): void;
+};
+
+const realTerminal = (): ComposerTerminal | null => {
+	const terminal = openTerminal();
+	return terminal
+		? {
+				compose: async config => compose(config, terminal),
+				close: () => terminal.close(),
+			}
+		: null;
 };
 
 export type GhRunner = (
@@ -60,6 +86,8 @@ const HELP = `
 	                                   (exits 3 when no release is needed)
 	  $ chamoji release [version]      Cut a release: CHANGELOG.md, version
 	                                   bumps, release commit and tag
+	  $ chamoji commit [-a]            Write a commit with the composer
+	                                   (-a commits all tracked changes)
 	  $ chamoji hook install           Offer the composer on a plain
 	                                   \`git commit\` (uninstall to remove)
 
@@ -127,6 +155,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
 			trailer: {type: 'string', isMultiple: true},
 			anyBranch: {type: 'boolean'},
 			json: {type: 'boolean'},
+			all: {type: 'boolean', shortFlag: 'a'},
 			help: {type: 'boolean', shortFlag: 'h'},
 			version: {type: 'boolean', shortFlag: 'v'},
 		},
@@ -145,7 +174,8 @@ export async function run(argv: string[], io: Io): Promise<number> {
 
 	// The refresh runs detached and the notice comes from the cache, so the
 	// check never delays the command or touches stdout.
-	const check = flags.updateCheck ? io.updateCheck : undefined;
+	const check =
+		flags.updateCheck && cli.input[0] !== 'hook' ? io.updateCheck : undefined;
 	check?.refreshIfStale();
 	const code = await execute(cli.input[0]);
 	const notice = check?.notice();
@@ -222,6 +252,10 @@ export async function run(argv: string[], io: Io): Promise<number> {
 					return await hook(cli.input[1]);
 				}
 
+				case 'commit': {
+					return await commit();
+				}
+
 				default: {
 					io.stderr(
 						`${command ? `chamoji: unknown command "${command}"\n` : ''}${cli.help}\n`,
@@ -232,6 +266,109 @@ export async function run(argv: string[], io: Io): Promise<number> {
 		} catch (error) {
 			io.stderr(`chamoji: ${(error as Error).message}\n`);
 			return error instanceof ReleaseError ? PREFLIGHT_FAILED : 1;
+		}
+	}
+
+	async function commit(): Promise<number> {
+		const root = (
+			await runGit(['rev-parse', '--show-toplevel'], io.cwd)
+		).trim();
+		const config = await loadComposeConfig(root);
+		const terminal = (io.terminal ?? realTerminal)();
+		if (!terminal) {
+			io.stderr(
+				'chamoji: commit needs a terminal to ask on; in scripts, use git commit -m\n',
+			);
+			return PREFLIGHT_FAILED;
+		}
+
+		let message: string | null;
+		try {
+			message = await terminal.compose(config);
+		} finally {
+			terminal.close();
+		}
+
+		if (message === null) {
+			io.stderr('Cancelled; nothing was committed.\n');
+			return 1;
+		}
+
+		const dir = await mkdtemp(path.join(tmpdir(), 'chamoji-commit-'));
+		const file = path.join(dir, 'COMMIT_EDITMSG');
+		try {
+			await writeFile(file, `${message}\n`);
+			// gitmoji-cli's autoAdd stages everything, as `git add .` does.
+			if (config.autoAdd) await runGit(['add', '--all'], io.cwd);
+			io.stdout(
+				await runGit(
+					['commit', '-F', file, ...(flags.all ? ['--all'] : [])],
+					io.cwd,
+				),
+			);
+			return 0;
+		} catch (error) {
+			const {stdout = '', stderr = ''} = error as {
+				stdout?: string;
+				stderr?: string;
+			};
+			io.stderr(`${`${stdout}${stderr}`.trim() || (error as Error).message}\n`);
+			return 1;
+		} finally {
+			await rm(dir, {recursive: true, force: true});
+		}
+	}
+
+	/**
+	 * What the installed prepare-commit-msg hook runs. It opens the composer
+	 * only when shouldPrompt says so, and always exits 0 with the message
+	 * file unchanged unless a message was composed, so it never blocks a commit.
+	 */
+	async function runHook(
+		file: string | undefined,
+		source: string | undefined,
+	): Promise<number> {
+		if (!file) return 0;
+		let terminal: ComposerTerminal | null = null;
+		try {
+			const messageFile = path.resolve(io.cwd, file);
+			const original = await readFile(messageFile, 'utf8');
+			const gitDir = (
+				await runGit(['rev-parse', '--absolute-git-dir'], io.cwd)
+			).trim();
+			const rebasing =
+				existsSync(path.join(gitDir, 'rebase-merge')) ||
+				existsSync(path.join(gitDir, 'rebase-apply'));
+			terminal = (io.terminal ?? realTerminal)();
+			const decision = shouldPrompt({
+				source,
+				message: original,
+				isTTY: terminal !== null,
+				env: io.env ?? process.env,
+				rebasing,
+			});
+			if (!decision.prompt || !terminal) return 0;
+
+			const root = (
+				await runGit(['rev-parse', '--show-toplevel'], io.cwd)
+			).trim();
+			const message = await terminal.compose(await loadComposeConfig(root));
+			if (message === null) return 0;
+
+			// Keep git's comment lines, such as the list of changes, below the message.
+			const comments = original
+				.split('\n')
+				.filter(line => line.startsWith('#'));
+			await writeFile(
+				messageFile,
+				`${message}\n${comments.length > 0 ? `\n${comments.join('\n')}\n` : ''}`,
+			);
+			return 0;
+		} catch (error) {
+			io.stderr(`chamoji: hook skipped (${(error as Error).message})\n`);
+			return 0;
+		} finally {
+			terminal?.close();
 		}
 	}
 
@@ -265,6 +402,10 @@ export async function run(argv: string[], io: Io): Promise<number> {
 
 					throw error;
 				}
+			}
+
+			case 'run': {
+				return runHook(cli.input[2], cli.input[3]);
 			}
 
 			case 'uninstall': {

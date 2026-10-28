@@ -128,3 +128,167 @@ test('hook with no subcommand explains the choices', async () => {
 	expect(code).toBe(2);
 	expect(stderr).toContain('install, uninstall or run');
 });
+
+// --- hook run and chamoji commit, with a fake terminal ---
+
+function fakeTerminal(message: string | null) {
+	const calls: string[] = [];
+	return {
+		calls,
+		terminal: () => ({
+			async compose() {
+				calls.push('compose');
+				return message;
+			},
+			close() {
+				calls.push('close');
+			},
+		}),
+	};
+}
+
+async function withTerminal(
+	argv: string[],
+	cwd: string,
+	terminal: () => {compose(): Promise<string | null>; close(): void} | null,
+	env: Record<string, string | undefined> = {},
+) {
+	let stdout = '';
+	let stderr = '';
+	const code = await run(argv, {
+		cwd,
+		stdout: text => (stdout += text),
+		stderr: text => (stderr += text),
+		terminal,
+		env,
+	});
+	return {code, stdout, stderr};
+}
+
+const TEMPLATE =
+	'\n# Please enter the commit message for your changes.\n#\n# Changes to be committed:\n#\tmodified:   app.ts\n';
+
+async function messageFile(dir: string, text = TEMPLATE) {
+	const file = path.join(dir, '.git', 'COMMIT_EDITMSG');
+	await writeFile(file, text);
+	return file;
+}
+
+test('hook run writes the composed message above git’s comments', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	const file = await messageFile(repo.dir);
+	const fake = fakeTerminal('🐛 (api): Fix timeout');
+	const {code} = await withTerminal(
+		['hook', 'run', file],
+		repo.dir,
+		fake.terminal,
+	);
+	expect(code).toBe(0);
+	const written = await readFile(file, 'utf8');
+	expect(written.startsWith('🐛 (api): Fix timeout\n\n# Please enter')).toBe(
+		true,
+	);
+	expect(written).toContain('#\tmodified:   app.ts');
+	expect(fake.calls).toEqual(['compose', 'close']);
+});
+
+test('hook run leaves -m, cancelled and terminal-less commits alone', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	const file = await messageFile(repo.dir);
+
+	const fromM = fakeTerminal('🐛 Nope');
+	await withTerminal(
+		['hook', 'run', file, 'message'],
+		repo.dir,
+		fromM.terminal,
+	);
+	expect(fromM.calls).toEqual(['close']);
+
+	const cancelled = fakeTerminal(null);
+	await withTerminal(['hook', 'run', file], repo.dir, cancelled.terminal);
+	expect(cancelled.calls).toEqual(['compose', 'close']);
+
+	const none = await withTerminal(['hook', 'run', file], repo.dir, () => null);
+	expect(none.code).toBe(0);
+
+	const ci = fakeTerminal('🐛 Nope');
+	await withTerminal(['hook', 'run', file], repo.dir, ci.terminal, {
+		CI: 'true',
+	});
+	expect(ci.calls).toEqual(['close']);
+
+	expect(await readFile(file, 'utf8')).toBe(TEMPLATE);
+});
+
+test('hook run exits 0 and changes nothing when something goes wrong', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	const file = await messageFile(repo.dir);
+	const {code, stderr} = await withTerminal(
+		['hook', 'run', file],
+		repo.dir,
+		() => ({
+			async compose(): Promise<string | null> {
+				throw new Error('terminal went away');
+			},
+			close() {},
+		}),
+	);
+	expect(code).toBe(0);
+	expect(stderr).toContain('hook skipped (terminal went away)');
+	expect(await readFile(file, 'utf8')).toBe(TEMPLATE);
+});
+
+test('chamoji commit commits the composed message', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await writeFile(path.join(repo.dir, 'app.ts'), 'export {};\n');
+	await gitOutput(repo.dir, ['add', 'app.ts']);
+	const fake = fakeTerminal('✨ (app): Add the entry point\n\nWhy: so it runs');
+	const {code} = await withTerminal(['commit'], repo.dir, fake.terminal);
+	expect(code).toBe(0);
+	expect(await gitOutput(repo.dir, ['log', '-1', '--format=%B'])).toBe(
+		'✨ (app): Add the entry point\n\nWhy: so it runs\n\n',
+	);
+});
+
+test('chamoji commit -a picks up tracked changes, and autoAdd stages everything', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await writeFile(path.join(repo.dir, 'tracked.txt'), 'one\n');
+	await gitOutput(repo.dir, ['add', 'tracked.txt']);
+	await gitOutput(repo.dir, ['commit', '-q', '-m', '🔧 Track it']);
+	await writeFile(path.join(repo.dir, 'tracked.txt'), 'two\n');
+	const first = await withTerminal(
+		['commit', '-a'],
+		repo.dir,
+		fakeTerminal('🐛 Fix the count').terminal,
+	);
+	expect(first.code).toBe(0);
+	expect(await gitOutput(repo.dir, ['status', '--porcelain'])).toBe('');
+
+	await writeFile(path.join(repo.dir, 'new.txt'), 'new\n');
+	await writeFile(path.join(repo.dir, '.gitmojirc.json'), '{"autoAdd": true}');
+	const second = await withTerminal(
+		['commit'],
+		repo.dir,
+		fakeTerminal('✨ Add the new file').terminal,
+	);
+	expect(second.code).toBe(0);
+	expect(
+		await gitOutput(repo.dir, ['show', '--name-only', '--format=', 'HEAD']),
+	).toContain('new.txt');
+});
+
+test('chamoji commit needs a terminal, and cancelling commits nothing', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	const none = await withTerminal(['commit'], repo.dir, () => null);
+	expect(none.code).toBe(2);
+	expect(none.stderr).toContain('needs a terminal');
+
+	const before = await gitOutput(repo.dir, ['rev-parse', 'HEAD']);
+	const cancelled = await withTerminal(
+		['commit'],
+		repo.dir,
+		fakeTerminal(null).terminal,
+	);
+	expect(cancelled.code).toBe(1);
+	expect(await gitOutput(repo.dir, ['rev-parse', 'HEAD'])).toBe(before);
+});

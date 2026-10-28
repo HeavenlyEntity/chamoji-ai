@@ -30,7 +30,9 @@
 	"dependencies": {
 		"@chamoji/core": "workspace:*",
 		"@typesafe-ai/sdk": "^0.7.0",
+		"ink": "^8.0.0",
 		"meow": "^14.1.0",
+		"react": "^19.3.1",
 		"semver": "^7.8.5"
 	},
 	"keywords": [
@@ -45,6 +47,8 @@
 		"access": "public"
 	},
 	"devDependencies": {
-		"@types/semver": "^7.8.0"
+		"@types/react": "^19.3.0",
+		"@types/semver": "^7.8.0",
+		"ink-testing-library": "^4.0.0"
 	}
 }
