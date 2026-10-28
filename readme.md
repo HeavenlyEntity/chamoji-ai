@@ -81,6 +81,20 @@ chamoji changelog --ai
 - **Where the key comes from:** the `TYPESAFE_API_KEY` environment variable, or else that one line from `.env.local` or `.env` in the current folder. No other variable in those files is read.
 - **Without `--ai`:** chamoji makes no network calls.
 
+## Update notice
+
+When a newer version is out, chamoji says so once, after your command finishes:
+
+```
+chamoji 0.5.0 is available (you have 0.4.0): npm i -g @chamoji/cli@latest
+```
+
+- **What it sends:** one request a day at most, to `registry.npmjs.org`, asking for the latest `@chamoji/cli` version. Nothing about you or your repo is sent.
+- **It never slows a command down.** The check runs in the background, and its answer shows on a later run.
+- **It never touches stdout,** so pipes, `--format json` and `$(chamoji next-version)` are unaffected.
+- **It's off in CI, and whenever stderr isn't a terminal.** To turn it off yourself, use `--no-update-check`, `NO_UPDATE_NOTIFIER=1` or `CHAMOJI_NO_UPDATE_CHECK=1`.
+- **The cache** lives in `~/.config/chamoji/update-check.json`, or under `$XDG_CONFIG_HOME` or `%APPDATA%`.
+
 ## Config
 
 `chamoji.config.json`:

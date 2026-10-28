@@ -21,7 +21,8 @@
 	"dependencies": {
 		"@chamoji/core": "workspace:*",
 		"@typesafe-ai/sdk": "^0.7.0",
-		"meow": "^14.1.0"
+		"meow": "^14.1.0",
+		"semver": "^7.8.5"
 	},
 	"keywords": [
 		"changelog",
@@ -33,5 +34,8 @@
 	],
 	"publishConfig": {
 		"access": "public"
+	},
+	"devDependencies": {
+		"@types/semver": "^7.8.0"
 	}
 }

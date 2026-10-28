@@ -35,6 +35,13 @@ importers:
       meow:
         specifier: ^14.1.0
         version: 14.1.0
+      semver:
+        specifier: ^7.8.5
+        version: 7.8.5
+    devDependencies:
+      '@types/semver':
+        specifier: ^7.8.0
+        version: 7.8.0
 
   packages/core:
     dependencies:
