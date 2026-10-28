@@ -19,16 +19,16 @@ config/defaultGroupConfig.ts   Added / Changed / Breaking / Deprecated / Removed
 
 The pipeline is sound: tags → commit ranges → classify by emoji → group → render. The implementation does not work yet:
 
-| Problem | Where |
-|---|---|
-| Does not compile: arguments passed in the wrong order, and `groupConfig` is sent as a JSON string | `source/app.tsx:75`, `source/utils/changelogGenerator.ts:20` |
-| Markdown (the default format) is built but never passed to `setChangelogOutput`, so output is empty | `source/app.tsx:143` |
-| Link syntax is swapped: HTML output gets Markdown links, Markdown output gets `<li>` tags | `source/app.tsx:116`, `:143` |
-| The effect depends on state it sets, so it re-runs up to 4 times and reads stale `packageVersion` / `repositoryURL` | `source/app.tsx:156` |
-| Only the subject line (`%s`) is read: no body, author, trailers, or `BREAKING CHANGE:` footers | `source/utils/gitUtils.ts:24` |
-| Hand-copied subset of about 40 gitmojis; the official list has about 75, with a `semver` field per emoji | `source/utils/emojiMapping.ts` |
-| Ink renders a one-shot text dump. Ink adds nothing here and wraps or garbles long output | `source/app.tsx` |
-| `dist/`, `readme.md` and `test.tsx` are still the "Hello, Jane" template. Not a git repo yet | — |
+| Problem                                                                                                             | Where                                                        |
+| ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Does not compile: arguments passed in the wrong order, and `groupConfig` is sent as a JSON string                   | `source/app.tsx:75`, `source/utils/changelogGenerator.ts:20` |
+| Markdown (the default format) is built but never passed to `setChangelogOutput`, so output is empty                 | `source/app.tsx:143`                                         |
+| Link syntax is swapped: HTML output gets Markdown links, Markdown output gets `<li>` tags                           | `source/app.tsx:116`, `:143`                                 |
+| The effect depends on state it sets, so it re-runs up to 4 times and reads stale `packageVersion` / `repositoryURL` | `source/app.tsx:156`                                         |
+| Only the subject line (`%s`) is read: no body, author, trailers, or `BREAKING CHANGE:` footers                      | `source/utils/gitUtils.ts:24`                                |
+| Hand-copied subset of about 40 gitmojis; the official list has about 75, with a `semver` field per emoji            | `source/utils/emojiMapping.ts`                               |
+| Ink renders a one-shot text dump. Ink adds nothing here and wraps or garbles long output                            | `source/app.tsx`                                             |
+| `dist/`, `readme.md` and `test.tsx` are still the "Hello, Jane" template. Not a git repo yet                        | —                                                            |
 
 **Takeaway:** keep the idea and the group config, and rebuild the engine as a plain library. Use Ink where it is strong: interactive flows such as composing a commit or reviewing groups.
 
@@ -68,6 +68,7 @@ chamoji/                      pnpm workspace
 ### 3b. Using iii as the backend for the daemon, desktop app and cloud
 
 [iii](https://iii.dev) ([iii-hq/iii](https://github.com/iii-hq/iii), 18.9k★, v0.25.0 on 2026-10-22) is a Rust backend engine built on three primitives:
+
 - **Functions** (ids like `memory::search`).
 - **Triggers**: direct call, HTTP, cron, queue, state change.
 - **Workers**: processes in any language that register functions through `iii-sdk` (npm, Apache-2.0).
@@ -77,17 +78,19 @@ Its registry has ready-made workers for state/KV, queues with dead-letter, cron,
 **Decision: iii is the backend for everything that runs in the background, and never a requirement for the CLI.** A git hook has to start in milliseconds with zero setup, and a free tool can't ask people to install and run a Rust daemon before their first commit.
 
 How that works:
+
 - `packages/core` exposes its operations as plain async functions, each with a stable id: `changelog::build`, `commit::judge`, `ws::list`, `memory::search`, `memory::index`. The CLI imports them directly.
 - `packages/iii-worker` is a thin adapter that registers those same functions with iii. It is one codebase with two ways in.
 
-| Tier | Runs | What iii gives us that we'd otherwise build ourselves |
-|---|---|---|
-| **CLI (free)** | No iii | — |
-| **Local daemon (free, opt-in)** `chamoji daemon` | iii engine on localhost + chamoji worker | **Queue:** embedding and Jev reranking run after each commit without blocking it. **State triggers:** live updates to the desktop board. **Cron:** periodic reindex. **MCP worker:** exposes `memory::search` and friends to Claude Code/Cursor. **Console:** traces for free |
-| **Desktop app (free)** | Tauri UI → local iii (HTTP/WebSocket) | Replaces the custom `serve --stdio` JSON-RPC plan. The UI calls functions and subscribes to state |
-| **Cloud (paid, later)** | Same worker on hosted iii + database/storage workers | Team memory sync, shared vector index, org-wide workstream board, hosted LLM routing. Same function ids, so it's a deployment change, not a rewrite |
+| Tier                                             | Runs                                                 | What iii gives us that we'd otherwise build ourselves                                                                                                                                                                                                                         |
+| ------------------------------------------------ | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **CLI (free)**                                   | No iii                                               | —                                                                                                                                                                                                                                                                             |
+| **Local daemon (free, opt-in)** `chamoji daemon` | iii engine on localhost + chamoji worker             | **Queue:** embedding and Jev reranking run after each commit without blocking it. **State triggers:** live updates to the desktop board. **Cron:** periodic reindex. **MCP worker:** exposes `memory::search` and friends to Claude Code/Cursor. **Console:** traces for free |
+| **Desktop app (free)**                           | Tauri UI → local iii (HTTP/WebSocket)                | Replaces the custom `serve --stdio` JSON-RPC plan. The UI calls functions and subscribes to state                                                                                                                                                                             |
+| **Cloud (paid, later)**                          | Same worker on hosted iii + database/storage workers | Team memory sync, shared vector index, org-wide workstream board, hosted LLM routing. Same function ids, so it's a deployment change, not a rewrite                                                                                                                           |
 
 Risks to keep in view:
+
 - **iii is pre-1.0 and changes fast.** `registerTrigger` started giving a deprecation warning in 0.25. Keep the adapter small and pin the engine version.
 - **License.** ELv2 allows running iii inside your own paid product, but doesn't allow offering iii itself as a managed service. Chamoji Cloud is the former; confirm with whoever handles licensing before charging money.
 - **Unverified.** I haven't confirmed exactly how the MCP worker exposes registered functions as tools. Spike it before dropping our own `chamoji mcp`.
@@ -100,12 +103,12 @@ Design rule: **the deterministic path always works.** AI only suggests: it ranks
 
 **A workstream** is a named, long-lived unit of work: _"Auth revamp"_, _"Dark mode"_. It is recorded in git itself, so it travels with the history:
 
-| Layer | Mechanism | Why |
-|---|---|---|
-| Per commit | Git trailer `Workstream: auth-revamp` | Native git (`git log --format='%(trailers:key=Workstream)'`). It survives push and rebase, and GitHub's default squash message keeps it |
-| Retroactive | `git notes --ref=chamoji` | Groups old or pushed commits without rewriting hashes (needs `refs/notes/chamoji` in push/fetch refspecs; `chamoji init` configures this) |
-| Metadata | `.chamoji/workstreams.yml` (committed) | Title, emoji, description, status (`active` / `shipped` / `dropped`), linked issues, owner |
-| Local state | `.git/chamoji/active` (not committed) | The workstream you are "in" right now; the hook stamps it onto new commits |
+| Layer       | Mechanism                              | Why                                                                                                                                       |
+| ----------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Per commit  | Git trailer `Workstream: auth-revamp`  | Native git (`git log --format='%(trailers:key=Workstream)'`). It survives push and rebase, and GitHub's default squash message keeps it   |
+| Retroactive | `git notes --ref=chamoji`              | Groups old or pushed commits without rewriting hashes (needs `refs/notes/chamoji` in push/fetch refspecs; `chamoji init` configures this) |
+| Metadata    | `.chamoji/workstreams.yml` (committed) | Title, emoji, description, status (`active` / `shipped` / `dropped`), linked issues, owner                                                |
+| Local state | `.git/chamoji/active` (not committed)  | The workstream you are "in" right now; the hook stamps it onto new commits                                                                |
 
 **Developer flow**
 
@@ -126,19 +129,20 @@ It is lighter than stacked diffs (Graphite, Sapling) or a new VCS (Jujutsu). It 
 
 Jev is a **judgment** model, not a text generator: it returns typed `choice` / `noul` / `score` answers with probabilities. It answers in about 100 ms and costs $0.042 per million input tokens (a 4k-token diff costs about $0.0002). That makes it fast and cheap enough to run on **every commit, inline in the prompt**. Prose generation goes to an optional LLM.
 
-| Moment | Judgment | Primitive | UX |
-|---|---|---|---|
-| `chamoji commit` | Which gitmoji fits this staged diff + draft message? | `choice` over ~75 gitmojis (limit 255) | Picker opens with top 3 ranked; high confidence → preselected; Enter to accept |
-| | Does this break a public API or behavior? | `noul` | Suggests 💥 + `BREAKING CHANGE:` footer; never auto-applies |
-| | Which active workstream does this belong to? | `choice` over open workstreams + `new` + `none` | Pre-fills the trailer |
-| | Should this staged diff be 2+ commits? | `noul` per hunk pair ("same logical change?") | Offers a split, clustered by code |
-| | Subject line text | LLM (optional) | Drafts from diff; user edits |
-| `chamoji group` | Which workstream does each ungrouped commit belong to? | `choice` per commit, run as a batch | Low-confidence ones go to a review list |
-| `chamoji changelog` | How user-visible is this change? | `score` (internal → headline) | Hides noise (CI, typos) below a threshold you control |
-| | Does the emoji disagree with the content? | `choice` re-classification vs. the stated emoji | Lint warning, not an auto-fix |
-| | Release summary per workstream | LLM (optional) | Short paragraph under each Highlight |
+| Moment              | Judgment                                               | Primitive                                       | UX                                                                             |
+| ------------------- | ------------------------------------------------------ | ----------------------------------------------- | ------------------------------------------------------------------------------ |
+| `chamoji commit`    | Which gitmoji fits this staged diff + draft message?   | `choice` over ~75 gitmojis (limit 255)          | Picker opens with top 3 ranked; high confidence → preselected; Enter to accept |
+|                     | Does this break a public API or behavior?              | `noul`                                          | Suggests 💥 + `BREAKING CHANGE:` footer; never auto-applies                    |
+|                     | Which active workstream does this belong to?           | `choice` over open workstreams + `new` + `none` | Pre-fills the trailer                                                          |
+|                     | Should this staged diff be 2+ commits?                 | `noul` per hunk pair ("same logical change?")   | Offers a split, clustered by code                                              |
+|                     | Subject line text                                      | LLM (optional)                                  | Drafts from diff; user edits                                                   |
+| `chamoji group`     | Which workstream does each ungrouped commit belong to? | `choice` per commit, run as a batch             | Low-confidence ones go to a review list                                        |
+| `chamoji changelog` | How user-visible is this change?                       | `score` (internal → headline)                   | Hides noise (CI, typos) below a threshold you control                          |
+|                     | Does the emoji disagree with the content?              | `choice` re-classification vs. the stated emoji | Lint warning, not an auto-fix                                                  |
+|                     | Release summary per workstream                         | LLM (optional)                                  | Short paragraph under each Highlight                                           |
 
 Implementation notes:
+
 - JS SDK `@typesafe-ai/sdk` (needs Node 22+; today `engines` says `>=16`). One `client.systemOne({ state, questions })` call asks all commit-time questions in parallel, which is one round trip.
 - State is structured JSON: `{ branch, stagedFiles, diff (truncated per file), draftMessage, activeWorkstreams, recentCommits }`.
 - Thresholds start from the docs' defaults (noul ≥ 0.7 yes / ≤ 0.3 no, choice confidence ≥ 0.8 to preselect). Tune them on our own history: chamoji's own repo and the gitmoji repos are labeled data for free, since each emoji is a label.
@@ -152,6 +156,7 @@ Implementation notes:
 **Goal (from you):** every commit and workstream should leave behind context the project's AI can use later. Deleting a workspace or workstream must never lose that context. Memory should live locally and in the cloud, and stay small.
 
 **Key call: store text as the source of truth, and treat vectors as a rebuildable cache.** Don't embed vectors or compressed blobs inside commit messages:
+
 - Git keeps every byte forever, so blobs in commits _grow_ every clone and never shrink.
 - Vectors are tied to one embedding model. When the model changes, every old commit holds garbage.
 - They are unreadable, can't be diffed, and conflict badly on merge.
@@ -159,16 +164,17 @@ Implementation notes:
 
 **Design**
 
-| Piece | What | Where it lives |
-|---|---|---|
-| **Intent card** per commit | 3–6 short lines: `Why`, `Constraint`, `Gotcha`, `Follow-up`, `Touches` (key files/symbols) | Commit trailers (`Why: …`), so it travels with the commit even through squash merges |
-| **Workstream memory** | Rolling summary: goal, decisions made, dead ends, open questions. It is updated when the workstream ships or is archived | `refs/chamoji/memory`, a dedicated git ref (like git notes; GitButler and git-bug use custom refs too). Pushed and fetched with the repo, so every remote is "the cloud" with no extra infra |
-| **Archive, never delete** | `chamoji ws drop` marks a workstream `dropped` and keeps its memory. Deleting a branch or worktree doesn't touch the ref | Same ref. A hard delete requires an explicit `--purge` |
-| **Vector index** | Embeddings of cards and workstream memory, int8-quantized, stamped with the model id | `.git/chamoji/index` (local, git-ignored, rebuilt with `chamoji memory reindex`). Built in the background by the iii daemon when it's running, otherwise on demand. Team sync = paid cloud tier |
-| **Retrieval** | Embedding/BM25 search → **Jev reranks** the candidates (`choice`/`noul` "is this relevant to the task?", per the TypeSafe rerank cookbook) → top-k cards | Runs locally in about 100 ms |
-| **AI access** | `chamoji mcp`: an MCP server with `search_memory`, `why <file:line>` (blame → cards), `workstream <id>`. Plus `chamoji memory digest > AGENTS.md` for tools without MCP | Claude Code, Cursor, etc. query the project's memory directly |
+| Piece                      | What                                                                                                                                                                    | Where it lives                                                                                                                                                                                  |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Intent card** per commit | 3–6 short lines: `Why`, `Constraint`, `Gotcha`, `Follow-up`, `Touches` (key files/symbols)                                                                              | Commit trailers (`Why: …`), so it travels with the commit even through squash merges                                                                                                            |
+| **Workstream memory**      | Rolling summary: goal, decisions made, dead ends, open questions. It is updated when the workstream ships or is archived                                                | `refs/chamoji/memory`, a dedicated git ref (like git notes; GitButler and git-bug use custom refs too). Pushed and fetched with the repo, so every remote is "the cloud" with no extra infra    |
+| **Archive, never delete**  | `chamoji ws drop` marks a workstream `dropped` and keeps its memory. Deleting a branch or worktree doesn't touch the ref                                                | Same ref. A hard delete requires an explicit `--purge`                                                                                                                                          |
+| **Vector index**           | Embeddings of cards and workstream memory, int8-quantized, stamped with the model id                                                                                    | `.git/chamoji/index` (local, git-ignored, rebuilt with `chamoji memory reindex`). Built in the background by the iii daemon when it's running, otherwise on demand. Team sync = paid cloud tier |
+| **Retrieval**              | Embedding/BM25 search → **Jev reranks** the candidates (`choice`/`noul` "is this relevant to the task?", per the TypeSafe rerank cookbook) → top-k cards                | Runs locally in about 100 ms                                                                                                                                                                    |
+| **AI access**              | `chamoji mcp`: an MCP server with `search_memory`, `why <file:line>` (blame → cards), `workstream <id>`. Plus `chamoji memory digest > AGENTS.md` for tools without MCP | Claude Code, Cursor, etc. query the project's memory directly                                                                                                                                   |
 
 **How cards get written, without slowing commits:**
+
 - The composer asks one optional "why?" line.
 - When an AI agent made the change, a hook lets the agent write the card from its own session. Claude Code hooks can do this at commit time.
 - An LLM can compress a workstream's cards into its memory summary when it ships.

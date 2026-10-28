@@ -36,11 +36,14 @@ const history: RepoStep[] = [
 
 test('changelog json on a fixture repo', async () => {
 	repo = await createRepo(history);
-	const {code, stdout} = await chamoji(['changelog', '--format', 'json'], repo.dir);
-	expect(code).toBe(0);
-	expect(JSON.parse(stdout).releases.map((r: {version: string}) => r.version)).toEqual(
-		['Unreleased', 'v1.0.0'],
+	const {code, stdout} = await chamoji(
+		['changelog', '--format', 'json'],
+		repo.dir,
 	);
+	expect(code).toBe(0);
+	expect(
+		JSON.parse(stdout).releases.map((r: {version: string}) => r.version),
+	).toEqual(['Unreleased', 'v1.0.0']);
 });
 
 test('changelog defaults to markdown and accepts md alias', async () => {
@@ -80,7 +83,10 @@ test('next-version prints none when nothing needs releasing', async () => {
 
 test('unknown format exits 1 with a message', async () => {
 	repo = await createRepo(history);
-	const {code, stderr} = await chamoji(['changelog', '--format', 'pdf'], repo.dir);
+	const {code, stderr} = await chamoji(
+		['changelog', '--format', 'pdf'],
+		repo.dir,
+	);
 	expect(code).toBe(1);
 	expect(stderr).toBe(
 		'chamoji: Unknown format "pdf" (use markdown, json or html)\n',

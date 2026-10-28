@@ -12,7 +12,9 @@ export function groupCommits(
 	commits: ParsedCommit[],
 	config: GroupConfig,
 ): Group[] {
-	const buckets = new Map(config.map(item => [item.group, [] as ParsedCommit[]]));
+	const buckets = new Map(
+		config.map(item => [item.group, [] as ParsedCommit[]]),
+	);
 	const groupByCode = new Map<string, string>();
 	for (const item of config) {
 		for (const code of item.emojis) {

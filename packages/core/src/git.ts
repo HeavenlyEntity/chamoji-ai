@@ -32,7 +32,9 @@ export async function assertRevision(cwd: string, ref: string): Promise<void> {
 		await runGit(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], cwd);
 	} catch {
 		throw new Error(
-			ref === 'HEAD' ? 'Repository has no commits yet' : `Unknown revision: ${ref}`,
+			ref === 'HEAD'
+				? 'Repository has no commits yet'
+				: `Unknown revision: ${ref}`,
 		);
 	}
 }
@@ -62,8 +64,16 @@ export async function readCommits(
 		.map(record => record.replace(/^\n/, ''))
 		.filter(record => record.length > 0)
 		.map(record => {
-			const [hash, shortHash, authorName, authorEmail, date, subject, body, trailers] =
-				record.split(FIELD);
+			const [
+				hash,
+				shortHash,
+				authorName,
+				authorEmail,
+				date,
+				subject,
+				body,
+				trailers,
+			] = record.split(FIELD);
 			return {
 				hash: hash!,
 				shortHash: shortHash!,
@@ -107,9 +117,13 @@ export async function listReleaseTags(
 }
 
 /** `origin` as an https web URL, or undefined when there is none. */
-export async function getRemoteWebUrl(cwd: string): Promise<string | undefined> {
+export async function getRemoteWebUrl(
+	cwd: string,
+): Promise<string | undefined> {
 	try {
-		return toWebUrl((await runGit(['remote', 'get-url', 'origin'], cwd)).trim());
+		return toWebUrl(
+			(await runGit(['remote', 'get-url', 'origin'], cwd)).trim(),
+		);
 	} catch {
 		return undefined;
 	}
@@ -134,7 +148,10 @@ export function toWebUrl(remote: string): string | undefined {
 	}
 
 	const protocol = url.protocol === 'http:' ? 'http' : 'https';
-	const host = url.protocol === 'https:' || url.protocol === 'http:' ? url.host : url.hostname;
+	const host =
+		url.protocol === 'https:' || url.protocol === 'http:'
+			? url.host
+			: url.hostname;
 	return `${protocol}://${host}/${stripGitSuffix(url.pathname.replace(/^\/+/, ''))}`;
 }
 

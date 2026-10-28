@@ -5,6 +5,7 @@
 **Goal:** Replace the broken Ink prototype with a tested, AI-free engine. After this milestone, `chamoji changelog` writes a correct changelog (Markdown, JSON or HTML) from gitmoji and Conventional Commits history.
 
 **Architecture:**
+
 - The repo becomes a pnpm workspace with two packages: `packages/core`, a pure TypeScript library (git reading, parsing, grouping, versioning, rendering), and `packages/cli`, a meow command that calls core.
 - Core reads git through `execFile`, so no shell is involved.
 - The emoji list comes from the official `gitmojis` package.
@@ -72,6 +73,7 @@ Deleted: `source/`, `dist/`, `test.tsx`, `package-lock.json`, `.editorconfig` ke
 **Files:** root config files above, `packages/*/package.json`, `packages/*/tsconfig.json`, `packages/core/test/helpers/fixture-repo.ts`, `packages/core/test/fixture-repo.test.ts`.
 
 **Interfaces:**
+
 - Produces: `createRepo(steps: RepoStep[]): Promise<{ dir: string; cleanup(): Promise<void> }>`, where
   `RepoStep = { commit: string; body?: string; date?: string } | { tag: string; annotated?: boolean } | { mergeBranch: string; commits: string[] }`.
   - Dates default to `2026-01-01T00:00:00Z` plus 1 day per commit.
@@ -86,6 +88,7 @@ Deleted: `source/`, `dist/`, `test.tsx`, `package-lock.json`, `.editorconfig` ke
 ### Task 2: Gitmojis and commit parsing
 
 **Interfaces:**
+
 - `normalizeEmoji(s: string): string`: removes `️`.
 - `GITMOJIS: readonly GitmojiInfo[]`, where `GitmojiInfo = { code: string; emoji: string; description: string; semver: 'major'|'minor'|'patch'|null }`.
 - `getGitmoji(code: string): GitmojiInfo | undefined`.
@@ -101,19 +104,19 @@ Deleted: `source/`, `dist/`, `test.tsx`, `package-lock.json`, `.editorconfig` ke
   - A gitmoji-cli scope `^\(([^)]+)\):\s*` directly after the emoji sets `scope`.
   - If there is no emoji but there is a type, map the type to a gitmoji:
 
-    | type | gitmoji |
-    |---|---|
-    | feat | sparkles |
-    | fix | bug |
-    | docs | memo |
-    | style | art |
-    | refactor | recycle |
-    | perf | zap |
-    | test | white_check_mark |
-    | build | package |
-    | ci | construction_worker |
-    | chore | wrench |
-    | revert | rewind |
+    | type     | gitmoji             |
+    | -------- | ------------------- |
+    | feat     | sparkles            |
+    | fix      | bug                 |
+    | docs     | memo                |
+    | style    | art                 |
+    | refactor | recycle             |
+    | perf     | zap                 |
+    | test     | white_check_mark    |
+    | build    | package             |
+    | ci       | construction_worker |
+    | chore    | wrench              |
+    | revert   | rewind              |
 
   - `breaking` is true for gitmoji `boom`, the `!` flag, or `/^BREAKING[ -]CHANGE:/m` in the body.
 
@@ -123,40 +126,41 @@ Deleted: `source/`, `dist/`, `test.tsx`, `package-lock.json`, `.editorconfig` ke
   - `findGitmoji matches :code:`, and ignores an unknown `:nope:`.
 - [ ] Write `parse.test.ts`:
 
-  | Test | Input | Expected |
-  |---|---|---|
-  | `plain gitmoji` | `'✨ Add login'` | `{gitmoji:'sparkles', description:'Add login', type:null, scope:null, breaking:false}` |
-  | `shortcode` | `':bug: Fix crash'` | `gitmoji 'bug'`, `description 'Fix crash'` |
-  | `gitmoji-cli scope` | `'✨ (auth): Add login'` | `scope 'auth'`, `description 'Add login'` |
-  | `conventional + gitmoji` | `'feat(auth): ✨ Add login'` | `type 'feat'`, `scope 'auth'`, `gitmoji 'sparkles'`, `description 'Add login'` |
-  | `conventional only maps type` | `'fix: Handle null'` | `gitmoji 'bug'` |
-  | `breaking via bang` | `'feat!: ✨ New API'` | `breaking true` |
-  | `breaking via footer` | body `'BREAKING CHANGE: removed x'` | `breaking true` |
-  | `breaking via boom` | `'💥 Drop node 18'` | `breaking true` |
-  | `no gitmoji` | `'Update stuff'` | `gitmoji null`, `description 'Update stuff'` |
-  | `trailers parsed` | trailers `'Workstream: auth\nRefs: #4\n'` | `[{key:'Workstream',value:'auth'},{key:'Refs',value:'#4'}]` |
+  | Test                          | Input                                     | Expected                                                                               |
+  | ----------------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------- |
+  | `plain gitmoji`               | `'✨ Add login'`                          | `{gitmoji:'sparkles', description:'Add login', type:null, scope:null, breaking:false}` |
+  | `shortcode`                   | `':bug: Fix crash'`                       | `gitmoji 'bug'`, `description 'Fix crash'`                                             |
+  | `gitmoji-cli scope`           | `'✨ (auth): Add login'`                  | `scope 'auth'`, `description 'Add login'`                                              |
+  | `conventional + gitmoji`      | `'feat(auth): ✨ Add login'`              | `type 'feat'`, `scope 'auth'`, `gitmoji 'sparkles'`, `description 'Add login'`         |
+  | `conventional only maps type` | `'fix: Handle null'`                      | `gitmoji 'bug'`                                                                        |
+  | `breaking via bang`           | `'feat!: ✨ New API'`                     | `breaking true`                                                                        |
+  | `breaking via footer`         | body `'BREAKING CHANGE: removed x'`       | `breaking true`                                                                        |
+  | `breaking via boom`           | `'💥 Drop node 18'`                       | `breaking true`                                                                        |
+  | `no gitmoji`                  | `'Update stuff'`                          | `gitmoji null`, `description 'Update stuff'`                                           |
+  | `trailers parsed`             | trailers `'Workstream: auth\nRefs: #4\n'` | `[{key:'Workstream',value:'auth'},{key:'Refs',value:'#4'}]`                            |
 
 - [ ] Run the tests and confirm they fail. Implement `gitmojis.ts` and `parse.ts`. Run again and confirm they pass. Commit `✨ Parse gitmoji and Conventional Commit messages`.
 
 ### Task 3: Config, grouping, versioning
 
 **Interfaces:**
+
 - `GroupConfigItem = { group: string; label: string; emojis: string[]; hidden?: boolean }`, `GroupConfig = GroupConfigItem[]`.
 - `ChamojiConfig = { groups: GroupConfig; repositoryUrl?: string }`.
 - `DEFAULT_GROUP_CONFIG`, in this order: added, changed, breaking_changes, deprecated, removed, fixed, security, useless (`hidden: true`), misc.
   - Every official code appears exactly once across groups. Legacy codes (`apple`, `penguin`, `checkered_flag`, `robot`, `green_apple`) stay in `fixed`.
   - New mapping calls are mine:
 
-    | Group | New codes |
-    |---|---|
-    | added | globe_with_meridians, camera_flash, seedling, test_tube, necktie, triangular_flag_on_post, egg, money_with_wings, thread, safety_vest, airplane, stethoscope |
-    | changed | hammer, package, label, mag, dizzy, goal_net, bricks, technologist, page_facing_up, poop |
-    | deprecated | wastebasket |
-    | removed | coffin |
-    | fixed | adhesive_bandage |
-    | security | closed_lock_with_key, passport_control |
-    | useless | twisted_rightwards_arrows |
-    | misc | memo, bulb, rocket, construction, beers, busts_in_silhouette, clown_face, see_no_evil, alembic, monocle_face |
+    | Group      | New codes                                                                                                                                                    |
+    | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+    | added      | globe_with_meridians, camera_flash, seedling, test_tube, necktie, triangular_flag_on_post, egg, money_with_wings, thread, safety_vest, airplane, stethoscope |
+    | changed    | hammer, package, label, mag, dizzy, goal_net, bricks, technologist, page_facing_up, poop                                                                     |
+    | deprecated | wastebasket                                                                                                                                                  |
+    | removed    | coffin                                                                                                                                                       |
+    | fixed      | adhesive_bandage                                                                                                                                             |
+    | security   | closed_lock_with_key, passport_control                                                                                                                       |
+    | useless    | twisted_rightwards_arrows                                                                                                                                    |
+    | misc       | memo, bulb, rocket, construction, beers, busts_in_silhouette, clown_face, see_no_evil, alembic, monocle_face                                                 |
 
 - `loadConfig(cwd: string, explicitPath?: string): Promise<ChamojiConfig>`.
   - It reads `explicitPath` or `<cwd>/chamoji.config.json`. A missing file gives the defaults.
@@ -188,6 +192,7 @@ Deleted: `source/`, `dist/`, `test.tsx`, `package-lock.json`, `.editorconfig` ke
 ### Task 4: Git reader and changelog builder
 
 **Interfaces:**
+
 - `runGit(args: string[], cwd: string): Promise<string>`. Uses `execFile` with `maxBuffer` set to 64 MB, and returns stdout.
 - `readCommits(cwd: string, range: string): Promise<RawCommit[]>`.
   - Runs `git log --no-merges --format=%H%x1f%h%x1f%an%x1f%ae%x1f%aI%x1f%s%x1f%b%x1f%(trailers:only,unfold)%x1e <range>`.
@@ -223,12 +228,14 @@ Deleted: `source/`, `dist/`, `test.tsx`, `package-lock.json`, `.editorconfig` ke
 ### Task 5: Renderers
 
 **Interfaces:**
+
 - `renderMarkdown(c: Changelog): string`
 - `renderHtml(c: Changelog): string`
 - `renderJson(c: Changelog): string`
 - `render(c, format: 'markdown'|'json'|'html'): string`
 
 Output format, decided here:
+
 - Markdown starts with `# Changelog\n`. Each release then follows this layout:
 
   ```
@@ -237,6 +244,7 @@ Output format, decided here:
 
   - The link is only added when `repositoryUrl`, `tag` and `previousTag` all exist. The Unreleased compare link targets `HEAD`.
   - The ` - <date>` part is left out when there is no date.
+
 - Each group is a `### <label>` heading followed by `- <emoji> <scope bold?> <description> ([<shortHash>](<url>/commit/<hash>))`.
   - With a scope, the line reads `**scope:** description`.
   - `#123` becomes `[#123](<url>/issues/123)` when there is a URL.
@@ -255,6 +263,7 @@ Output format, decided here:
 ### Task 6: CLI
 
 **Interfaces:**
+
 - `run(argv: string[], io: { cwd: string; stdout: (s: string) => void; stderr: (s: string) => void; today?: string }): Promise<number>`.
 - Commands:
   - `chamoji changelog [--format markdown|md|json|html] [--output <file>] [--from <tag>] [--to <ref>] [--release <version>] [--config <file>]`. Without `--output` it prints to stdout. With `--output` it writes the file and prints `Wrote <file>` to stderr.

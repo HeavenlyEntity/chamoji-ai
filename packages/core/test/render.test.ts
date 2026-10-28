@@ -1,7 +1,12 @@
 import {expect, test} from 'vitest';
 import {groupCommits} from '../src/group.js';
 import {DEFAULT_GROUP_CONFIG} from '../src/config.js';
-import {render, renderHtml, renderJson, renderMarkdown} from '../src/render/index.js';
+import {
+	render,
+	renderHtml,
+	renderJson,
+	renderMarkdown,
+} from '../src/render/index.js';
 import type {Changelog, ParsedCommit} from '../src/types.js';
 import {commit} from './helpers/commit.js';
 
@@ -118,7 +123,9 @@ test('html escapes commit text and attributes', () => {
 	expect(html).toMatch(/^<!doctype html>/);
 	expect(html).toContain('<meta charset="utf-8">');
 	expect(html).not.toContain('<script>');
-	expect(html).toContain('&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; more');
+	expect(html).toContain(
+		'&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; more',
+	);
 	expect(html).toContain(
 		'<a href="https://github.com/acme/widgets/compare/v1.0.0...v1.1.0">v1.1.0</a>',
 	);

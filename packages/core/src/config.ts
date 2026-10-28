@@ -169,7 +169,9 @@ export async function loadConfig(
 
 	return {
 		groups:
-			groups === undefined ? DEFAULT_GROUP_CONFIG : validateGroups(groups, file),
+			groups === undefined
+				? DEFAULT_GROUP_CONFIG
+				: validateGroups(groups, file),
 		...(repositoryUrl ? {repositoryUrl} : {}),
 	};
 }

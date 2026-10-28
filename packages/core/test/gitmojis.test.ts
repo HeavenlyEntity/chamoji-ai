@@ -14,7 +14,11 @@ test('findGitmoji matches unicode with and without FE0F', () => {
 });
 
 test('findGitmoji matches :code: and ignores unknown codes', () => {
-	expect(findGitmoji(':bug: Fix crash')).toEqual({code: 'bug', index: 0, length: 5});
+	expect(findGitmoji(':bug: Fix crash')).toEqual({
+		code: 'bug',
+		index: 0,
+		length: 5,
+	});
 	expect(findGitmoji(':nope: Something')).toBeNull();
 	expect(findGitmoji('Plain message')).toBeNull();
 });

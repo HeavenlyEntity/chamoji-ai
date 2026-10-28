@@ -20,14 +20,14 @@ chamoji changelog --format json            # machine-readable
 chamoji next-version                       # e.g. 1.3.0, or "none"
 ```
 
-| Option | Meaning |
-| --- | --- |
-| `--format` | `markdown` (default), `md`, `json` or `html` |
-| `--output`, `-o` | Write to a file instead of stdout |
-| `--from <tag>` | Leave out this release and everything older |
-| `--to <ref>` | Ref to treat as the head of history (default `HEAD`) |
+| Option                | Meaning                                                           |
+| --------------------- | ----------------------------------------------------------------- |
+| `--format`            | `markdown` (default), `md`, `json` or `html`                      |
+| `--output`, `-o`      | Write to a file instead of stdout                                 |
+| `--from <tag>`        | Leave out this release and everything older                       |
+| `--to <ref>`          | Ref to treat as the head of history (default `HEAD`)              |
 | `--release <version>` | Name and date the unreleased section, e.g. when cutting a release |
-| `--config <file>` | Config file (default `chamoji.config.json` when present) |
+| `--config <file>`     | Config file (default `chamoji.config.json` when present)          |
 
 Typical release flow:
 
@@ -61,7 +61,12 @@ git commit -am "🔖 Release v$version" && git tag "v$version"
 	"groups": [
 		{"group": "added", "label": "Added", "emojis": ["sparkles", "tada"]},
 		{"group": "fixed", "label": "Fixed", "emojis": ["bug", "ambulance"]},
-		{"group": "useless", "label": "Useless", "emojis": ["bookmark"], "hidden": true},
+		{
+			"group": "useless",
+			"label": "Useless",
+			"emojis": ["bookmark"],
+			"hidden": true
+		},
 		{"group": "misc", "label": "Miscellaneous", "emojis": []}
 	]
 }

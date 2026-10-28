@@ -5,7 +5,11 @@ import {afterEach, expect, test} from 'vitest';
 import {buildChangelog} from '../src/changelog.js';
 import {DEFAULT_GROUP_CONFIG} from '../src/config.js';
 import type {Release} from '../src/types.js';
-import {createRepo, gitOutput, type FixtureRepo} from './helpers/fixture-repo.js';
+import {
+	createRepo,
+	gitOutput,
+	type FixtureRepo,
+} from './helpers/fixture-repo.js';
 
 const config = {groups: DEFAULT_GROUP_CONFIG};
 let repo: FixtureRepo | undefined;
@@ -92,7 +96,11 @@ test('from option stops before that tag', async () => {
 		{tag: 'v1.2.0'},
 	]);
 
-	const {releases} = await buildChangelog({cwd: repo.dir, config, from: 'v1.1.0'});
+	const {releases} = await buildChangelog({
+		cwd: repo.dir,
+		config,
+		from: 'v1.1.0',
+	});
 	expect(releases.map(r => r.version)).toEqual(['v1.2.0']);
 });
 
@@ -104,7 +112,11 @@ test('to option treats an older ref as the head', async () => {
 		{tag: 'v1.1.0'},
 	]);
 
-	const {releases} = await buildChangelog({cwd: repo.dir, config, to: 'v1.0.0'});
+	const {releases} = await buildChangelog({
+		cwd: repo.dir,
+		config,
+		to: 'v1.0.0',
+	});
 	expect(releases.map(r => r.version)).toEqual(['v1.0.0']);
 });
 

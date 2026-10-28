@@ -42,7 +42,9 @@ export function emojiFor(commit: ParsedCommit): string {
  * Splits text into plain parts and `#123` issue references, so renderers can
  * escape the plain parts and link the references.
  */
-export function splitIssues(text: string): Array<{text: string; issue?: string}> {
+export function splitIssues(
+	text: string,
+): Array<{text: string; issue?: string}> {
 	return text
 		.split(/(#\d+)\b/)
 		.filter(part => part.length > 0)

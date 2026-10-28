@@ -1,5 +1,9 @@
 import {afterEach, expect, test} from 'vitest';
-import {createRepo, gitOutput, type FixtureRepo} from './helpers/fixture-repo.js';
+import {
+	createRepo,
+	gitOutput,
+	type FixtureRepo,
+} from './helpers/fixture-repo.js';
 
 let repo: FixtureRepo | undefined;
 
