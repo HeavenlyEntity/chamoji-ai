@@ -17,6 +17,5 @@ process.exitCode = await run(process.argv.slice(2), {
 		env: process.env,
 		stderrIsTTY: Boolean(process.stderr.isTTY),
 		scriptPath: process.argv[1] ?? '',
-		cwd: process.cwd(),
 	}),
 });

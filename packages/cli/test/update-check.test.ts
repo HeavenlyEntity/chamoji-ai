@@ -4,6 +4,7 @@ import path from 'node:path';
 import {afterEach, beforeEach, expect, test} from 'vitest';
 import {
 	cacheFile,
+	createUpdateCheck,
 	installKind,
 	isStale,
 	readCache,
@@ -81,29 +82,84 @@ test('the cache goes stale after 24 hours', () => {
 	expect(isStale({checkedAt: 0, latest: '1.0.0'}, day + 1)).toBe(true);
 });
 
-test('install kind comes from where chamoji runs', () => {
-	expect(
-		installKind('/Users/a/.npm/_npx/1a2b/node_modules/.bin/chamoji', '/w'),
-	).toBe('npx');
-	expect(
-		installKind(
-			'C:\\Users\\a\\AppData\\Local\\npm-cache\\_npx\\1a2b\\node_modules\\.bin\\chamoji',
-			'/w',
-		),
-	).toBe('npx');
-	// path.resolve gives a drive letter on Windows, so both sides match there too.
-	expect(
-		installKind(
-			path.resolve('/work/app/node_modules/.bin/chamoji'),
-			path.resolve('/work/app/src'),
-		),
-	).toBe('project');
-	expect(
-		installKind(
-			path.resolve('/usr/local/lib/node_modules/@chamoji/cli/dist/cli.js'),
-			path.resolve('/work/app'),
-		),
-	).toBe('global');
+test.each([
+	['/Users/a/.npm/_npx/1a2b/node_modules/.bin/chamoji', 'npx'],
+	[
+		'C:\\Users\\a\\AppData\\Local\\npm-cache\\_npx\\1a2b\\node_modules\\.bin\\chamoji',
+		'npx',
+	],
+	[
+		'/Users/a/Library/Caches/pnpm/dlx/abc/node_modules/@chamoji/cli/dist/cli.js',
+		'dlx',
+	],
+	[
+		'/private/var/folders/x/T/dlx-1234/node_modules/@chamoji/cli/dist/cli.js',
+		'dlx',
+	],
+	['/Users/a/.bun/install/cache/@chamoji/cli@0.4.0/dist/cli.js', 'dlx'],
+	[
+		'/Users/a/Library/pnpm/global/5/node_modules/@chamoji/cli/dist/cli.js',
+		'pnpm-global',
+	],
+	[
+		'/Users/a/.config/yarn/global/node_modules/@chamoji/cli/dist/cli.js',
+		'yarn-global',
+	],
+	['/usr/local/lib/node_modules/@chamoji/cli/dist/cli.js', 'global'],
+	[
+		'C:\\Users\\a\\AppData\\Roaming\\npm\\node_modules\\@chamoji\\cli\\dist\\cli.js',
+		'global',
+	],
+	['/usr/local/bin/chamoji', 'global'],
+	['/work/app/node_modules/.bin/chamoji', 'project'],
+	[
+		'/work/app/node_modules/.pnpm/@chamoji+cli@0.4.0/node_modules/@chamoji/cli/dist/cli.js',
+		'project',
+	],
+	['C:\\Work\\App\\node_modules\\.bin\\chamoji', 'project'],
+])('install kind of %s is %s', (scriptPath, kind) => {
+	expect(installKind(scriptPath)).toBe(kind);
+});
+
+test('a cache dated in the future counts as stale', () => {
+	expect(isStale({checkedAt: 10_000, latest: '1.0.0'}, 5000)).toBe(true);
+});
+
+test('a relative XDG_CONFIG_HOME is ignored', () => {
+	expect(cacheFile({XDG_CONFIG_HOME: 'relative/dir'}, 'linux', '/home/a')).toBe(
+		path.join('/home/a', '.config', 'chamoji', 'update-check.json'),
+	);
+});
+
+test('refreshIfStale records the attempt first and starts at most one worker', async () => {
+	const file = path.join(dir, 'cfg', 'chamoji', 'update-check.json');
+	const spawned: string[] = [];
+	const check = createUpdateCheck({
+		current: '0.4.0',
+		env: {XDG_CONFIG_HOME: path.join(dir, 'cfg')},
+		stderrIsTTY: true,
+		scriptPath: '/usr/local/bin/chamoji',
+		now: () => 1_000_000,
+		startWorker: cache => spawned.push(cache),
+	});
+	check.refreshIfStale();
+	check.refreshIfStale();
+	expect(spawned).toEqual([file]);
+	expect(readCache(file)).toEqual({checkedAt: 1_000_000, latest: ''});
+});
+
+test('refreshIfStale starts no worker when the cache cannot be written', async () => {
+	// A file where the config directory should be makes the write fail.
+	await writeFile(path.join(dir, 'blocked'), '');
+	const spawned: string[] = [];
+	createUpdateCheck({
+		current: '0.4.0',
+		env: {XDG_CONFIG_HOME: path.join(dir, 'blocked')},
+		stderrIsTTY: true,
+		scriptPath: '/usr/local/bin/chamoji',
+		startWorker: cache => spawned.push(cache),
+	}).refreshIfStale();
+	expect(spawned).toEqual([]);
 });
 
 test('notices only for newer stable versions', () => {
@@ -115,6 +171,15 @@ test('notices only for newer stable versions', () => {
 	);
 	expect(updateNotice('0.3.0', '0.4.0', 'project')).toBe(
 		'chamoji 0.4.0 is available (you have 0.3.0): update @chamoji/cli in package.json',
+	);
+	expect(updateNotice('0.3.0', '0.4.0', 'dlx')).toBe(
+		'chamoji 0.4.0 is available (you have 0.3.0): run it with @chamoji/cli@latest',
+	);
+	expect(updateNotice('0.3.0', '0.4.0', 'pnpm-global')).toBe(
+		'chamoji 0.4.0 is available (you have 0.3.0): pnpm add -g @chamoji/cli@latest',
+	);
+	expect(updateNotice('0.3.0', '0.4.0', 'yarn-global')).toBe(
+		'chamoji 0.4.0 is available (you have 0.3.0): yarn global add @chamoji/cli@latest',
 	);
 	expect(updateNotice('0.4.0', '0.4.0', 'global')).toBeUndefined();
 	expect(updateNotice('0.5.0', '0.4.0', 'global')).toBeUndefined();
