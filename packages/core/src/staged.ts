@@ -26,15 +26,35 @@ const LOCKFILES = new Set([
 	'Gemfile.lock',
 ]);
 
+/** File names that hold credentials, matched in any case. */
+const SECRET_NAME =
+	/^(?:\.env(?:\..+)?|\.envrc|\.npmrc|\.netrc|\.pgpass|\.git-credentials|credentials(?:\..+)?|id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?)$|\.(?:pem|key|p12|pfx|p8|jks|keystore|ppk|asc|tfvars|tfstate)$/i;
+
 /** Paths that are never sent anywhere, not even by name. */
 export function isWithheld(file: string): boolean {
 	const name = file.split('/').pop() ?? file;
-	return (
-		/^\.env(\..+)?$/.test(name) ||
-		/\.(pem|key|p12|pfx)$/i.test(name) ||
-		/^id_(rsa|dsa|ecdsa|ed25519)/.test(name) ||
-		/secret/i.test(file) ||
-		LOCKFILES.has(name)
+	return SECRET_NAME.test(name) || /secret/i.test(file) || LOCKFILES.has(name);
+}
+
+/**
+ * Credential-shaped strings, replaced in diff text even in files that pass
+ * the path checks: private-key blocks, and AWS, GitHub, Slack, npm and
+ * Stripe-style tokens.
+ */
+const SECRET_TEXT = [
+	/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g,
+	/\b(?:AKIA|ASIA)[A-Z\d]{16}\b/g,
+	/\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z\d]{30,}\b/g,
+	/\bgithub_pat_\w{30,}\b/g,
+	/\bxox[abprs]-[\w-]{10,}\b/g,
+	/\bnpm_[A-Za-z\d]{30,}\b/g,
+	/\b(?:sk|rk)_(?:live|test)_[A-Za-z\d]{16,}\b/g,
+];
+
+function redactSecrets(text: string): string {
+	return SECRET_TEXT.reduce(
+		(redacted, pattern) => redacted.replaceAll(pattern, '<redacted>'),
+		text,
 	);
 }
 
@@ -71,8 +91,11 @@ export async function readStagedChanges(
 	for (let i = 0; i < parts.length; i++) {
 		const code = parts[i]!;
 		const renamed = code.startsWith('R') || code.startsWith('C');
-		const file = renamed ? parts[(i += 2)]! : parts[++i]!;
-		if (isWithheld(file)) {
+		// A rename or copy is withheld if either name is, so `.env` renamed to
+		// notes.txt can't carry its content out.
+		const source = renamed ? parts[++i]! : undefined;
+		const file = parts[++i]!;
+		if (isWithheld(file) || (source !== undefined && isWithheld(source))) {
 			withheld++;
 			continue;
 		}
@@ -94,8 +117,12 @@ export async function readStagedChanges(
 	let budget = LINES_IN_ALL;
 	for (const file of files) {
 		if (budget <= 0) break;
-		const lines = (
-			await runGit(['diff', '--cached', '-M', '-U2', '--', file.path], cwd)
+		// :(literal) keeps a name like `*` from matching other files.
+		const lines = redactSecrets(
+			await runGit(
+				['diff', '--cached', '-M', '-U2', '--', `:(literal)${file.path}`],
+				cwd,
+			),
 		)
 			.trimEnd()
 			.split('\n');

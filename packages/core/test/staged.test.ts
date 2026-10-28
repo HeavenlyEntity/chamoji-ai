@@ -102,3 +102,60 @@ test('a rename reports the new path and its line counts', async () => {
 		{path: 'new.txt', status: 'renamed', added: 1, deleted: 0},
 	]);
 });
+
+test('a rename is withheld when either name is', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await stage(repo.dir, {'.env': 'TOKEN=shh\nMORE=1\nEVEN=2\n'});
+	await gitOutput(repo.dir, ['commit', '-q', '-m', '🔧 Env']);
+	await gitOutput(repo.dir, ['mv', '.env', 'notes.txt']);
+	const staged = await readStagedChanges(repo.dir, {sendDiffs: true});
+	expect(staged.files).toEqual([]);
+	expect(staged.withheld).toBe(1);
+	expect(staged.diff).toBeUndefined();
+});
+
+test('file names are literal paths, never pathspec patterns', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await stage(repo.dir, {'.env.local': 'TOKEN=shh\n', '*': 'star\n'});
+	const staged = await readStagedChanges(repo.dir, {sendDiffs: true});
+	expect(staged.files.map(file => file.path)).toEqual(['*']);
+	expect(staged.diff).toContain('star');
+	expect(staged.diff).not.toContain('shh');
+});
+
+test('secret-shaped strings in the diff are replaced', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await stage(repo.dir, {
+		'src/config.ts': [
+			'const aws = "AKIAIOSFODNN7EXAMPLE";',
+			'const gh = "ghp_abcdefghijklmnopqrstuvwxyz0123456789";',
+			'-----BEGIN OPENSSH PRIVATE KEY-----',
+			'b3BlbnNzaC1rZXktdjEAAAAA',
+			'-----END OPENSSH PRIVATE KEY-----',
+			'const ok = "hello";',
+		].join('\n'),
+	});
+	const {diff} = await readStagedChanges(repo.dir, {sendDiffs: true});
+	expect(diff).not.toMatch(/AKIAIOSFODNN7EXAMPLE|ghp_abc|b3BlbnNzaC1rZXkt/);
+	expect(diff).toContain('<redacted>');
+	expect(diff).toContain('hello');
+});
+
+test.each([
+	'.envrc',
+	'.npmrc',
+	'.netrc',
+	'.pgpass',
+	'.git-credentials',
+	'aws/credentials',
+	'infra/prod.tfvars',
+	'ios/AuthKey.p8',
+	'android/release.jks',
+	'android/release.keystore',
+	'putty/server.ppk',
+	'gpg/private.asc',
+	'ssh/ID_RSA',
+	'certs/SERVER.PEM',
+])('%s is withheld', file => {
+	expect(isWithheld(file)).toBe(true);
+});
