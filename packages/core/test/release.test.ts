@@ -1,10 +1,21 @@
-import {expect, test} from 'vitest';
+import {writeFile} from 'node:fs/promises';
+import path from 'node:path';
+import {afterEach, expect, test} from 'vitest';
+import {DEFAULT_GROUP_CONFIG} from '../src/config.js';
 import {
 	bumpManifest,
 	insertSection,
+	planRelease,
 	releaseSubject,
 	tagPrefix,
+	type ReleaseOptions,
 } from '../src/release.js';
+import {
+	createRepo,
+	gitOutput,
+	type FixtureRepo,
+	type RepoStep,
+} from './helpers/fixture-repo.js';
 
 const SECTION =
 	'## [v1.3.0](https://x/compare/v1.2.0...v1.3.0) - 2026-10-28\n\n### Added\n\n- ✨ Add export';
@@ -131,4 +142,167 @@ test('tagPrefix follows the newest tag', () => {
 	expect(tagPrefix(['v1.2.0', 'v1.1.0'])).toBe('v');
 	expect(tagPrefix(['2.0.1'])).toBe('');
 	expect(tagPrefix([])).toBe('v');
+});
+
+// --- planRelease, on throwaway repos ---
+
+const plans: FixtureRepo[] = [];
+afterEach(async () => {
+	await Promise.all(plans.splice(0).map(async repo => repo.cleanup()));
+});
+
+async function repoWith(steps: RepoStep[], files: Record<string, string> = {}) {
+	const repo = await createRepo(steps);
+	plans.push(repo);
+	for (const [file, text] of Object.entries(files)) {
+		await writeFile(path.join(repo.dir, file), text);
+	}
+
+	if (Object.keys(files).length > 0) {
+		await gitOutput(repo.dir, ['add', '-A']);
+		await gitOutput(repo.dir, [
+			'-c',
+			'user.name=Dev',
+			'-c',
+			'user.email=dev@example.com',
+			'commit',
+			'-q',
+			'-m',
+			'🔧 Add manifests',
+		]);
+	}
+
+	return repo;
+}
+
+const plan = async (cwd: string, extra: Partial<ReleaseOptions> = {}) =>
+	planRelease({
+		cwd,
+		config: {groups: DEFAULT_GROUP_CONFIG},
+		fetch: false,
+		today: '2026-10-28',
+		...extra,
+	});
+
+async function ready(cwd: string, extra: Partial<ReleaseOptions> = {}) {
+	const result = await plan(cwd, extra);
+	if (result.status !== 'ready') throw new Error('expected a release');
+	return result;
+}
+
+const widgets: RepoStep[] = [
+	{commit: '🎉 Start widgets'},
+	{tag: 'v1.2.0', annotated: true},
+	{commit: '✨ Add CSV export'},
+	{commit: '🐛 Fix crash when a widget has no title'},
+	{commit: '⬆️ Bump vite from 5.1.0 to 5.2.0'},
+	{commit: '⬆️ Bump vitest from 1.3.0 to 1.4.0'},
+	{commit: '⬆️ Bump typescript from 5.3.3 to 5.4.2'},
+];
+
+test('planRelease picks a minor bump and chamoji notes for a gitmoji repo', async () => {
+	const repo = await repoWith(widgets, {
+		'package.json': '{\n\t"name": "widgets",\n\t"version": "1.2.0"\n}\n',
+	});
+	const result = await ready(repo.dir);
+	expect(result).toMatchObject({
+		version: '1.3.0',
+		tag: 'v1.3.0',
+		lastTag: 'v1.2.0',
+		bump: 'minor',
+		subject: '🔖 Release v1.3.0',
+	});
+	expect(result.notes.startsWith('## v1.3.0 - 2026-10-28')).toBe(true);
+	expect(result.notes).toContain('Add CSV export');
+	expect(result.notes.match(/dependency updates/g)).toHaveLength(1);
+	expect(result.changes.map(change => change.file)).toEqual([
+		'CHANGELOG.md',
+		'package.json',
+	]);
+	expect(result.changes[1]!.text).toContain('"version": "1.3.0"');
+});
+
+test('planRelease follows tags without a v and Conventional subjects', async () => {
+	const repo = await repoWith([
+		{commit: 'feat: initial ledger'},
+		{tag: '2.0.1', annotated: true},
+		{commit: 'fix: keep currency symbol when exporting to PDF'},
+		{commit: 'fix(cli): exit non-zero when the ledger file is missing'},
+	]);
+	const result = await ready(repo.dir);
+	expect(result.tag).toBe('2.0.2');
+	expect(result.subject).toBe('chore(release): 🔖 2.0.2');
+});
+
+test('planRelease reports nothing to release, with the unreleased subjects', async () => {
+	const repo = await repoWith([
+		{commit: '✨ Add notes'},
+		{tag: 'v0.3.0'},
+		{commit: '📝 Fix typos in the README'},
+		{commit: '✅ Cover the empty-note case'},
+	]);
+	expect(await plan(repo.dir)).toEqual({
+		status: 'nothing',
+		lastTag: 'v0.3.0',
+		unreleased: ['✅ Cover the empty-note case', '📝 Fix typos in the README'],
+	});
+});
+
+test('planRelease needs a version for the first release', async () => {
+	const repo = await repoWith([{commit: '✨ Start'}]);
+	await expect(plan(repo.dir)).rejects.toMatchObject({code: 'first-release'});
+	const result = await ready(repo.dir, {version: '0.1.0'});
+	expect(result).toMatchObject({tag: 'v0.1.0', bump: 'first', lastTag: null});
+	expect(result.changes[0]!.how).toContain('full history');
+});
+
+test('planRelease rejects bad and old versions', async () => {
+	const repo = await repoWith(widgets);
+	await expect(plan(repo.dir, {version: 'banana'})).rejects.toMatchObject({
+		code: 'invalid-version',
+	});
+	await expect(plan(repo.dir, {version: '1.0.0'})).rejects.toMatchObject({
+		code: 'not-newer',
+	});
+});
+
+test('planRelease refuses a tag that already exists on another branch', async () => {
+	const repo = await repoWith(widgets);
+	const dev = ['-c', 'user.name=Dev', '-c', 'user.email=dev@example.com'];
+	await gitOutput(repo.dir, ['switch', '-q', '-c', 'side']);
+	await gitOutput(repo.dir, [
+		...dev,
+		'commit',
+		'-q',
+		'--allow-empty',
+		'-m',
+		'✨ Side',
+	]);
+	await gitOutput(repo.dir, ['tag', 'v1.3.0']);
+	await gitOutput(repo.dir, ['switch', '-q', 'main']);
+	await expect(plan(repo.dir)).rejects.toMatchObject({code: 'tag-exists'});
+});
+
+test('planRelease stops on a dirty tree unless told otherwise', async () => {
+	const repo = await repoWith(widgets);
+	await writeFile(path.join(repo.dir, 'scratch.txt'), 'wip');
+	await expect(plan(repo.dir)).rejects.toMatchObject({code: 'dirty'});
+	await expect(plan(repo.dir, {allowDirty: true})).resolves.toMatchObject({
+		status: 'ready',
+	});
+});
+
+test('planRelease stops off the default branch unless told otherwise', async () => {
+	const repo = await repoWith(widgets);
+	const head = (await gitOutput(repo.dir, ['rev-parse', 'HEAD'])).trim();
+	await gitOutput(repo.dir, ['update-ref', 'refs/remotes/origin/trunk', head]);
+	await gitOutput(repo.dir, [
+		'symbolic-ref',
+		'refs/remotes/origin/HEAD',
+		'refs/remotes/origin/trunk',
+	]);
+	await expect(plan(repo.dir)).rejects.toMatchObject({code: 'branch'});
+	await expect(plan(repo.dir, {anyBranch: true})).resolves.toMatchObject({
+		status: 'ready',
+	});
 });

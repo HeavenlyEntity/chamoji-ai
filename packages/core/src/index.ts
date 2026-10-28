@@ -26,5 +26,18 @@ export {
 	renderMarkdown,
 	type OutputFormat,
 } from './render/index.js';
+export {
+	CHANGELOG_FILE,
+	ReleaseError,
+	bumpManifest,
+	insertSection,
+	planRelease,
+	releaseSubject,
+	tagPrefix,
+	type FileChange,
+	type ReadyPlan,
+	type ReleaseOptions,
+	type ReleasePlan,
+} from './release.js';
 export type * from './types.js';
 export {bumpFor, nextVersion} from './version.js';
