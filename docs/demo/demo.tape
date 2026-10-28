@@ -1,14 +1,16 @@
-# The readme demo. Render from the repo root after `pnpm build`:
+# The readme demo: three captioned screens, each held long enough to read.
+#   1. a messy git log  2. `chamoji release`  3. the release commit and tag
+# Render from the repo root after `pnpm build`:
 #   vhs docs/demo/demo.tape
 Output docs/demo.gif
 
 Set Shell "bash"
-Set FontSize 20
+Set FontSize 18
 Set Width 1200
-Set Height 760
-Set Padding 28
+Set Height 880
+Set Padding 32
 Set Theme "Catppuccin Mocha"
-Set TypingSpeed 45ms
+Set TypingSpeed 40ms
 Set WindowBar Colorful
 
 Hide
@@ -17,17 +19,39 @@ Enter
 Sleep 2s
 Show
 
-Type "git log --oneline v1.2.0..HEAD"
-Sleep 300ms
+# 1. The starting point.
+Type "# 1. Your commits, written however you like"
 Enter
-Sleep 3s
-
-Type "chamoji changelog --from v1.2.0"
+Sleep 500ms
+Type "git log --oneline"
 Sleep 300ms
 Enter
 Sleep 5s
 
-Type "clear && chamoji release | head -n 6"
+Hide
+Type "clear"
+Enter
+Show
+
+# 2. The one command.
+Type "# 2. One command cuts the release"
+Enter
+Sleep 500ms
+Type "chamoji release"
 Sleep 300ms
 Enter
-Sleep 4.5s
+Sleep 9s
+
+Hide
+Type "clear"
+Enter
+Show
+
+# 3. What it left behind.
+Type "# 3. Committed and tagged, ready to push"
+Enter
+Sleep 500ms
+Type "git log --oneline -3"
+Sleep 300ms
+Enter
+Sleep 6s
