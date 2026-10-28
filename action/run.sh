@@ -7,6 +7,7 @@
 #   CHAMOJI_VERSION   chamoji version for npx; default: latest
 #   CHAMOJI_AI        true to pass --ai (needs TYPESAFE_API_KEY)
 #   CHAMOJI_RELEASE_VERSION  release mode: the version to release; default: from the commits
+#   CHAMOJI_COMMENT_AUTHOR   comment mode: login that owns the preview comment; default: github-actions[bot]
 #   GH_TOKEN, GH_REPO and the usual GITHUB_* variables
 #
 # Kept to bash 3.2 so it also runs on macOS runners.
@@ -135,9 +136,13 @@ comment)
 	} >"$body"
 	cat "$body" >>"$summary"
 
-	# Find our earlier comment by its marker, then update it or post a new one.
-	# A token that can't comment (fork PRs) leaves the preview in the summary.
-	if existing=$(gh api "repos/$repo/issues/$pr/comments" --paginate --jq ".[] | select(.body | contains(\"$marker\")) | .id" 2>/dev/null); then
+	# Find our earlier comment: the marker, written by the account this token
+	# acts as, so a comment that merely quotes the marker is never taken over.
+	# Then update it or post a new one. A token that can't comment (fork PRs)
+	# leaves the preview in the summary.
+	author=${CHAMOJI_COMMENT_AUTHOR:-github-actions[bot]}
+	case "$author" in *[!A-Za-z0-9\[\]-]*) fail "comment-author must be a GitHub login, not $author" ;; esac
+	if existing=$(gh api "repos/$repo/issues/$pr/comments" --paginate --jq ".[] | select(.user.login == \"$author\" and (.body | contains(\"$marker\"))) | .id" 2>/dev/null); then
 		id=$(echo "$existing" | head -n 1)
 		if [ -n "$id" ]; then
 			gh api -X PATCH "repos/$repo/issues/comments/$id" -F "body=@$body" >/dev/null 2>&1 && exit 0

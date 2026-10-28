@@ -163,10 +163,25 @@ describe.skipIf(process.platform === 'win32')('the GitHub Action', () => {
 			FAKE_COMMENT_ID: '42',
 		});
 		const calls = await read('calls');
+		// Only the Action's own account counts, so a pasted marker can't redirect it.
+		expect(calls).toContain('.user.login == "github-actions[bot]"');
 		expect(calls).toContain(
 			'api -X PATCH repos/acme/widgets/issues/comments/42',
 		);
 		expect(calls).not.toContain('-X POST');
+	});
+
+	test('comment mode refuses a comment-author that is not a login', async () => {
+		const {action, rev} = await setup(pr);
+		const result = await action({
+			GITHUB_EVENT_NAME: 'pull_request',
+			CHAMOJI_PR: '7',
+			CHAMOJI_BASE_SHA: await rev('HEAD~1'),
+			CHAMOJI_HEAD_SHA: await rev('HEAD'),
+			CHAMOJI_COMMENT_AUTHOR: 'x") or true or ("',
+		});
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain('comment-author must be a GitHub login');
 	});
 
 	test('comment mode falls back to the job summary when it cannot comment', async () => {

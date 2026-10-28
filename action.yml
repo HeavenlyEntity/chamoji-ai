@@ -27,6 +27,12 @@ inputs:
   typesafe-api-key:
     description: TypeSafe API key, for ai.
     default: ''
+  comment-author:
+    description: >-
+      comment mode only. The login github-token acts as, so the Action only
+      updates its own preview comment. Set it when github-token is a personal
+      token.
+    default: github-actions[bot]
   github-token:
     description: >-
       Token for gh. notes and release need contents write; comment needs
@@ -55,6 +61,7 @@ runs:
         CHAMOJI_VERSION: ${{ inputs.chamoji-version }}
         CHAMOJI_CLI: ${{ inputs.cli }}
         CHAMOJI_RELEASE_VERSION: ${{ inputs.release-version }}
+        CHAMOJI_COMMENT_AUTHOR: ${{ inputs.comment-author }}
         CHAMOJI_AI: ${{ inputs.ai }}
         TYPESAFE_API_KEY: ${{ inputs.typesafe-api-key }}
         GH_TOKEN: ${{ inputs.github-token }}
