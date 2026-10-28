@@ -27,25 +27,25 @@ These apply to every milestone. A plan that breaks one needs a written reason.
 
 ## Status
 
-| #   | Milestone                           | Phase                      | Lever       | Size | Status              | Plan                                                                   |
-| --- | ----------------------------------- | -------------------------- | ----------- | ---- | ------------------- | ---------------------------------------------------------------------- |
-| 1   | Changelog engine                    | 0 Foundation               | Activation  | M    | ✅ Shipped in 0.1.0 | [plan](superpowers/plans/2026-10-27-milestone-1-changelog-engine.md)   |
-| 1.5 | Plain commits, Dependencies, `--ai` | 0 Foundation               | Activation  | M    | ✅ Shipped in 0.2.0 | — (built from chat scope)                                              |
-| 1.6 | Use it ourselves                    | 0 Foundation               | Retention   | S    | ✅ Shipped in 0.3.0 | [plan](superpowers/plans/2026-10-28-milestone-1.6-use-it-ourselves.md) |
-| 2   | Public launch kit                   | 1 Activation & acquisition | Acquisition | S    | ⏭ Next              | [plan](superpowers/plans/2026-10-28-milestone-2-public-launch-kit.md)  |
-| 3   | GitHub Action                       | 1 Activation & acquisition | Acquisition | M    | Planned             | —                                                                      |
-| 4   | Commit composer and git hook        | 2 Retention                | Retention   | L    | Planned             | —                                                                      |
-| 5   | Jev in the composer                 | 2 Retention                | Retention   | M    | Planned             | —                                                                      |
-| 6   | Workstreams                         | 3 Differentiation          | Retention   | L    | Planned             | —                                                                      |
-| 7   | Project memory                      | 3 Differentiation          | Retention   | L    | Planned             | —                                                                      |
-| 8   | Review packets                      | 3 Differentiation          | Expansion   | L    | Planned             | —                                                                      |
-| 9   | Retroactive grouping                | 3 Differentiation          | Activation  | M    | Planned             | —                                                                      |
-| 10  | Editor extension                    | 4 Surfaces                 | Acquisition | L    | Planned             | —                                                                      |
-| 11  | Local daemon on iii                 | 4 Surfaces                 | Retention   | M    | Planned             | —                                                                      |
-| 12  | Desktop app (Tauri)                 | 4 Surfaces                 | Retention   | L    | Planned             | —                                                                      |
-| 13  | Cloud: hosted release notes         | 5 Expansion                | Expansion   | L    | Planned             | —                                                                      |
-| 14  | Cloud: team memory and review       | 5 Expansion                | Expansion   | L    | Planned             | —                                                                      |
-| 15  | Cloud: billing and organizations    | 5 Expansion                | Expansion   | M    | Planned             | —                                                                      |
+| #   | Milestone                           | Phase                      | Lever       | Size | Status                         | Plan                                                                   |
+| --- | ----------------------------------- | -------------------------- | ----------- | ---- | ------------------------------ | ---------------------------------------------------------------------- |
+| 1   | Changelog engine                    | 0 Foundation               | Activation  | M    | ✅ Shipped in 0.1.0            | [plan](superpowers/plans/2026-10-27-milestone-1-changelog-engine.md)   |
+| 1.5 | Plain commits, Dependencies, `--ai` | 0 Foundation               | Activation  | M    | ✅ Shipped in 0.2.0            | — (built from chat scope)                                              |
+| 1.6 | Use it ourselves                    | 0 Foundation               | Retention   | S    | ✅ Shipped in 0.3.0            | [plan](superpowers/plans/2026-10-28-milestone-1.6-use-it-ourselves.md) |
+| 2   | Public launch kit                   | 1 Activation & acquisition | Acquisition | S    | 🚧 In progress (0.4.0 shipped) | [plan](superpowers/plans/2026-10-28-milestone-2-public-launch-kit.md)  |
+| 3   | GitHub Action                       | 1 Activation & acquisition | Acquisition | M    | Planned                        | —                                                                      |
+| 4   | Commit composer and git hook        | 2 Retention                | Retention   | L    | Planned                        | —                                                                      |
+| 5   | Jev in the composer                 | 2 Retention                | Retention   | M    | Planned                        | —                                                                      |
+| 6   | Workstreams                         | 3 Differentiation          | Retention   | L    | Planned                        | —                                                                      |
+| 7   | Project memory                      | 3 Differentiation          | Retention   | L    | Planned                        | —                                                                      |
+| 8   | Review packets                      | 3 Differentiation          | Expansion   | L    | Planned                        | —                                                                      |
+| 9   | Retroactive grouping                | 3 Differentiation          | Activation  | M    | Planned                        | —                                                                      |
+| 10  | Editor extension                    | 4 Surfaces                 | Acquisition | L    | Planned                        | —                                                                      |
+| 11  | Local daemon on iii                 | 4 Surfaces                 | Retention   | M    | Planned                        | —                                                                      |
+| 12  | Desktop app (Tauri)                 | 4 Surfaces                 | Retention   | L    | Planned                        | —                                                                      |
+| 13  | Cloud: hosted release notes         | 5 Expansion                | Expansion   | L    | Planned                        | —                                                                      |
+| 14  | Cloud: team memory and review       | 5 Expansion                | Expansion   | L    | Planned                        | —                                                                      |
+| 15  | Cloud: billing and organizations    | 5 Expansion                | Expansion   | M    | Planned                        | —                                                                      |
 
 **Statuses:** ✅ shipped · 🚧 in progress · ⏭ next · Planned · ⏸ parked.
 
@@ -169,7 +169,25 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 
 **Goal:** people can find chamoji, trust it, and get value in their first minute.
 
-### 2. Public launch kit — ⏭ next
+### 2. Public launch kit — 🚧 in progress
+
+**Progress (2026-10-28):**
+
+- ✅ **Update notice**, in 0.4.0: once a day at most, detached, stderr only, off in CI. Reviewed and hardened.
+- ✅ **Public repo** at [github.com/HeavenlyEntity/chamoji-ai](https://github.com/HeavenlyEntity/chamoji-ai): code of conduct, security policy, issue and PR templates, the foil logo and badges.
+- ✅ **CI** is green on Linux, macOS and Windows with Node 22 and 24.
+- ✅ **v0.4.0** was published by `release.yml` through npm trusted publishing, with SLSA provenance on both packages. The npm pages link to GitHub.
+- ⬜ **`npm deprecate`** on versions below 0.3.0 (maintainer).
+- ⬜ **Readme demo GIF.**
+- ⬜ **Cloud waitlist page** on Vercel.
+- ⬜ **Two messy benchmark repos.**
+- ⬜ **New About text** on the repo, to match the readme.
+
+**What we learned getting the release to publish:**
+
+- Tarball paths need a leading `./`, or npm reads them as GitHub shorthand.
+- `setup-node`'s `registry-url` writes a placeholder token that blocks trusted publishing.
+- On npm, the trusted publisher lives on each package's **Settings** tab (`/package/<name>/access`), and direct `npm publish` has to be ticked under **Allowed actions**.
 
 **Why:**
 
