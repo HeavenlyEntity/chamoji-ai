@@ -153,6 +153,75 @@ GUI surfaces (the desktop app, Cloud pages and the website) render the foil live
 
 **The original wordmark** (the thin, wide caps in `chamoji-logo.png`) is retired. Marow Block replaces it everywhere.
 
+## Motion and interaction
+
+**Animation library: GSAP** (with `@gsap/react`'s `useGSAP` in React). It's for the website and Cloud pages, where the job is storytelling:
+
+- scroll-scrubbed scenes and pinned sections with **ScrollTrigger**
+- headlines that build in with **SplitText**
+- sequenced timelines, such as commits gathering into a workstream, then into a release ticket
+
+**License:** GSAP is free for commercial use, plugins included, under its [standard license](https://gsap.com/standard-license). The one restriction is building no-code visual animation tools that compete with Webflow, which chamoji is not.
+
+**Motion** (MIT, `motion` on npm) is the alternative for in-app React UI: layout transitions, gestures and presence in the desktop app and extension. Don't use both on the same surface.
+
+**The waitlist design** uses CSS only, because the design canvas can't run a library:
+
+- **Ambient:** floating tickets and coins, drifting foil, rising sparkles.
+- **On interaction:**
+  - foil buttons that lift, shimmer and glow, and press in on click
+  - cards that rise, with their icon tile wiggling
+  - nav links that grow a foil underline
+  - a foil focus ring
+  - a FAQ "+" that turns into "×"
+  - copy-to-clipboard feedback
+  - a foil burst when the waitlist form is submitted
+- **On scroll:** sections fade up, in browsers with CSS scroll-driven animations.
+
+**Rules:**
+
+- Motion supports the copy; it never carries meaning by itself.
+- Ambient loops are slow (5–22 s).
+- Interactions take 150–700 ms.
+- Everything turns off under `prefers-reduced-motion`.
+
+## Icons
+
+**Source:** the licensed "computer programming" icon pack: 50 filled icons with outlines, kept locally. Like the fonts, the original and recoloured files **stay out of git**, because publishing them would redistribute the pack.
+
+**Recolouring:** the icons are recoloured to the foil palette before use.
+
+| Pack colours | Foil colour        |
+| ------------ | ------------------ |
+| Blues        | periwinkle and sky |
+| Reds         | pink               |
+| Yellows      | peach              |
+| Greens       | mint               |
+| Whites       | white              |
+| Outlines     | ink                |
+
+**Use them sparingly:** only next to copy they illustrate, at 26–42 px, on a light tile (`#f6f5fb`) so the ink outlines also read on dark surfaces. On the waitlist page:
+
+| Copy              | Icon                                   |
+| ----------------- | -------------------------------------- |
+| CLI card          | command line                           |
+| Cloud page card   | website                                |
+| Release notes     | new features                           |
+| Context insurance | security shield                        |
+| Review packets    | scope                                  |
+| CLI plan          | command                                |
+| Team plan         | cloud computing                        |
+| Organization plan | cloud folders                          |
+| FAQ               | command, coding, shield, AI, checklist |
+
+## React Bits
+
+**Iridescence** is already in use (see above).
+
+**More React Bits components** can be installed in the Vercel build with the React Bits key kept in `.env.local`. Never commit the key.
+
+**The same license rule applies to all of them:** use components inside our apps, and never re-export them from a published package.
+
 ## Terminal
 
 The CLI shows the same palette where the terminal supports it:
