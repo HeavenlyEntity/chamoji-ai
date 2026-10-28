@@ -1,5 +1,57 @@
 # Changelog
 
+## [v0.5.0](https://github.com/HeavenlyEntity/chamoji-ai/compare/v0.4.0...v0.5.0) - 2026-10-28
+
+### Added
+
+- ✨ Add the chamoji GitHub Action ([5930551](https://github.com/HeavenlyEntity/chamoji-ai/commit/59305514b8346ab73ce78a30a6b4d3945ea4c580))
+- ✨ Add changelog --since for branch previews ([29265aa](https://github.com/HeavenlyEntity/chamoji-ai/commit/29265aa4bd003eec8052034cfa355724df18434e))
+- 📈 Add the benchmark script and two messy repos ([9d39cb2](https://github.com/HeavenlyEntity/chamoji-ai/commit/9d39cb295d1cf48bb769787c381da4bd62ed017f))
+- ✨ Add chamoji release ([b26f258](https://github.com/HeavenlyEntity/chamoji-ai/commit/b26f25868ee1b7d97fe9d3e319b4a3fd5a31e21d))
+- ✨ Apply and push releases in core ([1e516ba](https://github.com/HeavenlyEntity/chamoji-ai/commit/1e516ba893c95b9e0009e361ec367b3d87d24379))
+- ✨ Plan releases in core ([452b783](https://github.com/HeavenlyEntity/chamoji-ai/commit/452b78320264265b93a19286824736f84add4e83))
+- ✨ Add release text helpers to core ([8de9d3f](https://github.com/HeavenlyEntity/chamoji-ai/commit/8de9d3f512352f7ced8c4359f02529beffcde5aa))
+- ✨ Add the chamoji-release skill for coding agents ([7323709](https://github.com/HeavenlyEntity/chamoji-ai/commit/7323709e95d8c2412101fa1fa2021c3140ec9bd3))
+
+### Changed
+
+- 💄 Make the readme demo three captioned screens ([2800fe9](https://github.com/HeavenlyEntity/chamoji-ai/commit/2800fe9ecff2c50666664f91ab7ccaff8071bf45))
+- ⚡️ Make the release skill one command ([70a6149](https://github.com/HeavenlyEntity/chamoji-ai/commit/70a614906b8401d522b0e378d70ac630652ee53a))
+- 🎨 Add the render script for the waitlist hero props ([a6ed30c](https://github.com/HeavenlyEntity/chamoji-ai/commit/a6ed30c9e2dec93f5382bf3692b657776aba4d16))
+- 🍱 Drop the downloads badge until npm has data ([025074f](https://github.com/HeavenlyEntity/chamoji-ai/commit/025074fea500a3587efedd88b17327d64d864aa5))
+- 🍱 Add the foil logo and badges to the readme ([1978bd1](https://github.com/HeavenlyEntity/chamoji-ai/commit/1978bd1cd1831cce0d8638babdc42691be6d39f7))
+
+### Fixed
+
+- 🐛 Date tagged releases in UTC like --release does ([6635ed9](https://github.com/HeavenlyEntity/chamoji-ai/commit/6635ed942ae5be54fa48fc358df31cb85350de05))
+
+### Security
+
+- 🔒️ Only update the Action's own PR comment ([d5cdec6](https://github.com/HeavenlyEntity/chamoji-ai/commit/d5cdec618b93e773318275b022301d4dbe7aa3f6))
+- 🔒️ Stop the release script passing git arguments through a shell ([12dde8c](https://github.com/HeavenlyEntity/chamoji-ai/commit/12dde8c109e55e1fb84677ec4ba9dce11f3196ba))
+
+### Documentation
+
+- 📝 Add the readme demo ([9b453b0](https://github.com/HeavenlyEntity/chamoji-ai/commit/9b453b04736781b267df9c67601ed7c48f85ff9b))
+- 📝 Document chamoji release and cut our releases with it ([a1111dc](https://github.com/HeavenlyEntity/chamoji-ai/commit/a1111dc888fc2364aaa4d041311742bb548dea6b))
+- 📝 Mark the Cloud waitlist page live in the roadmap ([9d0ea14](https://github.com/HeavenlyEntity/chamoji-ai/commit/9d0ea1463b9e1fcfaa2c750566b51b903f57a1ea))
+- 📝 Add Know as the headline font for hero and closing lines ([694227a](https://github.com/HeavenlyEntity/chamoji-ai/commit/694227a9e4a54cad5226ac56ed25e4e8ecaaae52))
+- 📝 Switch brand icons to Phosphor duotone from Iconify ([b867430](https://github.com/HeavenlyEntity/chamoji-ai/commit/b8674303aed7fec47e30ca8d1ae6deacf4544ac3))
+- 📝 Note the agentframe storytelling pattern and its private-repo limit ([e603254](https://github.com/HeavenlyEntity/chamoji-ai/commit/e6032544521253e4b77a6498678463139e44b456))
+- 📝 Choose GSAP for storytelling and set icon and motion rules ([a6dba7c](https://github.com/HeavenlyEntity/chamoji-ai/commit/a6dba7ccb9fd50196cc9f4919266192d59838aeb))
+- 📝 Note the TBA price on the waitlist page ([d3572bc](https://github.com/HeavenlyEntity/chamoji-ai/commit/d3572bc565621bd9cb7c3db477ea4b922680e9c3))
+- 📝 Record that pricing is tested with the waitlist first ([981fc92](https://github.com/HeavenlyEntity/chamoji-ai/commit/981fc921d166de5613689d330974f3540f4b75a1))
+- 📝 Link the waitlist design from the roadmap ([08f9b63](https://github.com/HeavenlyEntity/chamoji-ai/commit/08f9b63583ebe25052778aa66f96cde4ba2bf472))
+- 📝 Mark old npm versions deprecated ([d138052](https://github.com/HeavenlyEntity/chamoji-ai/commit/d138052fb6b4dcdb09ea73dfdb22ed6cf6938a97))
+- 📝 Mark the About text done ([568c8c0](https://github.com/HeavenlyEntity/chamoji-ai/commit/568c8c05210e5b2c994389f72270606fc6c7cc8b))
+- 📝 Record milestone 2 progress: v0.4.0 published with provenance ([258bb0f](https://github.com/HeavenlyEntity/chamoji-ai/commit/258bb0f7ca01156ee99fcfbd0d708e9b1b377576))
+
+### Maintenance
+
+- 💚 Explain trusted-publishing failures in the release workflow ([98b40fa](https://github.com/HeavenlyEntity/chamoji-ai/commit/98b40fad8ede830f06bdbdd22bd497965735a626))
+- 💚 Let npm use trusted publishing in the release workflow ([910629f](https://github.com/HeavenlyEntity/chamoji-ai/commit/910629f31ff3677ab57c49193c8ca4eac926e1c3))
+- 💚 Fix the release workflow's npm publish step ([71efb31](https://github.com/HeavenlyEntity/chamoji-ai/commit/71efb315dddafb194cc75787c25ec3927c0b58c3))
+
 ## [v0.4.0](https://github.com/HeavenlyEntity/chamoji-ai/compare/v0.3.0...v0.4.0) - 2026-10-28
 
 ### Added
