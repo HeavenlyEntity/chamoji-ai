@@ -55,3 +55,10 @@ export {
 	type FormatOptions,
 } from './compose/message.js';
 export {searchGitmojis} from './compose/search.js';
+export {openJudgmentCache, type Judgment, type JudgmentCache} from './cache.js';
+export {
+	isWithheld,
+	readStagedChanges,
+	type StagedChanges,
+	type StagedFile,
+} from './staged.js';
