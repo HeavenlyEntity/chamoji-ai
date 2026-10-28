@@ -72,9 +72,9 @@ test('breaking via boom', () => {
 });
 
 test('no gitmoji', () => {
-	expect(parseCommit(raw('Update stuff'))).toMatchObject({
+	expect(parseCommit(raw('Misc stuff'))).toMatchObject({
 		gitmoji: null,
-		description: 'Update stuff',
+		description: 'Misc stuff',
 		breaking: false,
 	});
 });

@@ -1,5 +1,6 @@
 import {findGitmoji, normalizeEmoji} from './gitmojis.js';
-import type {ParsedCommit, RawCommit, Trailer} from './types.js';
+import {inferGitmoji} from './infer.js';
+import type {GitmojiSource, ParsedCommit, RawCommit, Trailer} from './types.js';
 
 /** Conventional Commits types we recognize, and the gitmoji each implies. */
 const TYPE_TO_GITMOJI: Record<string, string> = {
@@ -14,7 +15,14 @@ const TYPE_TO_GITMOJI: Record<string, string> = {
 	ci: 'construction_worker',
 	chore: 'wrench',
 	revert: 'rewind',
+	release: 'bookmark',
+	wip: 'construction',
+	deps: 'arrow_up',
+	security: 'lock',
 };
+
+/** Conventional scopes that mean "dependency update" under any type. */
+const DEPENDENCY_SCOPES = new Set(['deps', 'deps-dev', 'dependencies']);
 
 const CONVENTIONAL_PREFIX = /^(\w+)(?:\(([^)]+)\))?(!)?:\s*/;
 const GITMOJI_CLI_SCOPE = /^\(([^)]+)\):\s*/;
@@ -31,6 +39,7 @@ export function parseCommit(raw: RawCommit): ParsedCommit {
 			...original,
 			body: raw.body,
 			gitmoji: 'rewind',
+			gitmojiSource: 'rule',
 			type: null,
 			description: `Revert "${original.description}"`,
 			breaking: BREAKING_FOOTER.test(raw.body),
@@ -53,9 +62,11 @@ export function parseCommit(raw: RawCommit): ParsedCommit {
 	}
 
 	let gitmoji: string | null = null;
+	let gitmojiSource: GitmojiSource = null;
 	const found = findGitmoji(text);
 	if (found) {
 		gitmoji = found.code;
+		gitmojiSource = 'gitmoji';
 		text = (text.slice(0, found.index) + text.slice(found.index + found.length))
 			.replaceAll(/\s{2,}/g, ' ')
 			.trim();
@@ -68,13 +79,23 @@ export function parseCommit(raw: RawCommit): ParsedCommit {
 	}
 
 	if (!gitmoji && type) {
-		gitmoji = TYPE_TO_GITMOJI[type] ?? null;
+		gitmoji =
+			scope && DEPENDENCY_SCOPES.has(scope.toLowerCase())
+				? 'arrow_up'
+				: (TYPE_TO_GITMOJI[type] ?? null);
+		gitmojiSource = gitmoji ? 'type' : null;
+	}
+
+	if (!gitmoji) {
+		gitmoji = inferGitmoji(text);
+		gitmojiSource = gitmoji ? 'rule' : null;
 	}
 
 	const {trailers: rawTrailers, ...rest} = raw;
 	return {
 		...rest,
 		gitmoji,
+		gitmojiSource,
 		type,
 		scope,
 		description: text.trim(),

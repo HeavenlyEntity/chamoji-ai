@@ -36,7 +36,7 @@ test('breaking sparkles goes to breaking_changes', () => {
 
 test('commits without a matching group go to misc', () => {
 	const groups = groupCommits(
-		[commit('Update stuff'), commit('📝 Write docs')],
+		[commit('Misc stuff'), commit('📝 Write docs')],
 		DEFAULT_GROUP_CONFIG,
 	);
 	expect(ids(groups)).toEqual(['misc']);
@@ -45,7 +45,7 @@ test('commits without a matching group go to misc', () => {
 
 test('without a misc group unmatched commits are dropped', () => {
 	const groups = groupCommits(
-		[commit('Update stuff'), commit('✨ Add login')],
+		[commit('Misc stuff'), commit('✨ Add login')],
 		[{group: 'added', label: 'Added', emojis: ['sparkles']}],
 	);
 	expect(ids(groups)).toEqual(['added']);

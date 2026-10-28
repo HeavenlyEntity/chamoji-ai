@@ -16,9 +16,16 @@ export type RawCommit = {
 
 export type Trailer = {key: string; value: string};
 
+/**
+ * Where a commit's gitmoji came from: written in the message, implied by a
+ * Conventional type, guessed from the wording, or picked by an AI classifier.
+ */
+export type GitmojiSource = 'gitmoji' | 'type' | 'rule' | 'ai' | null;
+
 export type ParsedCommit = Omit<RawCommit, 'trailers'> & {
 	/** Gitmoji code without colons, e.g. `sparkles`. */
 	gitmoji: string | null;
+	gitmojiSource: GitmojiSource;
 	/** Conventional Commits type, e.g. `feat`. */
 	type: string | null;
 	scope: string | null;
