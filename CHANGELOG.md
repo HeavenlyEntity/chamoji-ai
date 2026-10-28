@@ -1,5 +1,22 @@
 # Changelog
 
+## [v0.7.0](https://github.com/HeavenlyEntity/chamoji-ai/compare/v0.6.0...v0.7.0) - 2026-10-28
+
+### Added
+
+- ✨ Add the commit composer, chamoji commit and hook run ([2e16b44](https://github.com/HeavenlyEntity/chamoji-ai/commit/2e16b440c8fc03e62038eb83691a9e584aa7e86b))
+- ✨ Add chamoji hook install and uninstall ([fa9abc1](https://github.com/HeavenlyEntity/chamoji-ai/commit/fa9abc1ce8797efb9d166f30968efadcd50017ee))
+- ✨ Add the commit composer's core: messages, search, config and hook rules ([a95e4af](https://github.com/HeavenlyEntity/chamoji-ai/commit/a95e4afe58146da97517a4a9e987d8252cca7c56))
+
+### Documentation
+
+- 📝 Document the commit composer and hook ([4c8a3f5](https://github.com/HeavenlyEntity/chamoji-ai/commit/4c8a3f5225ab4955bee8257cd4c831ec84a81f9c))
+- 📝 Record the waitlist site's custom domain, chamoji.dev ([e25a4a6](https://github.com/HeavenlyEntity/chamoji-ai/commit/e25a4a60e3afba1ae901501736f16937343538bd))
+
+### Maintenance
+
+- 👷 Check the commit hook end to end in each shell and hook manager ([a6f5312](https://github.com/HeavenlyEntity/chamoji-ai/commit/a6f531201c40e036c25fb5ab306ed242d93319d1))
+
 ## [v0.6.0](https://github.com/HeavenlyEntity/chamoji-ai/compare/v0.5.0...v0.6.0) - 2026-10-28
 
 ### Added
