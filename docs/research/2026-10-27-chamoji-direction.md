@@ -312,6 +312,8 @@ Checked against the GitHub API and npm on 2026-10-27. Items marked [unverified] 
 
 ## 8. Suggested first milestones
 
+> **Superseded by [`docs/ROADMAP.md`](../ROADMAP.md).** The roadmap is the live order and status. This list is kept as the original proposal.
+
 1. ✅ **Fix and restructure** (no AI): monorepo split, working `chamoji changelog` with full gitmoji list, trailers, tests on fixture repos. Published as `@chamoji/core` and `@chamoji/cli` 0.1.0.
 2. **`chamoji commit`**: Ink composer + `prepare-commit-msg` hook; deterministic gitmoji search.
 3. **Jev judgments** in the composer (gitmoji ranking, breaking-change check).
