@@ -34,8 +34,8 @@ These apply to every milestone. A plan that breaks one needs a written reason.
 | 1.6 | Use it ourselves                    | 0 Foundation               | Retention   | S    | ✅ Shipped in 0.3.0                            | [plan](superpowers/plans/2026-10-28-milestone-1.6-use-it-ourselves.md)  |
 | 2   | Public launch kit                   | 1 Activation & acquisition | Acquisition | S    | ✅ Done (all items shipped)                    | [plan](superpowers/plans/2026-10-28-milestone-2-public-launch-kit.md)   |
 | 3   | GitHub Action                       | 1 Activation & acquisition | Acquisition | M    | ✅ Shipped in 0.5.0 (Marketplace listing left) | [plan](superpowers/plans/2026-10-28-milestone-3a-release-command.md)    |
-| 4   | Commit composer and git hook        | 2 Retention                | Retention   | L    | 🚧 Built, release pending                      | [plan](superpowers/plans/2026-10-28-milestone-4-commit-composer.md)     |
-| 5   | Jev in the composer                 | 2 Retention                | Retention   | M    | 🚧 Built, release pending                      | [plan](superpowers/plans/2026-10-28-milestone-5-jev-in-the-composer.md) |
+| 4   | Commit composer and git hook        | 2 Retention                | Retention   | L    | ✅ Shipped in 0.7.0                            | [plan](superpowers/plans/2026-10-28-milestone-4-commit-composer.md)     |
+| 5   | Jev in the composer                 | 2 Retention                | Retention   | M    | ✅ Shipped in 0.8.0                            | [plan](superpowers/plans/2026-10-28-milestone-5-jev-in-the-composer.md) |
 | 6   | Workstreams                         | 3 Differentiation          | Retention   | L    | Planned                                        | —                                                                       |
 | 7   | Project memory                      | 3 Differentiation          | Retention   | L    | Planned                                        | —                                                                       |
 | 8   | Review packets                      | 3 Differentiation          | Expansion   | L    | Planned                                        | —                                                                       |
@@ -327,7 +327,7 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 
 ### 4. Commit composer and git hook
 
-**Progress (2026-10-28):** built, waiting for its release.
+**Progress (2026-10-28):** ✅ shipped in 0.7.0. The Hook workflow passes in bash, zsh, fish and PowerShell on Linux and macOS, with husky and lefthook, and on Windows without a terminal.
 
 - ✅ **`chamoji commit`** with the Ink composer:
   - gitmoji search, then scope, title, body, why and breaking
@@ -399,7 +399,9 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 
 **Dependencies:** milestone 4.
 
-**Progress:** built, not yet released. Prose title drafts are left for later.
+**Progress:** ✅ shipped in 0.8.0. Prose title drafts are left for later.
+
+- **End-to-end check:** `chamoji commit` in a real terminal with `chamoji.composer` on and the live API: for a staged docs-only change, Jev preselected 📝 and the commit read `📝 Document the setup`.
 
 - **The opt-in is git config,** `chamoji.composer` and `chamoji.sendDiffs`, not `chamoji.config.json`. A file in the repository would let a cloned repository send your staged changes on its own say.
 - **Measured** with `scripts/jev-eval.mjs` on 200 labelled commits from the gitmoji and gitmoji-cli repos. Latency was p50 about 100 ms, p95 120–150 ms with 4 requests in flight.
