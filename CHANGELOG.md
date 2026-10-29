@@ -1,5 +1,33 @@
 # Changelog
 
+## [v0.8.0](https://github.com/HeavenlyEntity/chamoji-ai/compare/v0.7.0...v0.8.0) - 2026-10-29
+
+### Added
+
+- ✨ Preselect Jev's gitmoji in the composer ([ff1f526](https://github.com/HeavenlyEntity/chamoji-ai/commit/ff1f52667a5091fb0120c923a12b6d7a17b1ec27))
+- ✨ Ask Jev for gitmoji, breaking and split advice at commit time ([6a329f8](https://github.com/HeavenlyEntity/chamoji-ai/commit/6a329f88b6366a34f9593cf464a2b664c1472041))
+- ✨ Add Jev's judgment cache and a staged-changes reader ([15fef1d](https://github.com/HeavenlyEntity/chamoji-ai/commit/15fef1d1b2777b11bd4523376b0d677de963a700))
+
+### Changed
+
+- 🚸 Preselect Jev's gitmoji only when it's very sure ([0cf3bca](https://github.com/HeavenlyEntity/chamoji-ai/commit/0cf3bcacd84f3d6c5ca05fe11f26cd4c92571a73))
+- ⚡️ Don't ask Jev again about commits it already sorted ([eacb5a6](https://github.com/HeavenlyEntity/chamoji-ai/commit/eacb5a60b46349fa253d2d91c581817cf0269fda))
+
+### Security
+
+- 🔒️ Keep the composer's AI opt-in out of the repository ([173a010](https://github.com/HeavenlyEntity/chamoji-ai/commit/173a0108ce046d983d5058195e56705a9e769d3b))
+- 🔒️ Close three ways staged secrets could reach Jev ([653dca8](https://github.com/HeavenlyEntity/chamoji-ai/commit/653dca8ce1b3def0847129de0261f10ac7c26048))
+
+### Documentation
+
+- 📝 Mark the composer and Jev milestones shipped ([0699caf](https://github.com/HeavenlyEntity/chamoji-ai/commit/0699caf06097f823763d964069246c6d1abbd2cf))
+- ✏️ Use npm i -g in the install instructions ([e905d09](https://github.com/HeavenlyEntity/chamoji-ai/commit/e905d09a2d1b12699af9ec039752fe26caa5a2fe))
+- 📝 Measure Jev in the composer and document it ([b1a744c](https://github.com/HeavenlyEntity/chamoji-ai/commit/b1a744c6c8e4c1b8c9b647bb4e9260ab0c35979d))
+
+### Maintenance
+
+- 💚 Make two tests pass on Windows ([e4b8254](https://github.com/HeavenlyEntity/chamoji-ai/commit/e4b82543a23c281799a2a4e2ee3adc64e484a15c))
+
 ## [v0.7.0](https://github.com/HeavenlyEntity/chamoji-ai/compare/v0.6.0...v0.7.0) - 2026-10-28
 
 ### Added
