@@ -295,3 +295,7 @@ pnpm check    # build (type-check) + prettier
 ```
 
 `packages/core` is the engine: git reading, parsing, grouping and rendering, with no UI. `packages/cli` is the `chamoji` command. See `docs/research/` for where the project is heading.
+
+## License
+
+MIT © AMWARE Technologies LLC. chamoji is a project of AMWARE Technologies LLC.

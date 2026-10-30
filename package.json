@@ -3,6 +3,7 @@
 	"private": true,
 	"type": "module",
 	"license": "MIT",
+	"author": "AMWARE Technologies LLC",
 	"engines": {
 		"node": ">=22"
 	},
