@@ -3,6 +3,7 @@
 	"version": "0.8.0",
 	"description": "Changelogs from gitmoji and Conventional Commits",
 	"license": "MIT",
+	"author": "AMWARE Technologies LLC",
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/HeavenlyEntity/chamoji-ai.git",
