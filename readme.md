@@ -226,7 +226,7 @@ Then paste this into your readme, with your own owner and repo:
 - **What it never overwrites:** the Action refuses a branch that holds anything other than `card.png`.
 - **What is sent:** to `chamoji.dev/api/card`, the repo name, the latest tag, its date and a few counts. Never commit text. A private repo's name reaches `chamoji.dev` this way.
 - **If the renderer is down,** the job warns and the last card stays.
-- **Scheduled runs pause:** GitHub stops scheduled workflows in a repository with no activity for 60 days.
+- **Scheduled runs pause:** GitHub stops scheduled workflows in a public repository with no activity for 60 days.
 - **Releases from `mode: release`:** tags pushed with `GITHUB_TOKEN` don't start workflows, so add a `mode: card` step after the release step. Otherwise the daily run catches up.
 
 ## Release from your coding agent
