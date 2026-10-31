@@ -6,7 +6,7 @@
 - **When a milestone ships:** update its status, its exit-criteria results and the dogfooding log below.
 - **Background only:** [`docs/research/2026-10-27-chamoji-direction.md`](research/2026-10-27-chamoji-direction.md) holds the research and reasoning. If it disagrees with this file, this file wins.
 - **Look and feel:** [`docs/brand/BRAND.md`](brand/BRAND.md) sets the colours, the holographic foil effect, the type and the rules for every visual surface.
-- **Last updated:** 2026-10-28
+- **Last updated:** 2026-10-31
 
 ## Vision
 
@@ -34,6 +34,7 @@ These apply to every milestone. A plan that breaks one needs a written reason.
 | 1.6 | Use it ourselves                    | 0 Foundation               | Retention   | S    | ✅ Shipped in 0.3.0                            | [plan](superpowers/plans/2026-10-28-milestone-1.6-use-it-ourselves.md)  |
 | 2   | Public launch kit                   | 1 Activation & acquisition | Acquisition | S    | ✅ Done (all items shipped)                    | [plan](superpowers/plans/2026-10-28-milestone-2-public-launch-kit.md)   |
 | 3   | GitHub Action                       | 1 Activation & acquisition | Acquisition | M    | ✅ Shipped in 0.5.0 (Marketplace listing left) | [plan](superpowers/plans/2026-10-28-milestone-3a-release-command.md)    |
+| 3.5 | Repo card                           | 1 Activation & acquisition | Acquisition | M    | ⏭ Next                                         | [plan](superpowers/plans/2026-10-31-repo-card.md)                       |
 | 4   | Commit composer and git hook        | 2 Retention                | Retention   | L    | ✅ Shipped in 0.7.0                            | [plan](superpowers/plans/2026-10-28-milestone-4-commit-composer.md)     |
 | 5   | Jev in the composer                 | 2 Retention                | Retention   | M    | ✅ Shipped in 0.8.0                            | [plan](superpowers/plans/2026-10-28-milestone-5-jev-in-the-composer.md) |
 | 6   | Workstreams                         | 3 Differentiation          | Retention   | L    | Planned                                        | —                                                                       |
@@ -318,6 +319,32 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 - Updates the PR comment in place, with no duplicates.
 
 **Dependencies:** milestone 2.
+
+### 3.5. Repo card
+
+**Why:** distribution. A card in a readme shows a project's latest release and links back to chamoji, so every repo that uses it promotes chamoji. daily.dev's DevCard is the model: a hosted image that an Action saves into a repo on a schedule.
+
+**Scope:**
+
+- **A renderer at `chamoji.dev/api/card`,** in the private `chamoji-web` repo, because it uses the licensed fonts. It turns validated parameters into a PNG. It has no database and no GitHub token, and it stores nothing.
+- **`chamoji card`** works out the stats from local git history and prints the renderer URL:
+  - the latest version and its date
+  - the number of releases and commits
+  - the share of commits sorted without AI
+  - the latest release's Added, Fixed and Changed counts
+- **`mode: card` in the Action** saves the image to a separate `chamoji-card` branch on every release tag and once a day. The branch holds one commit, replaced on each change.
+
+**Out of scope:** a personal developer card for GitHub profiles, which needs stats from across a person's repos. Much of the renderer can be reused for it later.
+
+**Exit criteria:**
+
+- A release tag updates the card's version with no manual step.
+- A daily run with no changes pushes nothing.
+- A failing renderer never fails the job, and the last card stays.
+- `main` and the tags get no bot commits.
+- It works on a repo with no tags.
+
+**Dependencies:** milestone 3.
 
 ---
 
