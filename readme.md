@@ -184,6 +184,51 @@ To release at the press of a button, add a `workflow_dispatch` workflow with `wi
 
 On PRs from forks the token can't comment, so the preview goes to the job summary instead.
 
+## Repo card
+
+The Action can also keep a card for your project: an image of your latest release and a few stats about it, to paste into your readme. Each card links back to chamoji.
+
+```yaml
+# .github/workflows/card.yml
+name: card
+on:
+  push:
+    tags: ['v*']
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write # the card branch
+jobs:
+  card:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # chamoji reads every commit and tag
+      - uses: HeavenlyEntity/chamoji-ai@v0.9.0
+        with:
+          mode: card
+```
+
+Then paste this into your readme, with your own owner and repo:
+
+```html
+<img
+	src="https://raw.githubusercontent.com/<owner>/<repo>/chamoji-card/card.png"
+	alt="chamoji card"
+	width="480"
+/>
+```
+
+- **Where it goes:** a `chamoji-card` branch that holds only `card.png`, replaced on every change. `main` and your tags get no bot commits. `card-branch` renames it, and the `card-url` output is the image's address.
+- **What it needs:** `contents: write` and `fetch-depth: 0`. The push uses the credential `actions/checkout` leaves behind, so `persist-credentials: false` won't work.
+- **What it never overwrites:** the Action refuses a branch that holds anything other than `card.png`.
+- **What is sent:** to `chamoji.dev/api/card`, the repo name, the latest tag, its date and a few counts. Never commit text. A private repo's name reaches `chamoji.dev` this way.
+- **If the renderer is down,** the job warns and the last card stays.
+- **Scheduled runs pause:** GitHub stops scheduled workflows in a repository with no activity for 60 days.
+- **Releases from `mode: release`:** tags pushed with `GITHUB_TOKEN` don't start workflows, so add a `mode: card` step after the release step. Otherwise the daily run catches up.
+
 ## Release from your coding agent
 
 The `chamoji-release` skill teaches Claude Code, Codex, Cursor and other coding agents to cut a release the way the flow above does. Ask for "a release" or "release notes", and the agent:

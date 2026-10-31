@@ -1,0 +1,38 @@
+name: card
+
+# chamoji's repo card, saved to the chamoji-card branch from the local build:
+# on every v* tag, once a day, and on request.
+on:
+  push:
+    tags: ['v*']
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Its own group, apart from the chamoji workflow's. Runs queue instead of
+# cancelling, so a tag's card is never dropped for a scheduled one.
+concurrency:
+  group: card
+  cancel-in-progress: false
+
+jobs:
+  card:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - uses: ./
+        with:
+          mode: card
+          cli: node packages/cli/dist/cli.js

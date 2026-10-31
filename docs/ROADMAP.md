@@ -34,7 +34,7 @@ These apply to every milestone. A plan that breaks one needs a written reason.
 | 1.6 | Use it ourselves                    | 0 Foundation               | Retention   | S    | ✅ Shipped in 0.3.0                            | [plan](superpowers/plans/2026-10-28-milestone-1.6-use-it-ourselves.md)  |
 | 2   | Public launch kit                   | 1 Activation & acquisition | Acquisition | S    | ✅ Done (all items shipped)                    | [plan](superpowers/plans/2026-10-28-milestone-2-public-launch-kit.md)   |
 | 3   | GitHub Action                       | 1 Activation & acquisition | Acquisition | M    | ✅ Shipped in 0.5.0 (Marketplace listing left) | [plan](superpowers/plans/2026-10-28-milestone-3a-release-command.md)    |
-| 3.5 | Repo card                           | 1 Activation & acquisition | Acquisition | M    | ⏭ Next                                         | [plan](superpowers/plans/2026-10-31-repo-card.md)                       |
+| 3.5 | Repo card                           | 1 Activation & acquisition | Acquisition | M    | 🚧 In progress                                 | [plan](superpowers/plans/2026-10-31-repo-card.md)                       |
 | 4   | Commit composer and git hook        | 2 Retention                | Retention   | L    | ✅ Shipped in 0.7.0                            | [plan](superpowers/plans/2026-10-28-milestone-4-commit-composer.md)     |
 | 5   | Jev in the composer                 | 2 Retention                | Retention   | M    | ✅ Shipped in 0.8.0                            | [plan](superpowers/plans/2026-10-28-milestone-5-jev-in-the-composer.md) |
 | 6   | Workstreams                         | 3 Differentiation          | Retention   | L    | Planned                                        | —                                                                       |
@@ -321,6 +321,22 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 **Dependencies:** milestone 2.
 
 ### 3.5. Repo card
+
+**Progress (2026-10-31):**
+
+- ✅ **Built and tested locally.** The full suite passes (399 tests).
+  - `card` in `@chamoji/core`: works out the stats from local git history and builds the renderer URL. Tested for the counts, the share sorted without AI (never rounded up to 100%), a repo with no tags, an empty history, and that no commit text is ever in the URL.
+  - `chamoji card` in the CLI: prints the renderer URL, reads the repo from an HTTPS or SSH `origin` or from `--repo`, takes `--endpoint` and `--json`, and never calls the classifier.
+  - `mode: card` in the Action, with `card-endpoint`, `card-branch` and the `card-url` output. Tested against fixture repos with a fake renderer:
+    - the image alone on the branch, as one replaced commit
+    - nothing pushed when the image hasn't changed
+    - a branch holding anything else refused
+    - the last card kept when the renderer fails or doesn't send a PNG
+    - the checkout left alone
+    - a branch that changed during the run not overwritten
+    - the image stored byte for byte
+- ✅ **Wired up for chamoji's own repo:** `.github/workflows/card.yml` runs the local build on `v*` tags, daily and on request. The readme has a "Repo card" section.
+- ⬜ **Not deployed, and not run on GitHub yet.** The renderer at `chamoji.dev/api/card` in `chamoji-web`, a real run of the workflow, the `chamoji-card` branch and a card in chamoji's own readme don't exist yet. None of the exit criteria below is met in production.
 
 **Why:** distribution. A card in a readme shows a project's latest release and links back to chamoji, so every repo that uses it promotes chamoji. daily.dev's DevCard is the model: a hosted image that an Action saves into a repo on a schedule.
 
