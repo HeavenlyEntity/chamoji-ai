@@ -180,9 +180,10 @@ release)
 
 card)
 	# Saves the repo's card image alone on its own branch, so a README can link to
-	# it. It force-pushes, so it only ever touches a branch that doesn't exist yet
-	# or holds exactly card.png. It never changes the checkout: no git config, no
-	# worktree, no --depth. Nothing here asks Jev, so it calls the CLI directly.
+	# it. It force-pushes, but only over the branch it inspected (one that doesn't
+	# exist yet or holds exactly card.png), which a lease enforces at push time.
+	# It never changes the checkout: no git config, no worktree, no --depth.
+	# Nothing here asks Jev, so it calls the CLI directly.
 	branch=${CHAMOJI_CARD_BRANCH:-chamoji-card}
 	repo=${GH_REPO:-${GITHUB_REPOSITORY:-}}
 	[ -n "$repo" ] || fail 'card mode needs the repository as owner/name (GH_REPO or GITHUB_REPOSITORY)'
@@ -202,6 +203,7 @@ card)
 	fi
 
 	current=
+	tip=
 	set +e
 	git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1
 	status=$?
@@ -210,13 +212,14 @@ card)
 		0)
 			git fetch --quiet --no-tags origin "+refs/heads/$branch:refs/chamoji/card" || fail "couldn't fetch $branch from origin"
 			[ "$(git ls-tree -r --name-only refs/chamoji/card)" = card.png ] || fail "$branch holds more than card.png, so chamoji won't overwrite it; pick another card-branch"
+			tip=$(git rev-parse refs/chamoji/card)
 			current=$(git rev-parse refs/chamoji/card:card.png)
 			;;
 		2) ;;
 		*) fail "couldn't read $branch from origin; the job needs contents: write" ;;
 	esac
 
-	blob=$(git hash-object -w "$image")
+	blob=$(git hash-object -w --no-filters "$image")
 	if [ "$blob" = "$current" ]; then
 		echo "chamoji: the card on $branch is already up to date" | tee -a "$summary"
 	else
@@ -226,7 +229,8 @@ card)
 				GIT_COMMITTER_NAME='github-actions[bot]' GIT_COMMITTER_EMAIL='41898282+github-actions[bot]@users.noreply.github.com' \
 				git commit-tree "$tree" -m '🍱 Update the chamoji card [skip ci]'
 		)
-		git push --quiet --force origin "$commit:refs/heads/$branch" || fail "couldn't push to $branch; the job needs contents: write"
+		# The lease makes the push refuse if the branch moved since we looked at it.
+		git push --quiet --force-with-lease="refs/heads/$branch:$tip" origin "$commit:refs/heads/$branch" || fail "couldn't push to $branch; it changed during this run, or the job needs contents: write"
 	fi
 	echo "card-url=https://raw.githubusercontent.com/$repo/$branch/card.png" >>"$output"
 	;;

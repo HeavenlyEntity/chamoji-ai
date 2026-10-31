@@ -1,5 +1,5 @@
 import {execFile} from 'node:child_process';
-import {chmod, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
+import {chmod, mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -130,7 +130,18 @@ async function setup(steps: RepoStep[]) {
 	// What the renderer answers with on the next run.
 	const answer = async (body: Buffer | string) =>
 		writeFile(path.join(fake, 'card.png'), body);
-	return {action, read, rev, git, originGit, originBlob, answer, dir: repo.dir};
+	return {
+		action,
+		read,
+		rev,
+		git,
+		originGit,
+		originBlob,
+		answer,
+		dir: repo.dir,
+		origin,
+		fake,
+	};
 }
 
 const tagged: RepoStep[] = [
@@ -381,11 +392,57 @@ describe.skipIf(process.platform === 'win32')('the GitHub Action', () => {
 		});
 
 		test('card mode explains a push it could not make', async () => {
-			const {action, git} = await setup(tagged);
-			await git('remote', 'set-url', 'origin', '/nonexistent/chamoji.git');
+			const {action, origin} = await setup(tagged);
+			const hook = path.join(origin, 'hooks', 'pre-receive');
+			await writeFile(hook, '#!/bin/sh\necho no >&2\nexit 1\n');
+			await chmod(hook, 0o755);
 			const result = await action(card);
 			expect(result.code).toBe(1);
+			expect(result.stderr).toContain('push to chamoji-card');
 			expect(result.stderr).toContain('contents: write');
+		});
+
+		test('card mode does not overwrite a branch that changed during the run', async () => {
+			const {action, answer, originGit, origin, fake} = await setup(tagged);
+			await action(card);
+			await answer(Buffer.concat([PNG, Buffer.from(' changed')]));
+			// A git that, before pushing, lets someone else commit to the branch.
+			const realGit = (await execFileAsync('which', ['git'])).stdout.trim();
+			const shimDir = path.join(fake, 'shim');
+			await mkdir(shimDir);
+			await writeFile(
+				path.join(shimDir, 'git'),
+				`#!/usr/bin/env bash
+if [ "$1" = push ]; then
+	tree=$("${realGit}" -C "${origin}" rev-parse chamoji-card^{tree})
+	other=$(GIT_AUTHOR_NAME=x GIT_AUTHOR_EMAIL=x@x GIT_COMMITTER_NAME=x GIT_COMMITTER_EMAIL=x@x "${realGit}" -C "${origin}" commit-tree "$tree" -p chamoji-card -m 'someone else')
+	"${realGit}" -C "${origin}" update-ref refs/heads/chamoji-card "$other"
+fi
+exec "${realGit}" "$@"
+`,
+			);
+			await chmod(path.join(shimDir, 'git'), 0o755);
+			const result = await action({
+				...card,
+				PATH: `${shimDir}${path.delimiter}${fake}${path.delimiter}${process.env.PATH}`,
+			});
+			expect(result.code).toBe(1);
+			expect(result.stderr).toContain('contents: write');
+			expect(await originGit('log', '--format=%s', '-1', 'chamoji-card')).toBe(
+				'someone else',
+			);
+		});
+
+		test('card mode stores the image byte for byte whatever .gitattributes says', async () => {
+			const {action, git, dir, originBlob} = await setup(tagged);
+			await writeFile(path.join(dir, '.gitattributes'), '* text eol=lf\n');
+			await git('add', '.gitattributes');
+			await git('commit', '--quiet', '-m', '🔧 Normalise line endings');
+			const result = await action(card);
+			expect(result.code).toBe(0);
+			expect((await originBlob('chamoji-card:card.png')).equals(PNG)).toBe(
+				true,
+			);
 		});
 	});
 });
