@@ -9,8 +9,10 @@ inputs:
   mode:
     description: >-
       auto (default) writes release notes on a tag push and a changelog preview
-      comment on a pull request. Or set notes, comment, or release (cuts a
-      release with `chamoji release --push`).
+      comment on a pull request. Or set notes, comment, release (cuts a
+      release with `chamoji release --push`) or card (saves the repo's card
+      image alone on card-branch; needs contents write, and a schedule or push
+      trigger of your own, since auto never picks it).
     default: auto
   chamoji-version:
     description: '@chamoji/cli version to run with npx.'
@@ -33,9 +35,17 @@ inputs:
       updates its own preview comment. Set it when github-token is a personal
       token.
     default: github-actions[bot]
+  card-endpoint:
+    description: card mode only. The renderer that draws the card image.
+    default: https://chamoji.dev/api/card
+  card-branch:
+    description: >-
+      card mode only. The branch that holds nothing but card.png. chamoji
+      force-pushes it, so it refuses a branch that holds anything else.
+    default: chamoji-card
   github-token:
     description: >-
-      Token for gh. notes and release need contents write; comment needs
+      Token for gh. notes, release and card need contents write; comment needs
       pull-requests write.
     default: ${{ github.token }}
 
@@ -46,6 +56,9 @@ outputs:
   notes-file:
     description: notes mode only. Path to the release notes.
     value: ${{ steps.run.outputs.notes-file }}
+  card-url:
+    description: card mode only. The raw GitHub address of the card image.
+    value: ${{ steps.run.outputs.card-url }}
 
 runs:
   using: composite
@@ -62,6 +75,8 @@ runs:
         CHAMOJI_CLI: ${{ inputs.cli }}
         CHAMOJI_RELEASE_VERSION: ${{ inputs.release-version }}
         CHAMOJI_COMMENT_AUTHOR: ${{ inputs.comment-author }}
+        CHAMOJI_CARD_URL: ${{ inputs.card-endpoint }}
+        CHAMOJI_CARD_BRANCH: ${{ inputs.card-branch }}
         CHAMOJI_AI: ${{ inputs.ai }}
         TYPESAFE_API_KEY: ${{ inputs.typesafe-api-key }}
         GH_TOKEN: ${{ inputs.github-token }}

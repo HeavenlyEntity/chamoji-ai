@@ -38,6 +38,24 @@ case "$1 $2" in
 esac
 `;
 
+// Copies FAKE_CURL_BODY (a file) to the path after --output, as the renderer's
+// answer, or fails like curl --fail does when FAKE_CURL_FAIL=1.
+const FAKE_CURL = `#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "$FAKE_GH_DIR/curl-calls"
+[ "\${FAKE_CURL_FAIL:-}" = 1 ] && exit 22
+previous=
+for arg in "$@"; do
+	if [ "$previous" = --output ]; then cp "$FAKE_CURL_BODY" "$arg"; fi
+	previous=$arg
+done
+`;
+
+// A small buffer that starts with the PNG signature.
+const PNG = Buffer.concat([
+	Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+	Buffer.from('fake card'),
+]);
+
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
 	await Promise.all(cleanups.splice(0).map(async cleanup => cleanup()));
@@ -52,8 +70,19 @@ async function setup(steps: RepoStep[]) {
 	);
 	await writeFile(path.join(fake, 'gh'), FAKE_GH);
 	await chmod(path.join(fake, 'gh'), 0o755);
+	await writeFile(path.join(fake, 'curl'), FAKE_CURL);
+	await chmod(path.join(fake, 'curl'), 0o755);
+	await writeFile(path.join(fake, 'card.png'), PNG);
 	await writeFile(path.join(fake, 'summary'), '');
 	await writeFile(path.join(fake, 'output'), '');
+
+	// A bare repository to be the checkout's origin, where card mode pushes.
+	const origin = `${repo.dir}-origin.git`;
+	cleanups.push(async () => rm(origin, {recursive: true, force: true}));
+	await execFileAsync('git', ['init', '-q', '--bare', origin]);
+	await execFileAsync('git', ['remote', 'add', 'origin', origin], {
+		cwd: repo.dir,
+	});
 
 	const action = async (env: Record<string, string>) => {
 		try {
@@ -63,6 +92,7 @@ async function setup(steps: RepoStep[]) {
 					...process.env,
 					PATH: `${fake}${path.delimiter}${process.env.PATH}`,
 					FAKE_GH_DIR: fake,
+					FAKE_CURL_BODY: path.join(fake, 'card.png'),
 					CHAMOJI_CLI: cli,
 					GITHUB_STEP_SUMMARY: path.join(fake, 'summary'),
 					GITHUB_OUTPUT: path.join(fake, 'output'),
@@ -86,7 +116,21 @@ async function setup(steps: RepoStep[]) {
 		readFile(path.join(fake, name), 'utf8').catch(() => '');
 	const rev = async (ref: string) =>
 		(await gitOutput(repo.dir, ['rev-parse', ref])).trim();
-	return {action, read, rev};
+	const git = async (...args: string[]) =>
+		(await gitOutput(repo.dir, args)).trim();
+	const originGit = async (...args: string[]) =>
+		(await gitOutput(origin, args)).trim();
+	const originBlob = async (spec: string) => {
+		const {stdout} = await execFileAsync('git', ['cat-file', 'blob', spec], {
+			cwd: origin,
+			encoding: 'buffer',
+		});
+		return stdout;
+	};
+	// What the renderer answers with on the next run.
+	const answer = async (body: Buffer | string) =>
+		writeFile(path.join(fake, 'card.png'), body);
+	return {action, read, rev, git, originGit, originBlob, answer, dir: repo.dir};
 }
 
 const tagged: RepoStep[] = [
@@ -213,9 +257,135 @@ describe.skipIf(process.platform === 'win32')('the GitHub Action', () => {
 	});
 
 	test('auto mode needs a tag push or a pull request', async () => {
-		const {action} = await setup(tagged);
+		const {action, read} = await setup(tagged);
 		const result = await action({GITHUB_EVENT_NAME: 'schedule'});
 		expect(result.code).toBe(1);
-		expect(result.stderr).toContain('set mode to notes, comment or release');
+		expect(result.stderr).toContain(
+			'set mode to notes, comment, release or card',
+		);
+		// card pushes to a branch, so no event ever picks it.
+		expect(await read('curl-calls')).toBe('');
+		expect(await read('output')).not.toContain('card-url');
+	});
+
+	describe('card mode', () => {
+		const card = {CHAMOJI_MODE: 'card'};
+		const cardUrl =
+			'https://raw.githubusercontent.com/acme/widgets/chamoji-card/card.png';
+
+		test('card mode saves the image alone on the card branch', async () => {
+			const {action, read, originGit, originBlob} = await setup(tagged);
+			const result = await action(card);
+			expect(result.code).toBe(0);
+			expect(await originGit('rev-list', '--count', 'chamoji-card')).toBe('1');
+			expect(
+				await originGit('ls-tree', '-r', '--name-only', 'chamoji-card'),
+			).toBe('card.png');
+			expect((await originBlob('chamoji-card:card.png')).equals(PNG)).toBe(
+				true,
+			);
+			expect(await read('output')).toContain(`card-url=${cardUrl}`);
+			expect(await read('curl-calls')).toContain(
+				'https://chamoji.dev/api/card',
+			);
+		});
+
+		test('card mode pushes nothing when the image has not changed', async () => {
+			const {action, read, originGit} = await setup(tagged);
+			await action(card);
+			const tip = await originGit('rev-parse', 'chamoji-card');
+			const result = await action(card);
+			expect(result.code).toBe(0);
+			expect(await originGit('rev-parse', 'chamoji-card')).toBe(tip);
+			expect(await read('output')).toContain(`card-url=${cardUrl}`);
+		});
+
+		test('card mode replaces the branch and keeps one commit', async () => {
+			const {action, answer, originGit} = await setup(tagged);
+			await action(card);
+			await answer(Buffer.concat([PNG, Buffer.from(' changed')]));
+			const result = await action(card);
+			expect(result.code).toBe(0);
+			expect(await originGit('rev-list', '--count', 'chamoji-card')).toBe('1');
+			expect(await originGit('log', '--format=%s', 'chamoji-card')).toBe(
+				'🍱 Update the chamoji card [skip ci]',
+			);
+			expect(await originGit('log', '--format=%an', 'chamoji-card')).toBe(
+				'github-actions[bot]',
+			);
+		});
+
+		test('card mode refuses a branch that holds anything else', async () => {
+			const {action, git, originGit} = await setup(tagged);
+			await git('push', '--quiet', 'origin', 'main');
+			const before = await originGit('rev-parse', 'main');
+			const result = await action({...card, CHAMOJI_CARD_BRANCH: 'main'});
+			expect(result.code).toBe(1);
+			expect(result.stderr).toContain('main');
+			expect(await originGit('rev-parse', 'main')).toBe(before);
+		});
+
+		test('card mode refuses a branch name git would reject', async () => {
+			const {action, read} = await setup(tagged);
+			const result = await action({...card, CHAMOJI_CARD_BRANCH: '../x'});
+			expect(result.code).toBe(1);
+			expect(result.stderr).toContain('../x');
+			expect(await read('curl-calls')).toBe('');
+		});
+
+		test('card mode keeps the last card when the renderer fails', async () => {
+			const {action, originGit} = await setup(tagged);
+			await action(card);
+			const tip = await originGit('rev-parse', 'chamoji-card');
+			const result = await action({...card, FAKE_CURL_FAIL: '1'});
+			expect(result.code).toBe(0);
+			expect(result.stdout).toContain('::warning::');
+			expect(await originGit('rev-parse', 'chamoji-card')).toBe(tip);
+		});
+
+		test('card mode keeps the last card when the answer is not a PNG', async () => {
+			const {action, answer, originGit} = await setup(tagged);
+			await action(card);
+			const tip = await originGit('rev-parse', 'chamoji-card');
+			await answer('<html>');
+			const result = await action(card);
+			expect(result.code).toBe(0);
+			expect(result.stdout).toContain('::warning::');
+			expect(await originGit('rev-parse', 'chamoji-card')).toBe(tip);
+		});
+
+		test('card mode leaves the checkout alone', async () => {
+			const {action, git, dir} = await setup(tagged);
+			await git('checkout', '--quiet', '--detach', 'v1.0.0');
+			await writeFile(path.join(dir, 'scratch.txt'), 'untracked');
+			const head = await git('rev-parse', 'HEAD');
+			const status = await git('status', '--porcelain');
+			const result = await action(card);
+			expect(result.code).toBe(0);
+			expect(await git('rev-parse', 'HEAD')).toBe(head);
+			expect(await git('status', '--porcelain')).toBe(status);
+			expect(await git('rev-parse', '--is-shallow-repository')).toBe('false');
+			expect(await git('config', '--local', '--get-all', 'user.name')).toBe(
+				'Fixture Bot',
+			);
+		});
+
+		test('card mode never asks Jev', async () => {
+			const {action} = await setup(tagged);
+			const result = await action({
+				...card,
+				CHAMOJI_AI: 'true',
+				TYPESAFE_API_KEY: '',
+			});
+			expect(result.code).toBe(0);
+		});
+
+		test('card mode explains a push it could not make', async () => {
+			const {action, git} = await setup(tagged);
+			await git('remote', 'set-url', 'origin', '/nonexistent/chamoji.git');
+			const result = await action(card);
+			expect(result.code).toBe(1);
+			expect(result.stderr).toContain('contents: write');
+		});
 	});
 });

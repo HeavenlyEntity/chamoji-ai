@@ -2,12 +2,14 @@
 # The chamoji GitHub Action; action.yml runs this. Everything arrives as
 # environment variables, never as ${{ }} expressions pasted into the script.
 #
-#   CHAMOJI_MODE      auto (default), notes, comment or release
+#   CHAMOJI_MODE      auto (default), notes, comment, release or card
 #   CHAMOJI_CLI       command to run chamoji; default: npx @chamoji/cli@$CHAMOJI_VERSION
 #   CHAMOJI_VERSION   chamoji version for npx; default: latest
 #   CHAMOJI_AI        true to pass --ai (needs TYPESAFE_API_KEY)
 #   CHAMOJI_RELEASE_VERSION  release mode: the version to release; default: from the commits
 #   CHAMOJI_COMMENT_AUTHOR   comment mode: login that owns the preview comment; default: github-actions[bot]
+#   CHAMOJI_CARD_URL     card mode: the renderer; default: https://chamoji.dev/api/card
+#   CHAMOJI_CARD_BRANCH  card mode: the branch that holds only card.png; default: chamoji-card
 #   GH_TOKEN, GH_REPO and the usual GITHUB_* variables
 #
 # Kept to bash 3.2 so it also runs on macOS runners.
@@ -67,7 +69,7 @@ if [ "$mode" = auto ]; then
 	case "${GITHUB_EVENT_NAME:-}:${GITHUB_REF:-}" in
 		push:refs/tags/*) mode=notes ;;
 		pull_request:* | pull_request_target:*) mode=comment ;;
-		*) fail "can't pick a mode for the ${GITHUB_EVENT_NAME:-unknown} event; set mode to notes, comment or release" ;;
+		*) fail "can't pick a mode for the ${GITHUB_EVENT_NAME:-unknown} event; set mode to notes, comment, release or card" ;;
 	esac
 fi
 
@@ -176,7 +178,60 @@ release)
 	echo "version=$version" >>"$output"
 	;;
 
+card)
+	# Saves the repo's card image alone on its own branch, so a README can link to
+	# it. It force-pushes, so it only ever touches a branch that doesn't exist yet
+	# or holds exactly card.png. It never changes the checkout: no git config, no
+	# worktree, no --depth. Nothing here asks Jev, so it calls the CLI directly.
+	branch=${CHAMOJI_CARD_BRANCH:-chamoji-card}
+	repo=${GH_REPO:-${GITHUB_REPOSITORY:-}}
+	[ -n "$repo" ] || fail 'card mode needs the repository as owner/name (GH_REPO or GITHUB_REPOSITORY)'
+	git check-ref-format --branch "$branch" >/dev/null 2>&1 || fail "card-branch isn't a branch name: $branch"
+	url=$("${cli[@]}" card --repo "$repo" --endpoint "${CHAMOJI_CARD_URL:-https://chamoji.dev/api/card}" --no-update-check) || fail "chamoji card failed with exit code $?"
+
+	# A renderer that is down, or an answer that isn't a PNG, leaves the last card.
+	image="$work/chamoji-card.png"
+	rm -f "$image"
+	if ! curl --fail --silent --show-error --location --retry 2 --max-time 30 --output "$image" "$url"; then
+		echo "::warning::chamoji: the card renderer didn't answer, so $branch keeps its last card"
+		exit 0
+	fi
+	if [ "$(head -c 8 "$image" | od -An -tx1 | tr -d ' \n')" != 89504e470d0a1a0a ]; then
+		echo "::warning::chamoji: the card renderer didn't send a PNG, so $branch keeps its last card"
+		exit 0
+	fi
+
+	current=
+	set +e
+	git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1
+	status=$?
+	set -e
+	case "$status" in
+		0)
+			git fetch --quiet --no-tags origin "+refs/heads/$branch:refs/chamoji/card" || fail "couldn't fetch $branch from origin"
+			[ "$(git ls-tree -r --name-only refs/chamoji/card)" = card.png ] || fail "$branch holds more than card.png, so chamoji won't overwrite it; pick another card-branch"
+			current=$(git rev-parse refs/chamoji/card:card.png)
+			;;
+		2) ;;
+		*) fail "couldn't read $branch from origin; the job needs contents: write" ;;
+	esac
+
+	blob=$(git hash-object -w "$image")
+	if [ "$blob" = "$current" ]; then
+		echo "chamoji: the card on $branch is already up to date" | tee -a "$summary"
+	else
+		tree=$(printf '100644 blob %s\tcard.png\n' "$blob" | git mktree)
+		commit=$(
+			GIT_AUTHOR_NAME='github-actions[bot]' GIT_AUTHOR_EMAIL='41898282+github-actions[bot]@users.noreply.github.com' \
+				GIT_COMMITTER_NAME='github-actions[bot]' GIT_COMMITTER_EMAIL='41898282+github-actions[bot]@users.noreply.github.com' \
+				git commit-tree "$tree" -m '🍱 Update the chamoji card [skip ci]'
+		)
+		git push --quiet --force origin "$commit:refs/heads/$branch" || fail "couldn't push to $branch; the job needs contents: write"
+	fi
+	echo "card-url=https://raw.githubusercontent.com/$repo/$branch/card.png" >>"$output"
+	;;
+
 *)
-	fail "unknown mode $mode (use auto, notes, comment or release)"
+	fail "unknown mode $mode (use auto, notes, comment, release or card)"
 	;;
 esac
