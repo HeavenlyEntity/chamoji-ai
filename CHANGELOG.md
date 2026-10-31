@@ -1,5 +1,34 @@
 # Changelog
 
+## [v0.9.0](https://github.com/HeavenlyEntity/chamoji-ai/compare/v0.8.0...v0.9.0) - 2026-10-31
+
+### Added
+
+- ✨ Save the repo card to its own branch from the Action ([31deefb](https://github.com/HeavenlyEntity/chamoji-ai/commit/31deefba971f96e8c307a73a8eaed365f195c731))
+- ✨ Add chamoji card ([30f5fc1](https://github.com/HeavenlyEntity/chamoji-ai/commit/30f5fc17f1a0efbefd2674e9c3af4608eb1d5f11))
+- ✨ Work out a repo's card stats ([b0cad9f](https://github.com/HeavenlyEntity/chamoji-ai/commit/b0cad9f2b47134937ef4a37adf7aaaacebbcfc65))
+
+### Changed
+
+- 📄 Add a contact email to the copyright line ([2972877](https://github.com/HeavenlyEntity/chamoji-ai/commit/2972877ef3278dc9739eccecd7a285196e34112e))
+- 📄 Put chamoji under AMWARE Technologies LLC ([3f88950](https://github.com/HeavenlyEntity/chamoji-ai/commit/3f88950e825c895925cb03a47828df6b5ffda5b0))
+
+### Fixed
+
+- 🐛 Report a refused card as refused, and tidy the card's branch check and docs ([53c73f6](https://github.com/HeavenlyEntity/chamoji-ai/commit/53c73f6539fbf87ba35d3fd1cca4acb8950fc045))
+- 🐛 Keep the card bytes intact and push only over what was inspected ([3db01e8](https://github.com/HeavenlyEntity/chamoji-ai/commit/3db01e8750a87106204294f5df50fab2170943ff))
+
+### Documentation
+
+- 📝 Mark the repo card shipped ([6dd6119](https://github.com/HeavenlyEntity/chamoji-ai/commit/6dd6119f324a0a705f0cbbca3b503999149066d2))
+- 📝 Say the 60-day schedule pause applies to public repositories ([f9c5e1d](https://github.com/HeavenlyEntity/chamoji-ai/commit/f9c5e1da3e387773fd567b1178780365b992a187))
+- 📝 Run the repo card on chamoji and document it ([4be37df](https://github.com/HeavenlyEntity/chamoji-ai/commit/4be37dfe0ce5b95425aca7cb07ad12514f24e4fd))
+- 📝 Plan the repo card ([9739273](https://github.com/HeavenlyEntity/chamoji-ai/commit/973927322b84c1ae54a99b37909700751fe7457b))
+
+### Maintenance
+
+- 💚 Wait for the composer's prompts in the hook checks ([a39f6c4](https://github.com/HeavenlyEntity/chamoji-ai/commit/a39f6c4f930a23f7f1b9c2827a7a738e7e455cb7))
+
 ## [v0.8.0](https://github.com/HeavenlyEntity/chamoji-ai/compare/v0.7.0...v0.8.0) - 2026-10-29
 
 ### Added
