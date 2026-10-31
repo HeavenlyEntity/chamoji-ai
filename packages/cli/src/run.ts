@@ -6,6 +6,9 @@ import path from 'node:path';
 import {
 	applyRelease,
 	buildChangelog,
+	CARD_ENDPOINT,
+	cardUrl,
+	getRemoteWebUrl,
 	loadComposeConfig,
 	loadConfig,
 	openJudgmentCache,
@@ -14,6 +17,7 @@ import {
 	pushRelease,
 	ReleaseError,
 	render,
+	repoStats,
 	runGit,
 	shouldPrompt,
 	type CommitClassifier,
@@ -102,6 +106,7 @@ const HELP = `
 	                                   (-a commits all tracked changes)
 	  $ chamoji hook install           Offer the composer on a plain
 	                                   \`git commit\` (uninstall to remove)
+	  $ chamoji card [options]         Print the URL of the repo's card image
 
 	Options
 	  --format   markdown (default), md, json or html
@@ -123,7 +128,9 @@ const HELP = `
 	  --trailer  release: add "Key: value" to the release commit (repeatable)
 	  --any-branch
 	             release: allow a branch other than origin's default
-	  --json     release: print the result as JSON
+	  --json     release: print the result as JSON; card: print the numbers
+	  --repo     card: owner/name on GitHub (default: from the origin remote)
+	  --endpoint card: the card renderer (default: https://chamoji.dev/api/card)
 	  --no-update-check
 	             Don't check npm for a newer chamoji. Also off in CI, when
 	             NO_UPDATE_NOTIFIER or CHAMOJI_NO_UPDATE_CHECK=1 is set,
@@ -167,6 +174,8 @@ export async function run(argv: string[], io: Io): Promise<number> {
 			trailer: {type: 'string', isMultiple: true},
 			anyBranch: {type: 'boolean'},
 			json: {type: 'boolean'},
+			repo: {type: 'string'},
+			endpoint: {type: 'string'},
 			all: {type: 'boolean', shortFlag: 'a'},
 			help: {type: 'boolean', shortFlag: 'h'},
 			version: {type: 'boolean', shortFlag: 'v'},
@@ -199,7 +208,9 @@ export async function run(argv: string[], io: Io): Promise<number> {
 
 	async function execute(command: string | undefined): Promise<number> {
 		try {
-			const classify = flags.ai ? await jevClassifier(io) : undefined;
+			// card ignores --ai: it counts what the rules sort and sends nothing out.
+			const classify =
+				flags.ai && command !== 'card' ? await jevClassifier(io) : undefined;
 			switch (command) {
 				case 'changelog': {
 					const format = Object.hasOwn(FORMATS, flags.format)
@@ -268,6 +279,10 @@ export async function run(argv: string[], io: Io): Promise<number> {
 					return await commit();
 				}
 
+				case 'card': {
+					return await card();
+				}
+
 				default: {
 					io.stderr(
 						`${command ? `chamoji: unknown command "${command}"\n` : ''}${cli.help}\n`,
@@ -279,6 +294,33 @@ export async function run(argv: string[], io: Io): Promise<number> {
 			io.stderr(`chamoji: ${(error as Error).message}\n`);
 			return error instanceof ReleaseError ? PREFLIGHT_FAILED : 1;
 		}
+	}
+
+	async function card(): Promise<number> {
+		const endpoint = flags.endpoint ?? CARD_ENDPOINT;
+		if (!/^https?:\/\/[^\s/]/i.test(endpoint) || !URL.canParse(endpoint)) {
+			throw new Error(`--endpoint "${endpoint}" is not an http(s) URL`);
+		}
+
+		const repo = flags.repo ?? (await githubRepo(io.cwd));
+		if (!repo) {
+			throw new Error("can't tell the repo; pass --repo owner/name");
+		}
+
+		const stats = repoStats(
+			await buildChangelog({
+				cwd: io.cwd,
+				config: await loadConfig(io.cwd, flags.config),
+				to: flags.to,
+				today: io.today,
+			}),
+		);
+		io.stdout(
+			flags.json
+				? `${JSON.stringify({repo, ...stats}, null, 2)}\n`
+				: `${cardUrl(endpoint, repo, stats)}\n`,
+		);
+		return 0;
 	}
 
 	async function commit(): Promise<number> {
@@ -609,6 +651,12 @@ function facts(plan: ReadyPlan, files: string[]) {
 		files,
 		warnings: plan.warnings,
 	};
+}
+
+/** `owner/name` from an origin on github.com, or undefined for anywhere else. */
+async function githubRepo(cwd: string): Promise<string | undefined> {
+	const url = await getRemoteWebUrl(cwd);
+	return /^https:\/\/github\.com\/([^/]+\/[^/]+)$/.exec(url ?? '')?.[1];
 }
 
 export type AiSettings = {composer: boolean; sendDiffs: boolean};
