@@ -10,7 +10,7 @@ export type RepoStats = {
 	date: string | null;
 	/** Tagged releases. */
 	releases: number;
-	/** Every commit in the history. */
+	/** Non-merge commits the changelog lists; commits in hidden groups aren't counted. */
 	commits: number;
 	/** Percent of commits that landed outside Miscellaneous, rounded down. */
 	sorted: number;

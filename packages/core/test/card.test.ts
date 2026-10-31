@@ -135,3 +135,41 @@ test('cardUrl never contains commit text', async () => {
 	const url = cardUrl(CARD_ENDPOINT, 'acme/widgets', repoStats(changelog));
 	expect(url).not.toContain('SECRET');
 });
+
+// The tags the renderer accepts. Each must travel from git to the card's
+// address unchanged, build metadata included.
+const TAGS = [
+	'v1.2.0',
+	'1.2.3',
+	'v1.29.1+k3s2',
+	'v1.28.5+rke2r1',
+	'1.2.3+build.5',
+	'v1.2.3-rc.1+exp.sha.5114f85',
+	'v1.0.20261031',
+	'v1.0.1700000000',
+	'2026.1.1234567',
+	'v2.1.0-alpha.20240315.abcdef1',
+	'v1.0.0-SNAPSHOT.20261031.123456',
+];
+
+test.each(TAGS)('carries the tag %s through unchanged', async tag => {
+	repo = await createRepo([
+		{commit: '✨ Add one'},
+		{tag, annotated: true},
+		{commit: '🐛 Fix two'},
+	]);
+
+	const changelog = await buildChangelog({cwd: repo.dir, config});
+	const found = repoStats(changelog);
+	expect(found).toMatchObject({version: tag, releases: 1});
+
+	const url = new URL(cardUrl(CARD_ENDPOINT, 'acme/widgets', found));
+	expect(url.searchParams.get('version')).toBe(tag);
+});
+
+test.each(TAGS)('cardUrl keeps the tag %s as given', tag => {
+	const url = new URL(
+		cardUrl(CARD_ENDPOINT, 'acme/widgets', {...stats, version: tag}),
+	);
+	expect(url.searchParams.get('version')).toBe(tag);
+});

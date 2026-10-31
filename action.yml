@@ -45,8 +45,9 @@ inputs:
     default: chamoji-card
   github-token:
     description: >-
-      Token for gh. notes, release and card need contents write; comment needs
-      pull-requests write.
+      Token for gh. notes and release need contents write; comment needs
+      pull-requests write. card doesn't use it: it pushes with the credential
+      that actions/checkout saved, so give the job contents write.
     default: ${{ github.token }}
 
 outputs:

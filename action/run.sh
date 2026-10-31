@@ -190,22 +190,48 @@ card)
 	git check-ref-format --branch "$branch" >/dev/null 2>&1 || fail "card-branch isn't a branch name: $branch"
 	url=$("${cli[@]}" card --repo "$repo" --endpoint "${CHAMOJI_CARD_URL:-https://chamoji.dev/api/card}" --no-update-check) || fail "chamoji card failed with exit code $?"
 
-	# A renderer that is down, or an answer that isn't a PNG, leaves the last card.
+	# A renderer that is down, refuses the card's details, or answers with
+	# something that isn't a PNG leaves the branch as it was. None of these fail
+	# the job: the card is decoration, and the next run tries again.
+	card_warning() {
+		echo "::warning::chamoji: $*"
+		echo "chamoji: $*" >>"$summary"
+	}
+	# What the branch holds, for the warnings: true whether or not a card exists.
+	card_state() {
+		local found=0
+		git ls-remote --exit-code origin "refs/heads/$branch" >/dev/null 2>&1 || found=$?
+		case "$found" in
+			0) echo "$branch keeps its last card" ;;
+			2) echo "$branch has no card yet" ;;
+			*) echo "$branch is unchanged" ;;
+		esac
+	}
+
 	image="$work/chamoji-card.png"
 	rm -f "$image"
-	if ! curl --fail --silent --show-error --location --retry 2 --max-time 30 --output "$image" "$url"; then
-		echo "::warning::chamoji: the card renderer didn't answer, so $branch keeps its last card"
+	http=
+	if ! http=$(curl --fail --silent --show-error --location --retry 2 --max-time 30 --write-out '%{http_code}' --output "$image" "$url"); then
+		case "$http" in
+			4??)
+				tag=$(printf '%s' "$url" | sed -n 's/.*[?&]version=\([^&]*\).*/\1/p' | sed 's/%2B/+/g')
+				what="repo $repo"
+				[ -z "$tag" ] || what="release $tag"
+				card_warning "the card renderer refused the card's details (HTTP $http, $what), so $(card_state); check the repo name and that the latest tag is semver such as v1.2.3, at most 64 characters"
+				;;
+			*) card_warning "the card renderer didn't answer, so $(card_state)" ;;
+		esac
 		exit 0
 	fi
 	if [ "$(head -c 8 "$image" | od -An -tx1 | tr -d ' \n')" != 89504e470d0a1a0a ]; then
-		echo "::warning::chamoji: the card renderer didn't send a PNG, so $branch keeps its last card"
+		card_warning "the card renderer didn't send a PNG, so $(card_state)"
 		exit 0
 	fi
 
 	current=
 	tip=
 	set +e
-	git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1
+	git ls-remote --exit-code origin "refs/heads/$branch" >/dev/null 2>&1
 	status=$?
 	set -e
 	case "$status" in

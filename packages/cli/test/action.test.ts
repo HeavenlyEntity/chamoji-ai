@@ -38,16 +38,37 @@ case "$1 $2" in
 esac
 `;
 
-// Copies FAKE_CURL_BODY (a file) to the path after --output, as the renderer's
-// answer, or fails like curl --fail does when FAKE_CURL_FAIL=1.
+// Answers as the renderer: copies FAKE_CURL_BODY (a file) to the path after
+// --output and exits 0. FAKE_CURL_STATUS sets the HTTP status (default 200);
+// with --fail an error status exits 22 and saves nothing, as curl does.
+// FAKE_CURL_FAIL=1 is a renderer that can't be reached: status 000, exit 7.
+// A --write-out of %{http_code} prints the status, as curl does.
 const FAKE_CURL = `#!/usr/bin/env bash
 printf '%s\\n' "$*" >> "$FAKE_GH_DIR/curl-calls"
-[ "\${FAKE_CURL_FAIL:-}" = 1 ] && exit 22
+status=\${FAKE_CURL_STATUS:-200}
+[ "\${FAKE_CURL_FAIL:-}" = 1 ] && status=000
 previous=
+fail=
+writeout=
 for arg in "$@"; do
-	if [ "$previous" = --output ]; then cp "$FAKE_CURL_BODY" "$arg"; fi
+	[ "$arg" = --fail ] && fail=1
+	[ "$previous" = --write-out ] && writeout=$arg
 	previous=$arg
 done
+code=0
+if [ "\${FAKE_CURL_FAIL:-}" = 1 ]; then
+	code=7
+elif [ -n "$fail" ] && [ "$status" -ge 400 ]; then
+	code=22
+else
+	previous=
+	for arg in "$@"; do
+		if [ "$previous" = --output ]; then cp "$FAKE_CURL_BODY" "$arg"; fi
+		previous=$arg
+	done
+fi
+[ "$writeout" = '%{http_code}' ] && printf '%s' "$status"
+exit "$code"
 `;
 
 // A small buffer that starts with the PNG signature.
@@ -352,6 +373,69 @@ describe.skipIf(process.platform === 'win32')('the GitHub Action', () => {
 			expect(result.code).toBe(0);
 			expect(result.stdout).toContain('::warning::');
 			expect(await originGit('rev-parse', 'chamoji-card')).toBe(tip);
+		});
+
+		test('card mode says a refused card has no card yet on a first run', async () => {
+			const {action, read, originGit} = await setup(tagged);
+			const result = await action({...card, FAKE_CURL_STATUS: '400'});
+			expect(result.code).toBe(0);
+			expect(result.stdout).toContain('::warning::');
+			expect(result.stdout).toContain('refused');
+			expect(result.stdout).toContain('v1.1.0');
+			expect(result.stdout).toContain('no card yet');
+			expect(result.stdout).not.toContain('keeps its last card');
+			expect(result.stdout).not.toContain("didn't answer");
+			expect(await read('summary')).toContain('refused');
+			expect(await read('summary')).toContain('v1.1.0');
+			expect(await read('output')).not.toContain('card-url');
+			await expect(
+				originGit('rev-parse', '--verify', 'chamoji-card'),
+			).rejects.toThrow();
+		});
+
+		test('card mode keeps the last card when the renderer refuses the details', async () => {
+			const {action, read, originGit} = await setup(tagged);
+			await action(card);
+			const tip = await originGit('rev-parse', 'chamoji-card');
+			const result = await action({...card, FAKE_CURL_STATUS: '400'});
+			expect(result.code).toBe(0);
+			expect(result.stdout).toContain('::warning::');
+			expect(result.stdout).toContain('refused');
+			expect(result.stdout).toContain('v1.1.0');
+			expect(result.stdout).toContain('keeps its last card');
+			expect(result.stdout).not.toContain("didn't answer");
+			expect(await read('summary')).toContain('refused');
+			expect(await originGit('rev-parse', 'chamoji-card')).toBe(tip);
+		});
+
+		test('card mode reports an outage as an outage, with a summary line', async () => {
+			const {action, read} = await setup(tagged);
+			const result = await action({...card, FAKE_CURL_FAIL: '1'});
+			expect(result.code).toBe(0);
+			expect(result.stdout).toContain("didn't answer");
+			expect(result.stdout).toContain('no card yet');
+			expect(result.stdout).not.toContain('refused');
+			expect(await read('summary')).toContain("didn't answer");
+		});
+
+		test('card mode treats a server error as an outage', async () => {
+			const {action} = await setup(tagged);
+			const result = await action({...card, FAKE_CURL_STATUS: '503'});
+			expect(result.code).toBe(0);
+			expect(result.stdout).toContain("didn't answer");
+			expect(result.stdout).not.toContain('refused');
+		});
+
+		test('card mode ignores a longer branch that ends the same way', async () => {
+			const {action, git, originGit} = await setup(tagged);
+			await git('push', '--quiet', 'origin', 'main:refs/heads/team/card');
+			const before = await originGit('rev-parse', 'team/card');
+			const result = await action({...card, CHAMOJI_CARD_BRANCH: 'card'});
+			expect(result.code).toBe(0);
+			expect(await originGit('ls-tree', '-r', '--name-only', 'card')).toBe(
+				'card.png',
+			);
+			expect(await originGit('rev-parse', 'team/card')).toBe(before);
 		});
 
 		test('card mode keeps the last card when the answer is not a PNG', async () => {

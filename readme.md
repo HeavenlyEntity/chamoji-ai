@@ -199,6 +199,8 @@ on:
   workflow_dispatch:
 permissions:
   contents: write # the card branch
+concurrency:
+  group: card # one run at a time, so two pushes can't race for the branch
 jobs:
   card:
     runs-on: ubuntu-latest
@@ -214,20 +216,35 @@ jobs:
 Then paste this into your readme, with your own owner and repo:
 
 ```html
-<img
-	src="https://raw.githubusercontent.com/<owner>/<repo>/chamoji-card/card.png"
-	alt="chamoji card"
-	width="480"
-/>
+<a href="https://chamoji.dev">
+	<img
+		src="https://raw.githubusercontent.com/<owner>/<repo>/chamoji-card/card.png"
+		alt="chamoji card"
+		width="480"
+	/>
+</a>
 ```
+
+The raw image address only renders for public repositories: a private repo's card won't load for anyone who isn't signed in to GitHub.
 
 - **Where it goes:** a `chamoji-card` branch that holds only `card.png`, replaced on every change. `main` and your tags get no bot commits. `card-branch` renames it, and the `card-url` output is the image's address.
 - **What it needs:** `contents: write` and `fetch-depth: 0`. The push uses the credential `actions/checkout` leaves behind, so `persist-credentials: false` won't work.
 - **What it never overwrites:** the Action refuses a branch that holds anything other than `card.png`.
 - **What is sent:** to `chamoji.dev/api/card`, the repo name, the latest tag, its date and a few counts. Never commit text. A private repo's name reaches `chamoji.dev` this way.
-- **If the renderer is down,** the job warns and the last card stays.
+- **Which tags count:** only semver tags, such as `v1.2.3` or `1.2.3`. `tags: ['v*']` doesn't start the workflow for an unprefixed tag, so the daily run picks that one up.
+- **If the renderer is down or refuses the card,** the job warns, in the log and the job summary, and doesn't fail. The last card stays, or none exists yet on a first run. A refusal names the tag or repo the renderer wouldn't draw.
 - **Scheduled runs pause:** GitHub stops scheduled workflows in a public repository with no activity for 60 days.
-- **Releases from `mode: release`:** tags pushed with `GITHUB_TOKEN` don't start workflows, so add a `mode: card` step after the release step. Otherwise the daily run catches up.
+- **Releases from `mode: release`:** tags pushed with `GITHUB_TOKEN` don't start workflows, so add a `mode: card` step after the release step. Otherwise the daily run catches up. Mark the card step `continue-on-error: true`, so a card problem never fails a release job:
+
+  ```yaml
+  - uses: HeavenlyEntity/chamoji-ai@v0.9.0
+    with:
+      mode: release
+  - uses: HeavenlyEntity/chamoji-ai@v0.9.0
+    continue-on-error: true
+    with:
+      mode: card
+  ```
 
 ## Release from your coding agent
 

@@ -324,14 +324,15 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 
 **Progress (2026-10-31):**
 
-- ✅ **Built and tested locally.** The full suite passes (399 tests).
+- ✅ **Built and tested locally.** The full suite passes (426 tests).
   - `card` in `@chamoji/core`: works out the stats from local git history and builds the renderer URL. Tested for the counts, the share sorted without AI (never rounded up to 100%), a repo with no tags, an empty history, and that no commit text is ever in the URL.
   - `chamoji card` in the CLI: prints the renderer URL, reads the repo from an HTTPS or SSH `origin` or from `--repo`, takes `--endpoint` and `--json`, and never calls the classifier.
   - `mode: card` in the Action, with `card-endpoint`, `card-branch` and the `card-url` output. Tested against fixture repos with a fake renderer:
     - the image alone on the branch, as one replaced commit
     - nothing pushed when the image hasn't changed
     - a branch holding anything else refused
-    - the last card kept when the renderer fails or doesn't send a PNG
+    - the last card kept when the renderer fails, refuses the card's details or doesn't send a PNG
+    - a refused first card reported as such, and a longer branch ending the same way ignored
     - the checkout left alone
     - a branch that changed during the run not overwritten
     - the image stored byte for byte
