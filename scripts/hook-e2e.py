@@ -16,7 +16,9 @@ Run it after `pnpm build`. Exits non-zero, saying which check failed.
 
 import argparse
 import os
+import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -25,8 +27,17 @@ import time
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CLI = os.path.join(ROOT, 'packages', 'cli', 'dist', 'cli.js')
 WINDOWS = sys.platform == 'win32'
-# The composer's keystrokes: gitmoji, scope (skipped), title, body (skipped), why, not breaking.
-KEYS = ['sparkles', '\r', '\r', 'add the report', '\r', '\r', 'the team asked for it', '\r', '\r']
+# The composer's steps: the prompt to wait for, then what to type at it.
+STEPS = [
+    ('Gitmoji', ['sparkles', '\r']),
+    ('Scope', ['\r']),
+    ('Title', ['add the report', '\r']),
+    ('Body', ['\r']),
+    ('Why?', ['the team asked for it', '\r']),
+    ('Breaking change?', ['\r']),
+]
+# How long one prompt, or git finishing, may take: a slow runner needs far less.
+WAIT_SECONDS = 90
 EXPECTED = '✨ Add the report\n\nWhy: the team asked for it'
 
 
@@ -114,25 +125,50 @@ def commit_in_pty(repo, shell, env):
         command = shell_command(shell, 'git commit')
         os.execvpe(command[0], command, env)
 
-    def drain(seconds):
-        end = time.time() + seconds
-        while time.time() < end:
-            ready, _, _ = select.select([fd], [], [], 0.05)
-            if ready:
-                try:
-                    os.read(fd, 65536)
-                except OSError:
-                    return
+    output = b''
 
-    drain(4)  # node start-up, and npx for husky or lefthook
-    for key in KEYS:
-        try:
+    def read(seconds):
+        nonlocal output
+        ready, _, _ = select.select([fd], [], [], seconds)
+        if ready:
+            try:
+                output += os.read(fd, 65536)
+            except OSError:
+                return False
+        return True
+
+    def screen():
+        return re.sub(r'\x1b\[[0-9;?]*[A-Za-z]', '', output.decode('utf8', 'replace'))
+
+    def give_up(waiting_for):
+        tail = screen()[-500:]
+        os.killpg(pid, signal.SIGKILL)
+        os.waitpid(pid, 0)
+        fail(f'{shell}: waited {WAIT_SECONDS}s for {waiting_for}; the screen ended with:\n{tail}')
+
+    # Typing before a prompt is up loses the keys and leaves the composer waiting, so watch the
+    # screen: how long pwsh, git and node take to start varies a lot between runs.
+    for prompt, keys in STEPS:
+        deadline = time.time() + WAIT_SECONDS
+        while prompt not in screen():
+            if time.time() > deadline or not read(0.05):
+                give_up(f'the {prompt!r} prompt')
+        output = b''
+        for key in keys:
             os.write(fd, key.encode())
-        except OSError:
-            break  # git already finished; the message check below says how
-        drain(0.4)
-    _, status = os.waitpid(pid, 0)
-    return os.waitstatus_to_exitcode(status)
+            # Keys that land in one read count as pasted text, so Enter needs a gap.
+            pause = time.time() + 0.3
+            while time.time() < pause and read(0.05):
+                pass
+
+    deadline = time.time() + WAIT_SECONDS
+    while True:
+        done, status = os.waitpid(pid, os.WNOHANG)
+        if done:
+            return os.waitstatus_to_exitcode(status)
+        if time.time() > deadline:
+            give_up('git commit to finish')
+        read(0.05)
 
 
 def main():
