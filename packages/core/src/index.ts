@@ -1,3 +1,4 @@
+export {blameLine, parseLocation, WhyError, type BlameResult} from './blame.js';
 export {buildChangelog, type BuildChangelogOptions} from './changelog.js';
 export {CARD_ENDPOINT, cardUrl, repoStats, type RepoStats} from './card.js';
 export {CONFIG_FILE, DEFAULT_GROUP_CONFIG, loadConfig} from './config.js';

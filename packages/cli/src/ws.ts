@@ -16,6 +16,7 @@ import {
 } from '@chamoji/core';
 import {readHookState} from './hook.js';
 import type {Io} from './run.js';
+import {stripControl} from './text.js';
 
 /** Same code run.ts uses for a command that was used wrongly. */
 const USAGE_ERROR = 2;
@@ -256,7 +257,7 @@ function columns(text: string): number {
 /** Title and emoji come from a file a clone can write, so no control characters. */
 function label({emoji, title}: Workstream): string {
 	const text = `${emoji ? `${emoji} ` : ''}${title}`;
-	return text.replace(/[\u0000-\u001F\u007F-\u009F]/g, '');
+	return stripControl(text);
 }
 
 /**
