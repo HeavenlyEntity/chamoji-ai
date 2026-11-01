@@ -42,6 +42,7 @@ import {HookError, installHook, uninstallHook} from './hook.js';
 import {createJevClassifier, JUDGMENT_VERSION} from './jev-classifier.js';
 import {openTerminal} from './tty.js';
 import type {UpdateCheck} from './update-check.js';
+import {runWhy} from './why.js';
 import {runWorkstream} from './ws.js';
 
 export type Io = {
@@ -119,6 +120,9 @@ const HELP = `
 	  $ chamoji ws switch <slug>       Make a workstream active
 	  $ chamoji ws ship [slug]         Mark one shipped (default: the active one)
 	  $ chamoji ws drop [slug]         Mark one dropped
+	  $ chamoji why <file:line>        Show why a line is there: the commit
+	                                   that wrote it and the Why, Constraint,
+	                                   Gotcha and Follow-up it recorded
 
 	Options
 	  --format   markdown (default), md, json or html
@@ -141,7 +145,8 @@ const HELP = `
 	  --any-branch
 	             release: allow a branch other than origin's default
 	  --json     release: print the result as JSON; card: print the numbers;
-	             ws list: print the workstreams as an array
+	             ws list: print the workstreams as an array;
+	             why: print the blame result
 	  --none     ws switch: clear the active workstream
 	  --repo     card: owner/name on GitHub (default: from the origin remote)
 	  --endpoint card: the card renderer (default: https://chamoji.dev/api/card)
@@ -300,6 +305,10 @@ export async function run(argv: string[], io: Io): Promise<number> {
 
 				case 'ws': {
 					return await runWorkstream(cli.input.slice(1), flags, io);
+				}
+
+				case 'why': {
+					return await runWhy(cli.input.slice(1), flags, io);
 				}
 
 				default: {
