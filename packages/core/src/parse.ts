@@ -1,6 +1,13 @@
 import {findGitmoji, normalizeEmoji} from './gitmojis.js';
 import {inferGitmoji} from './infer.js';
-import type {GitmojiSource, ParsedCommit, RawCommit, Trailer} from './types.js';
+import {readIntent} from './intent.js';
+import type {
+	GitmojiSource,
+	IntentCard,
+	ParsedCommit,
+	RawCommit,
+	Trailer,
+} from './types.js';
 import {isSlug} from './workstreams.js';
 
 /** Conventional Commits types we recognize, and the gitmoji each implies. */
@@ -88,6 +95,7 @@ export function parseCommit(raw: RawCommit): ParsedCommit {
 			description: `Revert "${original.description}"`,
 			breaking: BREAKING_FOOTER.test(raw.body),
 			...withWorkstream(readWorkstream(original.trailers, raw.body)),
+			...withCard(readIntent(original.trailers, raw.body)),
 		};
 	}
 
@@ -158,12 +166,18 @@ export function parseCommit(raw: RawCommit): ParsedCommit {
 		breaking: gitmoji === 'boom' || bang || BREAKING_FOOTER.test(raw.body),
 		trailers,
 		...withWorkstream(readWorkstream(trailers, raw.body)),
+		...withCard(readIntent(trailers, raw.body)),
 	};
 }
 
 /** The field only when there is one, so `--json` output has no `workstream: null`. */
 function withWorkstream(workstream: string | undefined): {workstream?: string} {
 	return workstream === undefined ? {} : {workstream};
+}
+
+/** The field only when there is one, like `withWorkstream`. */
+function withCard(card: IntentCard | undefined): {card?: IntentCard} {
+	return card === undefined ? {} : {card};
 }
 
 /**
