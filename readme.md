@@ -145,7 +145,7 @@ chamoji ws ship                    # mark the active one shipped (or: chamoji ws
 
 `ws start`, `ws ship` and `ws drop` stage `.chamoji/workstreams.yml` and don't commit it. Your next commit records the change.
 
-`ws start` tells you if `git commit` won't stamp your commits. It reads the hook git would run, including one set up through husky or lefthook, and never installs one for you. If another tool's hook doesn't show whether it runs chamoji, it says so. `chamoji hook install` shows the line to add.
+`ws start` and `ws switch` tell you if `git commit` won't stamp your commits, which is the case in a fresh clone until you run `chamoji hook install`, because git doesn't clone hooks. They read the hook git would run, including one set up through husky or lefthook, and never install one for you. If another tool's hook doesn't show whether it runs chamoji, they say so. `chamoji hook install` shows the line to add.
 
 - **Committed or local:** `.chamoji/workstreams.yml` is committed, so the team shares each workstream's title, emoji, description, status and links. Which workstream is active is local: `.git/chamoji/active`, one per worktree.
 - **What gets stamped:** commits made with `git commit -m` (an amend with `-m` too, since the hook can't tell them apart), `chamoji commit`, and messages written by the composer. Merges, squashes, amends without `-m`, rebases, cherry-picks and reverts are left alone. A `-m` subject starting `Revert "` or `Reapply "` isn't stamped either, because a clean `git revert` looks the same to the hook.
