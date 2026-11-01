@@ -224,6 +224,8 @@ def main():
     started = subprocess.run(['chamoji', 'ws', 'start', 'Auth revamp'], cwd=repo, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, shell=WINDOWS, timeout=120)
     if started.returncode != 0:
         fail(f'{label}: chamoji ws start exited {started.returncode}: {started.stdout}{started.stderr}')
+    if 'New commits in this worktree get' not in started.stdout:
+        fail(f'{label}: ws start should see the hook and promise the trailer: {started.stdout}{started.stderr}')
     with open(os.path.join(repo, 'report.txt'), 'w') as f:
         f.write('report, in a workstream\n')
     git(repo, 'add', 'report.txt')

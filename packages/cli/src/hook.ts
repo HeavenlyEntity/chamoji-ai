@@ -1,4 +1,12 @@
-import {chmod, readFile, rm, writeFile} from 'node:fs/promises';
+import {
+	access,
+	chmod,
+	constants,
+	readdir,
+	readFile,
+	rm,
+	writeFile,
+} from 'node:fs/promises';
 import path from 'node:path';
 import {runGit} from '@chamoji/core';
 
@@ -30,12 +38,23 @@ const LEFTHOOK_SNIPPET = `prepare-commit-msg:
       run: chamoji hook run {1} {2} {3}
       interactive: true`;
 
+/** `chamoji hook run`, `npx @chamoji/cli hook run` and the like. */
+const RUNS_CHAMOJI = /chamoji\S*\s+hook\s+run\b/;
+
+const LEFTHOOK_CONFIG = /^\.?lefthook(-local)?\.(ya?ml|jsonc?|toml)$/;
+
 export class HookError extends Error {
 	constructor(message: string) {
 		super(message);
 		this.name = 'HookError';
 	}
 }
+
+/**
+ * Whether a `git commit` here reaches `chamoji hook run`. `unknown` is a hook
+ * chamoji can't see through, such as a script that calls another script.
+ */
+export type HookState = 'installed' | 'missing' | 'unknown';
 
 export type InstallResult =
 	| {status: 'installed'; path: string; replaced: 'chamoji' | 'gitmoji' | null}
@@ -88,6 +107,55 @@ export async function uninstallHook(cwd: string): Promise<boolean> {
 
 	await rm(file);
 	return true;
+}
+
+/**
+ * Reads the prepare-commit-msg hook git would run, which core.hooksPath moves,
+ * so husky and lefthook count. It only reads files, and never runs a hook.
+ */
+export async function readHookState(cwd: string): Promise<HookState> {
+	const file = await hookPath(cwd);
+	const executable = await access(file, constants.X_OK).then(
+		() => true,
+		() => false,
+	);
+	if (!executable) return 'missing'; // git skips it.
+
+	// husky v9's .husky/_ holds generated stubs that run the scripts in .husky.
+	const dir = path.dirname(file);
+	const script = await readFile(
+		path.basename(dir) === '_'
+			? path.join(path.dirname(dir), 'prepare-commit-msg')
+			: file,
+		'utf8',
+	).catch(() => null);
+	if (script === null || script.includes('gitmoji --hook')) return 'missing';
+	if (RUNS_CHAMOJI.test(script)) return 'installed';
+	if (script.includes('lefthook') && (await lefthookRunsChamoji(cwd))) {
+		return 'installed';
+	}
+
+	return 'unknown';
+}
+
+/**
+ * Lefthook generates its hook, and writes prepare-commit-msg even when no
+ * config asks for it, so only the config says what runs. A config can also
+ * pull in others, so finding nothing here doesn't mean chamoji isn't run.
+ */
+async function lefthookRunsChamoji(cwd: string): Promise<boolean> {
+	const root = (await runGit(['rev-parse', '--show-toplevel'], cwd)).trim();
+	for (const dir of [root, path.join(root, '.config')]) {
+		const names = await readdir(dir).catch(() => []);
+		for (const name of names.filter(item => LEFTHOOK_CONFIG.test(item))) {
+			const config = await readFile(path.join(dir, name), 'utf8').catch(
+				() => '',
+			);
+			if (RUNS_CHAMOJI.test(config)) return true;
+		}
+	}
+
+	return false;
 }
 
 async function hookPath(cwd: string): Promise<string> {
