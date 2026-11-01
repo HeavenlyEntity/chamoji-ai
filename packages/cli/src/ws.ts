@@ -1,5 +1,6 @@
 import {
 	addWorkstream,
+	assertGitRepo,
 	getActive,
 	listReleaseTags,
 	parseCommit,
@@ -30,6 +31,8 @@ export async function runWorkstream(
 	io: Io,
 ): Promise<number> {
 	const [command = 'list', ...args] = input;
+	// Every subcommand reads git: say so plainly, not with a raw git error.
+	await assertGitRepo(io.cwd);
 	switch (command) {
 		case 'list': {
 			return list(io, flags.json ?? false);

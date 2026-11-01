@@ -1,5 +1,14 @@
 import {execFile} from 'node:child_process';
-import {chmod, mkdir, readFile, writeFile} from 'node:fs/promises';
+import {
+	chmod,
+	mkdir,
+	mkdtemp,
+	readdir,
+	readFile,
+	rm,
+	writeFile,
+} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
@@ -153,6 +162,38 @@ test('-m with no active workstream leaves the message byte for byte', async () =
 	await chamoji(['ws', 'switch', '--none'], repo.dir);
 	await commitFile(repo.dir, 'b.ts', '✨ Add b', 'Because.');
 	expect(await message(repo.dir)).toBe('✨ Add b\n\nBecause.\n\n');
+});
+
+test('ws outside a repo says so, as the other commands do', async () => {
+	const dir = await mkdtemp(path.join(tmpdir(), 'chamoji-nogit-'));
+	try {
+		for (const argv of [['ws'], ['ws', 'list'], ['ws', 'start', 'Auth']]) {
+			const {code, stdout, stderr} = await chamoji(argv, dir);
+			expect(code).toBe(1);
+			expect(stdout).toBe('');
+			expect(stderr).toBe(`chamoji: Not a git repository: ${dir}\n`);
+		}
+	} finally {
+		await rm(dir, {recursive: true, force: true});
+	}
+});
+
+test('ws start under a git-ignored .chamoji names the rule and leaves no file behind', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await writeFile(path.join(repo.dir, '.gitignore'), '.chamoji/\n');
+	const {code, stdout, stderr} = await chamoji(
+		['ws', 'start', 'Auth revamp'],
+		repo.dir,
+	);
+	expect(code).toBe(1);
+	expect(stdout).toBe('');
+	expect(stderr).toContain('.chamoji/workstreams.yml is ignored by git');
+	expect(stderr).toContain('.gitignore:1:.chamoji/');
+	expect(stderr).not.toContain('Command failed');
+	await expect(readdir(path.join(repo.dir, '.chamoji'))).rejects.toThrow();
+	await expect(
+		readFile(path.join(repo.dir, '.git', 'chamoji', 'active'), 'utf8'),
+	).rejects.toThrow();
 });
 
 test('git commit -m with a leading # is stamped under the default cleanup', async () => {

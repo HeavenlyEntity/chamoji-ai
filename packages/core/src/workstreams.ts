@@ -407,7 +407,46 @@ async function save(
 	file: string,
 	document: Document,
 ): Promise<void> {
-	await mkdir(path.dirname(file), {recursive: true});
+	const dir = path.dirname(file);
+	const before = await readFileIfExists(file);
+	const madeDir = await mkdir(dir, {recursive: true});
 	await writeFile(file, document.toString());
-	await runGit(['add', '--', file], cwd);
+	try {
+		await runGit(['add', '--', file], cwd);
+	} catch (error) {
+		// Put back what was there; a new file would only be left half done.
+		if (before === undefined) {
+			await rm(file, {force: true});
+			if (madeDir !== undefined) await rm(dir, {recursive: true, force: true});
+		} else {
+			await writeFile(file, before);
+		}
+
+		throw await stagingError(cwd, file, error);
+	}
+}
+
+/** Why `git add` refused the file: usually a `.gitignore` rule, which is named. */
+async function stagingError(
+	cwd: string,
+	file: string,
+	cause: unknown,
+): Promise<Error> {
+	try {
+		const rule = (await runGit(['check-ignore', '-v', '--', file], cwd))
+			.split('\t')[0]
+			?.trim();
+		if (rule) {
+			return new WorkstreamError(
+				`${WORKSTREAMS_FILE} is ignored by git (${rule}), so it can't be staged. Remove that rule so the file can be committed, then try again.`,
+			);
+		}
+	} catch {
+		// Not ignored (check-ignore exits 1): some other reason.
+	}
+
+	const {stderr} = cause as {stderr?: string};
+	return new WorkstreamError(
+		`Could not stage ${WORKSTREAMS_FILE}: ${stderr?.trim() || (cause as Error).message}`,
+	);
 }

@@ -598,6 +598,23 @@ test('stampWorkstream treats a message of only sign-off lines as empty, as git d
 	expect(text.indexOf('Workstream:')).toBeLessThan(text.indexOf('# Please'));
 });
 
+test('writers say so when .chamoji is git-ignored, and put the file back as it was', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await writeFile(path.join(repo.dir, '.gitignore'), '.chamoji/\n');
+	await expect(addWorkstream(repo.dir, {title: 'New'})).rejects.toThrow(
+		/workstreams\.yml is ignored by git \(\.gitignore:1:\.chamoji\/\)/,
+	);
+	await expect(readdir(path.join(repo.dir, '.chamoji'))).rejects.toThrow();
+
+	// A file that was already there keeps its text.
+	const text = 'workstreams:\n  a:\n    title: A\n    status: active\n';
+	await writeWorkstreams(repo.dir, text);
+	await expect(setWorkstreamStatus(repo.dir, 'a', 'shipped')).rejects.toThrow(
+		WorkstreamError,
+	);
+	expect(await readFile(fileIn(repo.dir), 'utf8')).toBe(text);
+});
+
 test('stampWorkstream counts a comment-looking -m message as content, unless commit.cleanup=strip', async () => {
 	repo = await createRepo([{commit: '🎉 Init'}]);
 	await addWorkstream(repo.dir, {title: 'Auth revamp'});
