@@ -8,6 +8,7 @@ lefthook), then runs `git commit` from the given shell:
   the composed message (Linux and macOS only: Windows has no pty)
 - with -m, and checks the message was left alone
 - with no terminal at all, and checks the commit still goes through
+- after `chamoji ws start`, with -m, and checks the commit got the Workstream trailer
 
   python3 scripts/hook-e2e.py --shell bash|zsh|fish|pwsh [--manager husky|lefthook] [--no-tty]
 
@@ -217,6 +218,19 @@ def main():
     if result.returncode != 0 or last_message(repo) != 'report, from an editor':
         fail(f'{label}: a commit without a terminal failed: {result.stdout}{result.stderr}')
     print(f'ok   {label}: a commit without a terminal went through')
+
+    # `ws start` makes the workstream active and stages .chamoji/workstreams.yml, so the
+    # commit below records the file too. Like the check above, nothing here may wait on a prompt.
+    subprocess.run(['chamoji', 'ws', 'start', 'Auth revamp'], cwd=repo, env=env, check=True, stdin=subprocess.DEVNULL, capture_output=True, shell=WINDOWS, timeout=120)
+    with open(os.path.join(repo, 'report.txt'), 'w') as f:
+        f.write('report, in a workstream\n')
+    git(repo, 'add', 'report.txt')
+    subprocess.run(shell_command(args.shell, 'git commit -m "add the login"'), cwd=repo, env=env, check=True, stdin=subprocess.DEVNULL, capture_output=True, timeout=120)
+    if last_message(repo) != 'add the login\n\nWorkstream: auth-revamp':
+        fail(f'{label}: git commit -m with an active workstream gave {last_message(repo)!r}')
+    if '.chamoji/workstreams.yml' not in git(repo, 'show', '--name-only', '--format=', 'HEAD').split():
+        fail(f'{label}: the commit should have recorded .chamoji/workstreams.yml')
+    print(f'ok   {label}: git commit -m was stamped with the active workstream')
 
 
 if __name__ == '__main__':

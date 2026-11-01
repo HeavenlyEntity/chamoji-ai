@@ -43,6 +43,7 @@ chamoji changelog --format json            # machine-readable
 chamoji next-version                       # e.g. 1.3.0
 chamoji release                            # cut a release (see below)
 chamoji commit                             # write a commit (see below)
+chamoji ws                                 # list workstreams (see below)
 ```
 
 `next-version` exits with code 3 and prints nothing to stdout when no commit since the last tag implies a version bump (only docs, tests or refactors, say).
@@ -128,6 +129,27 @@ git config --global chamoji.sendDiffs true  # optional: send the diff too
 **What is never sent:** secrets files and lockfiles, not even their names. That covers `.env*`, `.envrc`, `.npmrc`, `.netrc`, `credentials*`, `id_*` keys, `*.pem`, `*.key`, `*.p12`, `*.tfvars` and similar, any path containing "secret", and lockfiles. The request says only how many files were left out.
 
 **The opt-in lives in git config,** not in a file in the repository, so a repository you clone can't switch it on for you. The key comes from `TYPESAFE_API_KEY`, or that line in an untracked `.env.local` or `.env`.
+
+## Workstreams
+
+A workstream is a piece of work that takes more than one commit, such as "Auth revamp". Mark its commits, and the changelog shows it as one Highlight with those commits folded underneath, instead of a flat list.
+
+```bash
+chamoji hook install               # once: the hook is what stamps commits
+chamoji ws start "Auth revamp" 🔐  # a new workstream, now active here
+git commit -m "✨ Add login"       # gets the line "Workstream: auth-revamp"
+chamoji ws                         # workstreams and their unreleased commits (* is active)
+chamoji ws switch <slug>           # make another one active (--none clears it)
+chamoji ws ship                    # mark the active one shipped (or: chamoji ws drop)
+```
+
+`ws start`, `ws ship` and `ws drop` stage `.chamoji/workstreams.yml` and don't commit it. Your next commit records the change.
+
+- **Committed or local:** `.chamoji/workstreams.yml` is committed, so the team shares each workstream's title, emoji, description, status and links. Which workstream is active is local: `.git/chamoji/active`, one per worktree.
+- **What gets stamped:** commits made with `git commit -m` (an amend with `-m` too, since the hook can't tell them apart), `chamoji commit`, and messages written by the composer. Merges, squashes, amends without `-m`, rebases, cherry-picks and reverts are left alone.
+- **Editor commits aren't stamped.** The hook runs before the editor opens, and stamping an empty message would stop git from aborting when you quit. So for a plain `git commit` whose message you write in the editor, the hook prints a notice naming the workstream. Add the `Workstream:` line yourself, or use `-m` or `chamoji commit`. A message written in the editor from a `commit.template` works the same way.
+- **When it becomes a Highlight:** once the workstream is `shipped` in the file as of that release. Earlier releases don't change, and a workstream's commits in an earlier release stay loose. Commits of a workstream that is still active or dropped are listed as usual, and breaking commits stay under Breaking changes.
+- **Squash merges:** chamoji reads `Workstream:` lines anywhere in a commit's body. A squash that mixes workstreams gets the first one found. We haven't tested GitHub's squash settings yet. If your repo squashes with "PR title and description", add the `Workstream:` line to the PR description.
 
 ## Cutting a release
 

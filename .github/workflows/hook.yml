@@ -1,8 +1,9 @@
 name: Hook
 
 # End-to-end checks of the commit hook with real git: the composer in a
-# terminal, `git commit -m` left alone, and commits without a terminal,
-# from each shell and through husky and lefthook (scripts/hook-e2e.py).
+# terminal, `git commit -m` left alone, commits without a terminal, and
+# `git commit -m` stamped with the active workstream, from each shell and
+# through husky and lefthook (scripts/hook-e2e.py).
 on:
   push:
     branches: [main]

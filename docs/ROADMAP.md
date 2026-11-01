@@ -37,7 +37,7 @@ These apply to every milestone. A plan that breaks one needs a written reason.
 | 3.5 | Repo card                           | 1 Activation & acquisition | Acquisition | M    | ✅ Shipped in 0.9.0 (own readme card left)     | [plan](superpowers/plans/2026-10-31-repo-card.md)                       |
 | 4   | Commit composer and git hook        | 2 Retention                | Retention   | L    | ✅ Shipped in 0.7.0                            | [plan](superpowers/plans/2026-10-28-milestone-4-commit-composer.md)     |
 | 5   | Jev in the composer                 | 2 Retention                | Retention   | M    | ✅ Shipped in 0.8.0                            | [plan](superpowers/plans/2026-10-28-milestone-5-jev-in-the-composer.md) |
-| 6   | Workstreams                         | 3 Differentiation          | Retention   | L    | Planned                                        | [plan](superpowers/plans/2026-10-31-milestone-6-workstreams.md)         |
+| 6   | Workstreams                         | 3 Differentiation          | Retention   | L    | 🚧 Built, release pending                      | [plan](superpowers/plans/2026-10-31-milestone-6-workstreams.md)         |
 | 7   | Project memory                      | 3 Differentiation          | Retention   | L    | Planned                                        | —                                                                       |
 | 8   | Review packets                      | 3 Differentiation          | Expansion   | L    | Planned                                        | —                                                                       |
 | 9   | Retroactive grouping                | 3 Differentiation          | Activation  | M    | Planned                                        | —                                                                       |
@@ -484,6 +484,13 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 
 - Trailers survive a GitHub squash merge, tested on a real repo.
 - A 40-commit release renders as 5 or fewer Highlights plus loose commits.
+
+**Results (2026-10-31):**
+
+- ✅ **A 40-commit release renders as 5 or fewer Highlights plus loose commits:** met. The test in `packages/core/test/highlights.test.ts` gives 4 Highlights and 6 loose commits.
+- ⬜ **Trailers survive a GitHub squash merge, tested on a real repo:** not yet run. It needs a throwaway repo on GitHub, tried with both of GitHub's default squash-message settings. Locally, chamoji reads `Workstream:` lines anywhere in the body, so GitHub's default squash message works in tests. The readme says the GitHub settings are untested, and suggests adding the line to the PR description for repos that squash with "PR title and description".
+- ✅ **The hook stamps `git commit -m` in the real-git check:** `scripts/hook-e2e.py` has a fourth check, run from each shell and through husky and lefthook in the Hook workflow.
+- ⬜ **Dogfooding on milestone 7 is pending.** Per the rule above, this milestone isn't done until we've run milestone 7 as a workstream in this repo.
 
 **Dependencies:** milestone 4.
 
