@@ -245,14 +245,19 @@ test('the Workstream trailer names the workstream, whatever its case', () => {
 });
 
 test('a squash body with the trailer mid-body still gives the workstream', () => {
-	// GitHub puts the squashed commits' bodies after the PR title, so git's
-	// own trailer parsing, which only reads the last paragraph, misses it.
+	// The shape of a real GitHub squash with the default message setting.
+	// Git's own trailer parsing only reads the last paragraph, so it misses
+	// the line.
 	const body = [
 		'* Add login',
 		'',
 		'Workstream: auth-revamp',
 		'',
 		'* Fix the redirect',
+		'',
+		'Workstream: auth-revamp',
+		'',
+		'---------',
 		'',
 		'Co-authored-by: Dev <dev@example.com>',
 	].join('\n');
