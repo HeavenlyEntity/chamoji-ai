@@ -1,4 +1,11 @@
-import {access, constants, mkdir, readFile, writeFile} from 'node:fs/promises';
+import {
+	access,
+	constants,
+	mkdir,
+	readFile,
+	rm,
+	writeFile,
+} from 'node:fs/promises';
 import path from 'node:path';
 import {afterEach, expect, test, vi} from 'vitest';
 import {
@@ -410,4 +417,190 @@ test('a repository can’t switch the advice on from its own files', async () =>
 	await withAdvisor(['commit'], repo.dir, capture.terminal, advise);
 	expect(capture.seen[0]).toBeUndefined();
 	expect(advise).not.toHaveBeenCalled();
+});
+
+// --- stamping the active workstream ---
+
+async function startWorkstream(dir: string) {
+	const {code, stderr} = await chamoji(
+		['ws', 'start', 'Auth revamp', '🔐'],
+		dir,
+	);
+	expect(code, stderr).toBe(0);
+}
+
+test('hook run stamps a -m commit, where it never prompts', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await startWorkstream(repo.dir);
+	const file = await messageFile(repo.dir, '✨ Add sign-in\n');
+	const fake = fakeTerminal('🐛 Nope');
+	const {code} = await withTerminal(
+		['hook', 'run', file, 'message'],
+		repo.dir,
+		fake.terminal,
+	);
+	expect(code).toBe(0);
+	expect(fake.calls).toEqual(['close']);
+	expect(await readFile(file, 'utf8')).toBe(
+		'✨ Add sign-in\n\nWorkstream: auth-revamp\n',
+	);
+});
+
+test('hook run puts the trailer under the composed message and above git’s comments', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await startWorkstream(repo.dir);
+	const file = await messageFile(repo.dir);
+	await withTerminal(
+		['hook', 'run', file],
+		repo.dir,
+		fakeTerminal('🐛 (api): Fix timeout').terminal,
+	);
+	const written = await readFile(file, 'utf8');
+	expect(
+		written.startsWith(
+			'🐛 (api): Fix timeout\n\nWorkstream: auth-revamp\n\n# Please enter',
+		),
+	).toBe(true);
+	expect(written).toContain('#\tmodified:   app.ts');
+});
+
+test('hook run never turns an empty message into one, so a cancelled commit still aborts', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await startWorkstream(repo.dir);
+	const file = await messageFile(repo.dir);
+	await withTerminal(['hook', 'run', file], repo.dir, () => null);
+	await withTerminal(['hook', 'run', file, 'template'], repo.dir, () => null);
+	await withTerminal(
+		['hook', 'run', file],
+		repo.dir,
+		fakeTerminal(null).terminal,
+	);
+	expect(await readFile(file, 'utf8')).toBe(TEMPLATE);
+});
+
+test('hook run stamps nothing for a merge, squash or amend', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await startWorkstream(repo.dir);
+	for (const source of ['merge', 'squash', 'commit']) {
+		const file = await messageFile(repo.dir, `Some message\n${TEMPLATE}`);
+		await withTerminal(['hook', 'run', file, source], repo.dir, () => null);
+		expect(await readFile(file, 'utf8')).toBe(`Some message\n${TEMPLATE}`);
+	}
+});
+
+test('hook run stamps nothing during a rebase, cherry-pick or revert', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await startWorkstream(repo.dir);
+	const gitDir = path.join(repo.dir, '.git');
+	const markers: Array<[string, () => Promise<void>]> = [
+		[
+			'rebase-merge',
+			async () => void (await mkdir(path.join(gitDir, 'rebase-merge'))),
+		],
+		[
+			'rebase-apply',
+			async () => void (await mkdir(path.join(gitDir, 'rebase-apply'))),
+		],
+		[
+			'CHERRY_PICK_HEAD',
+			async () => writeFile(path.join(gitDir, 'CHERRY_PICK_HEAD'), 'x\n'),
+		],
+		[
+			'REVERT_HEAD',
+			async () => writeFile(path.join(gitDir, 'REVERT_HEAD'), 'x\n'),
+		],
+	];
+	for (const [name, create] of markers) {
+		await create();
+		const file = await messageFile(repo.dir, '✨ Picked\n');
+		await withTerminal(['hook', 'run', file, 'message'], repo.dir, () => null);
+		expect(await readFile(file, 'utf8'), name).toBe('✨ Picked\n');
+		await rm(path.join(gitDir, name), {recursive: true});
+	}
+
+	// With the markers gone it stamps again, so they were what held it back.
+	const file = await messageFile(repo.dir, '✨ Picked\n');
+	await withTerminal(['hook', 'run', file, 'message'], repo.dir, () => null);
+	expect(await readFile(file, 'utf8')).toContain('Workstream: auth-revamp');
+});
+
+test('hook run still reaches the composer during a cherry-pick, as before', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await startWorkstream(repo.dir);
+	await writeFile(path.join(repo.dir, '.git', 'CHERRY_PICK_HEAD'), 'x\n');
+	const file = await messageFile(repo.dir);
+	const fake = fakeTerminal('🐛 Composed');
+	await withTerminal(['hook', 'run', file], repo.dir, fake.terminal);
+	// shouldPrompt's input doesn't know about CHERRY_PICK_HEAD, so it prompts;
+	// only the stamp is held back.
+	expect(fake.calls).toEqual(['compose', 'close']);
+	expect(await readFile(file, 'utf8')).toContain('🐛 Composed');
+	expect(await readFile(file, 'utf8')).not.toContain('Workstream:');
+});
+
+test('hook run swallows a corrupt workstreams file and leaves the message alone', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await startWorkstream(repo.dir);
+	await writeFile(
+		path.join(repo.dir, '.chamoji', 'workstreams.yml'),
+		'<<<<<<< HEAD\nworkstreams: {\n=======\n>>>>>>> other\n',
+	);
+	const file = await messageFile(repo.dir, '✨ Add sign-in\n');
+	const {code, stderr} = await withTerminal(
+		['hook', 'run', file, 'message'],
+		repo.dir,
+		() => null,
+	);
+	expect(code).toBe(0);
+	expect(stderr).toContain('chamoji: hook skipped (.chamoji/workstreams.yml');
+	expect(await readFile(file, 'utf8')).toBe('✨ Add sign-in\n');
+});
+
+test('chamoji commit survives a corrupt workstreams file and commits unstamped', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await startWorkstream(repo.dir);
+	await gitOutput(repo.dir, ['commit', '-q', '-m', '🔧 Track workstreams']);
+	await writeFile(
+		path.join(repo.dir, '.chamoji', 'workstreams.yml'),
+		'workstreams: [unclosed\n',
+	);
+	await writeFile(path.join(repo.dir, 'app.ts'), 'export {};\n');
+	await gitOutput(repo.dir, ['add', 'app.ts']);
+	const {code, stderr} = await withTerminal(
+		['commit'],
+		repo.dir,
+		fakeTerminal('✨ Add the entry point').terminal,
+	);
+	expect(code).toBe(0);
+	expect(stderr).toContain('chamoji: not stamped with a workstream (');
+	expect(await gitOutput(repo.dir, ['log', '-1', '--format=%B'])).toBe(
+		'✨ Add the entry point\n\n',
+	);
+});
+
+test('chamoji commit does not stamp mid cherry-pick', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await startWorkstream(repo.dir);
+	await writeFile(path.join(repo.dir, '.git', 'CHERRY_PICK_HEAD'), 'x\n');
+	await writeFile(path.join(repo.dir, 'app.ts'), 'export {};\n');
+	await gitOutput(repo.dir, ['add', 'app.ts']);
+	const {code} = await withTerminal(
+		['commit'],
+		repo.dir,
+		fakeTerminal('✨ Add the entry point').terminal,
+	);
+	expect(code).toBe(0);
+	expect(await gitOutput(repo.dir, ['log', '-1', '--format=%B'])).toBe(
+		'✨ Add the entry point\n\n',
+	);
+});
+
+test('hook run stamps nothing on the message of a clean git revert', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await startWorkstream(repo.dir);
+	// A clean revert leaves no REVERT_HEAD and reaches the hook as a -m message.
+	const text = 'Revert "✨ Add sign-in"\n\nThis reverts commit abc123.\n';
+	const file = await messageFile(repo.dir, text);
+	await withTerminal(['hook', 'run', file, 'message'], repo.dir, () => null);
+	expect(await readFile(file, 'utf8')).toBe(text);
 });

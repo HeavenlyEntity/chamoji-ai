@@ -20,6 +20,8 @@ import {
 	repoStats,
 	runGit,
 	shouldPrompt,
+	shouldStamp,
+	stampWorkstream,
 	type CommitClassifier,
 	type ComposeConfig,
 	type OutputFormat,
@@ -38,6 +40,7 @@ import {HookError, installHook, uninstallHook} from './hook.js';
 import {createJevClassifier, JUDGMENT_VERSION} from './jev-classifier.js';
 import {openTerminal} from './tty.js';
 import type {UpdateCheck} from './update-check.js';
+import {runWorkstream} from './ws.js';
 
 export type Io = {
 	cwd: string;
@@ -107,6 +110,13 @@ const HELP = `
 	  $ chamoji hook install           Offer the composer on a plain
 	                                   \`git commit\` (uninstall to remove)
 	  $ chamoji card [options]         Print the URL of the repo's card image
+	  $ chamoji ws                     List workstreams with their unreleased
+	                                   commits (* marks the active one)
+	  $ chamoji ws start <title> [emoji]
+	                                   Start a workstream and make it active
+	  $ chamoji ws switch <slug>       Make a workstream active
+	  $ chamoji ws ship [slug]         Mark one shipped (default: the active one)
+	  $ chamoji ws drop [slug]         Mark one dropped
 
 	Options
 	  --format   markdown (default), md, json or html
@@ -128,7 +138,9 @@ const HELP = `
 	  --trailer  release: add "Key: value" to the release commit (repeatable)
 	  --any-branch
 	             release: allow a branch other than origin's default
-	  --json     release: print the result as JSON; card: print the numbers
+	  --json     release: print the result as JSON; card: print the numbers;
+	             ws list: print the workstreams as an array
+	  --none     ws switch: clear the active workstream
 	  --repo     card: owner/name on GitHub (default: from the origin remote)
 	  --endpoint card: the card renderer (default: https://chamoji.dev/api/card)
 	  --no-update-check
@@ -174,6 +186,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
 			trailer: {type: 'string', isMultiple: true},
 			anyBranch: {type: 'boolean'},
 			json: {type: 'boolean'},
+			none: {type: 'boolean'},
 			repo: {type: 'string'},
 			endpoint: {type: 'string'},
 			all: {type: 'boolean', shortFlag: 'a'},
@@ -283,6 +296,10 @@ export async function run(argv: string[], io: Io): Promise<number> {
 					return await card();
 				}
 
+				case 'ws': {
+					return await runWorkstream(cli.input.slice(1), flags, io);
+				}
+
 				default: {
 					io.stderr(
 						`${command ? `chamoji: unknown command "${command}"\n` : ''}${cli.help}\n`,
@@ -353,6 +370,17 @@ export async function run(argv: string[], io: Io): Promise<number> {
 		const file = path.join(dir, 'COMMIT_EDITMSG');
 		try {
 			await writeFile(file, `${message}\n`);
+			try {
+				const gitDir = (
+					await runGit(['rev-parse', '--absolute-git-dir'], io.cwd)
+				).trim();
+				await stamp(file, gitDir, undefined);
+			} catch (error) {
+				io.stderr(
+					`chamoji: not stamped with a workstream (${(error as Error).message})\n`,
+				);
+			}
+
 			// gitmoji-cli's autoAdd stages everything, as `git add .` does.
 			if (config.autoAdd) await runGit(['add', '--all'], io.cwd);
 			io.stdout(
@@ -376,8 +404,9 @@ export async function run(argv: string[], io: Io): Promise<number> {
 
 	/**
 	 * What the installed prepare-commit-msg hook runs. It opens the composer
-	 * only when shouldPrompt says so, and always exits 0 with the message
-	 * file unchanged unless a message was composed, so it never blocks a commit.
+	 * only when shouldPrompt says so, stamps the active workstream on the
+	 * message, and always exits 0 with the message file unchanged when
+	 * anything goes wrong, so it never blocks a commit.
 	 */
 	async function runHook(
 		file: string | undefined,
@@ -391,41 +420,19 @@ export async function run(argv: string[], io: Io): Promise<number> {
 			const gitDir = (
 				await runGit(['rev-parse', '--absolute-git-dir'], io.cwd)
 			).trim();
-			const rebasing =
-				existsSync(path.join(gitDir, 'rebase-merge')) ||
-				existsSync(path.join(gitDir, 'rebase-apply'));
 			terminal = (io.terminal ?? realTerminal)();
 			const decision = shouldPrompt({
 				source,
 				message: original,
 				isTTY: terminal !== null,
 				env: io.env ?? process.env,
-				rebasing,
+				rebasing: anyExists(gitDir, REBASE_MARKERS),
 			});
-			if (!decision.prompt || !terminal) return 0;
+			if (decision.prompt && terminal) {
+				await composeInto(messageFile, original, terminal);
+			}
 
-			const root = (
-				await runGit(['rev-parse', '--show-toplevel'], io.cwd)
-			).trim();
-			const draft =
-				original
-					.split('\n')
-					.find(line => line.trim() && !line.startsWith('#')) ?? '';
-			const advice = adviceFor(root, await readAiSettings(root), draft);
-			const message = await terminal.compose(
-				await loadComposeConfig(root),
-				advice,
-			);
-			if (message === null) return 0;
-
-			// Keep git's comment lines, such as the list of changes, below the message.
-			const comments = original
-				.split('\n')
-				.filter(line => line.startsWith('#'));
-			await writeFile(
-				messageFile,
-				`${message}\n${comments.length > 0 ? `\n${comments.join('\n')}\n` : ''}`,
-			);
+			await stamp(messageFile, gitDir, source);
 			return 0;
 		} catch (error) {
 			io.stderr(`chamoji: hook skipped (${(error as Error).message})\n`);
@@ -433,6 +440,58 @@ export async function run(argv: string[], io: Io): Promise<number> {
 		} finally {
 			terminal?.close();
 		}
+	}
+
+	/** Replaces the message in `messageFile` with a composed one, if there is one. */
+	async function composeInto(
+		messageFile: string,
+		original: string,
+		terminal: ComposerTerminal,
+	): Promise<void> {
+		const root = (
+			await runGit(['rev-parse', '--show-toplevel'], io.cwd)
+		).trim();
+		const advice = adviceFor(
+			root,
+			await readAiSettings(root),
+			firstContentLine(original) ?? '',
+		);
+		const message = await terminal.compose(
+			await loadComposeConfig(root),
+			advice,
+		);
+		if (message === null) return;
+
+		// Keep git's comment lines, such as the list of changes, below the message.
+		const comments = original.split('\n').filter(line => line.startsWith('#'));
+		await writeFile(
+			messageFile,
+			`${message}\n${comments.length > 0 ? `\n${comments.join('\n')}\n` : ''}`,
+		);
+	}
+
+	/**
+	 * Adds the active workstream's trailer to the message in `file`. It leaves
+	 * alone a message that git or the user already settled (a merge, an amend,
+	 * a cherry-pick or revert), and one with nothing above git's comments yet:
+	 * stamping that would make an empty message count as a message, and
+	 * quitting the editor would commit a bare "Workstream:" line. Throws when
+	 * the workstreams file is corrupt; callers decide how to carry on.
+	 */
+	async function stamp(
+		file: string,
+		gitDir: string,
+		source: string | undefined,
+	): Promise<void> {
+		// Most repos have no active workstream: this is one stat, no git, no parsing.
+		if (!existsSync(path.join(gitDir, 'chamoji', 'active'))) return;
+		const sequencing = anyExists(gitDir, [...REBASE_MARKERS, ...PICK_MARKERS]);
+		if (!shouldStamp({source, rebasing: sequencing})) return;
+		const subject = firstContentLine(await readFile(file, 'utf8'));
+		// A clean `git revert` leaves no REVERT_HEAD and says it's a plain -m
+		// message, so its generated subject is the only sign of it.
+		if (subject === undefined || /^(?:Revert|Reapply) "/.test(subject)) return;
+		await stampWorkstream(io.cwd, file);
 	}
 
 	/**
@@ -633,6 +692,23 @@ export async function run(argv: string[], io: Io): Promise<number> {
 
 /** Exit code for a release check that failed before anything changed. */
 export const PREFLIGHT_FAILED = 2;
+
+/** Files in the git dir that say a rebase is running. */
+const REBASE_MARKERS = ['rebase-merge', 'rebase-apply'];
+
+/** Files in the git dir that say a cherry-pick or revert is waiting for its commit. */
+const PICK_MARKERS = ['CHERRY_PICK_HEAD', 'REVERT_HEAD'];
+
+function anyExists(gitDir: string, names: string[]): boolean {
+	return names.some(name => existsSync(path.join(gitDir, name)));
+}
+
+/** The first line that isn't blank or one of git's `#` comment lines. */
+function firstContentLine(message: string): string | undefined {
+	return message
+		.split('\n')
+		.find(line => line.trim() !== '' && !line.startsWith('#'));
+}
 
 function describeBump(plan: ReadyPlan): string {
 	if (plan.bump === 'first') {

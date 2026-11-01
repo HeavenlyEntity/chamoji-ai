@@ -1,0 +1,538 @@
+import {execFile} from 'node:child_process';
+import {chmod, mkdir, readFile, writeFile} from 'node:fs/promises';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {promisify} from 'node:util';
+import {afterEach, expect, test} from 'vitest';
+import {
+	createRepo,
+	gitOutput,
+	type FixtureRepo,
+} from '../../core/test/helpers/fixture-repo.js';
+import {run} from '../src/run.js';
+
+let repo: FixtureRepo | undefined;
+afterEach(async () => {
+	await repo?.cleanup();
+	repo = undefined;
+});
+
+const FILE = '.chamoji/workstreams.yml';
+const cliJs = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
+
+async function chamoji(argv: string[], cwd: string) {
+	let stdout = '';
+	let stderr = '';
+	const code = await run(argv, {
+		cwd,
+		stdout: text => (stdout += text),
+		stderr: text => (stderr += text),
+	});
+	return {code, stdout, stderr};
+}
+
+/** The installed hook, running the built CLI, so a real `git commit` goes through it. */
+async function installBuiltHook(dir: string) {
+	const file = path.join(dir, '.git', 'hooks', 'prepare-commit-msg');
+	const quote = (value: string) => `"${value.replaceAll('\\', '/')}"`;
+	await writeFile(
+		file,
+		`#!/bin/sh\n${quote(process.execPath)} ${quote(cliJs)} hook run "$@"\nexit 0\n`,
+	);
+	await chmod(file, 0o755);
+}
+
+const message = (dir: string, revision = 'HEAD') =>
+	gitOutput(dir, ['log', '-1', '--format=%B', revision]);
+
+async function commitFile(dir: string, name: string, ...messages: string[]) {
+	await writeFile(path.join(dir, name), `${name}\n`);
+	await gitOutput(dir, ['add', '--', name]);
+	await gitOutput(dir, [
+		'commit',
+		'-q',
+		...messages.flatMap(text => ['-m', text]),
+	]);
+}
+
+test('ws start adds the workstream, stages the file and makes it active', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	const {code, stdout, stderr} = await chamoji(
+		['ws', 'start', 'Auth revamp', '🔐'],
+		repo.dir,
+	);
+	expect(code).toBe(0);
+	expect(stderr).toBe('');
+	expect(stdout).toContain(
+		'Started auth-revamp. Staged .chamoji/workstreams.yml; your next commit records it.',
+	);
+	expect(await gitOutput(repo.dir, ['diff', '--cached', '--name-only'])).toBe(
+		`${FILE}\n`,
+	);
+	expect(await readFile(path.join(repo.dir, FILE), 'utf8')).toContain('🔐');
+	expect(
+		await readFile(path.join(repo.dir, '.git', 'chamoji', 'active'), 'utf8'),
+	).toBe('auth-revamp\n');
+	// ws never commits.
+	expect(await gitOutput(repo.dir, ['rev-list', '--count', 'HEAD'])).toBe(
+		'1\n',
+	);
+});
+
+test('git commit -m through the installed hook gets the Workstream trailer', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await installBuiltHook(repo.dir);
+	await chamoji(['ws', 'start', 'Auth revamp', '🔐'], repo.dir);
+	await commitFile(repo.dir, 'a.ts', '✨ Add sign-in');
+	expect(await message(repo.dir)).toBe(
+		'✨ Add sign-in\n\nWorkstream: auth-revamp\n\n',
+	);
+	// The commit also recorded the staged workstreams file.
+	expect(
+		await gitOutput(repo.dir, ['show', '--name-only', '--format=', 'HEAD']),
+	).toContain(FILE);
+});
+
+test('chamoji commit with no hook installed stamps it too', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await chamoji(['ws', 'start', 'Auth revamp'], repo.dir);
+	await writeFile(path.join(repo.dir, 'a.ts'), 'export {};\n');
+	await gitOutput(repo.dir, ['add', 'a.ts']);
+	let stderr = '';
+	const code = await run(['commit'], {
+		cwd: repo.dir,
+		stdout() {},
+		stderr: text => (stderr += text),
+		env: {},
+		terminal: () => ({
+			async compose() {
+				return '✨ Add sign-in';
+			},
+			close() {},
+		}),
+	});
+	expect(code, stderr).toBe(0);
+	expect(await message(repo.dir)).toBe(
+		'✨ Add sign-in\n\nWorkstream: auth-revamp\n\n',
+	);
+});
+
+test('chamoji commit with the hook installed stamps once', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await installBuiltHook(repo.dir);
+	await chamoji(['ws', 'start', 'Auth revamp'], repo.dir);
+	await writeFile(path.join(repo.dir, 'a.ts'), 'export {};\n');
+	await gitOutput(repo.dir, ['add', 'a.ts']);
+	const code = await run(['commit'], {
+		cwd: repo.dir,
+		stdout() {},
+		stderr() {},
+		env: {},
+		terminal: () => ({
+			async compose() {
+				return '✨ Add sign-in';
+			},
+			close() {},
+		}),
+	});
+	expect(code).toBe(0);
+	expect(await message(repo.dir)).toBe(
+		'✨ Add sign-in\n\nWorkstream: auth-revamp\n\n',
+	);
+});
+
+test('-m with no active workstream leaves the message byte for byte', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await installBuiltHook(repo.dir);
+	// No workstreams file at all.
+	await commitFile(repo.dir, 'a.ts', '✨ Add a', 'Because.');
+	expect(await message(repo.dir)).toBe('✨ Add a\n\nBecause.\n\n');
+
+	// A file, but nothing active.
+	await chamoji(['ws', 'start', 'Auth revamp'], repo.dir);
+	await chamoji(['ws', 'switch', '--none'], repo.dir);
+	await commitFile(repo.dir, 'b.ts', '✨ Add b', 'Because.');
+	expect(await message(repo.dir)).toBe('✨ Add b\n\nBecause.\n\n');
+});
+
+test('a message that already has a Workstream trailer keeps it', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await installBuiltHook(repo.dir);
+	await chamoji(['ws', 'start', 'Auth revamp'], repo.dir);
+	await commitFile(repo.dir, 'a.ts', '✨ Add a', 'Workstream: other');
+	expect(await message(repo.dir)).toBe('✨ Add a\n\nWorkstream: other\n\n');
+});
+
+test('a merge commit is not stamped', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await installBuiltHook(repo.dir);
+	await chamoji(['ws', 'start', 'Auth revamp'], repo.dir);
+	await commitFile(repo.dir, 'a.ts', '✨ Add a');
+	await gitOutput(repo.dir, ['switch', '-q', '-c', 'side']);
+	await commitFile(repo.dir, 'side.ts', '✨ Add side');
+	await gitOutput(repo.dir, ['switch', '-q', 'main']);
+	await commitFile(repo.dir, 'main.ts', '✨ Add main');
+	await gitOutput(repo.dir, ['merge', '--no-ff', '--no-edit', '-q', 'side']);
+	expect(await message(repo.dir)).toBe("Merge branch 'side'\n\n");
+});
+
+test('an amend is not stamped and keeps the trailer it had', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await installBuiltHook(repo.dir);
+	await chamoji(['ws', 'start', 'Auth revamp'], repo.dir);
+	await commitFile(repo.dir, 'a.ts', '✨ Add a');
+	await chamoji(['ws', 'start', 'Billing'], repo.dir);
+
+	// Billing is active now, but amending a commit leaves its message alone.
+	await gitOutput(repo.dir, ['commit', '-q', '--amend', '--no-edit']);
+	expect(await message(repo.dir)).toBe(
+		'✨ Add a\n\nWorkstream: auth-revamp\n\n',
+	);
+
+	await gitOutput(repo.dir, ['switch', '-q', '-c', 'plain', 'HEAD~0']);
+	await chamoji(['ws', 'switch', '--none'], repo.dir);
+	await commitFile(repo.dir, 'b.ts', '✨ Add b');
+	await chamoji(['ws', 'switch', 'billing'], repo.dir);
+	await gitOutput(repo.dir, ['commit', '-q', '--amend', '--no-edit']);
+	expect(await message(repo.dir)).toBe('✨ Add b\n\n');
+});
+
+test('a workstream shipped or deleted elsewhere commits unstamped without an error', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await installBuiltHook(repo.dir);
+	await chamoji(['ws', 'start', 'Auth revamp'], repo.dir);
+	await commitFile(repo.dir, 'a.ts', '✨ Add a');
+
+	// Another branch shipped it: the working-tree file now says so.
+	await writeFile(
+		path.join(repo.dir, FILE),
+		(await readFile(path.join(repo.dir, FILE), 'utf8')).replace(
+			'status: active',
+			'status: shipped',
+		),
+	);
+	await gitOutput(repo.dir, ['add', FILE]);
+	await gitOutput(repo.dir, ['commit', '-q', '-m', '🔧 Ship it']);
+	expect(await message(repo.dir)).toBe('🔧 Ship it\n\n');
+
+	// Or the entry is gone.
+	await writeFile(path.join(repo.dir, FILE), 'workstreams: {}\n');
+	await commitFile(repo.dir, 'b.ts', '✨ Add b');
+	expect(await message(repo.dir)).toBe('✨ Add b\n\n');
+});
+
+test('a corrupt workstreams file never blocks git commit -m', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await installBuiltHook(repo.dir);
+	await chamoji(['ws', 'start', 'Auth revamp'], repo.dir);
+	await writeFile(
+		path.join(repo.dir, FILE),
+		'<<<<<<< HEAD\nworkstreams: {\n=======\n>>>>>>> other\n',
+	);
+	await writeFile(path.join(repo.dir, 'a.ts'), 'a\n');
+	await gitOutput(repo.dir, ['add', 'a.ts']);
+	await gitOutput(repo.dir, ['commit', '-q', '-m', '✨ Add a']);
+	expect(await message(repo.dir)).toBe('✨ Add a\n\n');
+});
+
+test('ws switch moves the active workstream, and --none clears it', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await chamoji(['ws', 'start', 'Auth revamp'], repo.dir);
+	await chamoji(['ws', 'start', 'Billing'], repo.dir);
+	const active = () =>
+		readFile(path.join(repo!.dir, '.git', 'chamoji', 'active'), 'utf8');
+	expect(await active()).toBe('billing\n');
+
+	const back = await chamoji(['ws', 'switch', 'auth-revamp'], repo.dir);
+	expect(back.code).toBe(0);
+	expect(back.stdout).toBe('Switched to auth-revamp.\n');
+	expect(await active()).toBe('auth-revamp\n');
+
+	const none = await chamoji(['ws', 'switch', '--none'], repo.dir);
+	expect(none.code).toBe(0);
+	expect(none.stdout).toBe('No active workstream now.\n');
+	await expect(active()).rejects.toThrow();
+});
+
+test('ws switch refuses a workstream that is not active, naming its status', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await chamoji(['ws', 'start', 'Auth revamp'], repo.dir);
+	await chamoji(['ws', 'ship'], repo.dir);
+	const shipped = await chamoji(['ws', 'switch', 'auth-revamp'], repo.dir);
+	expect(shipped.code).toBe(1);
+	expect(shipped.stderr).toBe(
+		"chamoji: auth-revamp is shipped, so it can't be made active\n",
+	);
+
+	const missing = await chamoji(['ws', 'switch', 'nope'], repo.dir);
+	expect(missing.code).toBe(1);
+	expect(missing.stderr).toContain('No workstream named "nope"');
+});
+
+test('ws switch needs a slug or --none, and not both', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await chamoji(['ws', 'start', 'Auth revamp'], repo.dir);
+	const neither = await chamoji(['ws', 'switch'], repo.dir);
+	expect(neither.code).toBe(2);
+	expect(neither.stderr).toContain('switch needs a slug or --none');
+
+	const both = await chamoji(
+		['ws', 'switch', 'auth-revamp', '--none'],
+		repo.dir,
+	);
+	expect(both.code).toBe(2);
+	expect(both.stderr).toContain('switch needs a slug or --none');
+});
+
+test('ws ship and drop set the status, stage the file and clear the active one', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await chamoji(['ws', 'start', 'Auth revamp'], repo.dir);
+	await gitOutput(repo.dir, ['commit', '-q', '-m', '🔧 Track workstreams']);
+
+	const shipped = await chamoji(['ws', 'ship'], repo.dir);
+	expect(shipped.code).toBe(0);
+	expect(shipped.stdout).toContain(
+		'Shipped auth-revamp. Staged .chamoji/workstreams.yml; your next commit records it.',
+	);
+	expect(await gitOutput(repo.dir, ['diff', '--cached', '--name-only'])).toBe(
+		`${FILE}\n`,
+	);
+	expect(await readFile(path.join(repo.dir, FILE), 'utf8')).toContain(
+		'status: shipped',
+	);
+	await expect(
+		readFile(path.join(repo.dir, '.git', 'chamoji', 'active'), 'utf8'),
+	).rejects.toThrow();
+
+	await chamoji(['ws', 'start', 'Billing'], repo.dir);
+	await chamoji(['ws', 'start', 'Search'], repo.dir);
+	const dropped = await chamoji(['ws', 'drop', 'billing'], repo.dir);
+	expect(dropped.code).toBe(0);
+	expect(dropped.stdout).toContain(
+		'Dropped billing. Staged .chamoji/workstreams.yml; your next commit records it.',
+	);
+	const text = await readFile(path.join(repo.dir, FILE), 'utf8');
+	expect(text).toContain('status: dropped');
+	// Dropping another workstream leaves the active one alone.
+	expect(
+		await readFile(path.join(repo.dir, '.git', 'chamoji', 'active'), 'utf8'),
+	).toBe('search\n');
+});
+
+test('ws ship with no slug and no active workstream exits 1 and says so', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await chamoji(['ws', 'start', 'Auth revamp'], repo.dir);
+	await chamoji(['ws', 'switch', '--none'], repo.dir);
+	for (const command of ['ship', 'drop']) {
+		const {code, stdout, stderr} = await chamoji(['ws', command], repo.dir);
+		expect(code).toBe(1);
+		expect(stdout).toBe('');
+		expect(stderr).toBe(
+			`chamoji: no active workstream; name one: chamoji ws ${command} <slug>\n`,
+		);
+	}
+});
+
+test('ws ship of an unknown slug exits 1', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	const {code, stderr} = await chamoji(['ws', 'ship', 'nope'], repo.dir);
+	expect(code).toBe(1);
+	expect(stderr).toContain('No workstream named "nope"');
+});
+
+test('ws list shows slug, status, title and unreleased commits, with * on the active one', async () => {
+	repo = await createRepo([
+		{commit: '🎉 Init'},
+		{commit: '✨ Old', body: 'Workstream: auth-revamp'},
+		{tag: 'v1.0.0'},
+		{commit: '✨ One', body: 'Workstream: auth-revamp'},
+		{commit: '✨ Two', body: 'Workstream: auth-revamp'},
+		{commit: '🐛 Three', body: 'Workstream: billing'},
+		{commit: '♻️ Loose'},
+	]);
+	await chamoji(['ws', 'start', 'Auth revamp', '🔐'], repo.dir);
+	await chamoji(['ws', 'start', 'Billing'], repo.dir);
+	await chamoji(['ws', 'drop', 'billing'], repo.dir);
+	await chamoji(['ws', 'switch', 'auth-revamp'], repo.dir);
+
+	for (const argv of [['ws', 'list'], ['ws']]) {
+		const {code, stdout} = await chamoji(argv, repo.dir);
+		expect(code).toBe(0);
+		expect(stdout.split('\n').filter(Boolean)).toEqual([
+			'* auth-revamp  active   🔐 Auth revamp  2 commits',
+			'  billing      dropped  Billing  1 commit',
+		]);
+	}
+});
+
+test('ws list --json counts a workstream’s unreleased commits on this branch only', async () => {
+	repo = await createRepo([
+		{commit: '🎉 Init'},
+		{commit: '✨ Old', body: 'Workstream: auth-revamp'},
+		{tag: 'v1.0.0'},
+		{commit: '✨ One', body: 'Workstream: auth-revamp'},
+		{commit: '✨ Two', body: 'Workstream: auth-revamp'},
+	]);
+	await chamoji(['ws', 'start', 'Auth revamp', '🔐'], repo.dir);
+	await chamoji(['ws', 'start', 'Billing'], repo.dir);
+	await chamoji(['ws', 'switch', 'auth-revamp'], repo.dir);
+	await gitOutput(repo.dir, ['commit', '-q', '-m', '🔧 Track workstreams']);
+	await gitOutput(repo.dir, ['switch', '-q', '-c', 'feature']);
+	await gitOutput(repo.dir, [
+		'commit',
+		'-q',
+		'--allow-empty',
+		'-m',
+		'✨ Elsewhere',
+		'-m',
+		'Workstream: billing',
+	]);
+	await gitOutput(repo.dir, ['switch', '-q', 'main']);
+
+	const {code, stdout} = await chamoji(['ws', 'list', '--json'], repo.dir);
+	expect(code).toBe(0);
+	expect(JSON.parse(stdout)).toEqual([
+		{
+			slug: 'auth-revamp',
+			title: 'Auth revamp',
+			emoji: '🔐',
+			status: 'active',
+			active: true,
+			commits: 2,
+		},
+		{
+			slug: 'billing',
+			title: 'Billing',
+			status: 'active',
+			active: false,
+			commits: 0,
+		},
+	]);
+});
+
+test('ws list copes with no workstreams, no commits and no tag', async () => {
+	repo = await createRepo([]);
+	const human = await chamoji(['ws', 'list'], repo.dir);
+	expect(human.code).toBe(0);
+	expect(human.stdout).toBe(
+		'No workstreams yet. Start one with: chamoji ws start <title> [emoji]\n',
+	);
+	const json = await chamoji(['ws', 'list', '--json'], repo.dir);
+	expect(json.stdout).toBe('[]\n');
+
+	await chamoji(['ws', 'start', 'Auth revamp'], repo.dir);
+	expect(
+		JSON.parse((await chamoji(['ws', '--json'], repo.dir)).stdout),
+	).toEqual([
+		{
+			slug: 'auth-revamp',
+			title: 'Auth revamp',
+			status: 'active',
+			active: true,
+			commits: 0,
+		},
+	]);
+});
+
+test('a corrupt workstreams file makes ws start exit 1 and leaves it unchanged', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	const broken = 'workstreams: [unclosed\n';
+	const file = path.join(repo.dir, FILE);
+	await mkdir(path.dirname(file), {recursive: true});
+	await writeFile(file, broken);
+
+	const {code, stdout, stderr} = await chamoji(
+		['ws', 'start', 'Auth revamp'],
+		repo.dir,
+	);
+	expect(code).toBe(1);
+	expect(stdout).toBe('');
+	expect(stderr).toContain(
+		'chamoji: .chamoji/workstreams.yml is not valid YAML',
+	);
+	expect(await readFile(file, 'utf8')).toBe(broken);
+	expect(await gitOutput(repo.dir, ['diff', '--cached', '--name-only'])).toBe(
+		'',
+	);
+	await expect(
+		readFile(path.join(repo.dir, '.git', 'chamoji', 'active'), 'utf8'),
+	).rejects.toThrow();
+});
+
+test('ws start needs a title, an emoji that is one, and a known subcommand', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	const bare = await chamoji(['ws', 'start'], repo.dir);
+	expect(bare.code).toBe(2);
+	expect(bare.stderr).toContain('ws start needs a title');
+
+	// An unquoted multi-word title would otherwise turn "revamp" into the emoji.
+	const unquoted = await chamoji(['ws', 'start', 'Auth', 'revamp'], repo.dir);
+	expect(unquoted.code).toBe(2);
+	expect(unquoted.stderr).toContain('quote');
+
+	const dup = await chamoji(['ws', 'start', 'Auth revamp'], repo.dir);
+	expect(dup.code).toBe(0);
+	const again = await chamoji(['ws', 'start', 'Auth revamp'], repo.dir);
+	expect(again.code).toBe(1);
+	expect(again.stderr).toContain('already exists');
+
+	const unknown = await chamoji(['ws', 'frobnicate'], repo.dir);
+	expect(unknown.code).toBe(2);
+	expect(unknown.stderr).toContain(
+		'ws needs start, switch, list, ship or drop, not "frobnicate"',
+	);
+});
+
+/**
+ * Runs git with its editor set, as `gitOutput` can't. CI keeps the hook from
+ * opening the composer on the developer's own terminal.
+ */
+async function gitWithEditor(dir: string, args: string[], editor = 'true') {
+	const {stdout} = await promisify(execFile)('git', args, {
+		cwd: dir,
+		env: {...process.env, GIT_EDITOR: editor, CI: 'true'},
+	});
+	return stdout;
+}
+
+test('quitting the editor on an empty message still aborts the commit', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await installBuiltHook(repo.dir);
+	await chamoji(['ws', 'start', 'Auth revamp'], repo.dir);
+	await writeFile(path.join(repo.dir, 'a.ts'), 'a\n');
+	await gitOutput(repo.dir, ['add', 'a.ts']);
+	const before = await gitOutput(repo.dir, ['rev-parse', 'HEAD']);
+	await expect(gitWithEditor(repo.dir, ['commit', '-q'])).rejects.toThrow();
+	expect(await gitOutput(repo.dir, ['rev-parse', 'HEAD'])).toBe(before);
+});
+
+test('cherry-picks and reverts are not stamped', async () => {
+	repo = await createRepo([{commit: '🎉 Init', files: {'x.ts': 'one\n'}}]);
+	await installBuiltHook(repo.dir);
+	await gitOutput(repo.dir, ['switch', '-q', '-c', 'other']);
+	await commitFile(repo.dir, 'y.ts', '✨ Add y');
+	await writeFile(path.join(repo.dir, 'x.ts'), 'theirs\n');
+	await gitOutput(repo.dir, ['commit', '-q', '-a', '-m', '🐛 Change x']);
+	await gitOutput(repo.dir, ['switch', '-q', 'main']);
+	await chamoji(['ws', 'start', 'Auth revamp'], repo.dir);
+	await writeFile(path.join(repo.dir, 'x.ts'), 'ours\n');
+	await gitOutput(repo.dir, ['commit', '-q', '-a', '-m', '🐛 Change x here']);
+	expect(await message(repo.dir)).toContain('Workstream: auth-revamp');
+
+	// A clean pick.
+	await gitOutput(repo.dir, ['cherry-pick', 'other~1']);
+	expect(await message(repo.dir)).toBe('✨ Add y\n\n');
+
+	// A conflicting pick, resolved and continued.
+	await expect(gitOutput(repo.dir, ['cherry-pick', 'other'])).rejects.toThrow();
+	await writeFile(path.join(repo.dir, 'x.ts'), 'resolved\n');
+	await gitOutput(repo.dir, ['add', 'x.ts']);
+	await gitWithEditor(repo.dir, ['cherry-pick', '--continue']);
+	expect(await message(repo.dir)).not.toContain('Workstream:');
+	expect(await message(repo.dir)).toContain('🐛 Change x');
+
+	// A revert.
+	await gitWithEditor(repo.dir, ['revert', 'HEAD']);
+	expect(await message(repo.dir)).toContain('Revert');
+	expect(await message(repo.dir)).not.toContain('Workstream:');
+});
