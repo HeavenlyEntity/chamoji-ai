@@ -9,6 +9,7 @@ import {
 	runGit,
 	setActive,
 	setWorkstreamStatus,
+	snapshotWorkstream,
 	WORKSTREAMS_FILE,
 	WorkstreamError,
 	type Workstream,
@@ -25,7 +26,8 @@ const USAGE_ERROR = 2;
  * `chamoji ws`: `input` is what follows `ws`. Problems with the workstreams
  * themselves throw a WorkstreamError, which run.ts reports and exits 1 for;
  * misuse of the command is reported here and exits 2, as `hook` does.
- * None of it touches the network, and none of it commits.
+ * None of it touches the network, and none of it commits to a branch: `ship`
+ * and `drop` write only to the memory ref.
  */
 export async function runWorkstream(
 	input: string[],
@@ -178,6 +180,15 @@ async function finish(
 	await setWorkstreamStatus(io.cwd, slug, status);
 	if (slug === active) await setActive(io.cwd, null);
 	io.stdout(staged(status === 'shipped' ? 'Shipped' : 'Dropped', slug));
+	// The status change is what was asked for, and it has happened.
+	try {
+		await snapshotWorkstream(io.cwd, slug);
+	} catch (error) {
+		io.stderr(
+			`chamoji: ${slug} was not saved to memory (${stripControl((error as Error).message)})\n`,
+		);
+	}
+
 	return 0;
 }
 

@@ -6,7 +6,7 @@ import {assertRevision, runGit} from './git.js';
 
 export const WORKSTREAMS_FILE = '.chamoji/workstreams.yml';
 
-const STATUSES = ['active', 'shipped', 'dropped'] as const;
+export const STATUSES = ['active', 'shipped', 'dropped'] as const;
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MAX_SLUG = 64;
 

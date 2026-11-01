@@ -2,8 +2,11 @@ import {
 	assertGitRepo,
 	blameLine,
 	parseLocation,
+	readMemory,
+	readWorkstreams,
 	type IntentCard,
 	type ParsedCommit,
+	type Workstream,
 } from '@chamoji/core';
 import type {Io} from './run.js';
 import {stripControl} from './text.js';
@@ -43,24 +46,59 @@ export async function runWhy(
 	} else if (result.kind === 'uncommitted') {
 		io.stdout(`${stripControl(`${file}:${line}`)} is not committed yet.\n`);
 	} else {
-		io.stdout(describe(result.commit));
+		const {card, workstream} = result.commit;
+		const summary =
+			card === undefined && workstream !== undefined
+				? await findWorkstream(io.cwd, workstream)
+				: undefined;
+		io.stdout(describe(result.commit, summary));
 	}
 
 	return 0;
 }
 
+/**
+ * What memory, or failing that the workstreams file, knows of `slug`. Memory
+ * outlives the branch. This only adds to the answer, so a damaged entry or
+ * file leaves it out instead of failing the command.
+ */
+async function findWorkstream(
+	cwd: string,
+	slug: string,
+): Promise<Pick<Workstream, 'title' | 'emoji' | 'status'> | undefined> {
+	const remembered = await readMemory(cwd, slug).catch(() => undefined);
+	if (remembered) return remembered;
+	const workstreams = await readWorkstreams(cwd).catch(() => []);
+	return workstreams.find(item => item.slug === slug);
+}
+
 /** Commit text can come from a clone, so none of it reaches the terminal raw. */
-function describe({shortHash, subject, authorName, date, card}: ParsedCommit) {
+function describe(
+	{shortHash, subject, authorName, date, card}: ParsedCommit,
+	workstream?: Pick<Workstream, 'title' | 'emoji' | 'status'>,
+) {
 	const lines = [
 		`${shortHash} ${stripControl(subject)}`,
 		`${stripControl(authorName)}, ${date.slice(0, 10)}`,
 		'',
 	];
-	const recorded = CARD_LABELS.flatMap(([key, label]) =>
-		(card?.[key] ?? []).map(value => `${label}: ${stripControl(value)}`),
-	);
+	const recorded = cardLines(card);
 	lines.push(
 		...(recorded.length > 0 ? recorded : ['This commit records no intent.']),
 	);
+	if (workstream) {
+		const {emoji, title, status} = workstream;
+		lines.push(
+			`Workstream: ${stripControl(`${emoji ? `${emoji} ` : ''}${title}`)} (${status})`,
+		);
+	}
+
 	return `${lines.join('\n')}\n`;
+}
+
+/** A card as `Label: value` lines, safe to print. */
+export function cardLines(card: IntentCard | undefined): string[] {
+	return CARD_LABELS.flatMap(([key, label]) =>
+		(card?.[key] ?? []).map(value => `${label}: ${stripControl(value)}`),
+	);
 }

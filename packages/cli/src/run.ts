@@ -40,6 +40,7 @@ import {compose} from './composer.js';
 import {readTypesafeKey} from './env.js';
 import {HookError, installHook, uninstallHook} from './hook.js';
 import {createJevClassifier, JUDGMENT_VERSION} from './jev-classifier.js';
+import {runMemory} from './memory.js';
 import {openTerminal} from './tty.js';
 import type {UpdateCheck} from './update-check.js';
 import {runWhy} from './why.js';
@@ -123,6 +124,11 @@ const HELP = `
 	  $ chamoji why <file:line>        Show why a line is there: the commit
 	                                   that wrote it and the Why, Constraint,
 	                                   Gotcha and Follow-up it recorded
+	  $ chamoji memory                 List what shipped or dropped workstreams
+	                                   left in memory (refs/chamoji/memory)
+	  $ chamoji memory show <slug>     Show one entry with its commits and cards
+	  $ chamoji memory archive <slug>  Hide an entry from the list and keep it
+	                                   (--purge deletes it for good)
 
 	Options
 	  --format   markdown (default), md, json or html
@@ -146,8 +152,11 @@ const HELP = `
 	             release: allow a branch other than origin's default
 	  --json     release: print the result as JSON; card: print the numbers;
 	             ws list: print the workstreams as an array;
-	             why: print the blame result
+	             why: print the blame result; memory list and show: print
+	             the entries
 	  --none     ws switch: clear the active workstream
+	  --purge    memory archive: delete the entry and its history instead;
+	             a remote needs a force-push to lose it too
 	  --repo     card: owner/name on GitHub (default: from the origin remote)
 	  --endpoint card: the card renderer (default: https://chamoji.dev/api/card)
 	  --no-update-check
@@ -194,6 +203,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
 			anyBranch: {type: 'boolean'},
 			json: {type: 'boolean'},
 			none: {type: 'boolean'},
+			purge: {type: 'boolean'},
 			repo: {type: 'string'},
 			endpoint: {type: 'string'},
 			all: {type: 'boolean', shortFlag: 'a'},
@@ -309,6 +319,10 @@ export async function run(argv: string[], io: Io): Promise<number> {
 
 				case 'why': {
 					return await runWhy(cli.input.slice(1), flags, io);
+				}
+
+				case 'memory': {
+					return await runMemory(cli.input.slice(1), flags, io);
 				}
 
 				default: {

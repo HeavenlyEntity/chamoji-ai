@@ -12,6 +12,7 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
+import {readMemory} from '@chamoji/core';
 import {afterEach, expect, test} from 'vitest';
 import {
 	createRepo,
@@ -863,4 +864,60 @@ test('git commit -s still aborts on an empty message, and says why it did not st
 	expect(await message(repo.dir)).toMatch(
 		/^✨ Add a\n\nSigned-off-by: .+\nWorkstream: auth-revamp\n\n$/,
 	);
+});
+
+test('ws ship writes a snapshot', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await chamoji(['ws', 'start', 'Auth revamp', '🔐'], repo.dir);
+	await gitOutput(repo.dir, ['commit', '-q', '-m', '🔧 Track workstreams']);
+	await commitFile(
+		repo.dir,
+		'a.txt',
+		'✨ Add a',
+		'Why: because\nWorkstream: auth-revamp',
+	);
+
+	const {code, stderr} = await chamoji(['ws', 'ship'], repo.dir);
+	expect(stderr).toBe('');
+	expect(code).toBe(0);
+	const entry = await readMemory(repo.dir, 'auth-revamp');
+	expect(entry).toMatchObject({
+		title: 'Auth revamp',
+		emoji: '🔐',
+		status: 'shipped',
+		archived: false,
+	});
+	expect(entry?.commits.map(commit => commit.subject)).toEqual(['✨ Add a']);
+	expect(entry?.commits[0]?.card?.why).toEqual(['because']);
+	// The status change stays staged, and only the ref moved.
+	expect(await gitOutput(repo.dir, ['diff', '--cached', '--name-only'])).toBe(
+		`${FILE}\n`,
+	);
+});
+
+test('ws drop writes a snapshot', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await chamoji(['ws', 'start', 'Billing'], repo.dir);
+	const {code} = await chamoji(['ws', 'drop', 'billing'], repo.dir);
+	expect(code).toBe(0);
+	expect((await readMemory(repo.dir, 'billing'))?.status).toBe('dropped');
+});
+
+test('a failed snapshot warns and ws ship still succeeds', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await chamoji(['ws', 'start', 'Auth revamp'], repo.dir);
+	// A held lock is what a crashed git leaves behind: update-ref can't get in.
+	const refs = path.join(repo.dir, '.git', 'refs', 'chamoji');
+	await mkdir(refs);
+	await writeFile(path.join(refs, 'memory.lock'), '');
+
+	const {code, stdout, stderr} = await chamoji(['ws', 'ship'], repo.dir);
+	expect(code).toBe(0);
+	expect(stdout).toContain('Shipped auth-revamp.');
+	expect(stderr).toContain('chamoji: auth-revamp was not saved to memory (');
+	expect(await readFile(path.join(repo.dir, FILE), 'utf8')).toContain(
+		'status: shipped',
+	);
+	await rm(path.join(refs, 'memory.lock'));
+	expect(await readMemory(repo.dir, 'auth-revamp')).toBeUndefined();
 });

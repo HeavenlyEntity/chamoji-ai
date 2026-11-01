@@ -19,6 +19,28 @@ export async function runGit(args: string[], cwd: string): Promise<string> {
 	return stdout;
 }
 
+/**
+ * `runGit` for the plumbing that reads stdin. `env` adds to the environment
+ * for commands whose result must not depend on it.
+ */
+export async function runGitWithInput(
+	args: string[],
+	cwd: string,
+	input: string,
+	env?: Record<string, string>,
+): Promise<string> {
+	const running = execFileAsync('git', args, {
+		cwd,
+		env: {...process.env, ...env},
+		maxBuffer: 64 * 1024 * 1024,
+	});
+	// Git can exit before reading it all; its exit code is what gets reported.
+	running.child.stdin?.on('error', () => {});
+	running.child.stdin?.end(input);
+	const {stdout} = await running;
+	return stdout;
+}
+
 export async function assertGitRepo(cwd: string): Promise<void> {
 	try {
 		await runGit(['rev-parse', '--is-inside-work-tree'], cwd);
