@@ -20,6 +20,7 @@ export {
 } from './gitmojis.js';
 export {groupCommits} from './group.js';
 export {splitHighlights} from './highlights.js';
+export {readIntent} from './intent.js';
 export {parseCommit} from './parse.js';
 export {
 	escapeHtml,

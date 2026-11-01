@@ -339,3 +339,55 @@ test('a revert keeps the workstream of its own body', () => {
 		).workstream,
 	).toBe('auth-revamp');
 });
+
+test('a commit with no card has no card key', () => {
+	expect('card' in parseCommit(raw('✨ Add login'))).toBe(false);
+	expect(
+		'card' in
+			parseCommit(
+				raw('✨ Add login', {
+					body: 'Why this works: prose\n',
+					trailers: 'Refs: #4\n',
+				}),
+			),
+	).toBe(false);
+});
+
+test('a commit with intent lines gets a card', () => {
+	expect(
+		parseCommit(
+			raw('✨ Add login', {
+				trailers: 'Why: users asked\nGotcha: needs a restart\n',
+			}),
+		).card,
+	).toEqual({
+		why: ['users asked'],
+		constraint: [],
+		gotcha: ['needs a restart'],
+		followUp: [],
+	});
+	expect(
+		parseCommit(raw('✨ Add login (#12)', {body: 'Constraint: no new deps\n'}))
+			.card?.constraint,
+	).toEqual(['no new deps']);
+});
+
+test('a revert keeps no card from the commit it reverts', () => {
+	expect('card' in parseCommit(raw('Revert "✨ Add login"'))).toBe(false);
+	expect(
+		'card' in
+			parseCommit(
+				raw('Revert "✨ Add login"', {body: 'This reverts commit abc.\n'}),
+			),
+	).toBe(false);
+});
+
+test('a revert keeps the card of its own body', () => {
+	expect(
+		parseCommit(
+			raw('Revert "✨ Add login"', {
+				body: 'This reverts commit abc.\n\nWhy: it broke sign-in\n',
+			}),
+		).card?.why,
+	).toEqual(['it broke sign-in']);
+});

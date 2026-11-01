@@ -19,6 +19,17 @@ export type RawCommit = {
 export type Trailer = {key: string; value: string};
 
 /**
+ * What a commit says about its own intent, from `Why:`, `Constraint:`,
+ * `Gotcha:` and `Follow-up:` lines, in the order they were written.
+ */
+export type IntentCard = {
+	why: string[];
+	constraint: string[];
+	gotcha: string[];
+	followUp: string[];
+};
+
+/**
  * Where a commit's gitmoji came from: written in the message, implied by a
  * Conventional type, guessed from the wording, or picked by an AI classifier.
  */
@@ -37,6 +48,8 @@ export type ParsedCommit = Omit<RawCommit, 'trailers'> & {
 	trailers: Trailer[];
 	/** Slug from the `Workstream:` trailer. Absent when the commit has none. */
 	workstream?: string;
+	/** The commit's intent lines. Absent when it has none. */
+	card?: IntentCard;
 };
 
 export type GroupConfigItem = {
