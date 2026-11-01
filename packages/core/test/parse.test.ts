@@ -391,3 +391,10 @@ test('a revert keeps the card of its own body', () => {
 		).card?.why,
 	).toEqual(['it broke sign-in']);
 });
+
+test('trailers named like inherited properties do not break parsing', () => {
+	const commit = parseCommit(
+		raw('✨ Add login', {trailers: 'constructor: x\n__proto__: x\n'}),
+	);
+	expect('card' in commit).toBe(false);
+});
