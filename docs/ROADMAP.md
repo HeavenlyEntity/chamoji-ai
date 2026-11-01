@@ -488,8 +488,8 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 **Results (2026-10-31):**
 
 - ✅ **A 40-commit release renders as 5 or fewer Highlights plus loose commits:** met. The test in `packages/core/test/highlights.test.ts` gives 4 Highlights and 6 loose commits.
-- ⬜ **Trailers survive a GitHub squash merge, tested on a real repo:** not yet run. It needs a throwaway repo on GitHub, tried with both of GitHub's default squash-message settings. Locally, chamoji reads `Workstream:` lines anywhere in the body, so GitHub's default squash message works in tests. The readme says the GitHub settings are untested, and suggests adding the line to the PR description for repos that squash with "PR title and description".
-- ✅ **The hook stamps `git commit -m` in the real-git check:** `scripts/hook-e2e.py` has a fourth check, run from each shell and through husky and lefthook in the Hook workflow.
+- ⬜ **Trailers survive a GitHub squash merge, tested on a real repo:** not yet run. It needs a throwaway repo on GitHub, tried with both of GitHub's default squash-message settings. Locally, chamoji reads `Workstream:` lines anywhere in the body, and a test uses a body shaped like what we expect GitHub's default squash message to be. No real GitHub squash has been run. The readme says the GitHub settings are untested, and suggests adding the line to the PR description for repos that squash with "PR title and description".
+- ✅ **The hook stamps `git commit -m` in the real-git check:** `scripts/hook-e2e.py` has a fourth check. Run locally on bash, zsh, husky and lefthook; the Hook workflow in CI hasn't run yet, so CI is pending.
 - ⬜ **Dogfooding on milestone 7 is pending.** Per the rule above, this milestone isn't done until we've run milestone 7 as a workstream in this repo.
 
 **Dependencies:** milestone 4.

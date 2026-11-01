@@ -59,7 +59,8 @@ jobs:
       - run: python3 scripts/hook-e2e.py --shell bash --manager ${{ matrix.manager }}
 
   # Windows has no pseudo-terminal for Python, so only the checks that must
-  # never block: -m and commits without a terminal, from PowerShell.
+  # never block: -m, the stamped -m and commits without a terminal, from
+  # PowerShell.
   windows:
     name: windows-latest · pwsh
     runs-on: windows-latest
