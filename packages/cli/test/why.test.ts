@@ -1,6 +1,7 @@
-import {appendFile, mkdtemp, rm} from 'node:fs/promises';
+import {appendFile, mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
+import {snapshotWorkstream} from '@chamoji/core';
 import {afterEach, expect, test} from 'vitest';
 import {
 	createRepo,
@@ -115,4 +116,80 @@ test('outside a repo reports it plainly', async () => {
 	const {code, stderr} = await chamoji(['why', 'a.ts:1'], loose);
 	expect(code).toBe(1);
 	expect(stderr).toContain('chamoji: Not a git repository');
+});
+
+const SHIPPED = {
+	'.chamoji/workstreams.yml':
+		'workstreams:\n  auth:\n    title: Auth revamp\n    emoji: 🔐\n    status: shipped\n',
+};
+
+test('why falls back to the workstream summary', async () => {
+	repo = await createRepo([
+		{commit: '🎉 Init', files: SHIPPED},
+		{commit: '✨ Add a', body: 'Workstream: auth', files: FILES},
+	]);
+	await snapshotWorkstream(repo.dir, 'auth');
+	// With the file gone, only the memory ref knows the title.
+	await rm(path.join(repo.dir, '.chamoji'), {recursive: true});
+	const {code, stdout} = await chamoji(['why', 'src/a.ts:1'], repo.dir);
+	expect(code).toBe(0);
+	expect(stdout).toContain('This commit records no intent.\n');
+	expect(stdout).toContain('Workstream: 🔐 Auth revamp (shipped)\n');
+});
+
+test('why takes the title from the workstreams file before any snapshot', async () => {
+	repo = await createRepo([
+		{commit: '🎉 Init', files: SHIPPED},
+		{commit: '✨ Add a', body: 'Workstream: auth', files: FILES},
+	]);
+	const {stdout} = await chamoji(['why', 'src/a.ts:1'], repo.dir);
+	expect(stdout).toContain('Workstream: 🔐 Auth revamp (shipped)\n');
+});
+
+test('a commit with a card shows no workstream line', async () => {
+	repo = await createRepo([
+		{commit: '🎉 Init', files: SHIPPED},
+		{commit: '✨ Add a', body: 'Why: because\nWorkstream: auth', files: FILES},
+	]);
+	const {stdout} = await chamoji(['why', 'src/a.ts:1'], repo.dir);
+	expect(stdout).toContain('Why: because\n');
+	expect(stdout).not.toContain('Auth revamp');
+});
+
+test('a workstream nothing knows about leaves the plain answer', async () => {
+	repo = await createRepo([
+		{commit: '✨ Add a', body: 'Workstream: gone', files: FILES},
+	]);
+	const {code, stdout} = await chamoji(['why', 'src/a.ts:1'], repo.dir);
+	expect(code).toBe(0);
+	expect(stdout).toContain('This commit records no intent.\n');
+	expect(stdout).not.toContain('Workstream:');
+});
+
+test('a corrupt workstreams file does not stop why', async () => {
+	repo = await createRepo([
+		{commit: '✨ Add a', body: 'Workstream: auth', files: FILES},
+	]);
+	await mkdir(path.join(repo.dir, '.chamoji'));
+	await writeFile(path.join(repo.dir, '.chamoji/workstreams.yml'), 'a: [\n');
+	const {code, stdout} = await chamoji(['why', 'src/a.ts:1'], repo.dir);
+	expect(code).toBe(0);
+	expect(stdout).toContain('This commit records no intent.\n');
+});
+
+test('the workstream summary strips terminal escapes', async () => {
+	repo = await createRepo([
+		{
+			commit: '🎉 Init',
+			files: {
+				'.chamoji/workstreams.yml':
+					'workstreams:\n  auth:\n    title: "Auth \\e[31mred"\n    status: active\n',
+			},
+		},
+		{commit: '✨ Add a', body: 'Workstream: auth', files: FILES},
+	]);
+	const {stdout} = await chamoji(['why', 'src/a.ts:1'], repo.dir);
+	expect(stdout).toContain('Workstream: Auth [31mred (active)\n');
+	// eslint-disable-next-line no-control-regex
+	expect(stdout).not.toMatch(/[\u0000-\u0009\u000B-\u001F\u007F-\u009F]/);
 });

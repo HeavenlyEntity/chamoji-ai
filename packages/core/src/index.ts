@@ -8,6 +8,7 @@ export {
 	listReleaseTags,
 	readCommits,
 	runGit,
+	runGitWithInput,
 	toWebUrl,
 	type ReleaseTag,
 } from './git.js';
@@ -22,6 +23,19 @@ export {
 export {groupCommits} from './group.js';
 export {splitHighlights} from './highlights.js';
 export {readIntent} from './intent.js';
+export {
+	MEMORY_REF,
+	MemoryError,
+	archiveMemory,
+	listMemory,
+	purgeMemory,
+	readMemory,
+	readTree,
+	snapshotWorkstream,
+	writeTree,
+	type MemoryCommit,
+	type MemoryEntry,
+} from './memory.js';
 export {parseCommit} from './parse.js';
 export {
 	escapeHtml,
