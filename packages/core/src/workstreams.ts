@@ -410,7 +410,8 @@ async function save(
 	const dir = path.dirname(file);
 	const before = await readFileIfExists(file);
 	const madeDir = await mkdir(dir, {recursive: true});
-	await writeFile(file, document.toString());
+	// Never fold a long line a person wrote by hand.
+	await writeFile(file, document.toString({lineWidth: 0}));
 	try {
 		await runGit(['add', '--', file], cwd);
 	} catch (error) {

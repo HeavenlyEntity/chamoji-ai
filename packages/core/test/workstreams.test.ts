@@ -598,6 +598,23 @@ test('stampWorkstream treats a message of only sign-off lines as empty, as git d
 	expect(text.indexOf('Workstream:')).toBeLessThan(text.indexOf('# Please'));
 });
 
+test('setWorkstreamStatus keeps a long hand-written line as it was', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	const text = [
+		'workstreams:',
+		'  a:',
+		'    title: A',
+		`    description: ${'A long description written by hand that runs well past eighty columns. '.repeat(3).trim()}`,
+		'    status: active',
+		'',
+	].join('\n');
+	await writeWorkstreams(repo.dir, text);
+	await setWorkstreamStatus(repo.dir, 'a', 'shipped');
+	expect(await readFile(fileIn(repo.dir), 'utf8')).toBe(
+		text.replace('status: active', 'status: shipped'),
+	);
+});
+
 test('writers say so when .chamoji is git-ignored, and put the file back as it was', async () => {
 	repo = await createRepo([{commit: '🎉 Init'}]);
 	await writeFile(path.join(repo.dir, '.gitignore'), '.chamoji/\n');
