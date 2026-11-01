@@ -155,6 +155,36 @@ test('-m with no active workstream leaves the message byte for byte', async () =
 	expect(await message(repo.dir)).toBe('✨ Add b\n\nBecause.\n\n');
 });
 
+test('git commit -m with a leading # is stamped under the default cleanup', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await installBuiltHook(repo.dir);
+	await chamoji(['ws', 'start', 'Auth revamp'], repo.dir);
+	await commitFile(repo.dir, 'a.ts', '#123 fix the login');
+	expect(await message(repo.dir)).toBe(
+		'#123 fix the login\n\nWorkstream: auth-revamp\n\n',
+	);
+});
+
+test('git commit -m with a leading # is left alone, and aborts, under commit.cleanup=strip', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await installBuiltHook(repo.dir);
+	await chamoji(['ws', 'start', 'Auth revamp'], repo.dir);
+	await gitOutput(repo.dir, ['config', 'commit.cleanup', 'strip']);
+	await writeFile(path.join(repo.dir, 'a.ts'), 'a\n');
+	await gitOutput(repo.dir, ['add', 'a.ts']);
+	const before = await gitOutput(repo.dir, ['rev-parse', 'HEAD']);
+	await expect(
+		gitOutput(repo.dir, ['commit', '-q', '-m', '#123 fix the login']),
+	).rejects.toThrow(/empty commit message/i);
+	expect(await gitOutput(repo.dir, ['rev-parse', 'HEAD'])).toBe(before);
+
+	// A real line beside the comment is a message, and is stamped.
+	await gitOutput(repo.dir, ['commit', '-q', '-m', '✨ Add a', '-m', '#123']);
+	expect(await message(repo.dir)).toBe(
+		'✨ Add a\n\nWorkstream: auth-revamp\n\n',
+	);
+});
+
 test('a message that already has a Workstream trailer keeps it', async () => {
 	repo = await createRepo([{commit: '🎉 Init'}]);
 	await installBuiltHook(repo.dir);

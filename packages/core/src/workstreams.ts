@@ -176,19 +176,41 @@ export function shouldStamp(input: {
  * hook has met: text above the scissors line of `git commit -v`, once comment
  * lines are stripped by git's own rule (so `core.commentChar` counts), and
  * ignoring `Signed-off-by: ` lines, which git also treats as no message.
- * It does not mirror `commit.cleanup` modes or other template checks.
+ * That is what an editor commit gets. For `source` `message` (`-m`, `-F`),
+ * git keeps comment-looking lines under its default cleanup, so `#123 fix`
+ * is a message there, unless `commit.cleanup` is `strip`, where git aborts on
+ * it. That config is only read when a message is nothing but comment lines.
+ * It does not mirror other `commit.cleanup` modes or template checks.
  * `cwd` must be inside the repository.
  */
 export async function hasMessageContent(
 	cwd: string,
 	message: string,
+	source?: string,
 ): Promise<boolean> {
 	const kept = message.split('\n');
 	const scissors = kept.findIndex(line => SCISSORS.test(line));
 	const above = scissors === -1 ? message : kept.slice(0, scissors).join('\n');
-	return (await stripComments(cwd, above))
-		.split('\n')
-		.some(line => line.trim() !== '' && !line.startsWith(SIGN_OFF));
+	if ((await stripComments(cwd, above)).split('\n').some(isContent)) {
+		return true;
+	}
+
+	if (source !== 'message' || !above.split('\n').some(isContent)) return false;
+	return !(await cleanupIsStrip(cwd));
+}
+
+function isContent(line: string): boolean {
+	return line.trim() !== '' && !line.startsWith(SIGN_OFF);
+}
+
+/** `git config --get` exits 1 when the key is unset: that is not `strip`. */
+async function cleanupIsStrip(cwd: string): Promise<boolean> {
+	try {
+		const value = await runGit(['config', '--get', 'commit.cleanup'], cwd);
+		return value.trim() === 'strip';
+	} catch {
+		return false;
+	}
 }
 
 /** What git's own empty-message check skips, as `git commit -s` writes it. */
@@ -217,17 +239,20 @@ async function stripComments(cwd: string, text: string): Promise<string> {
  * active workstream. A message that already has the trailer keeps it, and a
  * message with no content yet is left alone: a trailer would make an empty
  * message look like a message, and quitting the editor would commit it.
- * Returns the slug it stamped, or null when it changed nothing.
+ * `source` is git's, as for `hasMessageContent`: `message` makes a message of
+ * only `#` lines count as content. Returns the slug it stamped, or null when
+ * it changed nothing.
  */
 export async function stampWorkstream(
 	cwd: string,
 	messageFile: string,
+	source?: string,
 ): Promise<string | null> {
 	const slug = await getActive(cwd);
 	if (slug === null) return null;
 	const file = path.resolve(cwd, messageFile);
 	const before = await readFile(file, 'utf8');
-	if (!(await hasMessageContent(cwd, before))) return null;
+	if (!(await hasMessageContent(cwd, before, source))) return null;
 	await runGit(
 		[
 			'interpret-trailers',

@@ -376,7 +376,8 @@ export async function run(argv: string[], io: Io): Promise<number> {
 				const gitDir = (
 					await runGit(['rev-parse', '--absolute-git-dir'], io.cwd)
 				).trim();
-				await stamp(file, gitDir, undefined);
+				// `git commit -F` keeps `#` lines like -m does.
+				await stamp(file, gitDir, 'message');
 			} catch (error) {
 				io.stderr(
 					`chamoji: not stamped with a workstream (${(error as Error).message})\n`,
@@ -506,7 +507,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
 		// message, so its generated subject is the only sign of it.
 		if (/^(?:Revert|Reapply) "/.test(message)) return;
 		if (
-			(await stampWorkstream(io.cwd, file)) === null &&
+			(await stampWorkstream(io.cwd, file, source)) === null &&
 			source === undefined &&
 			!(await hasMessageContent(io.cwd, message))
 		) {

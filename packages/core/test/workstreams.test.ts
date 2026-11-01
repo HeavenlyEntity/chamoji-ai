@@ -597,3 +597,46 @@ test('stampWorkstream treats a message of only sign-off lines as empty, as git d
 	expect(text).toContain(`${signOff}\nWorkstream: auth-revamp\n`);
 	expect(text.indexOf('Workstream:')).toBeLessThan(text.indexOf('# Please'));
 });
+
+test('stampWorkstream counts a comment-looking -m message as content, unless commit.cleanup=strip', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await addWorkstream(repo.dir, {title: 'Auth revamp'});
+	await setActive(repo.dir, 'auth-revamp');
+	const message = path.join(repo.dir, 'MSG');
+	const text = '#123 fix the login\n';
+
+	// An editor message with only comment lines is empty, so nothing happens.
+	await writeFile(message, text);
+	expect(await stampWorkstream(repo.dir, message)).toBeNull();
+	expect(await readFile(message, 'utf8')).toBe(text);
+	expect(await stampWorkstream(repo.dir, message, 'template')).toBeNull();
+
+	// Git keeps "#" lines of a -m message under its default cleanup.
+	expect(await stampWorkstream(repo.dir, message, 'message')).toBe(
+		'auth-revamp',
+	);
+	expect(await readFile(message, 'utf8')).toContain('Workstream: auth-revamp');
+
+	// With commit.cleanup=strip, git aborts on it, so the hook leaves it.
+	await gitOutput(repo.dir, ['config', 'commit.cleanup', 'strip']);
+	await writeFile(message, text);
+	expect(await stampWorkstream(repo.dir, message, 'message')).toBeNull();
+	expect(await readFile(message, 'utf8')).toBe(text);
+});
+
+test('stampWorkstream still treats empty, scissors and sign-off messages as empty for -m', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await addWorkstream(repo.dir, {title: 'Auth revamp'});
+	await setActive(repo.dir, 'auth-revamp');
+	const message = path.join(repo.dir, 'MSG');
+	for (const text of [
+		'',
+		'\n',
+		'Signed-off-by: T <t@t.t>\n',
+		'# ------------------------ >8 ------------------------\n# diff\n',
+	]) {
+		await writeFile(message, text);
+		expect(await stampWorkstream(repo.dir, message, 'message')).toBeNull();
+		expect(await readFile(message, 'utf8')).toBe(text);
+	}
+});
