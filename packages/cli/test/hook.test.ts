@@ -483,12 +483,93 @@ test('hook run stamps nothing for a merge, squash or amend', async () => {
 	await startWorkstream(repo.dir);
 	for (const source of ['merge', 'squash', 'commit']) {
 		const file = await messageFile(repo.dir, `Some message\n${TEMPLATE}`);
-		await withTerminal(['hook', 'run', file, source], repo.dir, () => null);
+		const {stderr} = await withTerminal(
+			['hook', 'run', file, source],
+			repo.dir,
+			() => null,
+		);
+		expect(stderr).toBe('');
 		expect(await readFile(file, 'utf8')).toBe(`Some message\n${TEMPLATE}`);
 	}
 });
 
-test('hook run stamps nothing during a rebase, cherry-pick or revert', async () => {
+const NOTICE =
+	'chamoji: editor commits aren\'t stamped; add "Workstream: auth-revamp" to the message, or use -m or chamoji commit.\n';
+
+test('hook run says so when an editor commit goes unstamped for want of a message', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await startWorkstream(repo.dir);
+
+	// No terminal, and a cancelled composer: the editor starts on an empty message.
+	const file = await messageFile(repo.dir);
+	const none = await withTerminal(['hook', 'run', file], repo.dir, () => null);
+	expect(none.stderr).toBe(NOTICE);
+	const cancelled = await withTerminal(
+		['hook', 'run', file],
+		repo.dir,
+		fakeTerminal(null).terminal,
+	);
+	expect(cancelled.stderr).toBe(NOTICE);
+	expect(await readFile(file, 'utf8')).toBe(TEMPLATE);
+
+	// A template is never stamped, even one with text in it.
+	const withText = await messageFile(repo.dir, `Describe it\n${TEMPLATE}`);
+	const template = await withTerminal(
+		['hook', 'run', withText, 'template'],
+		repo.dir,
+		() => null,
+	);
+	expect(template.stderr).toBe(NOTICE);
+	expect(await readFile(withText, 'utf8')).toBe(`Describe it\n${TEMPLATE}`);
+});
+
+test('hook run stays quiet when nothing is active, on -m, and during a merge', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await startWorkstream(repo.dir);
+	const file = await messageFile(repo.dir);
+	const message = await withTerminal(
+		['hook', 'run', file, 'message'],
+		repo.dir,
+		() => null,
+	);
+	expect(message.stderr).toBe('');
+
+	await writeFile(path.join(repo.dir, '.git', 'MERGE_HEAD'), 'x\n');
+	const merging = await withTerminal(
+		['hook', 'run', file],
+		repo.dir,
+		() => null,
+	);
+	expect(merging.stderr).toBe('');
+	await rm(path.join(repo.dir, '.git', 'MERGE_HEAD'));
+
+	await chamoji(['ws', 'switch', '--none'], repo.dir);
+	const idle = await withTerminal(['hook', 'run', file], repo.dir, () => null);
+	expect(idle.stderr).toBe('');
+	const idleTemplate = await withTerminal(
+		['hook', 'run', file, 'template'],
+		repo.dir,
+		() => null,
+	);
+	expect(idleTemplate.stderr).toBe('');
+});
+
+test('a message the composer wrote is stamped even when git called it a template', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await startWorkstream(repo.dir);
+	const file = await messageFile(repo.dir);
+	const {stderr} = await withTerminal(
+		['hook', 'run', file, 'template'],
+		repo.dir,
+		fakeTerminal('🐛 Composed').terminal,
+	);
+	expect(stderr).toBe('');
+	expect(await readFile(file, 'utf8')).toContain(
+		'🐛 Composed\n\nWorkstream: auth-revamp\n',
+	);
+});
+
+test('hook run stamps nothing during a rebase, cherry-pick, revert or merge', async () => {
 	repo = await createRepo([{commit: '🎉 Init'}]);
 	await startWorkstream(repo.dir);
 	const gitDir = path.join(repo.dir, '.git');
@@ -508,6 +589,10 @@ test('hook run stamps nothing during a rebase, cherry-pick or revert', async () 
 		[
 			'REVERT_HEAD',
 			async () => writeFile(path.join(gitDir, 'REVERT_HEAD'), 'x\n'),
+		],
+		[
+			'MERGE_HEAD',
+			async () => writeFile(path.join(gitDir, 'MERGE_HEAD'), 'x\n'),
 		],
 	];
 	for (const [name, create] of markers) {

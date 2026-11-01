@@ -346,14 +346,14 @@ test('active state is per worktree', async () => {
 	}
 });
 
-test('shouldStamp is true for a plain commit, -m and a template', () => {
+test('shouldStamp is true for a plain commit and -m', () => {
 	expect(shouldStamp({rebasing: false})).toBe(true);
 	expect(shouldStamp({source: undefined, rebasing: false})).toBe(true);
 	expect(shouldStamp({source: 'message', rebasing: false})).toBe(true);
-	expect(shouldStamp({source: 'template', rebasing: false})).toBe(true);
 });
 
-test('shouldStamp is false for merge, squash, commit and while rebasing', () => {
+test('shouldStamp is false for a template, merge, squash, commit and while rebasing', () => {
+	expect(shouldStamp({source: 'template', rebasing: false})).toBe(false);
 	expect(shouldStamp({source: 'merge', rebasing: false})).toBe(false);
 	expect(shouldStamp({source: 'squash', rebasing: false})).toBe(false);
 	expect(shouldStamp({source: 'commit', rebasing: false})).toBe(false);
@@ -513,3 +513,64 @@ test.skipIf(process.platform === 'win32')(
 		}
 	},
 );
+
+test('stampWorkstream leaves an empty message alone, so the commit still aborts', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await addWorkstream(repo.dir, {title: 'Auth revamp'});
+	await setActive(repo.dir, 'auth-revamp');
+	const message = path.join(repo.dir, 'MSG');
+	for (const text of ['', '\n', comments, `\n${comments}`]) {
+		await writeFile(message, text);
+		expect(await stampWorkstream(repo.dir, message)).toBeNull();
+		expect(await readFile(message, 'utf8')).toBe(text);
+	}
+});
+
+test('stampWorkstream ignores the diff that git commit -v puts below the scissors', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await addWorkstream(repo.dir, {title: 'Auth revamp'});
+	await setActive(repo.dir, 'auth-revamp');
+	const message = path.join(repo.dir, 'MSG');
+	const scissors = [
+		'# ------------------------ >8 ------------------------',
+		'# Do not modify or remove the line above.',
+		'# Everything below it will be ignored.',
+		'diff --git a/a.ts b/a.ts',
+		'+export {};',
+		'',
+	].join('\n');
+
+	const empty = `\n${comments}${scissors}`;
+	await writeFile(message, empty);
+	expect(await stampWorkstream(repo.dir, message)).toBeNull();
+	expect(await readFile(message, 'utf8')).toBe(empty);
+
+	await writeFile(message, `✨ Add sign-in\n${comments}${scissors}`);
+	expect(await stampWorkstream(repo.dir, message)).toBe('auth-revamp');
+	const text = await readFile(message, 'utf8');
+	expect(text.startsWith('✨ Add sign-in\n\nWorkstream: auth-revamp\n')).toBe(
+		true,
+	);
+	expect(text.indexOf('Workstream:')).toBeLessThan(text.indexOf('>8'));
+});
+
+test('stampWorkstream follows core.commentChar for what counts as a comment', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await gitOutput(repo.dir, ['config', 'core.commentChar', ';']);
+	await addWorkstream(repo.dir, {title: 'Auth revamp'});
+	await setActive(repo.dir, 'auth-revamp');
+	const message = path.join(repo.dir, 'MSG');
+	const empty = '\n; Please enter the commit message for your changes.\n;\n';
+	await writeFile(message, empty);
+	expect(await stampWorkstream(repo.dir, message)).toBeNull();
+	expect(await readFile(message, 'utf8')).toBe(empty);
+
+	// With ";" as the comment character, a "#" line is the message.
+	await writeFile(message, '# Heading\n; a comment\n');
+	expect(await stampWorkstream(repo.dir, message)).toBe('auth-revamp');
+	expect(await readFile(message, 'utf8')).toContain('Workstream: auth-revamp');
+
+	const scissors = `\n; ------------------------ >8 ------------------------\ndiff\n`;
+	await writeFile(message, scissors);
+	expect(await stampWorkstream(repo.dir, message)).toBeNull();
+});

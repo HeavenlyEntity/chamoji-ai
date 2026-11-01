@@ -536,3 +536,133 @@ test('cherry-picks and reverts are not stamped', async () => {
 	expect(await message(repo.dir)).toContain('Revert');
 	expect(await message(repo.dir)).not.toContain('Workstream:');
 });
+
+const NOTICE = (slug: string) =>
+	`chamoji: editor commits aren't stamped; add "Workstream: ${slug}" to the message, or use -m or chamoji commit.`;
+
+test('git commit -v and commit.verbose still abort on an empty message', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await installBuiltHook(repo.dir);
+	await chamoji(['ws', 'start', 'Auth revamp'], repo.dir);
+	await writeFile(path.join(repo.dir, 'a.ts'), 'export {};\n');
+	await gitOutput(repo.dir, ['add', 'a.ts']);
+	const before = await gitOutput(repo.dir, ['rev-parse', 'HEAD']);
+	for (const args of [
+		['commit', '-q', '-v'],
+		['-c', 'commit.verbose=true', 'commit', '-q'],
+	]) {
+		await expect(gitWithEditor(repo.dir, args)).rejects.toThrow(
+			/empty commit message/i,
+		);
+		expect(await gitOutput(repo.dir, ['rev-parse', 'HEAD'])).toBe(before);
+	}
+});
+
+test('an unedited commit.template still aborts, and the hook says why it did not stamp', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await installBuiltHook(repo.dir);
+	await writeFile(
+		path.join(repo.dir, '.git', 'template.txt'),
+		'Describe the change here\n',
+	);
+	await gitOutput(repo.dir, ['config', 'commit.template', '.git/template.txt']);
+	await chamoji(['ws', 'start', 'Auth revamp'], repo.dir);
+	await writeFile(path.join(repo.dir, 'a.ts'), 'export {};\n');
+	await gitOutput(repo.dir, ['add', 'a.ts']);
+	const before = await gitOutput(repo.dir, ['rev-parse', 'HEAD']);
+	await expect(gitWithEditor(repo.dir, ['commit', '-q'])).rejects.toThrow(
+		NOTICE('auth-revamp'),
+	);
+	expect(await gitOutput(repo.dir, ['rev-parse', 'HEAD'])).toBe(before);
+
+	// -m ignores the template and is stamped as usual.
+	await gitOutput(repo.dir, ['commit', '-q', '-m', '✨ Add a']);
+	expect(await message(repo.dir)).toBe(
+		'✨ Add a\n\nWorkstream: auth-revamp\n\n',
+	);
+});
+
+test('the editor notice names the workstream, and only shows when a stamp was skipped for that reason', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await installBuiltHook(repo.dir);
+	await chamoji(['ws', 'start', 'Auth revamp'], repo.dir);
+	await writeFile(path.join(repo.dir, 'a.ts'), 'export {};\n');
+	await gitOutput(repo.dir, ['add', 'a.ts']);
+
+	// An editor that writes a message: the commit goes through, unstamped.
+	const editor = path.join(repo.dir, 'editor.js');
+	await writeFile(
+		editor,
+		"require('node:fs').writeFileSync(process.argv[2], '✨ Add a\\n');\n",
+	);
+	const quote = (value: string) => `"${value.replaceAll('\\', '/')}"`;
+	const result = await promisify(execFile)('git', ['commit', '-q'], {
+		cwd: repo.dir,
+		env: {
+			...process.env,
+			GIT_EDITOR: `${quote(process.execPath)} ${quote(editor)}`,
+			CI: 'true',
+		},
+	});
+	expect(result.stderr).toContain(NOTICE('auth-revamp'));
+	expect(await message(repo.dir)).toBe('✨ Add a\n\n');
+
+	// No notice with -m, or with nothing active.
+	await commitFile(repo.dir, 'b.ts', '✨ Add b');
+	await chamoji(['ws', 'switch', '--none'], repo.dir);
+	await writeFile(path.join(repo.dir, 'c.ts'), 'c\n');
+	await gitOutput(repo.dir, ['add', 'c.ts']);
+	const quiet = await promisify(execFile)('git', ['commit', '-q'], {
+		cwd: repo.dir,
+		env: {
+			...process.env,
+			GIT_EDITOR: `${quote(process.execPath)} ${quote(editor)}`,
+			CI: 'true',
+		},
+	});
+	expect(quiet.stderr).toBe('');
+});
+
+const CONFLICT_STEPS = async (dir: string) => {
+	await gitOutput(dir, ['switch', '-q', '-c', 'side']);
+	await writeFile(path.join(dir, 'x.ts'), 'theirs\n');
+	await gitOutput(dir, ['commit', '-q', '-a', '-m', '🐛 Change x there']);
+	await gitOutput(dir, ['switch', '-q', 'main']);
+	await writeFile(path.join(dir, 'x.ts'), 'ours\n');
+	await gitOutput(dir, ['commit', '-q', '-a', '-m', '🐛 Change x here']);
+};
+
+test('a conflicted merge concluded with git commit -m is not stamped', async () => {
+	repo = await createRepo([{commit: '🎉 Init', files: {'x.ts': 'one\n'}}]);
+	await installBuiltHook(repo.dir);
+	await chamoji(['ws', 'start', 'Auth revamp'], repo.dir);
+	await CONFLICT_STEPS(repo.dir);
+	await expect(gitOutput(repo.dir, ['merge', 'side'])).rejects.toThrow();
+	await writeFile(path.join(repo.dir, 'x.ts'), 'resolved\n');
+	await gitOutput(repo.dir, ['add', 'x.ts']);
+	await gitOutput(repo.dir, ['commit', '-q', '-m', '🔀 Merge side']);
+	expect(await message(repo.dir)).toBe('🔀 Merge side\n\n');
+});
+
+test('chamoji commit does not stamp the merge it concludes', async () => {
+	repo = await createRepo([{commit: '🎉 Init', files: {'x.ts': 'one\n'}}]);
+	await chamoji(['ws', 'start', 'Auth revamp'], repo.dir);
+	await CONFLICT_STEPS(repo.dir);
+	await expect(gitOutput(repo.dir, ['merge', 'side'])).rejects.toThrow();
+	await writeFile(path.join(repo.dir, 'x.ts'), 'resolved\n');
+	await gitOutput(repo.dir, ['add', 'x.ts']);
+	const code = await run(['commit'], {
+		cwd: repo.dir,
+		stdout() {},
+		stderr() {},
+		env: {},
+		terminal: () => ({
+			async compose() {
+				return '🔀 Merge side';
+			},
+			close() {},
+		}),
+	});
+	expect(code).toBe(0);
+	expect(await message(repo.dir)).toBe('🔀 Merge side\n\n');
+});

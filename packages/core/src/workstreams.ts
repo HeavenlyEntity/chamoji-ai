@@ -1,3 +1,4 @@
+import {execFile} from 'node:child_process';
 import {lstat, mkdir, readFile, rm, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {Document, isMap, parseDocument} from 'yaml';
@@ -155,8 +156,10 @@ export async function setActive(
 
 /**
  * Whether `prepare-commit-msg` should stamp. Git's `source` is `message` for
- * `-m`, `template` for a template, and `merge`, `squash` or `commit` for
- * messages that already exist.
+ * `-m`, `template` for a `commit.template` file, and `merge`, `squash` or
+ * `commit` for messages that already exist. A template is not stamped: git
+ * aborts a commit whose message is still the unedited template, and a trailer
+ * would stop that. A message the composer wrote counts as having no source.
  */
 export function shouldStamp(input: {
 	source?: string;
@@ -164,16 +167,49 @@ export function shouldStamp(input: {
 }): boolean {
 	return (
 		!input.rebasing &&
-		(input.source === undefined ||
-			input.source === 'message' ||
-			input.source === 'template')
+		(input.source === undefined || input.source === 'message')
 	);
 }
 
 /**
+ * Whether a commit message has anything git would keep: text above the
+ * scissors line of `git commit -v`, once comment lines are stripped by git's
+ * own rule, so `core.commentChar` counts. `cwd` must be inside the repository.
+ */
+export async function hasMessageContent(
+	cwd: string,
+	message: string,
+): Promise<boolean> {
+	const kept = message.split('\n');
+	const scissors = kept.findIndex(line => SCISSORS.test(line));
+	const above = scissors === -1 ? message : kept.slice(0, scissors).join('\n');
+	return (await stripComments(cwd, above)).trim() !== '';
+}
+
+/** `<comment char> ------------------------ >8 ------------------------` */
+const SCISSORS = /^\S+ -{24} >8 -{24}$/;
+
+async function stripComments(cwd: string, text: string): Promise<string> {
+	return new Promise((resolve, reject) => {
+		const child = execFile(
+			'git',
+			['stripspace', '--strip-comments'],
+			{cwd},
+			(error, stdout) => {
+				if (error) reject(error);
+				else resolve(stdout);
+			},
+		);
+		child.stdin?.end(text);
+	});
+}
+
+/**
  * Adds `Workstream: <slug>` to the commit message in `messageFile` for the
- * active workstream. A message that already has the trailer keeps it. Returns
- * the slug it stamped, or null when it changed nothing.
+ * active workstream. A message that already has the trailer keeps it, and a
+ * message with no content yet is left alone: a trailer would make an empty
+ * message look like a message, and quitting the editor would commit it.
+ * Returns the slug it stamped, or null when it changed nothing.
  */
 export async function stampWorkstream(
 	cwd: string,
@@ -183,6 +219,7 @@ export async function stampWorkstream(
 	if (slug === null) return null;
 	const file = path.resolve(cwd, messageFile);
 	const before = await readFile(file, 'utf8');
+	if (!(await hasMessageContent(cwd, before))) return null;
 	await runGit(
 		[
 			'interpret-trailers',

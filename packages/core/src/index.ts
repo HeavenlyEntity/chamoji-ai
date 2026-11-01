@@ -69,6 +69,7 @@ export {
 	WorkstreamError,
 	addWorkstream,
 	getActive,
+	hasMessageContent,
 	isSlug,
 	readWorkstreams,
 	readWorkstreamsAt,

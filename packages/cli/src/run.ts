@@ -8,7 +8,9 @@ import {
 	buildChangelog,
 	CARD_ENDPOINT,
 	cardUrl,
+	getActive,
 	getRemoteWebUrl,
+	hasMessageContent,
 	loadComposeConfig,
 	loadConfig,
 	openJudgmentCache,
@@ -428,11 +430,12 @@ export async function run(argv: string[], io: Io): Promise<number> {
 				env: io.env ?? process.env,
 				rebasing: anyExists(gitDir, REBASE_MARKERS),
 			});
-			if (decision.prompt && terminal) {
-				await composeInto(messageFile, original, terminal);
-			}
-
-			await stamp(messageFile, gitDir, source);
+			const composed =
+				decision.prompt && terminal
+					? await composeInto(messageFile, original, terminal)
+					: false;
+			// A message the composer wrote is real, whatever git's source was.
+			await stamp(messageFile, gitDir, composed ? undefined : source);
 			return 0;
 		} catch (error) {
 			io.stderr(`chamoji: hook skipped (${(error as Error).message})\n`);
@@ -442,25 +445,29 @@ export async function run(argv: string[], io: Io): Promise<number> {
 		}
 	}
 
-	/** Replaces the message in `messageFile` with a composed one, if there is one. */
+	/**
+	 * Replaces the message in `messageFile` with a composed one. Returns
+	 * whether there was one to write (false when the composer was cancelled).
+	 */
 	async function composeInto(
 		messageFile: string,
 		original: string,
 		terminal: ComposerTerminal,
-	): Promise<void> {
+	): Promise<boolean> {
 		const root = (
 			await runGit(['rev-parse', '--show-toplevel'], io.cwd)
 		).trim();
 		const advice = adviceFor(
 			root,
 			await readAiSettings(root),
-			firstContentLine(original) ?? '',
+			original.split('\n').find(line => line.trim() && !line.startsWith('#')) ??
+				'',
 		);
 		const message = await terminal.compose(
 			await loadComposeConfig(root),
 			advice,
 		);
-		if (message === null) return;
+		if (message === null) return false;
 
 		// Keep git's comment lines, such as the list of changes, below the message.
 		const comments = original.split('\n').filter(line => line.startsWith('#'));
@@ -468,15 +475,18 @@ export async function run(argv: string[], io: Io): Promise<number> {
 			messageFile,
 			`${message}\n${comments.length > 0 ? `\n${comments.join('\n')}\n` : ''}`,
 		);
+		return true;
 	}
 
 	/**
-	 * Adds the active workstream's trailer to the message in `file`. It leaves
-	 * alone a message that git or the user already settled (a merge, an amend,
-	 * a cherry-pick or revert), and one with nothing above git's comments yet:
-	 * stamping that would make an empty message count as a message, and
-	 * quitting the editor would commit a bare "Workstream:" line. Throws when
-	 * the workstreams file is corrupt; callers decide how to carry on.
+	 * Adds the active workstream's trailer to the message in `file`. The hook
+	 * must never turn a commit git would abort into one that goes through, so
+	 * it leaves alone a message that git or the user already settled (a merge,
+	 * an amend, a cherry-pick or revert), an unedited `commit.template`, and a
+	 * message with no content yet (stampWorkstream checks that): a trailer
+	 * there would count as the message. Editor commits that miss out that way
+	 * get a one-line notice. Throws when the workstreams file is corrupt;
+	 * callers decide how to carry on.
 	 */
 	async function stamp(
 		file: string,
@@ -485,13 +495,33 @@ export async function run(argv: string[], io: Io): Promise<number> {
 	): Promise<void> {
 		// Most repos have no active workstream: this is one stat, no git, no parsing.
 		if (!existsSync(path.join(gitDir, 'chamoji', 'active'))) return;
-		const sequencing = anyExists(gitDir, [...REBASE_MARKERS, ...PICK_MARKERS]);
-		if (!shouldStamp({source, rebasing: sequencing})) return;
-		const subject = firstContentLine(await readFile(file, 'utf8'));
+		if (anyExists(gitDir, [...REBASE_MARKERS, ...SEQUENCE_MARKERS])) return;
+		if (!shouldStamp({source, rebasing: false})) {
+			if (source === 'template') await noticeUnstamped();
+			return;
+		}
+
+		const message = await readFile(file, 'utf8');
 		// A clean `git revert` leaves no REVERT_HEAD and says it's a plain -m
 		// message, so its generated subject is the only sign of it.
-		if (subject === undefined || /^(?:Revert|Reapply) "/.test(subject)) return;
-		await stampWorkstream(io.cwd, file);
+		if (/^(?:Revert|Reapply) "/.test(message)) return;
+		if (
+			(await stampWorkstream(io.cwd, file)) === null &&
+			source === undefined &&
+			!(await hasMessageContent(io.cwd, message))
+		) {
+			await noticeUnstamped();
+		}
+	}
+
+	/** Said when an editor commit is left unstamped because its message isn't written yet. */
+	async function noticeUnstamped(): Promise<void> {
+		const slug = await getActive(io.cwd);
+		if (slug !== null) {
+			io.stderr(
+				`chamoji: editor commits aren't stamped; add "Workstream: ${slug}" to the message, or use -m or chamoji commit.\n`,
+			);
+		}
 	}
 
 	/**
@@ -696,18 +726,15 @@ export const PREFLIGHT_FAILED = 2;
 /** Files in the git dir that say a rebase is running. */
 const REBASE_MARKERS = ['rebase-merge', 'rebase-apply'];
 
-/** Files in the git dir that say a cherry-pick or revert is waiting for its commit. */
-const PICK_MARKERS = ['CHERRY_PICK_HEAD', 'REVERT_HEAD'];
+/**
+ * Files in the git dir that say a cherry-pick, revert or merge is waiting for
+ * its commit. A `-m` commit that concludes one of them reaches the hook as a
+ * plain message, so only these tell it apart; shouldPrompt doesn't use them.
+ */
+const SEQUENCE_MARKERS = ['CHERRY_PICK_HEAD', 'REVERT_HEAD', 'MERGE_HEAD'];
 
 function anyExists(gitDir: string, names: string[]): boolean {
 	return names.some(name => existsSync(path.join(gitDir, name)));
-}
-
-/** The first line that isn't blank or one of git's `#` comment lines. */
-function firstContentLine(message: string): string | undefined {
-	return message
-		.split('\n')
-		.find(line => line.trim() !== '' && !line.startsWith('#'));
 }
 
 function describeBump(plan: ReadyPlan): string {
