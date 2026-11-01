@@ -172,9 +172,12 @@ export function shouldStamp(input: {
 }
 
 /**
- * Whether a commit message has anything git would keep: text above the
- * scissors line of `git commit -v`, once comment lines are stripped by git's
- * own rule, so `core.commentChar` counts. `cwd` must be inside the repository.
+ * Whether git would count a commit message as non-empty, for the cases the
+ * hook has met: text above the scissors line of `git commit -v`, once comment
+ * lines are stripped by git's own rule (so `core.commentChar` counts), and
+ * ignoring `Signed-off-by: ` lines, which git also treats as no message.
+ * It does not mirror `commit.cleanup` modes or other template checks.
+ * `cwd` must be inside the repository.
  */
 export async function hasMessageContent(
 	cwd: string,
@@ -183,8 +186,13 @@ export async function hasMessageContent(
 	const kept = message.split('\n');
 	const scissors = kept.findIndex(line => SCISSORS.test(line));
 	const above = scissors === -1 ? message : kept.slice(0, scissors).join('\n');
-	return (await stripComments(cwd, above)).trim() !== '';
+	return (await stripComments(cwd, above))
+		.split('\n')
+		.some(line => line.trim() !== '' && !line.startsWith(SIGN_OFF));
 }
+
+/** What git's own empty-message check skips, as `git commit -s` writes it. */
+const SIGN_OFF = 'Signed-off-by: ';
 
 /** `<comment char> ------------------------ >8 ------------------------` */
 const SCISSORS = /^\S+ -{24} >8 -{24}$/;

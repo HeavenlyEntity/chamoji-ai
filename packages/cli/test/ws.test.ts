@@ -666,3 +666,22 @@ test('chamoji commit does not stamp the merge it concludes', async () => {
 	expect(code).toBe(0);
 	expect(await message(repo.dir)).toBe('🔀 Merge side\n\n');
 });
+
+test('git commit -s still aborts on an empty message, and says why it did not stamp', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await installBuiltHook(repo.dir);
+	await chamoji(['ws', 'start', 'Auth revamp'], repo.dir);
+	await writeFile(path.join(repo.dir, 'a.ts'), 'export {};\n');
+	await gitOutput(repo.dir, ['add', 'a.ts']);
+	const before = await gitOutput(repo.dir, ['rev-parse', 'HEAD']);
+	await expect(gitWithEditor(repo.dir, ['commit', '-q', '-s'])).rejects.toThrow(
+		NOTICE('auth-revamp'),
+	);
+	expect(await gitOutput(repo.dir, ['rev-parse', 'HEAD'])).toBe(before);
+
+	// With a subject, the sign-off doesn't stop the stamp.
+	await gitOutput(repo.dir, ['commit', '-q', '-s', '-m', '✨ Add a']);
+	expect(await message(repo.dir)).toMatch(
+		/^✨ Add a\n\nSigned-off-by: .+\nWorkstream: auth-revamp\n\n$/,
+	);
+});

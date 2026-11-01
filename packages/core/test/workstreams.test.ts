@@ -574,3 +574,26 @@ test('stampWorkstream follows core.commentChar for what counts as a comment', as
 	await writeFile(message, scissors);
 	expect(await stampWorkstream(repo.dir, message)).toBeNull();
 });
+
+test('stampWorkstream treats a message of only sign-off lines as empty, as git does', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await addWorkstream(repo.dir, {title: 'Auth revamp'});
+	await setActive(repo.dir, 'auth-revamp');
+	const message = path.join(repo.dir, 'MSG');
+	const signOff = 'Signed-off-by: T <t@t.t>';
+	for (const text of [
+		`\n\n${signOff}\n`,
+		`\n\n${signOff}\n${signOff}\n${comments}`,
+	]) {
+		await writeFile(message, text);
+		expect(await stampWorkstream(repo.dir, message)).toBeNull();
+		expect(await readFile(message, 'utf8')).toBe(text);
+	}
+
+	// Something else in the message makes it a message again.
+	await writeFile(message, `✨ Add sign-in\n\n${signOff}\n${comments}`);
+	expect(await stampWorkstream(repo.dir, message)).toBe('auth-revamp');
+	const text = await readFile(message, 'utf8');
+	expect(text).toContain(`${signOff}\nWorkstream: auth-revamp\n`);
+	expect(text.indexOf('Workstream:')).toBeLessThan(text.indexOf('# Please'));
+});
