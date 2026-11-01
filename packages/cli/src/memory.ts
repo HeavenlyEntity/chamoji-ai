@@ -131,5 +131,5 @@ function label({emoji, title}: MemoryEntry): string {
 }
 
 function day(date: string): string {
-	return stripControl(date).slice(0, 10);
+	return stripControl(date).replace(/T.*$/, ''); // A year can pass four digits.
 }

@@ -173,3 +173,25 @@ test('outside a repo reports it plainly', async () => {
 	expect(code).toBe(1);
 	expect(stderr).toContain('chamoji: Not a git repository');
 });
+
+test('a commit dated past year 9999 leaves memory readable', async () => {
+	repo = await createRepo([{commit: '🎉 Init', files: WORKSTREAMS}]);
+	await gitOutput(repo.dir, [
+		'commit',
+		'-q',
+		'--allow-empty',
+		'--date=@253402300800 +0000',
+		'-m',
+		'🐛 Peer\n\nWhy: from the future\nWorkstream: auth',
+	]);
+	const dropped = await chamoji(['ws', 'drop', 'auth'], repo.dir);
+	expect(dropped.stderr).toBe('');
+	expect(dropped.code).toBe(0);
+	expect((await chamoji(['memory', 'list'], repo.dir)).stdout).toContain(
+		'🔐 Auth revamp',
+	);
+	const shown = await chamoji(['memory', 'show', 'auth'], repo.dir);
+	expect(shown.code).toBe(0);
+	expect(shown.stdout).toMatch(/[0-9a-f]{7} 🐛 Peer, 10000-01-01\n/);
+	expect(shown.stdout).toContain('  Why: from the future\n');
+});

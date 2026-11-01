@@ -2,7 +2,7 @@ import {appendFile, mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {snapshotWorkstream} from '@chamoji/core';
-import {afterEach, expect, test} from 'vitest';
+import {afterEach, expect, test, vi} from 'vitest';
 import {
 	createRepo,
 	type FixtureRepo,
@@ -12,6 +12,7 @@ import {run} from '../src/run.js';
 let repo: FixtureRepo | undefined;
 let loose: string | undefined;
 afterEach(async () => {
+	vi.unstubAllEnvs();
 	await repo?.cleanup();
 	repo = undefined;
 	if (loose) await rm(loose, {recursive: true, force: true});
@@ -190,6 +191,18 @@ test('the workstream summary strips terminal escapes', async () => {
 	]);
 	const {stdout} = await chamoji(['why', 'src/a.ts:1'], repo.dir);
 	expect(stdout).toContain('Workstream: Auth [31mred (active)\n');
+	// eslint-disable-next-line no-control-regex
+	expect(stdout).not.toMatch(/[\u0000-\u0009\u000B-\u001F\u007F-\u009F]/);
+});
+
+test('a separator byte in an author name puts no escape text on stdout', async () => {
+	// Git keeps \u001F inside a name, which moves every field after it along.
+	vi.stubEnv('GIT_AUTHOR_NAME', 'a\u001Fb\u001F\u001B[31mevil');
+	repo = await createRepo([{commit: '✨ Add a', files: FILES}]);
+	vi.unstubAllEnvs();
+	const {code, stdout} = await chamoji(['why', 'src/a.ts:1'], repo.dir);
+	expect(code).toBe(0);
+	expect(stdout).toContain('[31mevil');
 	// eslint-disable-next-line no-control-regex
 	expect(stdout).not.toMatch(/[\u0000-\u0009\u000B-\u001F\u007F-\u009F]/);
 });
