@@ -1,5 +1,41 @@
 # Changelog
 
+## [v0.10.0](https://github.com/HeavenlyEntity/chamoji-ai/compare/v0.9.0...v0.10.0) - 2026-11-01
+
+### Added
+
+- ✨ Add chamoji ws, and stamp the active workstream ([ef0afd0](https://github.com/HeavenlyEntity/chamoji-ai/commit/ef0afd077d4e6227ee1b604c2fbd6a4daedaa441))
+- ✨ Render Highlights in Markdown and HTML ([5c7a05c](https://github.com/HeavenlyEntity/chamoji-ai/commit/5c7a05c9c5d45a746ba3045167e09c617b0a2dd6))
+- ✨ Fold shipped workstreams into Highlights ([52b5f62](https://github.com/HeavenlyEntity/chamoji-ai/commit/52b5f629e28f7b2ed332f5997b25a21333b9598b))
+- ✨ Read the Workstream trailer ([2df559d](https://github.com/HeavenlyEntity/chamoji-ai/commit/2df559d5f2655a924260580314adb11c8beee873))
+- ✨ Add workstreams to core ([52b2da8](https://github.com/HeavenlyEntity/chamoji-ai/commit/52b2da83ebe97a0262034fca5dfe5f7cefa9b691))
+
+### Changed
+
+- ♻️ Make the workstream field optional ([6f33e2e](https://github.com/HeavenlyEntity/chamoji-ai/commit/6f33e2e10148ca55f9b4d3f92a3f7e2f4a26b011))
+
+### Fixed
+
+- 🐛 Show ws start's stderr when the hook e2e check fails ([a6b2e74](https://github.com/HeavenlyEntity/chamoji-ai/commit/a6b2e7425231448a0c710b70f50dc575044c554c))
+- 🐛 Pad the ws list title so the commit counts line up ([a1010eb](https://github.com/HeavenlyEntity/chamoji-ai/commit/a1010eb6c453ad9cc0ab24447049f52496e0c3e5))
+- 🐛 Keep long hand-written lines in the workstreams file unfolded ([dee3486](https://github.com/HeavenlyEntity/chamoji-ai/commit/dee348653eeb0e15ffbf396cebfab3540a80e75f))
+- 🐛 Report ws outside a repo and under an ignored .chamoji plainly ([a7343d4](https://github.com/HeavenlyEntity/chamoji-ai/commit/a7343d44235c937f3455a7b672d6a6ae2a3ab48c))
+- 🐛 Stamp a -m message that starts with # ([f252add](https://github.com/HeavenlyEntity/chamoji-ai/commit/f252add64c9afdfa2d6c7d8bec8618339c03ab13))
+- 🐛 Count a sign-off-only message as empty, as git does ([62ca858](https://github.com/HeavenlyEntity/chamoji-ai/commit/62ca85869630d4ded6d70ddea70fcf9617cfa4ea))
+- 🐛 Never let the stamp turn an aborted commit into a commit ([6013d77](https://github.com/HeavenlyEntity/chamoji-ai/commit/6013d77d0d4fc8d9225e5607a18bec5c85bd4f01))
+
+### Security
+
+- 🔒️ Refuse alias bombs and symlinks in workstreams ([f7b47a2](https://github.com/HeavenlyEntity/chamoji-ai/commit/f7b47a2b7d9dc8f4fa4b3d972e212482ecb35b63))
+
+### Documentation
+
+- 📝 Record the GitHub squash results ([249b1f7](https://github.com/HeavenlyEntity/chamoji-ai/commit/249b1f7fa2c00f3b891a9cb8fb1f4f6ffb1964d6))
+- 📝 Say what the hook checks and the squash test really cover ([ddd3c57](https://github.com/HeavenlyEntity/chamoji-ai/commit/ddd3c575f64ccfa04b2ba1d0ffbc6d68a28d06fa))
+- 📝 Document the revert subject and committing a ship before preview ([3221ac8](https://github.com/HeavenlyEntity/chamoji-ai/commit/3221ac80368dca286f7f8427f2a07dcdf1c5b5c8))
+- 📝 Document workstreams and record the exit criteria ([5c784ee](https://github.com/HeavenlyEntity/chamoji-ai/commit/5c784ee0ea2ea8b9527632d051a00043dbf3300e))
+- 📝 Plan milestone 6, Workstreams ([1dd6bcc](https://github.com/HeavenlyEntity/chamoji-ai/commit/1dd6bcc587776cdaf6e3ce2f3f0c7dd72a71d9f2))
+
 ## [v0.9.0](https://github.com/HeavenlyEntity/chamoji-ai/compare/v0.8.0...v0.9.0) - 2026-10-31
 
 ### Added
