@@ -1,6 +1,7 @@
 import {findGitmoji, normalizeEmoji} from './gitmojis.js';
 import {inferGitmoji} from './infer.js';
 import type {GitmojiSource, ParsedCommit, RawCommit, Trailer} from './types.js';
+import {isSlug} from './workstreams.js';
 
 /** Conventional Commits types we recognize, and the gitmoji each implies. */
 const TYPE_TO_GITMOJI: Record<string, string> = {
@@ -28,6 +29,7 @@ const CONVENTIONAL_PREFIX = /^(\w+)(?:\(([^)]+)\))?(!)?:\s*/;
 const GITMOJI_CLI_SCOPE = /^\(([^)]+)\):\s*/;
 const BREAKING_FOOTER = /^BREAKING[ -]CHANGE:/m;
 const GIT_REVERT = /^Revert "(.+)"$/;
+const WORKSTREAM_LINE = /^workstream:\s*(.*)$/i;
 
 /**
  * `[tag] description`, as Moment writes them. Kind tags say what the change
@@ -85,6 +87,7 @@ export function parseCommit(raw: RawCommit): ParsedCommit {
 			type: null,
 			description: `Revert "${original.description}"`,
 			breaking: BREAKING_FOOTER.test(raw.body),
+			workstream: readWorkstream(original.trailers, raw.body),
 		};
 	}
 
@@ -144,6 +147,7 @@ export function parseCommit(raw: RawCommit): ParsedCommit {
 	}
 
 	const {trailers: rawTrailers, ...rest} = raw;
+	const trailers = parseTrailers(rawTrailers);
 	return {
 		...rest,
 		gitmoji,
@@ -152,8 +156,26 @@ export function parseCommit(raw: RawCommit): ParsedCommit {
 		scope,
 		description: text.trim(),
 		breaking: gitmoji === 'boom' || bang || BREAKING_FOOTER.test(raw.body),
-		trailers: parseTrailers(rawTrailers),
+		trailers,
+		workstream: readWorkstream(trailers, raw.body),
 	};
+}
+
+/**
+ * The workstream a commit names with a `Workstream: <slug>` trailer. Git's
+ * own trailer block comes first. GitHub's squash message puts trailers
+ * mid-body, where git doesn't parse them, so the body is scanned line by
+ * line after that. The first valid slug wins, and a line whose value isn't a
+ * slug is skipped.
+ */
+function readWorkstream(trailers: Trailer[], body: string): string | null {
+	const values = [
+		...trailers
+			.filter(trailer => trailer.key.toLowerCase() === 'workstream')
+			.map(trailer => trailer.value),
+		...body.split('\n').map(line => WORKSTREAM_LINE.exec(line.trim())?.[1]),
+	];
+	return values.find(value => value !== undefined && isSlug(value)) ?? null;
 }
 
 /**

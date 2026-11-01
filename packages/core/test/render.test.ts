@@ -135,7 +135,27 @@ test('json round-trips', () => {
 	const changelog = sample('https://github.com/acme/widgets');
 	const json = renderJson(changelog);
 	expect(json.endsWith('\n')).toBe(true);
-	expect(JSON.parse(json)).toEqual(changelog);
+	// The sample names no workstream, and a null one is left out of the JSON.
+	const withoutWorkstreams = JSON.parse(
+		JSON.stringify(changelog, (key, value: unknown) =>
+			key === 'workstream' ? undefined : value,
+		),
+	) as unknown;
+	expect(JSON.parse(json)).toEqual(withoutWorkstreams);
+});
+
+test('json leaves out a null workstream and keeps a named one', () => {
+	const changelog = sample();
+	const commits = changelog.releases[0]!.groups[0]!.commits;
+	commits.push(
+		commit('✨ Add login (#12)', {trailers: 'Workstream: auth-revamp\n'}),
+	);
+	const json = JSON.parse(renderJson(changelog)) as {
+		releases: Array<{groups: Array<{commits: Array<Record<string, unknown>>}>}>;
+	};
+	const rendered = json.releases[0]!.groups[0]!.commits;
+	expect(rendered[0]).not.toHaveProperty('workstream');
+	expect(rendered.at(-1)).toHaveProperty('workstream', 'auth-revamp');
 });
 
 test('render dispatches by format', () => {

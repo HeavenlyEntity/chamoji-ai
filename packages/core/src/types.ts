@@ -33,6 +33,8 @@ export type ParsedCommit = Omit<RawCommit, 'trailers'> & {
 	description: string;
 	breaking: boolean;
 	trailers: Trailer[];
+	/** Slug from the `Workstream:` trailer, or null when the commit has none. */
+	workstream: string | null;
 };
 
 export type GroupConfigItem = {

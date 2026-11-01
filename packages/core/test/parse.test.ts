@@ -228,3 +228,105 @@ test('Conventional types and gitmojis still win over the new prefixes', () => {
 		gitmojiSource: 'gitmoji',
 	});
 });
+
+test('the Workstream trailer names the workstream, whatever its case', () => {
+	expect(
+		parseCommit(raw('✨ Add login', {trailers: 'Workstream: auth-revamp\n'}))
+			.workstream,
+	).toBe('auth-revamp');
+	expect(
+		parseCommit(raw('✨ Add login', {trailers: 'workstream: auth-revamp\n'}))
+			.workstream,
+	).toBe('auth-revamp');
+	expect(
+		parseCommit(raw('✨ Add login', {trailers: 'WORKSTREAM: auth-revamp\n'}))
+			.workstream,
+	).toBe('auth-revamp');
+});
+
+test('a squash body with the trailer mid-body still gives the workstream', () => {
+	// GitHub puts the squashed commits' bodies after the PR title, so git's
+	// own trailer parsing, which only reads the last paragraph, misses it.
+	const body = [
+		'* Add login',
+		'',
+		'Workstream: auth-revamp',
+		'',
+		'* Fix the redirect',
+		'',
+		'Co-authored-by: Dev <dev@example.com>',
+	].join('\n');
+	expect(
+		parseCommit(raw('✨ Add login (#12)', {body, trailers: ''})).workstream,
+	).toBe('auth-revamp');
+});
+
+test('a squash that mixes workstreams gets the first one found', () => {
+	const body = 'Workstream: auth-revamp\n\nWorkstream: billing\n';
+	expect(parseCommit(raw('✨ Add login (#12)', {body})).workstream).toBe(
+		'auth-revamp',
+	);
+});
+
+test('the trailer wins over the body', () => {
+	expect(
+		parseCommit(
+			raw('✨ Add login', {
+				trailers: 'Workstream: billing\n',
+				body: 'Workstream: auth-revamp\n',
+			}),
+		).workstream,
+	).toBe('billing');
+});
+
+test('a Workstream line that is not a slug is skipped', () => {
+	expect(
+		parseCommit(raw('✨ Add login', {trailers: 'Workstream: Not A Slug\n'}))
+			.workstream,
+	).toBeNull();
+	expect(
+		parseCommit(raw('✨ Add login', {trailers: 'Workstream: \n'})).workstream,
+	).toBeNull();
+	expect(
+		parseCommit(
+			raw('✨ Add login', {
+				trailers: 'Workstream: Not A Slug\n',
+				body: 'Workstream: auth-revamp\n',
+			}),
+		).workstream,
+	).toBe('auth-revamp');
+	expect(
+		parseCommit(
+			raw('✨ Add login', {
+				body: 'Workstream: Not A Slug\nWorkstream: billing\n',
+			}),
+		).workstream,
+	).toBe('billing');
+	expect(
+		parseCommit(
+			raw('✨ Add login', {trailers: `Workstream: ${'a'.repeat(65)}\n`}),
+		).workstream,
+	).toBeNull();
+});
+
+test('a commit without the trailer has no workstream', () => {
+	expect(parseCommit(raw('✨ Add login')).workstream).toBeNull();
+	expect(
+		parseCommit(
+			raw('✨ Add login', {
+				body: 'Mentions Workstream: in prose\nNot a Workstream: line.',
+				trailers: 'Refs: #4\n',
+			}),
+		).workstream,
+	).toBeNull();
+});
+
+test('a revert keeps the workstream of its own body', () => {
+	expect(
+		parseCommit(
+			raw('Revert "✨ Add login"', {
+				body: 'This reverts commit abc.\n\nWorkstream: auth-revamp\n',
+			}),
+		).workstream,
+	).toBe('auth-revamp');
+});

@@ -4,8 +4,15 @@ import {renderMarkdown} from './markdown.js';
 
 export type OutputFormat = 'markdown' | 'json' | 'html';
 
+/**
+ * A commit's `workstream` is null in a repo that has none. Leave it out
+ * then, so `--json` stays what it was before workstreams.
+ */
+const omitNullWorkstream = (key: string, value: unknown) =>
+	key === 'workstream' && value === null ? undefined : value;
+
 export const renderJson = (changelog: Changelog) =>
-	`${JSON.stringify(changelog, null, 2)}\n`;
+	`${JSON.stringify(changelog, omitNullWorkstream, 2)}\n`;
 
 export function render(changelog: Changelog, format: OutputFormat): string {
 	switch (format) {
