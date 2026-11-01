@@ -1,3 +1,5 @@
+import type {Workstream} from './workstreams.js';
+
 export type SemverBump = 'major' | 'minor' | 'patch';
 
 /** One commit as read from `git log`, before any interpretation. */
@@ -62,6 +64,16 @@ export type Group = {
 	commits: ParsedCommit[];
 };
 
+/**
+ * A shipped workstream in a release: its commits, folded out of the
+ * release's own groups. `links` and the other fields come from the
+ * workstreams file and are data, not markup.
+ */
+export type Highlight = Pick<
+	Workstream,
+	'slug' | 'title' | 'emoji' | 'description' | 'links'
+> & {groups: Group[]};
+
 export type Release = {
 	/** Tag name, the `--release` version, or `Unreleased`. */
 	version: string;
@@ -75,6 +87,11 @@ export type Release = {
 	date: string | null;
 	bump: SemverBump | null;
 	nextVersion: string | null;
+	/**
+	 * Shipped workstreams in this release, newest work first. Absent when
+	 * there are none. Their commits are not repeated in `groups`.
+	 */
+	highlights?: Highlight[];
 	groups: Group[];
 };
 

@@ -18,6 +18,7 @@ export {
 	type GitmojiMatch,
 } from './gitmojis.js';
 export {groupCommits} from './group.js';
+export {splitHighlights} from './highlights.js';
 export {parseCommit} from './parse.js';
 export {
 	escapeHtml,

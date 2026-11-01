@@ -1,4 +1,4 @@
-import type {Changelog} from './types.js';
+import type {Changelog, Group, Release} from './types.js';
 
 /** Where the repo card is rendered. */
 export const CARD_ENDPOINT = 'https://chamoji.dev/api/card';
@@ -20,10 +20,20 @@ export type RepoStats = {
 	changed: number;
 };
 
-const groupSize = (changelog: Changelog, tag: string | null, id: string) =>
-	changelog.releases
-		.find(release => release.tag === tag)
-		?.groups.find(group => group.group === id)?.commits.length ?? 0;
+/** A release's groups, with those folded into its highlights counted too. */
+const allGroups = (release: Release): Group[] => [
+	...(release.highlights ?? []).flatMap(highlight => highlight.groups),
+	...release.groups,
+];
+
+const groupSize = (changelog: Changelog, tag: string | null, id: string) => {
+	const release = changelog.releases.find(item => item.tag === tag);
+	return release
+		? allGroups(release)
+				.filter(group => group.group === id)
+				.reduce((sum, group) => sum + group.commits.length, 0)
+		: 0;
+};
 
 /**
  * Summarises a changelog for the repo card. `commits` and `sorted` are counted
@@ -34,7 +44,7 @@ export function repoStats(changelog: Changelog): RepoStats {
 	let commits = 0;
 	let misc = 0;
 	for (const release of changelog.releases) {
-		for (const group of release.groups) {
+		for (const group of allGroups(release)) {
 			commits += group.commits.length;
 			if (group.group === 'misc') misc += group.commits.length;
 		}

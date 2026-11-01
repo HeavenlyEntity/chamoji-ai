@@ -55,6 +55,21 @@ test('releases newest first with correct ranges', async () => {
 	expect(releases[2]!.previousTag).toBeNull();
 });
 
+test('a repo with no workstreams file has no highlights key', async () => {
+	repo = await createRepo([
+		{commit: '✨ Add', body: 'Workstream: auth'},
+		{tag: 'v1.0.0'},
+		{commit: '🐛 Fix'},
+	]);
+
+	const {releases} = await buildChangelog({cwd: repo.dir, config});
+	expect(releases.map(release => 'highlights' in release)).toEqual([
+		false,
+		false,
+	]);
+	expect(JSON.stringify(releases)).not.toContain('highlights');
+});
+
 test('no tags gives a single Unreleased release', async () => {
 	repo = await createRepo([{commit: '🎉 Init'}, {commit: '✨ Add login'}]);
 

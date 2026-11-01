@@ -1,5 +1,5 @@
 import {execFile} from 'node:child_process';
-import {mkdtemp, rm, writeFile} from 'node:fs/promises';
+import {mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {promisify} from 'node:util';
@@ -7,7 +7,13 @@ import {promisify} from 'node:util';
 const execFileAsync = promisify(execFile);
 
 export type RepoStep =
-	| {commit: string; body?: string; date?: string}
+	| {
+			commit: string;
+			body?: string;
+			date?: string;
+			/** Files (path relative to the repo, `/`-separated) to write and stage. */
+			files?: Record<string, string>;
+	  }
 	| {tag: string; annotated?: boolean}
 	| {mergeBranch: string; commits: string[]};
 
@@ -42,7 +48,19 @@ export async function createRepo(steps: RepoStep[]): Promise<FixtureRepo> {
 		});
 	};
 
-	const commit = async (message: string, body?: string, date?: string) => {
+	const commit = async (
+		message: string,
+		body?: string,
+		date?: string,
+		files: Record<string, string> = {},
+	) => {
+		for (const [name, text] of Object.entries(files)) {
+			const file = path.join(dir, ...name.split('/'));
+			await mkdir(path.dirname(file), {recursive: true});
+			await writeFile(file, text);
+			await git(['add', '--', name]);
+		}
+
 		const args = ['commit', '--allow-empty', '-q', '-m', message];
 		if (body) {
 			args.push('-m', body);
@@ -60,7 +78,7 @@ export async function createRepo(steps: RepoStep[]): Promise<FixtureRepo> {
 
 	for (const step of steps) {
 		if ('commit' in step) {
-			await commit(step.commit, step.body, step.date);
+			await commit(step.commit, step.body, step.date, step.files);
 		} else if ('tag' in step) {
 			await git(
 				step.annotated

@@ -60,7 +60,11 @@ function measure(slug) {
 	let total = 0;
 	let misc = 0;
 	for (const release of changelog.releases) {
-		for (const group of release.groups) {
+		const groups = [
+			...(release.highlights ?? []).flatMap(highlight => highlight.groups),
+			...release.groups,
+		];
+		for (const group of groups) {
 			total += group.commits.length;
 			if (group.group === 'misc') misc += group.commits.length;
 		}

@@ -199,6 +199,7 @@ export async function planRelease(
 		date: today,
 		bump: unreleased?.bump ?? null,
 		nextVersion: null,
+		...(unreleased?.highlights ? {highlights: unreleased.highlights} : {}),
 		groups: unreleased?.groups ?? [],
 	};
 	const notes = stripTitle(renderMarkdown({...changelog, releases: [section]}));

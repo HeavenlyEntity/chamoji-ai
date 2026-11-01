@@ -5,9 +5,11 @@ import {
 	getRemoteWebUrl,
 	listReleaseTags,
 	readCommits,
+	runGit,
 } from './git.js';
 import {getGitmoji} from './gitmojis.js';
 import {groupCommits} from './group.js';
+import {splitHighlights} from './highlights.js';
 import {parseCommit} from './parse.js';
 import type {
 	ChamojiConfig,
@@ -17,6 +19,11 @@ import type {
 	Release,
 } from './types.js';
 import {bumpFor, nextVersion} from './version.js';
+import {
+	WorkstreamError,
+	readWorkstreamsAt,
+	type Workstream,
+} from './workstreams.js';
 
 /** The tag a `--release` version will get, following the latest tag's `v` style. */
 function futureTag(release: string, latestTag: string | null): string {
@@ -88,6 +95,8 @@ export async function buildChangelog(
 		fields: Pick<Release, 'version' | 'tag' | 'previousTag' | 'date'>;
 		commits: ParsedCommit[];
 		isUnreleased: boolean;
+		/** The ref whose workstreams file applies: `to`, or the tag. */
+		ref: string;
 	};
 	const pending: Pending[] = [];
 	const latest = tags[0]?.name ?? null;
@@ -109,6 +118,7 @@ export async function buildChangelog(
 			},
 			commits: unreleased.map(parseCommit),
 			isUnreleased: true,
+			ref: to,
 		});
 	}
 
@@ -131,6 +141,7 @@ export async function buildChangelog(
 			},
 			commits: raw.map(parseCommit),
 			isUnreleased: false,
+			ref: tag.name,
 		});
 	}
 
@@ -145,18 +156,56 @@ export async function buildChangelog(
 		);
 	}
 
-	const releases = pending.map(({fields, commits, isUnreleased}): Release => {
+	const releases: Release[] = [];
+	const tagsAtTo = new Set(
+		(await runGit(['tag', '--points-at', to], cwd)).split('\n'),
+	);
+	for (const {fields, commits, isUnreleased, ref} of pending) {
 		const bump = bumpFor(commits);
-		return {
+		// The file is read as of the release, so a workstream counts as shipped
+		// only in the release that marked it so. A bad file fails the build only
+		// when it is the one at `to`; older ones are skipped, not fatal.
+		const atTo = ref === to || tagsAtTo.has(ref);
+		const workstreams =
+			atTo || commits.some(commit => commit.workstream !== undefined)
+				? await readWorkstreamsFor(cwd, ref, atTo)
+				: [];
+		const {highlights, loose} = splitHighlights(
+			commits,
+			workstreams,
+			config.groups,
+		);
+		releases.push({
 			...fields,
 			bump,
 			nextVersion: isUnreleased ? nextVersion(fields.previousTag, bump) : null,
-			groups: groupCommits(commits, config.groups),
-		};
-	});
+			...(highlights.length > 0 ? {highlights} : {}),
+			groups: groupCommits(loose, config.groups),
+		});
+	}
 
 	const repositoryUrl = config.repositoryUrl ?? (await getRemoteWebUrl(cwd));
 	return {...(repositoryUrl ? {repositoryUrl} : {}), releases};
+}
+
+/**
+ * The workstreams file as of `ref`. An unreadable file throws when it is the
+ * one at `to` (`strict`), and counts as no workstreams otherwise.
+ */
+async function readWorkstreamsFor(
+	cwd: string,
+	ref: string,
+	strict: boolean,
+): Promise<Workstream[]> {
+	try {
+		return await readWorkstreamsAt(cwd, ref);
+	} catch (error) {
+		if (!strict && error instanceof WorkstreamError) {
+			return [];
+		}
+
+		throw error;
+	}
 }
 
 /**

@@ -78,6 +78,44 @@ test('sorted matches the benchmark and never rounds up to 100', () => {
 	expect(repoStats(changelog)).toMatchObject({commits: 200, sorted: 99});
 });
 
+test('commits folded into highlights still count', () => {
+	const commit = (index: number) => ({hash: String(index)}) as ParsedCommit;
+	const changelog: Changelog = {
+		releases: [
+			{
+				version: 'v1.0.0',
+				tag: 'v1.0.0',
+				previousTag: null,
+				date: '2026-01-01',
+				bump: null,
+				nextVersion: null,
+				highlights: [
+					{
+						slug: 'auth',
+						title: 'Auth',
+						groups: [
+							{group: 'added', label: 'Added', commits: [commit(1), commit(2)]},
+							{group: 'misc', label: 'Miscellaneous', commits: [commit(3)]},
+						],
+					},
+				],
+				groups: [
+					{group: 'added', label: 'Added', commits: [commit(4)]},
+					{group: 'fixed', label: 'Fixed', commits: [commit(5)]},
+				],
+			},
+		],
+	};
+
+	expect(repoStats(changelog)).toMatchObject({
+		commits: 5,
+		sorted: 80,
+		added: 3,
+		fixed: 1,
+		changed: 0,
+	});
+});
+
 test('a repo with no tags has no version', async () => {
 	repo = await createRepo([{commit: '✨ Add one'}, {commit: '🐛 Fix two'}]);
 
