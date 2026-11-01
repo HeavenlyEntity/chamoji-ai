@@ -155,6 +155,7 @@ async function switchTo(
 
 	await setActive(io.cwd, slug);
 	io.stdout(`Switched to ${slug}.\n`);
+	await reportStamping(io, slug);
 	return 0;
 }
 

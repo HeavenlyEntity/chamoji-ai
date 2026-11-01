@@ -140,6 +140,48 @@ test('ws start under another tool’s hook neither promises nor warns outright',
 	expect(stderr).toContain('chamoji hook install');
 });
 
+test('ws switch with the hook installed says new commits get the trailer', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await chamoji(['hook', 'install'], repo.dir);
+	await chamoji(['ws', 'start', 'Auth revamp'], repo.dir);
+	await chamoji(['ws', 'switch', '--none'], repo.dir);
+	const {code, stdout, stderr} = await chamoji(
+		['ws', 'switch', 'auth-revamp'],
+		repo.dir,
+	);
+	expect(code).toBe(0);
+	expect(stdout).toBe(
+		'Switched to auth-revamp.\nNew commits in this worktree get "Workstream: auth-revamp".\n',
+	);
+	expect(stderr).toBe('');
+});
+
+test('ws switch with no hook warns, as a fresh clone has none', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await chamoji(['ws', 'start', 'Auth revamp'], repo.dir);
+	await chamoji(['ws', 'switch', '--none'], repo.dir);
+	const {code, stdout, stderr} = await chamoji(
+		['ws', 'switch', 'auth-revamp'],
+		repo.dir,
+	);
+	expect(code).toBe(0);
+	expect(stdout).toBe('Switched to auth-revamp.\n');
+	expect(stderr).toContain('`git commit` won\'t add "Workstream: auth-revamp"');
+	expect(stderr).toContain('chamoji hook install');
+});
+
+test('ws switch --none says nothing about the hook, as nothing is stamped', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await chamoji(['ws', 'start', 'Auth revamp'], repo.dir);
+	const {code, stdout, stderr} = await chamoji(
+		['ws', 'switch', '--none'],
+		repo.dir,
+	);
+	expect(code).toBe(0);
+	expect(stdout).toBe('No active workstream now.\n');
+	expect(stderr).toBe('');
+});
+
 test('git commit -m through the installed hook gets the Workstream trailer', async () => {
 	repo = await createRepo([{commit: '🎉 Init'}]);
 	await installBuiltHook(repo.dir);
