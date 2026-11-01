@@ -52,6 +52,18 @@ test('insertSection appends below the title when there is no release yet', () =>
 	);
 });
 
+test('insertSection keeps a Highlights section with the release it belongs to', () => {
+	const section =
+		'## [v1.3.0] - 2026-10-28\n\n### Highlights\n\n- 🔐 **Auth revamp**\n  - ✨ Add login (abc1234)\n\n### Fixed\n\n- 🐛 Fix a crash';
+	const old = '## [v1.2.0] - 2026-09-02\n\n- Old\n';
+	expect(insertSection(`# Changelog\n\n${old}`, section)).toBe(
+		`# Changelog\n\n${section}\n\n${old}`,
+	);
+	expect(insertSection('# Changelog\n', section)).toBe(
+		`# Changelog\n\n${section}\n`,
+	);
+});
+
 test('bumpManifest changes only the top-level version of package.json', () => {
 	const text =
 		'{\n\t"name": "@acme/widgets",\n\t"version": "1.2.0",\n\t"dependencies": {\n\t\t"left-pad": "1.2.0"\n\t}\n}\n';
@@ -223,6 +235,34 @@ test('planRelease picks a minor bump and chamoji notes for a gitmoji repo', asyn
 		'package.json',
 	]);
 	expect(result.changes[1]!.text).toContain('"version": "1.3.0"');
+});
+
+test('planRelease puts shipped workstreams under Highlights in the notes and the changelog', async () => {
+	const repo = await repoWith(
+		[
+			{commit: '🎉 Start widgets'},
+			{tag: 'v1.2.0', annotated: true},
+			{commit: '✨ Add passkey login', body: 'Workstream: auth-revamp'},
+			{commit: '🐛 Fix crash when a widget has no title'},
+			{
+				commit: '📝 Ship the auth revamp',
+				files: {
+					'.chamoji/workstreams.yml':
+						'workstreams:\n  auth-revamp:\n    title: Auth revamp\n    emoji: 🔐\n    status: shipped\n',
+				},
+			},
+		],
+		{'CHANGELOG.md': '# Changelog\n\n## v1.2.0 - 2026-01-02\n\n- Old\n'},
+	);
+	const result = await ready(repo.dir);
+	expect(result.notes).toMatch(
+		/^## v1\.3\.0 - 2026-10-28\n\n### Highlights\n\n- 🔐 \*\*Auth revamp\*\*\n {2}- ✨ Add passkey login \(\w{7}\)\n\n### Changed\n/,
+	);
+	expect(result.notes.match(/Add passkey login/g)).toHaveLength(1);
+	const changelog = result.changes.find(
+		change => change.file === 'CHANGELOG.md',
+	)!;
+	expect(changelog.text).toContain(`${result.notes}\n\n## v1.2.0`);
 });
 
 test('planRelease follows tags without a v and Conventional subjects', async () => {

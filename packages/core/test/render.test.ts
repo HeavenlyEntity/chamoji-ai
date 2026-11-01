@@ -7,7 +7,7 @@ import {
 	renderJson,
 	renderMarkdown,
 } from '../src/render/index.js';
-import type {Changelog, ParsedCommit} from '../src/types.js';
+import type {Changelog, Highlight, ParsedCommit} from '../src/types.js';
 import {commit} from './helpers/commit.js';
 
 const withHash = (c: ParsedCommit, hash: string): ParsedCommit => ({
@@ -303,4 +303,199 @@ test('AI-picked gitmojis are not shown as emojis either', () => {
 	expect(renderMarkdown(changelog)).toContain(
 		'### Added\n\n- Accept camelCase flags (',
 	);
+});
+
+// --- Highlights ---
+
+const highlightChangelog = (
+	highlight: Partial<Highlight> = {},
+	loose: ParsedCommit[] = [withHash(commit('🐛 Fix crash'), 'eeeeeee')],
+): Changelog => ({
+	releases: [
+		{
+			version: 'v3.0.0',
+			tag: 'v3.0.0',
+			previousTag: null,
+			date: '2026-03-01',
+			bump: 'minor',
+			nextVersion: null,
+			highlights: [
+				{
+					slug: 'auth-revamp',
+					title: 'Auth revamp',
+					emoji: '🔐',
+					description: 'Sign in with passkeys.',
+					groups: groupCommits(
+						[
+							withHash(commit('✨ Add login'), 'abc1234'),
+							withHash(commit('🐛 Fix logout'), 'def5678'),
+						],
+						DEFAULT_GROUP_CONFIG,
+					),
+					...highlight,
+				},
+			],
+			groups: groupCommits(loose, DEFAULT_GROUP_CONFIG),
+		},
+	],
+});
+
+test('markdown puts Highlights first, with each commit under its workstream', () => {
+	expect(renderMarkdown(highlightChangelog())).toBe(
+		`# Changelog
+
+## v3.0.0 - 2026-03-01
+
+### Highlights
+
+- 🔐 **Auth revamp:** Sign in with passkeys.
+  - ✨ Add login (abc1234)
+  - 🐛 Fix logout (def5678)
+
+### Fixed
+
+- 🐛 Fix crash (eeeeeee)
+`,
+	);
+});
+
+test('markdown links highlight commits like any other commit', () => {
+	const changelog = {
+		...highlightChangelog(),
+		repositoryUrl: 'https://github.com/acme/widgets',
+	};
+	expect(renderMarkdown(changelog)).toContain(
+		'  - ✨ Add login ([abc1234](https://github.com/acme/widgets/commit/abc1234000000000000000000000000000000000))\n',
+	);
+});
+
+test('markdown leaves out the colon without a description and the space without an emoji', () => {
+	const bare = renderMarkdown(
+		highlightChangelog({description: undefined, emoji: undefined}),
+	);
+	expect(bare).toContain('\n- **Auth revamp**\n  - ✨ Add login');
+	const noDescription = renderMarkdown(
+		highlightChangelog({description: undefined}),
+	);
+	expect(noDescription).toContain('\n- 🔐 **Auth revamp**\n');
+	const noEmoji = renderMarkdown(highlightChangelog({emoji: undefined}));
+	expect(noEmoji).toContain('\n- **Auth revamp:** Sign in with passkeys.\n');
+});
+
+test('markdown shows a release with only highlights and no groups', () => {
+	const markdown = renderMarkdown(highlightChangelog({}, []));
+	expect(markdown).toContain('### Highlights');
+	expect(markdown).not.toContain('### Fixed');
+	expect(markdown.endsWith('(def5678)\n')).toBe(true);
+});
+
+test('markdown keeps a dependency group inside a highlight to one line', () => {
+	const markdown = renderMarkdown(
+		highlightChangelog({groups: dependencyChangelog().releases[0]!.groups}),
+	);
+	expect(markdown).toContain(
+		'  - ⬆️ 9 dependency updates: jest, vite, @babel/core, fast-uri, prettier and 2 more\n',
+	);
+	expect(markdown.match(/dependency updates/g)).toHaveLength(1);
+});
+
+test('markdown makes workstream text from the file inert', () => {
+	const markdown = renderMarkdown(
+		highlightChangelog({
+			title: '[x](https://evil) <script>alert(1)</script>',
+			emoji: '<b>',
+			description: '[y](https://evil) <img src=x onerror=alert(1)>',
+		}),
+	);
+	expect(markdown).not.toMatch(/(?<!\\)\]\(/);
+	expect(markdown).not.toContain('<script>');
+	expect(markdown).not.toContain('<img');
+	expect(markdown).not.toContain('<b>');
+	expect(markdown).toContain(
+		'- &lt;b&gt; **\\[x\\](https://evil) &lt;script&gt;alert(1)&lt;/script&gt;:** \\[y\\](https://evil) &lt;img src=x onerror=alert(1)&gt;\n',
+	);
+});
+
+test('markdown keeps a multi-line description from starting new blocks', () => {
+	const markdown = renderMarkdown(
+		highlightChangelog({
+			title: 'Auth\n## [v9.9.9] - fake',
+			description: 'First line.\n\n## [v9.9.9] - fake\n- sneaky',
+		}),
+	);
+	expect(markdown).not.toMatch(/^## \[v9\.9\.9\]/m);
+	expect(markdown).toContain(
+		'- 🔐 **Auth ## \\[v9.9.9\\] - fake:** First line. ## \\[v9.9.9\\] - fake - sneaky\n',
+	);
+});
+
+test('html shows Highlights first, a details per workstream', () => {
+	const html = renderHtml(highlightChangelog());
+	expect(html).toContain(
+		`<h2>v3.0.0 <time datetime="2026-03-01">2026-03-01</time></h2>
+<h3>Highlights</h3>
+<details>
+<summary>🔐 <strong>Auth revamp</strong></summary>
+<p>Sign in with passkeys.</p>
+<ul>
+<li>✨ Add login (<code>abc1234</code>)</li>
+<li>🐛 Fix logout (<code>def5678</code>)</li>
+</ul>
+</details>
+<h3>Fixed</h3>`,
+	);
+});
+
+test('html leaves out the paragraph without a description and the space without an emoji', () => {
+	const html = renderHtml(
+		highlightChangelog({description: undefined, emoji: undefined}),
+	);
+	expect(html).toContain(
+		'<summary><strong>Auth revamp</strong></summary>\n<ul>',
+	);
+});
+
+test('html keeps a dependency group inside a highlight to one line', () => {
+	const html = renderHtml(
+		highlightChangelog({groups: dependencyChangelog().releases[0]!.groups}),
+	);
+	expect(html).toContain(
+		'<li>⬆️ 9 dependency updates: jest, vite, @babel/core, fast-uri, prettier and 2 more</li>',
+	);
+	expect(html.match(/dependency updates/g)).toHaveLength(1);
+});
+
+test('html makes workstream text from the file inert', () => {
+	const html = renderHtml(
+		highlightChangelog({
+			title: '[x](https://evil) <script>alert(1)</script>',
+			emoji: '<b>',
+			description: '<img src=x onerror=alert(1)> "quoted"',
+		}),
+	);
+	expect(html).not.toContain('<script>');
+	expect(html).not.toContain('<img');
+	expect(html).not.toContain('<b>');
+	expect(html).toContain(
+		'<summary>&lt;b&gt; <strong>[x](https://evil) &lt;script&gt;alert(1)&lt;/script&gt;</strong></summary>',
+	);
+	expect(html).toContain(
+		'<p>&lt;img src=x onerror=alert(1)&gt; &quot;quoted&quot;</p>',
+	);
+});
+
+test('a release without highlights renders as before', () => {
+	const changelog = sample();
+	expect(renderMarkdown(changelog)).not.toContain('Highlights');
+	expect(renderHtml(changelog)).not.toContain('Highlights');
+	expect(renderHtml(changelog)).not.toContain('<details>');
+});
+
+test('json carries highlights as they are', () => {
+	const json = JSON.parse(renderJson(highlightChangelog()));
+	expect(json.releases[0].highlights[0]).toMatchObject({
+		slug: 'auth-revamp',
+		title: 'Auth revamp',
+	});
+	expect(json.releases[0].highlights[0].groups).toHaveLength(2);
 });
