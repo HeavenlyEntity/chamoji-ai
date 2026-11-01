@@ -87,7 +87,7 @@ export function parseCommit(raw: RawCommit): ParsedCommit {
 			type: null,
 			description: `Revert "${original.description}"`,
 			breaking: BREAKING_FOOTER.test(raw.body),
-			workstream: readWorkstream(original.trailers, raw.body),
+			...withWorkstream(readWorkstream(original.trailers, raw.body)),
 		};
 	}
 
@@ -157,8 +157,13 @@ export function parseCommit(raw: RawCommit): ParsedCommit {
 		description: text.trim(),
 		breaking: gitmoji === 'boom' || bang || BREAKING_FOOTER.test(raw.body),
 		trailers,
-		workstream: readWorkstream(trailers, raw.body),
+		...withWorkstream(readWorkstream(trailers, raw.body)),
 	};
+}
+
+/** The field only when there is one, so `--json` output has no `workstream: null`. */
+function withWorkstream(workstream: string | undefined): {workstream?: string} {
+	return workstream === undefined ? {} : {workstream};
 }
 
 /**
@@ -168,14 +173,14 @@ export function parseCommit(raw: RawCommit): ParsedCommit {
  * line after that. The first valid slug wins, and a line whose value isn't a
  * slug is skipped.
  */
-function readWorkstream(trailers: Trailer[], body: string): string | null {
+function readWorkstream(trailers: Trailer[], body: string): string | undefined {
 	const values = [
 		...trailers
 			.filter(trailer => trailer.key.toLowerCase() === 'workstream')
 			.map(trailer => trailer.value),
 		...body.split('\n').map(line => WORKSTREAM_LINE.exec(line.trim())?.[1]),
 	];
-	return values.find(value => value !== undefined && isSlug(value)) ?? null;
+	return values.find(value => value !== undefined && isSlug(value));
 }
 
 /**

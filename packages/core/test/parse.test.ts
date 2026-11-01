@@ -283,10 +283,10 @@ test('a Workstream line that is not a slug is skipped', () => {
 	expect(
 		parseCommit(raw('✨ Add login', {trailers: 'Workstream: Not A Slug\n'}))
 			.workstream,
-	).toBeNull();
+	).toBeUndefined();
 	expect(
 		parseCommit(raw('✨ Add login', {trailers: 'Workstream: \n'})).workstream,
-	).toBeNull();
+	).toBeUndefined();
 	expect(
 		parseCommit(
 			raw('✨ Add login', {
@@ -306,11 +306,15 @@ test('a Workstream line that is not a slug is skipped', () => {
 		parseCommit(
 			raw('✨ Add login', {trailers: `Workstream: ${'a'.repeat(65)}\n`}),
 		).workstream,
-	).toBeNull();
+	).toBeUndefined();
 });
 
 test('a commit without the trailer has no workstream', () => {
-	expect(parseCommit(raw('✨ Add login')).workstream).toBeNull();
+	expect(parseCommit(raw('✨ Add login')).workstream).toBeUndefined();
+	expect(parseCommit(raw('✨ Add login'))).not.toHaveProperty('workstream');
+	expect(parseCommit(raw('Revert "✨ Add login"'))).not.toHaveProperty(
+		'workstream',
+	);
 	expect(
 		parseCommit(
 			raw('✨ Add login', {
@@ -318,7 +322,7 @@ test('a commit without the trailer has no workstream', () => {
 				trailers: 'Refs: #4\n',
 			}),
 		).workstream,
-	).toBeNull();
+	).toBeUndefined();
 });
 
 test('a revert keeps the workstream of its own body', () => {

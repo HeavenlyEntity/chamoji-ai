@@ -135,16 +135,10 @@ test('json round-trips', () => {
 	const changelog = sample('https://github.com/acme/widgets');
 	const json = renderJson(changelog);
 	expect(json.endsWith('\n')).toBe(true);
-	// The sample names no workstream, and a null one is left out of the JSON.
-	const withoutWorkstreams = JSON.parse(
-		JSON.stringify(changelog, (key, value: unknown) =>
-			key === 'workstream' ? undefined : value,
-		),
-	) as unknown;
-	expect(JSON.parse(json)).toEqual(withoutWorkstreams);
+	expect(JSON.parse(json)).toEqual(changelog);
 });
 
-test('json leaves out a null workstream and keeps a named one', () => {
+test('json has no workstream key for a commit without one', () => {
 	const changelog = sample();
 	const commits = changelog.releases[0]!.groups[0]!.commits;
 	commits.push(
