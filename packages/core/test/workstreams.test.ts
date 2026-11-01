@@ -1,4 +1,11 @@
-import {mkdir, readFile, writeFile} from 'node:fs/promises';
+import {
+	mkdir,
+	readdir,
+	readFile,
+	rm,
+	symlink,
+	writeFile,
+} from 'node:fs/promises';
 import path from 'node:path';
 import {afterEach, expect, test} from 'vitest';
 import {
@@ -431,3 +438,78 @@ test('a newline in the active file never reaches the message', async () => {
 	expect(await stampWorkstream(repo.dir, message)).toBeNull();
 	expect(await readFile(message, 'utf8')).toBe('✨ Add sign-in\n');
 });
+
+// Nine levels of aliases that each double: parses cleanly, then `toJS` throws.
+const BOMB = [
+	'a: &a [x, x, x, x, x, x, x, x, x]',
+	...'bcdefghi'
+		.split('')
+		.map(
+			(name, index) =>
+				`${name}: &${name} [${Array(9).fill(`*${'abcdefgh'[index]}`).join(', ')}]`,
+		),
+	'workstreams: *i',
+	'',
+].join('\n');
+
+test('an alias bomb is refused as a WorkstreamError by readers and writers', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await writeWorkstreams(repo.dir, BOMB);
+	await gitOutput(repo.dir, ['add', '.']);
+	await gitOutput(repo.dir, ['commit', '-q', '-m', '💥 Bomb']);
+	await expect(readWorkstreams(repo.dir)).rejects.toThrow(WorkstreamError);
+	await expect(readWorkstreamsAt(repo.dir, 'HEAD')).rejects.toThrow(
+		WorkstreamError,
+	);
+	await expect(addWorkstream(repo.dir, {title: 'New'})).rejects.toThrow(
+		WorkstreamError,
+	);
+	await expect(setWorkstreamStatus(repo.dir, 'a', 'shipped')).rejects.toThrow(
+		WorkstreamError,
+	);
+	expect(await readFile(fileIn(repo.dir), 'utf8')).toBe(BOMB);
+});
+
+test.skipIf(process.platform === 'win32')(
+	'writers refuse a workstreams file that is a symlink, and leave its target alone',
+	async () => {
+		repo = await createRepo([{commit: '🎉 Init'}]);
+		const target = `${repo.dir}.outside.yml`;
+		const text = 'workstreams:\n  a:\n    title: A\n    status: active\n';
+		await writeFile(target, text);
+		await mkdir(path.dirname(fileIn(repo.dir)), {recursive: true});
+		await symlink(target, fileIn(repo.dir));
+		try {
+			await expect(addWorkstream(repo.dir, {title: 'New'})).rejects.toThrow(
+				WorkstreamError,
+			);
+			await expect(
+				setWorkstreamStatus(repo.dir, 'a', 'shipped'),
+			).rejects.toThrow(WorkstreamError);
+			expect(await readFile(target, 'utf8')).toBe(text);
+		} finally {
+			await rm(target, {force: true});
+		}
+	},
+);
+
+test.skipIf(process.platform === 'win32')(
+	'writers refuse a .chamoji directory that is a symlink, and leave its target alone',
+	async () => {
+		repo = await createRepo([{commit: '🎉 Init'}]);
+		const outside = `${repo.dir}.outside`;
+		await mkdir(outside);
+		await symlink(outside, path.join(repo.dir, '.chamoji'));
+		try {
+			await expect(addWorkstream(repo.dir, {title: 'New'})).rejects.toThrow(
+				WorkstreamError,
+			);
+			await expect(
+				setWorkstreamStatus(repo.dir, 'new', 'shipped'),
+			).rejects.toThrow(WorkstreamError);
+			expect(await readdir(outside)).toEqual([]);
+		} finally {
+			await rm(outside, {recursive: true, force: true});
+		}
+	},
+);

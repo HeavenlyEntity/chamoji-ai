@@ -1,4 +1,4 @@
-import {mkdir, readFile, rm, writeFile} from 'node:fs/promises';
+import {lstat, mkdir, readFile, rm, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {Document, isMap, parseDocument} from 'yaml';
 import {assertRevision, runGit} from './git.js';
@@ -224,12 +224,35 @@ async function readFileIfExists(file: string): Promise<string | undefined> {
 
 /** Parses the file for editing; absent is empty. Refuses a corrupt file. */
 async function openDocument(file: string): Promise<Document> {
+	await refuseSymlinks(file);
 	const text = await readFileIfExists(file);
 	if (text === undefined) return new Document();
-	return checked(text);
+	return checked(text).document;
 }
 
-function checked(text: string): Document {
+/**
+ * A cloned repo can commit `.chamoji` or the file as a symlink, and writing
+ * through it would reach outside the repo. A missing path is fine.
+ */
+async function refuseSymlinks(file: string): Promise<void> {
+	for (const target of [path.dirname(file), file]) {
+		let isLink: boolean;
+		try {
+			isLink = (await lstat(target)).isSymbolicLink();
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+			throw error;
+		}
+
+		if (isLink) {
+			throw new WorkstreamError(
+				`${target === file ? WORKSTREAMS_FILE : '.chamoji'} is a symlink, so chamoji will not write through it`,
+			);
+		}
+	}
+}
+
+function checked(text: string): {document: Document; data: unknown} {
 	const document = parseDocument(text);
 	const [problem] = document.errors;
 	if (problem) {
@@ -238,7 +261,16 @@ function checked(text: string): Document {
 		);
 	}
 
-	const data: unknown = document.toJS();
+	let data: unknown;
+	try {
+		data = document.toJS();
+	} catch (error) {
+		// Aliases can expand without limit; yaml refuses with a ReferenceError.
+		throw new WorkstreamError(
+			`${WORKSTREAMS_FILE} cannot be read (${(error as Error).message})`,
+		);
+	}
+
 	const shapeOk =
 		data === null ||
 		(isPlain(data) &&
@@ -251,7 +283,7 @@ function checked(text: string): Document {
 		);
 	}
 
-	return document;
+	return {document, data};
 }
 
 function isPlain(value: unknown): value is Record<string, unknown> {
@@ -259,7 +291,7 @@ function isPlain(value: unknown): value is Record<string, unknown> {
 }
 
 function parseWorkstreams(text: string): Workstream[] {
-	const data = checked(text).toJS() as {workstreams?: unknown} | null;
+	const {data} = checked(text) as {data: {workstreams?: unknown} | null};
 	const entries = data?.workstreams;
 	if (typeof entries !== 'object' || entries === null) return [];
 	const found: Workstream[] = [];
