@@ -72,14 +72,18 @@ async function findWorkstream(
 	return workstreams.find(item => item.slug === slug);
 }
 
-/** Commit text can come from a clone, so none of it reaches the terminal raw. */
+/**
+ * Commit text can come from a clone, so none of it reaches the terminal raw.
+ * That goes for the hash and date too: a separator byte in an author name
+ * moves other text into those fields.
+ */
 function describe(
 	{shortHash, subject, authorName, date, card}: ParsedCommit,
 	workstream?: Pick<Workstream, 'title' | 'emoji' | 'status'>,
 ) {
 	const lines = [
-		`${shortHash} ${stripControl(subject)}`,
-		`${stripControl(authorName)}, ${date.slice(0, 10)}`,
+		`${stripControl(shortHash)} ${stripControl(subject)}`,
+		`${stripControl(authorName)}, ${stripControl(date).slice(0, 10)}`,
 		'',
 	];
 	const recorded = cardLines(card);

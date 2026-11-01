@@ -276,6 +276,12 @@ test.each([
 	['an unknown status', entry('bad', {status: 'done'})],
 	['an emoji that is not text', entry('bad', {emoji: 7})],
 	['a bad date', entry('bad', {updatedAt: 'soon'})],
+	['forged text for a date', entry('bad', {updatedAt: '1 (forged text)'})],
+	[
+		'an updatedAt nothing can compare',
+		entry('bad', {updatedAt: '10000-01-01T00:00:00Z'}),
+	],
+	['a date with no time', entry('bad', {updatedAt: '2026-01-01'})],
 	['commits that are not a list', entry('bad', {commits: {}})],
 	['a commit that is not an object', entry('bad', {commits: ['x']})],
 	['a bad hash', entry('bad', {commits: [{...commit, hash: '--all'}]})],
@@ -286,6 +292,14 @@ test.each([
 	[
 		'a commit with a bad date',
 		entry('bad', {commits: [{...commit, date: 'x'}]}),
+	],
+	[
+		'forged text for a commit date',
+		entry('bad', {commits: [{...commit, date: '1 (forged text)'}]}),
+	],
+	[
+		'a newline after a commit date',
+		entry('bad', {commits: [{...commit, date: `${commit.date}\n`}]}),
 	],
 	[
 		'a card missing a list',
@@ -556,4 +570,179 @@ test('runGitWithInput feeds stdin and reports git failing', async () => {
 	await expect(
 		runGitWithInput(['mktree'], dir, 'not a tree line\n'),
 	).rejects.toMatchObject({stderr: expect.any(String)});
+});
+
+/** Puts a commit with exactly this date on main, as a peer's tools could. */
+async function commitDated(dir: string, stamp: string): Promise<string> {
+	const tree = (await gitOutput(dir, ['rev-parse', 'HEAD^{tree}'])).trim();
+	const parent = (await gitOutput(dir, ['rev-parse', 'HEAD'])).trim();
+	const author = `Peer <p@example.com> ${stamp}`;
+	const text = `tree ${tree}\nparent ${parent}\nauthor ${author}\ncommitter ${author}\n\n🐛 Odd\n\nWhy: kept anyway\nWorkstream: auth\n`;
+	const args = ['hash-object', '-t', 'commit', '-w', '--stdin', '--literally'];
+	const hash = (await runGitWithInput(args, dir, text)).trim();
+	await gitOutput(dir, ['update-ref', 'refs/heads/main', hash]);
+	return hash;
+}
+
+test('a commit dated past year 9999 stays in the entry', async () => {
+	const dir = await shippedRepo();
+	await gitOutput(dir, [
+		'commit',
+		'-q',
+		'--allow-empty',
+		'--date=@253402300800 +0000',
+		'-m',
+		'🐛 Peer\n\nWorkstream: auth',
+	]);
+	const saved = await snapshotWorkstream(dir, 'auth');
+	expect(saved.commits).toHaveLength(3);
+	expect(saved.commits.map(commit => commit.date)).toContain(
+		'10000-01-01T00:00:00Z',
+	);
+	expect(await readMemory(dir, 'auth')).toEqual(saved);
+	expect((await listMemory(dir)).map(item => item.slug)).toEqual(['auth']);
+});
+
+test.each([
+	['+9900', '1767225600 +9900', '2026-01-05T03:00:00+99:00'],
+	['+2500', '1767225600 +2500', '2026-01-02T01:00:00+25:00'],
+	['+051800', '1767225600 +051800', '2026-01-22T14:00:00+518:00'],
+	['a huge stamp', '99999999999999 +0000', '3170843-11-07T09:46:39Z'],
+])('a commit with %s stays in the entry', async (_name, stamp, date) => {
+	const dir = await shippedRepo();
+	const hash = await commitDated(dir, stamp);
+	const saved = await snapshotWorkstream(dir, 'auth');
+	expect(saved.commits.find(commit => commit.hash === hash)?.date).toBe(date);
+	expect(await readMemory(dir, 'auth')).toEqual(saved);
+	// And it doesn't block the next one.
+	await expect(snapshotWorkstream(dir, 'auth')).resolves.toBeDefined();
+});
+
+test.each([
+	['a negative stamp', '-100 +0000'],
+	['no stamp', ''],
+])('a commit with %s is kept at the epoch', async (_name, stamp) => {
+	const dir = await shippedRepo();
+	const hash = await commitDated(dir, stamp);
+	const saved = await snapshotWorkstream(dir, 'auth');
+	const found = saved.commits.find(commit => commit.hash === hash);
+	expect(found?.date).toBe('1970-01-01T00:00:00Z');
+	expect(found?.card?.why).toEqual(['kept anyway']);
+	expect(await readMemory(dir, 'auth')).toEqual(saved);
+});
+
+test('a date that JavaScript cannot read sorts last, in a stable order', async () => {
+	const dir = await shippedRepo();
+	await commitDated(dir, '1767225600 +9900');
+	await commitDated(dir, '253402300800 +0000');
+	const saved = await snapshotWorkstream(dir, 'auth');
+	expect(saved.commits.map(commit => commit.subject)).toEqual([
+		'🐛 Fix login',
+		'✨ Add login',
+		'🐛 Odd',
+		'🐛 Odd',
+	]);
+});
+
+test('a snapshot that would not read back is refused and the old entry stays', async () => {
+	const dir = await shippedRepo();
+	const saved = await snapshotWorkstream(dir, 'auth');
+	const tip = await gitOutput(dir, ['rev-parse', MEMORY_REF]);
+	// toISOString writes this year as +010000, which isn't a date git gives.
+	vi.useFakeTimers({toFake: ['Date']});
+	vi.setSystemTime(new Date(Date.UTC(10_000, 0, 1)));
+	try {
+		await expect(snapshotWorkstream(dir, 'auth')).rejects.toBeInstanceOf(
+			MemoryError,
+		);
+	} finally {
+		vi.useRealTimers();
+	}
+
+	expect(await gitOutput(dir, ['rev-parse', MEMORY_REF])).toBe(tip);
+	expect(await readMemory(dir, 'auth')).toEqual(saved);
+});
+
+test('a tombstone hides an entry beside it, and purge still clears it', async () => {
+	const dir = await shippedRepo();
+	await plant(dir, {
+		'purged/gone': '',
+		'workstreams/gone.json': entry('gone'),
+		'archive/gone.json': entry('gone'),
+		'workstreams/fine.json': entry('fine'),
+	});
+	expect(
+		(await listMemory(dir, {archived: true})).map(item => item.slug),
+	).toEqual(['fine']);
+	expect(await readMemory(dir, 'gone')).toBeUndefined();
+	await expect(archiveMemory(dir, 'gone')).rejects.toThrow(
+		'No memory for "gone"',
+	);
+
+	await purgeMemory(dir, 'gone');
+	const tree = await readTree(dir, MEMORY_REF);
+	expect([...tree.keys()].sort()).toEqual([
+		'purged/gone',
+		'workstreams/fine.json',
+	]);
+});
+
+test.each([
+	['Z', '2026-01-01T00:00:00Z'],
+	['an offset', '2026-01-01T05:30:00+05:30'],
+	['a negative offset', '2026-01-01T05:30:00-08:00'],
+	['milliseconds', '2026-01-01T00:00:00.123Z'],
+	['a five-digit year', '10000-01-01T00:00:00Z'],
+	['a seven-digit year', '3170843-11-07T09:46:39Z'],
+	['an out-of-range offset', '2026-01-05T03:00:00+99:00'],
+	['a three-digit offset', '2026-01-22T14:00:00+518:00'],
+])('a commit date with %s reads back', async (_name, date) => {
+	const dir = await shippedRepo();
+	await plant(dir, {
+		'workstreams/fine.json': entry('fine', {commits: [{...commit, date}]}),
+	});
+	expect((await readMemory(dir, 'fine'))?.commits[0]?.date).toBe(date);
+});
+
+test('repeated hashes in an entry read as one commit', async () => {
+	const dir = await shippedRepo();
+	await plant(dir, {
+		'workstreams/fine.json': entry('fine', {
+			commits: [commit, {...commit, subject: 'again'}, commit],
+		}),
+	});
+	const found = await readMemory(dir, 'fine');
+	expect(found?.commits.map(item => item.hash)).toEqual([hash]);
+});
+
+test("a separator in a commit body can't put a forged record in memory", async () => {
+	const field = '\u001F';
+	repo = await createRepo([
+		{commit: '🎉 Init', files: WORKSTREAMS},
+		{commit: '✨ Add login', body: 'Workstream: auth'},
+		{
+			commit: '🐛 Odd body',
+			body: [
+				`Text\u001Enot-a-hash${field}s${field}n${field}e${field}2026-01-01T00:00:00Z${field}Forged${field}b${field}Workstream: auth`,
+				`More\u001E${'b'.repeat(40)}\u001EEnd`,
+			].join('\n'),
+		},
+	]);
+	const saved = await snapshotWorkstream(repo.dir, 'auth');
+	expect(saved.commits.map(item => item.subject)).toEqual(['✨ Add login']);
+	expect(await readMemory(repo.dir, 'auth')).toEqual(saved);
+});
+
+test('a separator in an author name leaves a readable entry', async () => {
+	vi.stubEnv('GIT_AUTHOR_NAME', 'a\u001Fb');
+	repo = await createRepo([
+		{commit: '🎉 Init', files: WORKSTREAMS},
+		{commit: '✨ Add login', body: 'Workstream: auth'},
+	]);
+	vi.unstubAllEnvs();
+	const saved = await snapshotWorkstream(repo.dir, 'auth');
+	expect(saved.commits).toHaveLength(1);
+	expect(saved.commits[0]!.hash).toMatch(/^[0-9a-f]{40}$/);
+	expect(saved.commits[0]!.date).toBe('1970-01-01T00:00:00Z');
+	expect(await readMemory(repo.dir, 'auth')).toEqual(saved);
 });

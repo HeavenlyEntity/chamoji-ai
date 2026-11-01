@@ -1,6 +1,6 @@
 import {readCommits, runGit, runGitWithInput} from './git.js';
 import {parseCommit} from './parse.js';
-import type {IntentCard} from './types.js';
+import type {IntentCard, RawCommit} from './types.js';
 import {
 	STATUSES,
 	isSlug,
@@ -11,6 +11,17 @@ import {
 export const MEMORY_REF = 'refs/chamoji/memory';
 
 const OBJECT_ID = /^[0-9a-f]{40,64}$/;
+
+/**
+ * ISO 8601 as `%aI` writes it. A commit's stamp is whatever its author's tools
+ * put there, and git limits neither the year nor the offset, so this allows
+ * both to run long. `Date.parse` refuses some dates that pass.
+ */
+const GIT_DATE =
+	/^\d{4,}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2,}:\d{2})$/;
+
+/** Stands in for a date git can't print: a negative or missing stamp. */
+const NO_DATE = '1970-01-01T00:00:00Z';
 
 const AUTHOR = {name: 'chamoji', email: 'noreply@chamoji.dev'};
 
@@ -249,7 +260,12 @@ async function writeBlob(cwd: string, text: string): Promise<string> {
 	return (await runGitWithInput(args, cwd, text)).trim();
 }
 
+/** Refuses an entry it couldn't read back, so a good one is never replaced by it. */
 async function writeEntry(cwd: string, entry: MemoryEntry): Promise<string> {
+	if (!toEntry(entry, entry.slug, entry.archived)) {
+		throw new MemoryError(`The entry for ${entry.slug} would not read back`);
+	}
+
 	return writeBlob(cwd, `${JSON.stringify(entry, null, 2)}\n`);
 }
 
@@ -320,12 +336,16 @@ function slugOf(file: string): string {
 	return file.slice(file.indexOf('/') + 1).replace(/\.json$/, '');
 }
 
-/** The entry for `slug` in `tree`. A live one comes before an archived one. */
+/**
+ * The entry for `slug` in `tree`. A live one comes before an archived one, and
+ * a tombstone beats both.
+ */
 async function load(
 	cwd: string,
 	tree: Map<string, string>,
 	slug: string,
 ): Promise<MemoryEntry | undefined> {
+	if (tree.has(purgedPath(slug))) return undefined;
 	const archived = !tree.has(livePath(slug));
 	const blob = tree.get(archived ? archivePath(slug) : livePath(slug));
 	if (blob === undefined) return undefined;
@@ -358,7 +378,12 @@ function toEntry(
 	if (typeof title !== 'string' || title.trim() === '') return undefined;
 	if (emoji !== undefined && typeof emoji !== 'string') return undefined;
 	if (!STATUSES.includes(status as WorkstreamStatus)) return undefined;
-	if (!isDate(updatedAt) || !Array.isArray(commits)) return undefined;
+	// A merge compares these, so unlike a commit's date it must be a real time.
+	if (!isDate(updatedAt) || Number.isNaN(Date.parse(updatedAt))) {
+		return undefined;
+	}
+
+	if (!Array.isArray(commits)) return undefined;
 	const parsed = commits.map(commit => toCommit(commit));
 	if (!parsed.every(commit => commit !== undefined)) return undefined;
 	return {
@@ -369,7 +394,7 @@ function toEntry(
 		status: status as WorkstreamStatus,
 		updatedAt,
 		archived,
-		commits: parsed,
+		commits: mergeCommits(parsed, []),
 	};
 }
 
@@ -403,7 +428,7 @@ function isTextList(value: unknown): value is string[] {
 }
 
 function isDate(value: unknown): value is string {
-	return typeof value === 'string' && !Number.isNaN(Date.parse(value));
+	return typeof value === 'string' && GIT_DATE.test(value);
 }
 
 /** Every commit on HEAD that names `slug`, carrying what memory keeps of it. */
@@ -414,24 +439,39 @@ async function commitsNaming(
 	if ((await headOf(cwd, 'HEAD')) === undefined) return []; // No commits yet.
 	const raw = await readCommits(cwd, 'HEAD');
 	return raw
+		.filter(commit => isWhole(commit))
 		.map(commit => parseCommit(commit))
 		.filter(commit => commit.workstream === slug)
 		.map(({hash, subject, date, card}) => ({
 			hash,
 			subject,
-			date,
+			date: isDate(date) ? date : NO_DATE,
 			...(card === undefined ? {} : {card}),
 		}));
 }
 
-/** The union by hash, newest first. What HEAD says now beats what was kept. */
+/**
+ * A separator byte in a commit's text can split its record in `readCommits`.
+ * The pieces after the split aren't commits, and may not have every field.
+ */
+function isWhole({hash, body}: RawCommit): boolean {
+	return OBJECT_ID.test(hash) && body !== undefined;
+}
+
+/**
+ * The union by hash, newest first, with what HEAD says now beating what was
+ * kept. A date JavaScript can't read sorts as the oldest.
+ */
 function mergeCommits(
 	kept: MemoryCommit[],
 	current: MemoryCommit[],
 ): MemoryCommit[] {
 	const byHash = new Map(kept.map(commit => [commit.hash, commit]));
 	for (const commit of current) byHash.set(commit.hash, commit);
-	return [...byHash.values()].sort(
-		(a, b) => Date.parse(b.date) - Date.parse(a.date),
-	);
+	return [...byHash.values()].sort((a, b) => time(b.date) - time(a.date));
+}
+
+function time(date: string): number {
+	const value = Date.parse(date);
+	return Number.isNaN(value) ? 0 : value;
 }
