@@ -1,0 +1,311 @@
+import {mkdir, readFile, rm, writeFile} from 'node:fs/promises';
+import path from 'node:path';
+import {Document, isMap, parseDocument} from 'yaml';
+import {assertRevision, runGit} from './git.js';
+
+export const WORKSTREAMS_FILE = '.chamoji/workstreams.yml';
+
+const STATUSES = ['active', 'shipped', 'dropped'] as const;
+const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const MAX_SLUG = 64;
+
+export type WorkstreamStatus = (typeof STATUSES)[number];
+
+export type Workstream = {
+	slug: string;
+	title: string;
+	emoji?: string;
+	description?: string;
+	status: WorkstreamStatus;
+	links?: string[];
+};
+
+/** The workstreams file is unusable, or a request names a bad workstream. */
+export class WorkstreamError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = 'WorkstreamError';
+	}
+}
+
+/** `Auth revamp!` becomes `auth-revamp`. Throws when nothing usable is left. */
+export function slugify(title: string): string {
+	const slug = title
+		.normalize('NFKD')
+		.replace(/\p{M}/gu, '')
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, '-')
+		.replace(/^-+|-+$/g, '')
+		.slice(0, MAX_SLUG)
+		.replace(/-+$/, '');
+	if (slug === '') {
+		throw new WorkstreamError(`"${title}" has no letters or digits for a slug`);
+	}
+
+	return slug;
+}
+
+export function isSlug(value: string): boolean {
+	return value.length <= MAX_SLUG && SLUG.test(value);
+}
+
+/** The workstreams in the working tree; `[]` when the file is absent. */
+export async function readWorkstreams(cwd: string): Promise<Workstream[]> {
+	const text = await readFileIfExists(await workstreamsPath(cwd));
+	return text === undefined ? [] : parseWorkstreams(text);
+}
+
+/** The workstreams as committed at `ref`; `[]` when the file is absent there. */
+export async function readWorkstreamsAt(
+	cwd: string,
+	ref: string,
+): Promise<Workstream[]> {
+	await assertRevision(cwd, ref);
+	let text: string;
+	try {
+		text = await runGit(['show', `${ref}:${WORKSTREAMS_FILE}`], cwd);
+	} catch {
+		return [];
+	}
+
+	return parseWorkstreams(text);
+}
+
+/** Adds an active workstream named by `input.title` and stages the file. */
+export async function addWorkstream(
+	cwd: string,
+	input: {title: string; emoji?: string; description?: string},
+): Promise<Workstream> {
+	const slug = slugify(input.title);
+	const file = await workstreamsPath(cwd);
+	const document = await openDocument(file);
+	if (document.hasIn(['workstreams', slug])) {
+		throw new WorkstreamError(`A workstream named "${slug}" already exists`);
+	}
+
+	const entry: Record<string, string> = {title: input.title.trim()};
+	if (input.emoji) entry['emoji'] = input.emoji;
+	if (input.description) entry['description'] = input.description;
+	entry['status'] = 'active';
+	if (!isMap(document.get('workstreams', true))) {
+		document.set('workstreams', document.createNode({}));
+	}
+
+	document.setIn(['workstreams', slug], entry);
+	await save(cwd, file, document);
+	return {slug, ...entry, status: 'active'} as Workstream;
+}
+
+export async function setWorkstreamStatus(
+	cwd: string,
+	slug: string,
+	status: WorkstreamStatus,
+): Promise<Workstream> {
+	const file = await workstreamsPath(cwd);
+	const document = await openDocument(file);
+	const current = parseWorkstreams(document.toString()).find(
+		item => item.slug === slug,
+	);
+	if (!current) {
+		throw new WorkstreamError(`No workstream named "${slug}"`);
+	}
+
+	document.setIn(['workstreams', slug, 'status'], status);
+	await save(cwd, file, document);
+	return {...current, status};
+}
+
+/**
+ * The workstream this worktree is in, or null. It is only returned while the
+ * slug is `active` in the working-tree file, so a shipped or dropped
+ * workstream stops stamping on its own.
+ */
+export async function getActive(cwd: string): Promise<string | null> {
+	let text: string | undefined;
+	try {
+		text = await readFileIfExists(await activePath(cwd));
+	} catch {
+		return null;
+	}
+
+	const slug = text?.trim();
+	if (slug === undefined || !isSlug(slug)) return null;
+	const found = (await readWorkstreams(cwd)).find(item => item.slug === slug);
+	return found?.status === 'active' ? slug : null;
+}
+
+/** Sets this worktree's active workstream, or clears it with `null`. */
+export async function setActive(
+	cwd: string,
+	slug: string | null,
+): Promise<void> {
+	const file = await activePath(cwd);
+	if (slug === null) {
+		await rm(file, {force: true});
+		return;
+	}
+
+	if (!isSlug(slug)) {
+		throw new WorkstreamError(`"${slug}" is not a valid workstream slug`);
+	}
+
+	await mkdir(path.dirname(file), {recursive: true});
+	await writeFile(file, `${slug}\n`);
+}
+
+/**
+ * Whether `prepare-commit-msg` should stamp. Git's `source` is `message` for
+ * `-m`, `template` for a template, and `merge`, `squash` or `commit` for
+ * messages that already exist.
+ */
+export function shouldStamp(input: {
+	source?: string;
+	rebasing: boolean;
+}): boolean {
+	return (
+		!input.rebasing &&
+		(input.source === undefined ||
+			input.source === 'message' ||
+			input.source === 'template')
+	);
+}
+
+/**
+ * Adds `Workstream: <slug>` to the commit message in `messageFile` for the
+ * active workstream. A message that already has the trailer keeps it. Returns
+ * the slug it stamped, or null when it changed nothing.
+ */
+export async function stampWorkstream(
+	cwd: string,
+	messageFile: string,
+): Promise<string | null> {
+	const slug = await getActive(cwd);
+	if (slug === null) return null;
+	const file = path.resolve(cwd, messageFile);
+	const before = await readFile(file, 'utf8');
+	await runGit(
+		[
+			'interpret-trailers',
+			'--in-place',
+			'--if-exists',
+			'doNothing',
+			'--trailer',
+			`Workstream: ${slug}`,
+			file,
+		],
+		cwd,
+	);
+	return (await readFile(file, 'utf8')) === before ? null : slug;
+}
+
+async function topLevel(cwd: string): Promise<string> {
+	return (await runGit(['rev-parse', '--show-toplevel'], cwd)).trim();
+}
+
+async function workstreamsPath(cwd: string): Promise<string> {
+	return path.join(await topLevel(cwd), WORKSTREAMS_FILE);
+}
+
+async function activePath(cwd: string): Promise<string> {
+	const gitDir = (
+		await runGit(['rev-parse', '--absolute-git-dir'], cwd)
+	).trim();
+	return path.join(gitDir, 'chamoji', 'active');
+}
+
+async function readFileIfExists(file: string): Promise<string | undefined> {
+	try {
+		return await readFile(file, 'utf8');
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+		throw error;
+	}
+}
+
+/** Parses the file for editing; absent is empty. Refuses a corrupt file. */
+async function openDocument(file: string): Promise<Document> {
+	const text = await readFileIfExists(file);
+	if (text === undefined) return new Document();
+	return checked(text);
+}
+
+function checked(text: string): Document {
+	const document = parseDocument(text);
+	const [problem] = document.errors;
+	if (problem) {
+		throw new WorkstreamError(
+			`${WORKSTREAMS_FILE} is not valid YAML (${problem.message.split('\n')[0]}). Fix it, or resolve any merge conflict, and try again.`,
+		);
+	}
+
+	const data: unknown = document.toJS();
+	const shapeOk =
+		data === null ||
+		(isPlain(data) &&
+			(data['workstreams'] === undefined ||
+				data['workstreams'] === null ||
+				isPlain(data['workstreams'])));
+	if (!shapeOk) {
+		throw new WorkstreamError(
+			`${WORKSTREAMS_FILE} must hold a "workstreams" mapping`,
+		);
+	}
+
+	return document;
+}
+
+function isPlain(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseWorkstreams(text: string): Workstream[] {
+	const data = checked(text).toJS() as {workstreams?: unknown} | null;
+	const entries = data?.workstreams;
+	if (typeof entries !== 'object' || entries === null) return [];
+	const found: Workstream[] = [];
+	for (const [slug, raw] of Object.entries(entries)) {
+		const entry = toWorkstream(slug, raw);
+		if (entry) found.push(entry);
+	}
+
+	return found;
+}
+
+function toWorkstream(slug: string, raw: unknown): Workstream | undefined {
+	if (!isSlug(slug) || typeof raw !== 'object' || raw === null) {
+		return undefined;
+	}
+
+	const {title, emoji, description, status, links} = raw as Record<
+		string,
+		unknown
+	>;
+	if (typeof title !== 'string' || title.trim() === '') return undefined;
+	if (!STATUSES.includes(status as WorkstreamStatus)) return undefined;
+	const workstream: Workstream = {
+		slug,
+		title: title.trim(),
+		status: status as WorkstreamStatus,
+	};
+	if (typeof emoji === 'string' && emoji !== '') workstream.emoji = emoji;
+	if (typeof description === 'string' && description !== '') {
+		workstream.description = description;
+	}
+
+	if (Array.isArray(links)) {
+		const urls = links.filter(link => typeof link === 'string');
+		if (urls.length > 0) workstream.links = urls;
+	}
+
+	return workstream;
+}
+
+async function save(
+	cwd: string,
+	file: string,
+	document: Document,
+): Promise<void> {
+	await mkdir(path.dirname(file), {recursive: true});
+	await writeFile(file, document.toString());
+	await runGit(['add', '--', file], cwd);
+}

@@ -63,3 +63,19 @@ export {
 	type StagedChanges,
 	type StagedFile,
 } from './staged.js';
+export {
+	WORKSTREAMS_FILE,
+	WorkstreamError,
+	addWorkstream,
+	getActive,
+	isSlug,
+	readWorkstreams,
+	readWorkstreamsAt,
+	setActive,
+	setWorkstreamStatus,
+	shouldStamp,
+	slugify,
+	stampWorkstream,
+	type Workstream,
+	type WorkstreamStatus,
+} from './workstreams.js';
