@@ -1,5 +1,12 @@
 # Changelog
 
+## [v0.10.1](https://github.com/HeavenlyEntity/chamoji-ai/compare/v0.10.0...v0.10.1) - 2026-11-01
+
+### Fixed
+
+- 🐛 Give ws switch the same hook check as ws start ([b645381](https://github.com/HeavenlyEntity/chamoji-ai/commit/b645381085f8c8c7c1f6ea3bd04c27dbcb177e6a))
+- 🐛 Stop ws start promising stamps when no hook will add them ([fdacc78](https://github.com/HeavenlyEntity/chamoji-ai/commit/fdacc781d8f6e8ab1c5d0ae361f101b6887ddf3f))
+
 ## [v0.10.0](https://github.com/HeavenlyEntity/chamoji-ai/compare/v0.9.0...v0.10.0) - 2026-11-01
 
 ### Added
