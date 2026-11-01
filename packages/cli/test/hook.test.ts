@@ -1,5 +1,6 @@
 import {
 	access,
+	chmod,
 	constants,
 	mkdir,
 	readFile,
@@ -13,7 +14,12 @@ import {
 	gitOutput,
 	type FixtureRepo,
 } from '../../core/test/helpers/fixture-repo.js';
-import {HookError, installHook, uninstallHook} from '../src/hook.js';
+import {
+	HookError,
+	installHook,
+	readHookState,
+	uninstallHook,
+} from '../src/hook.js';
 import {run} from '../src/run.js';
 
 let repo: FixtureRepo | undefined;
@@ -36,6 +42,11 @@ else
   gitmoji --hook $1 $2
 fi
 `;
+
+async function writeExecutable(file: string, script: string) {
+	await writeFile(file, script);
+	await chmod(file, 0o755);
+}
 
 async function chamoji(argv: string[], cwd: string) {
 	let stdout = '';
@@ -115,6 +126,106 @@ test('with core.hooksPath (husky), install writes nothing and prints the line', 
 	expect(code).toBe(0);
 	expect(stdout).toContain('.husky/prepare-commit-msg');
 	expect(stdout).toContain('chamoji hook run "$@"');
+});
+
+test('hook state: no hook is missing, and chamoji’s own is installed', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	expect(await readHookState(repo.dir)).toBe('missing');
+	await installHook(repo.dir);
+	expect(await readHookState(repo.dir)).toBe('installed');
+});
+
+test('hook state follows the hook git runs from a subdirectory too', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await installHook(repo.dir);
+	const sub = path.join(repo.dir, 'packages', 'app');
+	await mkdir(sub, {recursive: true});
+	expect(await readHookState(sub)).toBe('installed');
+});
+
+test('hook state: a hook git would skip for not being executable is missing', async () => {
+	if (process.platform === 'win32') return;
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await installHook(repo.dir);
+	await chmod(hookFile(repo.dir), 0o644);
+	expect(await readHookState(repo.dir)).toBe('missing');
+});
+
+test('hook state: gitmoji-cli’s hook never stamps, so it is missing', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await writeExecutable(hookFile(repo.dir), GITMOJI_CLI_HOOK);
+	expect(await readHookState(repo.dir)).toBe('missing');
+});
+
+test('hook state: a hook that doesn’t show chamoji is unknown, as it may call it', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await writeExecutable(
+		hookFile(repo.dir),
+		'#!/bin/sh\n./scripts/check-ticket.sh "$1"\n',
+	);
+	expect(await readHookState(repo.dir)).toBe('unknown');
+});
+
+test('hook state: npx and package-name calls of chamoji count as installed', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await writeExecutable(
+		hookFile(repo.dir),
+		'#!/bin/sh\nnpx --yes @chamoji/cli hook run "$@"\n',
+	);
+	expect(await readHookState(repo.dir)).toBe('installed');
+});
+
+test('hook state with husky v9 reads the script in .husky, not the stub in .husky/_', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await mkdir(path.join(repo.dir, '.husky', '_'), {recursive: true});
+	await gitOutput(repo.dir, ['config', 'core.hooksPath', '.husky/_']);
+	await writeExecutable(
+		path.join(repo.dir, '.husky', '_', 'prepare-commit-msg'),
+		'#!/usr/bin/env sh\n. "$(dirname "$0")/h"\n',
+	);
+	expect(await readHookState(repo.dir)).toBe('missing');
+
+	await writeFile(
+		path.join(repo.dir, '.husky', 'prepare-commit-msg'),
+		'chamoji hook run "$@"\n',
+	);
+	expect(await readHookState(repo.dir)).toBe('installed');
+});
+
+test('hook state with an older husky reads the script core.hooksPath points at', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await mkdir(path.join(repo.dir, '.husky'));
+	await gitOutput(repo.dir, ['config', 'core.hooksPath', '.husky']);
+	expect(await readHookState(repo.dir)).toBe('missing');
+
+	await writeExecutable(
+		path.join(repo.dir, '.husky', 'prepare-commit-msg'),
+		'#!/bin/sh\nchamoji hook run "$@"\n',
+	);
+	expect(await readHookState(repo.dir)).toBe('installed');
+});
+
+test('hook state with lefthook reads lefthook’s config, since its hook is generated', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await writeExecutable(
+		hookFile(repo.dir),
+		'#!/bin/sh\n# lefthook\ncall_lefthook run "prepare-commit-msg" "$@"\n',
+	);
+	// Lefthook writes this hook for its own use even when no config asks for it.
+	expect(await readHookState(repo.dir)).toBe('unknown');
+
+	await writeFile(
+		path.join(repo.dir, 'lefthook.yml'),
+		'pre-commit:\n  commands:\n    lint:\n      run: pnpm lint\n',
+	);
+	expect(await readHookState(repo.dir)).toBe('unknown');
+
+	await mkdir(path.join(repo.dir, '.config'));
+	await writeFile(
+		path.join(repo.dir, '.config', 'lefthook.yml'),
+		'prepare-commit-msg:\n  commands:\n    chamoji:\n      run: chamoji hook run {1} {2} {3}\n      interactive: true\n',
+	);
+	expect(await readHookState(repo.dir)).toBe('installed');
 });
 
 test('uninstall removes only chamoji’s hook', async () => {

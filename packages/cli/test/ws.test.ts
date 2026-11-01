@@ -66,12 +66,11 @@ async function commitFile(dir: string, name: string, ...messages: string[]) {
 
 test('ws start adds the workstream, stages the file and makes it active', async () => {
 	repo = await createRepo([{commit: '🎉 Init'}]);
-	const {code, stdout, stderr} = await chamoji(
+	const {code, stdout} = await chamoji(
 		['ws', 'start', 'Auth revamp', '🔐'],
 		repo.dir,
 	);
 	expect(code).toBe(0);
-	expect(stderr).toBe('');
 	expect(stdout).toContain(
 		'Started auth-revamp. Staged .chamoji/workstreams.yml; your next commit records it.',
 	);
@@ -86,6 +85,59 @@ test('ws start adds the workstream, stages the file and makes it active', async 
 	expect(await gitOutput(repo.dir, ['rev-list', '--count', 'HEAD'])).toBe(
 		'1\n',
 	);
+});
+
+test('ws start with the hook installed says new commits get the trailer', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await chamoji(['hook', 'install'], repo.dir);
+	const {code, stdout, stderr} = await chamoji(
+		['ws', 'start', 'Auth revamp'],
+		repo.dir,
+	);
+	expect(code).toBe(0);
+	expect(stdout).toContain(
+		'New commits in this worktree get "Workstream: auth-revamp".',
+	);
+	expect(stderr).toBe('');
+});
+
+test('ws start with no hook says git commit won’t stamp, and that holds', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	const {code, stdout, stderr} = await chamoji(
+		['ws', 'start', 'Auth revamp'],
+		repo.dir,
+	);
+	expect(code).toBe(0);
+	expect(stdout).toContain('Started auth-revamp.');
+	expect(stdout).not.toContain('New commits');
+	expect(stderr).toContain('`git commit` won\'t add "Workstream: auth-revamp"');
+	expect(stderr).toContain('chamoji hook install');
+	expect(stderr).toContain('chamoji commit');
+	// It warns rather than installing a hook unasked.
+	expect(await readdir(path.join(repo.dir, '.git', 'hooks'))).not.toContain(
+		'prepare-commit-msg',
+	);
+
+	await commitFile(repo.dir, 'a.ts', '✨ Add sign-in');
+	expect(await message(repo.dir)).toBe('✨ Add sign-in\n\n');
+});
+
+test('ws start under another tool’s hook neither promises nor warns outright', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	const hook = path.join(repo.dir, '.git', 'hooks', 'prepare-commit-msg');
+	await writeFile(hook, '#!/bin/sh\n./scripts/check-ticket.sh "$1"\n');
+	await chmod(hook, 0o755);
+	const {code, stdout, stderr} = await chamoji(
+		['ws', 'start', 'Auth revamp'],
+		repo.dir,
+	);
+	expect(code).toBe(0);
+	expect(stdout).not.toContain('New commits');
+	expect(stderr).not.toContain("won't add");
+	expect(stderr).toContain(
+		'`git commit` adds "Workstream: auth-revamp" only if it does',
+	);
+	expect(stderr).toContain('chamoji hook install');
 });
 
 test('git commit -m through the installed hook gets the Workstream trailer', async () => {

@@ -14,6 +14,7 @@ import {
 	type Workstream,
 	type WorkstreamStatus,
 } from '@chamoji/core';
+import {readHookState} from './hook.js';
 import type {Io} from './run.js';
 
 /** Same code run.ts uses for a command that was used wrongly. */
@@ -90,10 +91,34 @@ async function start(io: Io, args: string[]): Promise<number> {
 		...(emoji === undefined ? {} : {emoji}),
 	});
 	await setActive(io.cwd, slug);
-	io.stdout(
-		`${staged('Started', slug)}New commits in this worktree get "Workstream: ${slug}".\n`,
-	);
+	io.stdout(staged('Started', slug));
+	await reportStamping(io, slug);
 	return 0;
+}
+
+/** Says what will stamp new commits, which only `installed` can promise. */
+async function reportStamping(io: Io, slug: string): Promise<void> {
+	const trailer = `"Workstream: ${slug}"`;
+	switch (await readHookState(io.cwd)) {
+		case 'installed': {
+			io.stdout(`New commits in this worktree get ${trailer}.\n`);
+			break;
+		}
+
+		case 'missing': {
+			io.stderr(
+				`chamoji: no hook runs chamoji here, so \`git commit\` won't add ${trailer}. Run \`chamoji hook install\`, or commit with \`chamoji commit\`.\n`,
+			);
+			break;
+		}
+
+		case 'unknown': {
+			io.stderr(
+				`chamoji: there's a prepare-commit-msg hook here, but chamoji can't tell whether it runs \`chamoji hook run\`. \`git commit\` adds ${trailer} only if it does; \`chamoji hook install\` shows how to add it.\n`,
+			);
+			break;
+		}
+	}
 }
 
 async function switchTo(
