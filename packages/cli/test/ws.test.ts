@@ -431,9 +431,23 @@ test('ws list shows slug, status, title and unreleased commits, with * on the ac
 		expect(code).toBe(0);
 		expect(stdout.split('\n').filter(Boolean)).toEqual([
 			'* auth-revamp  active   🔐 Auth revamp  2 commits',
-			'  billing      dropped  Billing  1 commit',
+			'  billing      dropped  Billing         1 commit',
 		]);
 	}
+});
+
+test('ws list lines up the commit counts however wide the emoji are', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await chamoji(['ws', 'start', 'Cleanup', '♻️'], repo.dir);
+	await chamoji(['ws', 'start', 'Dev', '👩‍💻'], repo.dir);
+	await chamoji(['ws', 'start', 'Plain title'], repo.dir);
+	const {stdout} = await chamoji(['ws', 'list'], repo.dir);
+	// Each emoji takes two columns, so the labels fill 11 columns.
+	expect(stdout.split('\n').filter(Boolean)).toEqual([
+		'  cleanup      active  ♻️ Cleanup   0 commits',
+		'  dev          active  👩‍💻 Dev       0 commits',
+		'* plain-title  active  Plain title  0 commits',
+	]);
 });
 
 test('ws list --json counts a workstream’s unreleased commits on this branch only', async () => {

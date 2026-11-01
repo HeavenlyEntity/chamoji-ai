@@ -179,14 +179,52 @@ async function list(io: Io, json: boolean): Promise<number> {
 	} else {
 		const slugWidth = Math.max(...rows.map(row => row.slug.length));
 		const statusWidth = Math.max(...rows.map(row => row.status.length));
-		for (const row of rows) {
+		const labels = rows.map(row => label(row));
+		const labelWidth = Math.max(...labels.map(text => columns(text)));
+		for (const [index, row] of rows.entries()) {
+			const text = labels[index] ?? '';
+			const pad = ' '.repeat(labelWidth - columns(text));
 			io.stdout(
-				`${row.active ? '*' : ' '} ${row.slug.padEnd(slugWidth)}  ${row.status.padEnd(statusWidth)}  ${label(row)}  ${row.commits} ${row.commits === 1 ? 'commit' : 'commits'}\n`,
+				`${row.active ? '*' : ' '} ${row.slug.padEnd(slugWidth)}  ${row.status.padEnd(statusWidth)}  ${text}${pad}  ${row.commits} ${row.commits === 1 ? 'commit' : 'commits'}\n`,
 			);
 		}
 	}
 
 	return 0;
+}
+
+/**
+ * How many terminal columns `text` takes, for padding: emoji and CJK are two
+ * wide, and joiners, marks and variation selectors take none. An estimate that
+ * handles what titles hold, without a width library.
+ */
+function columns(text: string): number {
+	const WIDE =
+		/[\p{Emoji_Presentation}\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+	let width = 0;
+	let narrowPictograph = false;
+	let joined = false;
+	for (const char of text) {
+		if (char === '‍') {
+			joined = true; // The next emoji is part of this one.
+		} else if (joined) {
+			joined = false;
+		} else if (char === '️') {
+			// Emoji style makes a text symbol such as ♻ two wide.
+			if (narrowPictograph) width += 1;
+			narrowPictograph = false;
+		} else if (/\p{M}/u.test(char)) {
+			narrowPictograph = false;
+		} else if (WIDE.test(char)) {
+			width += 2;
+			narrowPictograph = false;
+		} else {
+			width += 1;
+			narrowPictograph = /\p{Extended_Pictographic}/u.test(char);
+		}
+	}
+
+	return width;
 }
 
 /** Title and emoji come from a file a clone can write, so no control characters. */
