@@ -38,7 +38,7 @@ These apply to every milestone. A plan that breaks one needs a written reason.
 | 4   | Commit composer and git hook        | 2 Retention                | Retention   | L    | ✅ Shipped in 0.7.0                            | [plan](superpowers/plans/2026-10-28-milestone-4-commit-composer.md)     |
 | 5   | Jev in the composer                 | 2 Retention                | Retention   | M    | ✅ Shipped in 0.8.0                            | [plan](superpowers/plans/2026-10-28-milestone-5-jev-in-the-composer.md) |
 | 6   | Workstreams                         | 3 Differentiation          | Retention   | L    | ✅ Shipped in 0.10.0 (dogfooding left)         | [plan](superpowers/plans/2026-10-31-milestone-6-workstreams.md)         |
-| 7   | Project memory                      | 3 Differentiation          | Retention   | L    | Planned                                        | —                                                                       |
+| 7   | Project memory                      | 3 Differentiation          | Retention   | L    | 🚧 Built, release pending                      | [plan](superpowers/plans/2026-11-01-milestone-7-project-memory.md)      |
 | 8   | Review packets                      | 3 Differentiation          | Expansion   | L    | Planned                                        | —                                                                       |
 | 9   | Retroactive grouping                | 3 Differentiation          | Activation  | M    | Planned                                        | —                                                                       |
 | 10  | Editor extension                    | 4 Surfaces                 | Acquisition | L    | Planned                                        | —                                                                       |
@@ -67,9 +67,10 @@ We use every release on our own projects before anyone else does. If something a
 
 **Repos using it:**
 
-| Repo                          | Since | How                                                                                                                                                                                 | Friction found                |
-| ----------------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
-| chamoji-ai (our product repo) | 0.1.0 | Generates its own `CHANGELOG.md`; since 0.3.0, `pnpm release` picks the version, bumps both packages, writes the changelog, commits and tags; since 0.5.0 it runs `chamoji release` | See the milestone 1.6 results |
+| Repo                          | Since                                   | How                                                                                                                                                                                                                                                                                | Friction found                |
+| ----------------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| chamoji-ai (our product repo) | 0.1.0                                   | Generates its own `CHANGELOG.md`; since 0.3.0, `pnpm release` picks the version, bumps both packages, writes the changelog, commits and tags; since 0.5.0 it runs `chamoji release`                                                                                                | See the milestone 1.6 results |
+| chamoji-ai, milestone 7 build | the `project-memory` branch, unreleased | Every commit on the branch carries a `Why:` line and a `Workstream: project-memory` trailer, written with the milestone's own hook. The MCP server and the agent hook were run against real Claude Code on this repo and in a scratch repo. The sprint of real use hasn't started. | See the milestone 7 results   |
 
 **What each upcoming milestone gives us:**
 
@@ -510,6 +511,18 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 
 - Claude Code can answer "why is this line like this?" through `chamoji mcp` on chamoji's own repo.
 - Memory survives deleting a branch and a fresh clone.
+
+**Results (2026-11-01):** built, not released. The [plan's Results](superpowers/plans/2026-11-01-milestone-7-project-memory.md#results) has the detail.
+
+- ✅ **Claude Code answers "why is this line like this?" through `chamoji mcp` on chamoji's own repo:** met. `claude -p` on haiku called `mcp__chamoji__why` on `packages/core/src/intent.ts:3` and quoted the card from commit 83329f3.
+- ✅ **Memory survives deleting a branch and a fresh clone:** met in `packages/cli/test/memory-e2e.test.ts`, through the built CLI against a local bare remote. It hasn't run against GitHub.
+- ✅ **Search is fast enough:** on Vite at 9,776 documents, whole CLI runs: index build 0.47 s against a 5 s target, search 228 ms (median of 5, about 170 ms of it Node start-up) against 300 ms, index 2.5 MB.
+- ✅ **The agent hook works in real Claude Code:** in a scratch repo, a plain commit and a compound `git add && git commit` were denied, the retry carried a `Why:` line, and the opt-out worked. The first denial text invited the opt-out and haiku took it, so the text now says to use it only when the user said to skip the card.
+- **Departure: no `remote.origin.push`.** Setting it made a plain `git push` push only the memory ref and leave the branch behind, and an explicit `git push origin main` ignored it. `chamoji init` sets only a fetch line; `chamoji memory sync` and `chamoji release --push` push memory.
+- **Other departures:** `chamoji why` on an uncommitted line exits 0; embeddings are left out; `chamoji mcp` has no SDK; the hook covers Claude Code only.
+- **Known limits:** purge needs a manual `git push --force origin refs/chamoji/memory` to reach a remote, and other clones can still hold the text. A memory ref is shared with anyone who can push to the repo, and cards are never verified. A project `.mcp.json` server shows "Pending approval" in Claude Code until the user approves it.
+- ⬜ **Not verified:** fish, pwsh and Windows CI for the new commands (CI hasn't run on this branch), and a real push of the memory ref to GitHub.
+- ⬜ **Dogfooding is pending.** Per the rule above, this milestone isn't done until we've used it on our own repos for a sprint. `chamoji ws ship` and `chamoji memory sync` for the `project-memory` workstream wait until just before release.
 
 **Dependencies:** milestone 6.
 

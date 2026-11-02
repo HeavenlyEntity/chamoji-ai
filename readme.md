@@ -44,6 +44,7 @@ chamoji next-version                       # e.g. 1.3.0
 chamoji release                            # cut a release (see below)
 chamoji commit                             # write a commit (see below)
 chamoji ws                                 # list workstreams (see below)
+chamoji why src/auth.ts:42                 # why is this line here? (see Project memory)
 ```
 
 `next-version` exits with code 3 and prints nothing to stdout when no commit since the last tag implies a version bump (only docs, tests or refactors, say).
@@ -152,6 +153,101 @@ chamoji ws ship                    # mark the active one shipped (or: chamoji ws
 - **Editor commits aren't stamped.** The hook runs before the editor opens, and stamping an empty message would stop git from aborting when you quit. So for a plain `git commit` whose message you write in the editor, the hook prints a notice naming the workstream. Add the `Workstream:` line yourself, or use `-m` or `chamoji commit`. A message written in the editor from a `commit.template` works the same way.
 - **When it becomes a Highlight:** once the workstream is `shipped` in the file as of that release. Earlier releases don't change, and a workstream's commits in an earlier release stay loose. Commits of a workstream that is still active or dropped are listed as usual, and breaking commits stay under Breaking changes. The changelog reads the committed file, so commit the ship before previewing the changelog.
 - **Squash merges:** chamoji reads `Workstream:` lines anywhere in a commit's body. A squash that mixes workstreams gets the first one found. On GitHub, the line survives with the "Default message" and "Pull request title and commit details" settings. "Pull request title and description" and "Pull request title" drop it, so those commits land outside their Highlight. With "title and description", add the `Workstream:` line to the PR description. With "title" alone, add it in the merge box.
+
+## Project memory
+
+Git keeps what changed. Project memory keeps why: the reasoning behind a commit, still there after the branch is deleted, and one command away for you or your AI agent. It is built from three things, all in git: intent cards in commit messages, workstream summaries on their own ref, and a search index you can rebuild at any time.
+
+### Intent cards
+
+An intent card is up to four lines in a commit message. The keys are matched ignoring case:
+
+- `Why:` the reason for the change
+- `Constraint:` a limit the change had to live within
+- `Gotcha:` something that will trip up the next person
+- `Follow-up:` work this change leaves for later
+
+Write them at the end of the message, use the composer's **Why?** field, or add them from the command line with git's own flag:
+
+```bash
+git commit -m "✨ Retry idle connections" \
+  --trailer "Why: the API drops idle connections after 30 seconds" \
+  --trailer "Gotcha: the retry must not repeat a POST"
+```
+
+A line can run on over the lines that follow it, until a blank line or the next `Key: value` line, and a key can repeat. Chamoji only reads cards. It never writes one, and `--ai` never touches them.
+
+**Squash merges:** chamoji reads card lines anywhere in a commit's body, so a squash keeps them as long as the body survives. On GitHub that is the same table as for `Workstream:` lines: "Default message" and "Pull request title and commit details" keep the cards. "Pull request title and description" keeps only what is in the PR description, and "Pull request title" drops the whole body, cards included. If you run `chamoji ws ship` on the branch before the squash, the summary saved on the memory ref keeps the cards even then (see below).
+
+### Asking why
+
+```bash
+chamoji why src/auth.ts:42
+```
+
+It blames the line in your working copy and prints the commit that wrote it, with its date, author and card. A commit with no card shows its workstream instead, when one is known. A line you haven't committed yet says so and exits 0. A file or line that doesn't exist gives a plain message and exits 1. `--json` prints the same result for scripts. It only reads git; nothing is changed or sent anywhere.
+
+### The memory ref
+
+When you mark a workstream shipped or dropped (`chamoji ws ship`, `chamoji ws drop`), chamoji saves a summary of it on `refs/chamoji/memory`: its title, emoji, status, and its commits with their cards. The summary comes from the commits on `HEAD` that name the workstream, so run the command on the branch that holds the work. The ref is written with git plumbing, so your working tree and index are never touched. The summary survives deleting the branch and a squash merge.
+
+```bash
+chamoji memory                          # list what is remembered
+chamoji memory show <slug>              # one entry with its commits and cards
+chamoji memory search <query>           # find commits and workstreams by what they say
+chamoji memory reindex                  # rebuild the search index
+chamoji memory archive <slug>           # hide an entry from the list, and keep it
+chamoji memory archive <slug> --purge   # delete it for good
+chamoji memory sync                     # merge with origin and push
+```
+
+- **Archive, never delete:** `archive` hides an entry from the list, and `memory show` still finds it. Only `--purge` removes one.
+- **Purge is local:** it removes the entry from your ref and leaves a marker, so a later sync can't bring it back. It doesn't reach origin. For that, run `git push --force origin refs/chamoji/memory` yourself; `chamoji memory sync` prints the step when it is needed, and chamoji never force-pushes. Any other clone that has already fetched the entry still holds the text.
+- **Search** is keyword search (BM25) over every commit on `HEAD`, with its subject, body and card, and over every remembered workstream. The index is a cache at `.git/chamoji/memory-index.json`. It rebuilds itself when `HEAD` or memory changes, and `memory reindex` forces it. It needs no network and no key. With `--ai`, Jev reorders the ten best matches (see below).
+
+### Sharing memory
+
+```bash
+chamoji init              # once per clone
+chamoji memory sync       # merge with origin, then push
+```
+
+`chamoji init` adds a fetch line for `refs/chamoji/*` to `origin` and takes in whatever memory origin has, so a fresh clone needs only `init`. Git doesn't clone these refs, so every clone runs `init` once. `chamoji memory sync` merges both sides and pushes the result; two clones that remembered different workstreams keep both. `chamoji release --push` also syncs memory, but only in a clone that ran `init`.
+
+**`init` leaves `git push` alone.** The roadmap planned to set `remote.origin.push` so that a plain `git push` would carry memory. Tested, that setting made a plain `git push` push only the memory ref and leave the branch behind, and an explicit `git push origin main` ignored it anyway. So memory goes out through `memory sync` and `release --push`, and `init` sets only the fetch line. Plain `git fetch` and `git pull` keep working before origin has any memory.
+
+**Who can change it:** a memory ref is shared with everyone who can push to the repo. Entries that come from origin are data. A pusher can add an entry or change a title or a card, and chamoji never verifies a card. Read them as you would a teammate's commit message. Chamoji prints them with control characters removed, and `chamoji mcp` tells the model they are data, not instructions.
+
+### For AI agents
+
+```bash
+chamoji init --agents
+```
+
+This does what `init` does, and sets up Claude Code in this repo by merging into two files that are meant to be committed, so everyone who uses Claude Code here gets the same setup. Existing entries are kept, and a file chamoji can't safely read is left alone.
+
+- **`.mcp.json`** gets a `chamoji` server that runs `chamoji mcp`, or `npx --yes @chamoji/cli mcp` when chamoji isn't on your PATH.
+- **`.claude/settings.json`** gets the commit hook, below.
+
+**Approve the server.** Claude Code won't run a server from a project's `.mcp.json` until you approve it, and until then `claude mcp list` shows it as Pending approval. Approve it when Claude Code asks.
+
+`chamoji mcp` is a small MCP server over stdio with three tools, all read-only. None changes your history, refs or files; `search_memory` may refresh the index cache in `.git`.
+
+| Tool            | What it does                                                               |
+| --------------- | -------------------------------------------------------------------------- |
+| `search_memory` | Search commits and remembered workstreams by what they say, cards included |
+| `why`           | The commit behind a `file` and `line`, with its message and card           |
+| `workstream`    | A workstream's title, status and, once remembered, its commits and cards   |
+
+Everything the tools return is commit text that other people wrote, and each tool says so to the model. Replies are cut to a fixed size, and a cut reply says `truncated: true`. The server makes no network calls, except under `chamoji mcp --ai`, which asks Jev to reorder `search_memory` results with the same limits as `memory search --ai`.
+
+**The commit hook** is a `PreToolUse` hook on Claude Code's Bash tool. When the agent runs a `git commit` whose message has no card line, the hook denies it and says what to add:
+
+> Add why this change was made: put a "Why: <reason>" line at the end of the commit message. Constraint:, Gotcha: and Follow-up: lines are welcome too. Only if the user told you to skip this, prefix the command with CHAMOJI_NO_CARD=1.
+
+The agent retries with a `Why:` line. Any one of the four lines counts. `CHAMOJI_NO_CARD=1` in front of the command is the opt-out, meant for when you've told the agent to skip cards. Commits that take their message from a file or another commit (`-F`, `-C`) and commands that only look (`--dry-run`, `--help`) pass. The hook reads the command text, so a commit hidden inside `sh -c '…'`, `xargs` or a shell alias isn't seen. If anything goes wrong inside the hook, it says nothing and lets the command through, and the committed command ends in `|| true`, so a chamoji too old to know the hook can't block your commits.
+
+The hook covers Claude Code only. Other agents can use the MCP server, but write their cards by hand.
 
 ## Cutting a release
 
@@ -327,6 +423,7 @@ chamoji changelog --ai
 ```
 
 - **What is sent:** only the commits no rule could sort, at most 300 characters each of subject and body, with email addresses and trailer lines such as `Signed-off-by:` removed. Never diffs, code or author details. `next-version --ai` sends only unreleased commits.
+- **Memory search:** `chamoji memory search --ai` and `chamoji mcp --ai` send the query and, for each of the ten best matches, at most 300 characters of its subject and card text, with email addresses replaced by `<email>`. Never diffs, code or authors. Jev only reorders what keyword search found; it doesn't write or change a card. The key comes from the same places as below.
 - **If a request fails:** chamoji stops sending, keeps the picks it already has, and leaves the rest in Miscellaneous.
 - **What it never does:** override an emoji or type the author wrote, or mark a change as breaking. Only authors declare breaking changes.
 - **Where the key comes from:** the `TYPESAFE_API_KEY` environment variable, or else that one line from `.env.local` or `.env` in the current folder. No other variable in those files is read.
