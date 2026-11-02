@@ -8,7 +8,7 @@ import {
 	gitOutput,
 	type FixtureRepo,
 } from '../../core/test/helpers/fixture-repo.js';
-import {run} from '../src/run.js';
+import {run, type Io} from '../src/run.js';
 
 let repo: FixtureRepo | undefined;
 let loose: string | undefined;
@@ -19,13 +19,14 @@ afterEach(async () => {
 	loose = undefined;
 });
 
-async function chamoji(argv: string[], cwd: string) {
+async function chamoji(argv: string[], cwd: string, extra: Partial<Io> = {}) {
 	let stdout = '';
 	let stderr = '';
 	const code = await run(argv, {
 		cwd,
 		stdout: text => (stdout += text),
 		stderr: text => (stderr += text),
+		...extra,
 	});
 	return {code, stdout, stderr};
 }
@@ -164,7 +165,120 @@ test('an unknown subcommand is a usage error', async () => {
 	const dir = await remembered();
 	const {code, stderr} = await chamoji(['memory', 'nope'], dir);
 	expect(code).toBe(2);
-	expect(stderr).toContain('memory needs list, show, archive or sync');
+	expect(stderr).toContain(
+		'memory needs list, show, search, reindex, archive or sync',
+	);
+});
+
+test('memory search prints each match with its card', async () => {
+	const dir = await remembered();
+	const {code, stdout, stderr} = await chamoji(
+		['memory', 'search', 'old form leaked'],
+		dir,
+	);
+	expect(stderr).toBe('');
+	expect(code).toBe(0);
+	expect(stdout).toMatch(/^[0-9a-f]{7} ✨ Add login\n/);
+	expect(stdout).toContain('  Why: the old form leaked\n');
+	expect(stdout).toContain('  Gotcha: order matters\n');
+	expect(stdout).toContain('workstream auth Auth revamp\n');
+});
+
+test('memory search takes a query in several words', async () => {
+	const dir = await remembered();
+	const {stdout} = await chamoji(['memory', 'search', 'old', 'form'], dir);
+	expect(stdout).toContain('Add login');
+});
+
+test('memory search --json prints the hits', async () => {
+	const dir = await remembered();
+	const {code, stdout} = await chamoji(
+		['memory', 'search', 'leaked', '--json'],
+		dir,
+	);
+	expect(code).toBe(0);
+	const hits = JSON.parse(stdout);
+	expect(hits.map((hit: {kind: string}) => hit.kind)).toEqual([
+		'commit',
+		'workstream',
+	]);
+	expect(hits[0]).toMatchObject({
+		title: '✨ Add login',
+		card: {why: ['the old form leaked']},
+	});
+	expect(hits[0].score).toBeGreaterThan(0);
+	expect(stdout).not.toContain('fixture@example.com');
+});
+
+test('memory search says when nothing matches', async () => {
+	const dir = await remembered();
+	const {code, stdout} = await chamoji(
+		['memory', 'search', 'zzz\u001B[31m'],
+		dir,
+	);
+	expect(code).toBe(0);
+	expect(stdout).toBe('Nothing in memory matches "zzz[31m".\n');
+});
+
+test('memory search strips terminal escapes', async () => {
+	const dir = await remembered();
+	const {stdout} = await chamoji(['memory', 'search', 'billing'], dir);
+	expect(stdout).toContain('Fix [31mbilling');
+	// eslint-disable-next-line no-control-regex
+	expect(stdout).not.toMatch(/[\u0000-\u0009\u000B-\u001F\u007F-\u009F]/);
+});
+
+test('memory search with no query is a usage error', async () => {
+	const dir = await remembered();
+	const {code, stderr} = await chamoji(['memory', 'search'], dir);
+	expect(code).toBe(2);
+	expect(stderr).toContain('memory search needs a query');
+});
+
+test('memory reindex prints the document count', async () => {
+	const dir = await remembered();
+	const {code, stdout} = await chamoji(['memory', 'reindex'], dir);
+	expect(code).toBe(0);
+	// Three commits on HEAD and two live entries.
+	expect(stdout).toBe('Indexed 5 documents.\n');
+	expect((await chamoji(['memory', 'reindex', 'x'], dir)).code).toBe(2);
+});
+
+test('memory search --ai with no key says so and exits 2', async () => {
+	const dir = await remembered();
+	const saved = process.env['TYPESAFE_API_KEY'];
+	delete process.env['TYPESAFE_API_KEY'];
+	try {
+		const {code, stdout, stderr} = await chamoji(
+			['memory', 'search', 'leaked', '--ai'],
+			dir,
+		);
+		expect(code).toBe(2);
+		expect(stdout).toBe('');
+		expect(stderr).toContain('--ai needs a TypeSafe API key');
+	} finally {
+		if (saved !== undefined) process.env['TYPESAFE_API_KEY'] = saved;
+	}
+});
+
+test('memory search --ai prints the matches in the order the rerank gives', async () => {
+	const dir = await remembered();
+	const seen: string[][] = [];
+	const {code, stdout} = await chamoji(
+		['memory', 'search', 'leaked', '--ai'],
+		dir,
+		{
+			async rerank(query, hits) {
+				seen.push([query, ...hits.map(hit => hit.kind)]);
+				return [...hits].reverse();
+			},
+		},
+	);
+	expect(code).toBe(0);
+	expect(seen).toEqual([['leaked', 'commit', 'workstream']]);
+	expect(stdout.indexOf('workstream auth')).toBeLessThan(
+		stdout.indexOf('Add login'),
+	);
 });
 
 async function bareOrigin(dir: string): Promise<string> {

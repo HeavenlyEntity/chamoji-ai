@@ -422,7 +422,7 @@ function toCommit(raw: unknown): MemoryCommit | undefined {
 	return parsedCard && {hash, subject, date, card: parsedCard};
 }
 
-function toCard(raw: unknown): IntentCard | undefined {
+export function toCard(raw: unknown): IntentCard | undefined {
 	if (!isPlain(raw)) return undefined;
 	const {why, constraint, gotcha, followUp} = raw;
 	return isTextList(why) &&

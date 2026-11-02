@@ -40,11 +40,12 @@ import {
 	type AdvisorClient,
 } from './advisor.js';
 import {compose} from './composer.js';
-import {readTypesafeKey} from './env.js';
+import {MISSING_KEY, readTypesafeKey} from './env.js';
 import {HookError, installHook, uninstallHook} from './hook.js';
 import {createJevClassifier, JUDGMENT_VERSION} from './jev-classifier.js';
 import {runInit} from './init.js';
 import {runMemory, syncSummary} from './memory.js';
+import {jevReranker, type MemoryReranker, type RerankClient} from './rerank.js';
 import {stripControlLines} from './text.js';
 import {openTerminal} from './tty.js';
 import type {UpdateCheck} from './update-check.js';
@@ -69,6 +70,8 @@ export type Io = {
 	env?: Record<string, string | undefined>;
 	/** Jev's commit advice; tests pass a fake. Defaults to the TypeSafe API. */
 	advise?: ReturnType<typeof createCommitAdvisor>;
+	/** Jev's `memory search --ai` reorder; tests pass a fake. Defaults to the TypeSafe API. */
+	rerank?: MemoryReranker;
 };
 
 export type ComposerTerminal = {
@@ -132,6 +135,9 @@ const HELP = `
 	  $ chamoji memory                 List what shipped or dropped workstreams
 	                                   left in memory (refs/chamoji/memory)
 	  $ chamoji memory show <slug>     Show one entry with its commits and cards
+	  $ chamoji memory search <query>  Find commits and workstreams by what they
+	                                   say, Why and Gotcha lines included
+	  $ chamoji memory reindex         Rebuild the search index
 	  $ chamoji memory archive <slug>  Hide an entry from the list and keep it
 	                                   (--purge deletes it for good)
 	  $ chamoji memory sync            Merge memory with origin and push it
@@ -152,6 +158,9 @@ const HELP = `
 	             .env.local / .env here. Sends up to 300 characters of
 	             each such commit's subject and body, with emails and
 	             trailer lines removed; never diffs, code or authors.
+	             memory search: Jev reorders the ten best matches.
+	             It sees the query and, per match, up to 300 characters of
+	             the subject and card text, with emails removed.
 	  --dry-run  release: show the version and notes, change nothing
 	  --push     release: push HEAD and the tag, sync memory if chamoji init
 	             ran here, then create the GitHub release when the gh CLI
@@ -162,7 +171,8 @@ const HELP = `
 	  --json     release: print the result as JSON; card: print the numbers;
 	             ws list: print the workstreams as an array;
 	             why: print the blame result; memory list and show: print
-	             the entries; memory sync: print the result
+	             the entries; memory search: print the matches;
+	             memory sync: print the result
 	  --none     ws switch: clear the active workstream
 	  --purge    memory archive: delete the entry and its history instead;
 	             a remote needs a force-push to lose it too
@@ -248,8 +258,11 @@ export async function run(argv: string[], io: Io): Promise<number> {
 	async function execute(command: string | undefined): Promise<number> {
 		try {
 			// card ignores --ai: it counts what the rules sort and sends nothing out.
+			// memory search has its own use for it, and asks for its key itself.
 			const classify =
-				flags.ai && command !== 'card' ? await jevClassifier(io) : undefined;
+				flags.ai && command !== 'card' && command !== 'memory'
+					? await jevClassifier(io)
+					: undefined;
 			switch (command) {
 				case 'changelog': {
 					const format = Object.hasOwn(FORMATS, flags.format)
@@ -331,7 +344,9 @@ export async function run(argv: string[], io: Io): Promise<number> {
 				}
 
 				case 'memory': {
-					return await runMemory(cli.input.slice(1), flags, io);
+					return await runMemory(cli.input.slice(1), flags, io, async () =>
+						realReranker(io),
+					);
 				}
 
 				case 'init': {
@@ -861,14 +876,13 @@ async function realAdvisor(
 	});
 }
 
-async function jevClassifier(io: Io): Promise<CommitClassifier> {
+/**
+ * The TypeSafe client, or undefined without a key. A key that can't go in a
+ * header throws.
+ */
+async function typesafeClient(io: Io): Promise<TypeSafeClient | undefined> {
 	const key = await readTypesafeKey(io.cwd, process.env);
-	if (!key) {
-		throw new Error(
-			'--ai needs a TypeSafe API key: set TYPESAFE_API_KEY in the environment or in .env.local (get one at https://typesafe.ai)',
-		);
-	}
-
+	if (!key) return undefined;
 	// Keys copied from a dashboard often end in "…"; headers can't carry it.
 	const invalid = /[^\x21-\x7E]/.exec(key);
 	if (invalid) {
@@ -879,7 +893,29 @@ async function jevClassifier(io: Io): Promise<CommitClassifier> {
 		);
 	}
 
-	const client = new TypeSafeClient({apiKey: key});
+	return new TypeSafeClient({apiKey: key});
+}
+
+/** `memory search --ai`'s reorder on the TypeSafe API, or undefined without a key. */
+async function realReranker(io: Io): Promise<MemoryReranker | undefined> {
+	if (io.rerank) return io.rerank;
+	const client = await typesafeClient(io);
+	if (!client) return undefined;
+	return jevReranker(
+		{
+			// The rerank asks only score questions.
+			systemOne: async request =>
+				(await client.systemOne(
+					request as Parameters<typeof client.systemOne>[0],
+				)) as unknown as Awaited<ReturnType<RerankClient['systemOne']>>,
+		},
+		{report: line => io.stderr(`${line}\n`)},
+	);
+}
+
+async function jevClassifier(io: Io): Promise<CommitClassifier> {
+	const client = await typesafeClient(io);
+	if (!client) throw new Error(MISSING_KEY);
 	// Outside a repository there's nowhere to keep judgments, so none are cached.
 	const cache = await openJudgmentCache(io.cwd, JUDGMENT_VERSION).catch(
 		() => undefined,

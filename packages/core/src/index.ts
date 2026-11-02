@@ -1,4 +1,11 @@
 export {blameLine, parseLocation, WhyError, type BlameResult} from './blame.js';
+export {
+	buildIndex,
+	queryIndex,
+	tokenize,
+	type Bm25Index,
+	type SearchDocument,
+} from './bm25.js';
 export {buildChangelog, type BuildChangelogOptions} from './changelog.js';
 export {CARD_ENDPOINT, cardUrl, repoStats, type RepoStats} from './card.js';
 export {CONFIG_FILE, DEFAULT_GROUP_CONFIG, loadConfig} from './config.js';
@@ -47,6 +54,7 @@ export {
 	type PullResult,
 	type SyncResult,
 } from './memory-sync.js';
+export {reindexMemory, searchMemory, type MemoryHit} from './memory-index.js';
 export {parseCommit} from './parse.js';
 export {
 	escapeHtml,
