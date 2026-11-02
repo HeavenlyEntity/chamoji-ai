@@ -1,7 +1,11 @@
 import type {ParsedCommit} from '@chamoji/core';
 import {expect, test} from 'vitest';
 import {commit} from '../../core/test/helpers/commit.js';
-import {createJevClassifier, type JevClient} from '../src/jev-classifier.js';
+import {
+	createJevClassifier,
+	redact,
+	type JevClient,
+} from '../src/jev-classifier.js';
 
 type Request = Parameters<JevClient['systemOne']>[0];
 
@@ -268,4 +272,18 @@ test('a failed request caches nothing for its commits', async () => {
 	};
 	await createJevClassifier(client, {cache: memory.cache})(commits(3));
 	expect(memory.judgments.size).toBe(0);
+});
+
+test('redact replaces a whole address, however long', () => {
+	expect(redact(`from ${'a'.repeat(100)}@example.com today`)).toBe(
+		'from <email> today',
+	);
+	expect(redact('(dev.name+tag@example.co.uk)')).toBe('(<email>)');
+});
+
+test('redact stays quick on a long run with no address in it', () => {
+	const text = 'a'.repeat(200_000);
+	const started = performance.now();
+	expect(redact(text)).toBe(text);
+	expect(performance.now() - started).toBeLessThan(1000);
 });
