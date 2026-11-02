@@ -34,6 +34,7 @@ import {
 } from '@chamoji/core';
 import {TypeSafeClient} from '@typesafe-ai/sdk';
 import meow from 'meow';
+import {runAgentHook} from './agent-hook.js';
 import {
 	createCommitAdvisor,
 	type Advice,
@@ -147,6 +148,11 @@ const HELP = `
 	                                   workstream, all read-only
 	  $ chamoji init                   Set this clone up to share memory, and
 	                                   take in what origin has
+	  $ chamoji init --agents          The same, and set up Claude Code here:
+	                                   the MCP server in .mcp.json and a hook
+	                                   in .claude/settings.json that sends back
+	                                   a git commit with no Why: line
+	  $ chamoji agent-hook             The hook itself; Claude Code runs it
 
 	Options
 	  --format   markdown (default), md, json or html
@@ -181,6 +187,9 @@ const HELP = `
 	  --none     ws switch: clear the active workstream
 	  --purge    memory archive: delete the entry and its history instead;
 	             a remote needs a force-push to lose it too
+	  --agents   init: also add chamoji to .mcp.json and .claude/settings.json.
+	             Both are shared files meant to be committed; existing
+	             entries are kept.
 	  --repo     card: owner/name on GitHub (default: from the origin remote)
 	  --endpoint card: the card renderer (default: https://chamoji.dev/api/card)
 	  --no-update-check
@@ -228,6 +237,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
 			json: {type: 'boolean'},
 			none: {type: 'boolean'},
 			purge: {type: 'boolean'},
+			agents: {type: 'boolean'},
 			repo: {type: 'string'},
 			endpoint: {type: 'string'},
 			all: {type: 'boolean', shortFlag: 'a'},
@@ -250,7 +260,10 @@ export async function run(argv: string[], io: Io): Promise<number> {
 	// The refresh runs detached and the notice comes from the cache, so the
 	// check never delays the command or touches stdout.
 	const check =
-		flags.updateCheck && cli.input[0] !== 'hook' && cli.input[0] !== 'mcp'
+		flags.updateCheck &&
+		cli.input[0] !== 'hook' &&
+		cli.input[0] !== 'mcp' &&
+		cli.input[0] !== 'agent-hook'
 			? io.updateCheck
 			: undefined;
 	check?.refreshIfStale();
@@ -266,12 +279,13 @@ export async function run(argv: string[], io: Io): Promise<number> {
 		try {
 			// card ignores --ai: it counts what the rules sort and sends nothing out.
 			// memory search and mcp have their own use for it, and ask for their key
-			// themselves.
+			// themselves. agent-hook has none, and stdout is its decision.
 			const classify =
 				flags.ai &&
 				command !== 'card' &&
 				command !== 'memory' &&
-				command !== 'mcp'
+				command !== 'mcp' &&
+				command !== 'agent-hook'
 					? await jevClassifier(io)
 					: undefined;
 			switch (command) {
@@ -371,8 +385,14 @@ export async function run(argv: string[], io: Io): Promise<number> {
 					);
 				}
 
+				case 'agent-hook': {
+					// Claude Code runs this before a Bash command. Whatever happens it
+					// prints a decision or nothing, and exits 0.
+					return await runAgentHook({...io, stdin: process.stdin});
+				}
+
 				case 'init': {
-					return await runInit({}, io);
+					return await runInit({agents: flags.agents}, io);
 				}
 
 				default: {
