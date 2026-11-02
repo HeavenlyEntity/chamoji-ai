@@ -328,4 +328,51 @@ The settings entry uses `matcher: "Bash"` and `if: "Bash(git commit *)"`, with t
 
 ## Results
 
-Filled in as tasks finish.
+**Status (2026-11-01):** built on the `worktree-milestone-7` branch, not released. The roadmap requires a sprint of real use before the milestone is done, and that has not happened. `chamoji ws ship` and `chamoji memory sync` for `project-memory` wait until just before release.
+
+### Exit criteria
+
+- ✅ **Claude Code answers "why is this line like this?" through `chamoji mcp` on chamoji's own repo: passed.** `claude -p` on haiku, started with `--mcp-config` and `--strict-mcp-config` in this worktree, called `mcp__chamoji__why` on `packages/core/src/intent.ts:3` and quoted the card from commit 83329f3. The user's own Claude Code config was not touched.
+- ✅ **Memory survives deleting a branch and a fresh clone: passed.** `packages/cli/test/memory-e2e.test.ts` runs it through the built CLI against a local bare remote. It has not run against GitHub.
+
+### Search numbers (Task 5)
+
+Vite at 9,776 documents (the plan assumed 8,685 commits; the clone has grown). Both figures are whole CLI runs, from `node scripts/benchmark.mjs --search vitejs/vite`.
+
+| Measure     | Result               | Target       |
+| ----------- | -------------------- | ------------ |
+| Index build | 0.47 s               | under 5 s    |
+| Search      | 228 ms (median of 5) | under 300 ms |
+| Index size  | 2.5 MB               |              |
+
+Node start-up alone is about 170 ms of the search figure, so the search itself is about 60 ms. The margin to the target is thin for that reason, not because of the index.
+
+### Real-client runs
+
+- **MCP server:** the exit criterion 1 run above, with the server loaded through `--mcp-config`. A server declared in a project `.mcp.json` shows "Pending approval" in `claude mcp list` until the user approves it, so the readme says to approve it. That path was not approved in the check, so a connection through `.mcp.json` itself is unverified. The same server connected through `--mcp-config`.
+- **Agent hook:** run against real Claude Code (haiku) in a scratch repo. A plain `git commit -am` and a compound `git add -A && git commit -m` were denied, a retry carried a `Why:` line, and `CHAMOJI_NO_CARD=1` committed on the first try. The run also showed haiku taking the opt-out on its first denial, because the first denial text invited it ("For a trivial change, prefix the command with CHAMOJI_NO_CARD=1"). The text now says to opt out only if the user said to skip the card.
+
+### Departures from the plan and the roadmap
+
+- **No `remote.origin.push`.** The roadmap's `chamoji init` was to configure push and fetch refspecs. Setting `remote.origin.push` made a plain `git push` push only the memory ref and leave the branch behind, and an explicit `git push origin main` ignored it anyway. `init` sets only the fetch line. Memory goes out through `chamoji memory sync` and `chamoji release --push`, the latter only in a clone that ran `init`.
+- **`chamoji why` on an uncommitted line exits 0,** where Review Focus 4 said exit 1. "Not committed yet" is an answer. A missing file or a line past the end still exits 1.
+- **Embeddings are left out.** The roadmap calls them optional. Search is BM25 with an optional Jev rerank.
+- **The MCP server has no SDK.** It is a small hand-written stdio JSON-RPC server, as decided in the plan.
+- **The agent hook covers Claude Code only.**
+- **Added beyond the plan** (rulings in the ledger): a merge never reaches purged text; `init` also takes in remote memory; `release --push` syncs memory only in a clone that ran `init`; commit records are framed with NUL so commit text can't forge them; the hook command ends in `|| true`; the denial text differs from the plan's exact copy.
+
+### Things to know
+
+- **Purge and the remote:** `memory archive --purge` removes an entry locally. Removing it from the remote needs a manual `git push --force origin refs/chamoji/memory`, and any clone that already fetched the entry still holds the text.
+- **A memory ref is shared with anyone who can push to the repo.** Entries from origin are data. A pusher can add or retitle them, and cards are never verified.
+- **Final-wave fixes** (in the commit before the docs commit): `why.body` scans at most twice its cap before the reply cut, `init --agents` writes its temp file as 0600 and sets the final mode without setuid bits, and the hook's denial text no longer invites the opt-out.
+
+### Not verified
+
+- fish, pwsh and Windows for the new commands. CI has not run on this branch.
+- A real push of the memory ref to GitHub. The e2e test uses a local bare remote.
+- `.mcp.json` approval flow end to end in Claude Code (see above).
+
+### Counts
+
+At the end of Task 8 the suite had 1010 tests, up from the 570 baseline at the plan commit.
