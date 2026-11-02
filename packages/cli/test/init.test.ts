@@ -1,4 +1,13 @@
-import {mkdtemp, rm} from 'node:fs/promises';
+import {
+	chmod,
+	mkdir,
+	mkdtemp,
+	readFile,
+	rm,
+	stat,
+	symlink,
+	writeFile,
+} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {
@@ -22,13 +31,18 @@ afterEach(async () => {
 	await Promise.all(cleanups.splice(0).map(async cleanup => cleanup()));
 });
 
-async function chamoji(argv: string[], cwd: string) {
+async function chamoji(
+	argv: string[],
+	cwd: string,
+	env?: Record<string, string | undefined>,
+) {
 	let stdout = '';
 	let stderr = '';
 	const code = await run(argv, {
 		cwd,
 		stdout: text => (stdout += text),
 		stderr: text => (stderr += text),
+		...(env ? {env} : {}),
 	});
 	return {code, stdout, stderr};
 }
@@ -233,4 +247,388 @@ test('init outside a repo reports it plainly', async () => {
 	const {code, stderr} = await chamoji(['init'], await tempDir());
 	expect(code).toBe(1);
 	expect(stderr).toContain('chamoji: Not a git repository');
+});
+
+/** A folder holding an executable `chamoji`, for a PATH that has chamoji on it. */
+async function withChamojiOnPath(): Promise<Record<string, string>> {
+	const bin = await tempDir();
+	await writeFile(path.join(bin, 'chamoji'), '#!/bin/sh\nexit 0\n');
+	await chmod(path.join(bin, 'chamoji'), 0o755);
+	return {PATH: bin};
+}
+
+const NO_CHAMOJI = {PATH: ''};
+
+const read = async (dir: string, file: string) =>
+	readFile(path.join(dir, file), 'utf8');
+
+const missing = async (dir: string, file: string) =>
+	(await stat(path.join(dir, file)).catch(() => null)) === null;
+
+async function plainRepo(): Promise<string> {
+	return (await repoFrom([{commit: '🎉 Init'}])).dir;
+}
+
+const HOOK_COMMAND = 'chamoji agent-hook';
+const NPX_HOOK_COMMAND = 'npx --yes @chamoji/cli agent-hook';
+
+const hookEntry = (command: string) => ({
+	matcher: 'Bash',
+	hooks: [{type: 'command', if: 'Bash(git commit *)', command}],
+});
+
+test('init --agents writes both files in a repo that has neither', async () => {
+	const dir = await plainRepo();
+	const env = await withChamojiOnPath();
+	const {code, stdout, stderr} = await chamoji(['init', '--agents'], dir, env);
+	expect(stderr).toBe('');
+	expect(code).toBe(0);
+	expect(stdout).toContain('.mcp.json: added the chamoji MCP server');
+	expect(stdout).toContain('.claude/settings.json: added the commit hook');
+	expect(stdout).toContain('meant to be committed');
+	expect(stdout).not.toContain('npx');
+	expect(await read(dir, '.mcp.json')).toBe(
+		`${JSON.stringify({mcpServers: {chamoji: {command: 'chamoji', args: ['mcp']}}}, null, 2)}\n`,
+	);
+	expect(JSON.parse(await read(dir, '.claude/settings.json'))).toEqual({
+		hooks: {PreToolUse: [hookEntry(HOOK_COMMAND)]},
+	});
+});
+
+test('init --agents runs chamoji through npx when it is not on PATH', async () => {
+	const dir = await plainRepo();
+	const {stdout} = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+	expect(stdout).toContain('start it with npx');
+	expect(JSON.parse(await read(dir, '.mcp.json'))).toEqual({
+		mcpServers: {
+			chamoji: {command: 'npx', args: ['--yes', '@chamoji/cli', 'mcp']},
+		},
+	});
+	expect(JSON.parse(await read(dir, '.claude/settings.json'))).toEqual({
+		hooks: {PreToolUse: [hookEntry(NPX_HOOK_COMMAND)]},
+	});
+});
+
+test('init --agents ignores a node_modules/.bin that npx put on PATH', async () => {
+	const dir = await plainRepo();
+	const bin = path.join(await tempDir(), 'node_modules', '.bin');
+	await mkdir(bin, {recursive: true});
+	await writeFile(path.join(bin, 'chamoji'), '#!/bin/sh\nexit 0\n');
+	await chmod(path.join(bin, 'chamoji'), 0o755);
+	await chamoji(['init', '--agents'], dir, {PATH: bin});
+	expect(
+		JSON.parse(await read(dir, '.mcp.json')).mcpServers.chamoji.command,
+	).toBe('npx');
+});
+
+test('init --agents adds chamoji to an existing .mcp.json and keeps other servers', async () => {
+	const dir = await plainRepo();
+	const before = {
+		mcpServers: {
+			github: {command: 'gh-mcp', args: ['--readonly'], env: {A: '1'}},
+		},
+		other: [1, 2],
+	};
+	await writeFile(
+		path.join(dir, '.mcp.json'),
+		`${JSON.stringify(before, null, '\t')}\n`,
+	);
+	const env = await withChamojiOnPath();
+	const {code, stdout} = await chamoji(['init', '--agents'], dir, env);
+	expect(code).toBe(0);
+	expect(stdout).toContain('.mcp.json: added the chamoji MCP server');
+	const text = await read(dir, '.mcp.json');
+	const after = JSON.parse(text);
+	expect(after).toEqual({
+		...before,
+		mcpServers: {
+			...before.mcpServers,
+			chamoji: {command: 'chamoji', args: ['mcp']},
+		},
+	});
+	// Their order and their tabs stay.
+	expect(Object.keys(after)).toEqual(['mcpServers', 'other']);
+	expect(Object.keys(after.mcpServers)).toEqual(['github', 'chamoji']);
+	expect(text).toContain('\n\t"mcpServers": {\n\t\t"github"');
+	expect(text.endsWith('}\n')).toBe(true);
+});
+
+test('init --agents keeps an mcp entry named chamoji that is already there', async () => {
+	const dir = await plainRepo();
+	const text = JSON.stringify({
+		mcpServers: {chamoji: {command: '/opt/chamoji', args: ['mcp', '--ai']}},
+	});
+	await writeFile(path.join(dir, '.mcp.json'), text);
+	const {stdout} = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+	expect(stdout).toContain('.mcp.json: already has the chamoji MCP server');
+	expect(await read(dir, '.mcp.json')).toBe(text);
+});
+
+test('init --agents keeps existing settings and hooks', async () => {
+	const dir = await plainRepo();
+	const before = {
+		permissions: {allow: ['Bash(git status)']},
+		hooks: {
+			PostToolUse: [
+				{matcher: 'Edit', hooks: [{type: 'command', command: 'fmt'}]},
+			],
+			PreToolUse: [
+				{matcher: 'Bash', hooks: [{type: 'command', command: 'audit.sh'}]},
+			],
+		},
+		model: 'opus',
+	};
+	await mkdir(path.join(dir, '.claude'));
+	await writeFile(
+		path.join(dir, '.claude', 'settings.json'),
+		JSON.stringify(before, null, 4),
+	);
+	const env = await withChamojiOnPath();
+	const {code, stdout} = await chamoji(['init', '--agents'], dir, env);
+	expect(code).toBe(0);
+	expect(stdout).toContain('.claude/settings.json: added the commit hook');
+	const text = await read(dir, '.claude/settings.json');
+	const after = JSON.parse(text);
+	expect(after.permissions).toEqual(before.permissions);
+	expect(after.model).toBe('opus');
+	expect(after.hooks.PostToolUse).toEqual(before.hooks.PostToolUse);
+	expect(after.hooks.PreToolUse).toEqual([
+		...before.hooks.PreToolUse,
+		hookEntry(HOOK_COMMAND),
+	]);
+	expect(Object.keys(after)).toEqual(['permissions', 'hooks', 'model']);
+	expect(Object.keys(after.hooks)).toEqual(['PostToolUse', 'PreToolUse']);
+	// Four spaces stay four spaces; no final newline stays none.
+	expect(text).toContain('\n    "permissions"');
+	expect(text.endsWith('\n')).toBe(false);
+});
+
+test('init --agents adds a hooks section to settings that have none', async () => {
+	const dir = await plainRepo();
+	await mkdir(path.join(dir, '.claude'));
+	await writeFile(path.join(dir, '.claude', 'settings.json'), '{}\n');
+	await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+	expect(JSON.parse(await read(dir, '.claude/settings.json'))).toEqual({
+		hooks: {PreToolUse: [hookEntry(NPX_HOOK_COMMAND)]},
+	});
+});
+
+test('init --agents keeps Windows line endings and a byte order mark', async () => {
+	const dir = await plainRepo();
+	await writeFile(
+		path.join(dir, '.mcp.json'),
+		`﻿${JSON.stringify({mcpServers: {}}, null, 2).replace(/\n/g, '\r\n')}\r\n`,
+	);
+	await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+	const text = await read(dir, '.mcp.json');
+	expect(text.startsWith('﻿{\r\n  "mcpServers": {\r\n    "chamoji"')).toBe(
+		true,
+	);
+	expect(text.endsWith('}\r\n')).toBe(true);
+	expect(text.replace(/\r\n/g, '')).not.toContain('\n');
+});
+
+test('init --agents twice adds nothing new', async () => {
+	const dir = await plainRepo();
+	const env = await withChamojiOnPath();
+	await chamoji(['init', '--agents'], dir, env);
+	const files = ['.mcp.json', '.claude/settings.json'];
+	const texts = async () =>
+		Promise.all(files.map(async file => read(dir, file)));
+	const times = async () =>
+		Promise.all(
+			files.map(async file => (await stat(path.join(dir, file))).mtimeMs),
+		);
+	const [firstTexts, firstTimes] = [await texts(), await times()];
+	await new Promise(resolve => {
+		setTimeout(resolve, 20);
+	});
+
+	// Even after chamoji moves off PATH: what is there stays.
+	const again = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+	expect(again.code).toBe(0);
+	expect(again.stdout).toContain(
+		'.mcp.json: already has the chamoji MCP server',
+	);
+	expect(again.stdout).toContain(
+		'.claude/settings.json: already has the commit hook',
+	);
+	expect(again.stdout).not.toContain('meant to be committed');
+	expect(await texts()).toEqual(firstTexts);
+	expect(await times()).toEqual(firstTimes);
+});
+
+test('init --agents sees a hook that runs through a full path', async () => {
+	const dir = await plainRepo();
+	const text = JSON.stringify({
+		hooks: {
+			PreToolUse: [
+				{hooks: [{type: 'command', command: '/opt/bin/chamoji agent-hook'}]},
+			],
+		},
+	});
+	await mkdir(path.join(dir, '.claude'));
+	await writeFile(path.join(dir, '.claude', 'settings.json'), text);
+	const {stdout} = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+	expect(stdout).toContain(
+		'.claude/settings.json: already has the commit hook',
+	);
+	expect(await read(dir, '.claude/settings.json')).toBe(text);
+});
+
+test('init --agents refuses a corrupt settings file', async () => {
+	const dir = await plainRepo();
+	await mkdir(path.join(dir, '.claude'));
+	const corrupt = '{"hooks": {"PreToolUse": [,]}';
+	await writeFile(path.join(dir, '.claude', 'settings.json'), corrupt);
+	const {code, stdout, stderr} = await chamoji(
+		['init', '--agents'],
+		dir,
+		NO_CHAMOJI,
+	);
+	expect(code).toBe(1);
+	expect(stderr).toContain('.claude/settings.json is not valid JSON');
+	expect(stderr).toContain('Nothing was changed');
+	expect(stdout).toBe('');
+	expect(await read(dir, '.claude/settings.json')).toBe(corrupt);
+	// The other file waits too, so one run does all or none.
+	expect(await missing(dir, '.mcp.json')).toBe(true);
+});
+
+test('init --agents refuses a corrupt .mcp.json and leaves it as it was', async () => {
+	const dir = await plainRepo();
+	await writeFile(path.join(dir, '.mcp.json'), '{"mcpServers": ');
+	const {code, stderr} = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+	expect(code).toBe(1);
+	expect(stderr).toContain('.mcp.json is not valid JSON');
+	expect(await read(dir, '.mcp.json')).toBe('{"mcpServers": ');
+	expect(await missing(dir, '.claude')).toBe(true);
+});
+
+test('init --agents refuses files that are not the shape it needs', async () => {
+	for (const [file, text, what] of [
+		['.mcp.json', '[]', 'is not a JSON object'],
+		['.mcp.json', 'null', 'is not a JSON object'],
+		['.mcp.json', '{"mcpServers": []}', 'a "mcpServers" that is not an object'],
+		[
+			'.mcp.json',
+			'{"mcpServers": "x"}',
+			'a "mcpServers" that is not an object',
+		],
+		[
+			'.claude/settings.json',
+			'{"hooks": []}',
+			'a "hooks" that is not an object',
+		],
+		[
+			'.claude/settings.json',
+			'{"hooks": {"PreToolUse": {}}}',
+			'a "hooks.PreToolUse" that is not a list',
+		],
+	] as const) {
+		const dir = await plainRepo();
+		await mkdir(path.join(dir, '.claude'));
+		await writeFile(path.join(dir, file), text);
+		const {code, stderr} = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+		expect(code).toBe(1);
+		expect(stderr).toContain(what);
+		expect(await read(dir, file)).toBe(text);
+	}
+});
+
+test('init --agents refuses a symlinked file and writes through nothing', async () => {
+	const dir = await plainRepo();
+	const elsewhere = path.join(await tempDir(), 'shared.json');
+	await writeFile(elsewhere, '{}\n');
+	await symlink(elsewhere, path.join(dir, '.mcp.json'));
+	const {code, stderr} = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+	expect(code).toBe(1);
+	expect(stderr).toContain('.mcp.json is a symlink');
+	expect(await readFile(elsewhere, 'utf8')).toBe('{}\n');
+	expect(await missing(dir, '.claude')).toBe(true);
+});
+
+test('init --agents refuses a symlinked .claude folder', async () => {
+	const dir = await plainRepo();
+	const elsewhere = await tempDir();
+	await symlink(elsewhere, path.join(dir, '.claude'));
+	const {code, stderr} = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+	expect(code).toBe(1);
+	expect(stderr).toContain(
+		'.claude/settings.json is inside a symlinked folder',
+	);
+	expect(await missing(elsewhere, 'settings.json')).toBe(true);
+	expect(await missing(dir, '.mcp.json')).toBe(true);
+});
+
+test('init --agents refuses a folder where a file should be', async () => {
+	const dir = await plainRepo();
+	await mkdir(path.join(dir, '.mcp.json'));
+	const {code, stderr} = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+	expect(code).toBe(1);
+	expect(stderr).toContain('.mcp.json is not a file');
+});
+
+test('init --agents refusing a file also leaves the fetch refspec alone', async () => {
+	const {clone} = await withOrigin();
+	await writeFile(path.join(clone, '.mcp.json'), '{');
+	const {code} = await chamoji(['init', '--agents'], clone, NO_CHAMOJI);
+	expect(code).toBe(1);
+	expect(await fetchLines(clone)).toEqual([
+		'+refs/heads/*:refs/remotes/origin/*',
+	]);
+});
+
+test('init --agents keeps a __proto__ key as data and does not pollute', async () => {
+	const dir = await plainRepo();
+	await writeFile(
+		path.join(dir, '.mcp.json'),
+		'{"__proto__": {"chamoji": true}, "mcpServers": {"__proto__": {"x": 1}}}',
+	);
+	const {code} = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+	expect(code).toBe(0);
+	const after = JSON.parse(await read(dir, '.mcp.json'));
+	expect(Object.hasOwn(after.mcpServers, 'chamoji')).toBe(true);
+	expect(Object.hasOwn(after, '__proto__')).toBe(true);
+	expect(({} as Record<string, unknown>).chamoji).toBeUndefined();
+});
+
+test('init --agents with no origin still sets up the agent files', async () => {
+	const dir = await plainRepo();
+	const {code, stdout} = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+	expect(code).toBe(0);
+	expect(stdout).toContain('.mcp.json: added');
+	expect(stdout).toContain('No remote named origin');
+});
+
+test('init --agents on a clone also sets up memory sharing', async () => {
+	const {clone} = await withOrigin();
+	const {code, stdout} = await chamoji(['init', '--agents'], clone, NO_CHAMOJI);
+	expect(code).toBe(0);
+	expect(stdout).toContain('.claude/settings.json: added the commit hook');
+	expect(stdout).toContain('origin now fetches chamoji memory');
+	expect(await fetchLines(clone)).toContain(MEMORY_FETCH_REFSPEC);
+});
+
+test('init --agents from a subdirectory writes at the repo root', async () => {
+	const dir = await plainRepo();
+	const sub = path.join(dir, 'packages', 'app');
+	await mkdir(sub, {recursive: true});
+	const {code} = await chamoji(['init', '--agents'], sub, NO_CHAMOJI);
+	expect(code).toBe(0);
+	expect(await missing(dir, '.mcp.json')).toBe(false);
+	expect(await missing(sub, '.mcp.json')).toBe(true);
+	expect(await missing(sub, '.claude')).toBe(true);
+});
+
+test('plain init writes neither file', async () => {
+	const {clone} = await withOrigin();
+	const {code} = await chamoji(['init'], clone, NO_CHAMOJI);
+	expect(code).toBe(0);
+	expect(await missing(clone, '.mcp.json')).toBe(true);
+	expect(await missing(clone, '.claude')).toBe(true);
+	const none = await plainRepo();
+	await chamoji(['init'], none, NO_CHAMOJI);
+	expect(await missing(none, '.mcp.json')).toBe(true);
+	expect(await missing(none, '.claude')).toBe(true);
 });
