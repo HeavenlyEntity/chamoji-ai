@@ -390,7 +390,11 @@ test('a path outside the repo gives isError true', async () => {
 	for (const file of ['../elsewhere.txt', outside, '/etc/passwd']) {
 		const {isError, text} = await callTool(tools, 'why', {file, line: 1});
 		expect(isError, file).toBe(true);
-		expect(text, file).toMatch(/outside repository|No such file/i);
+		// Git for Windows reports /etc/passwd as a missing path, not an outside one.
+		expect(text, file).toMatch(
+			/outside repository|No such file|is in HEAD but/i,
+		);
+		expect(text, file).not.toContain('root:');
 	}
 });
 
@@ -756,11 +760,11 @@ test('chamoji mcp takes no arguments', async () => {
 });
 
 test('an oversized card and subject are cut, and the reply says so', async () => {
-	// Argument size limits keep one commit message small, so the card is many lines.
+	// Windows caps a command line at 32 KB, so the card is many short lines.
 	const lines = (key: string) =>
 		Array.from(
 			{length: 22},
-			(_, index) => `${key}: line${index} ${'w'.repeat(2500)}`,
+			(_, index) => `${key}: line${index} ${'w'.repeat(600)}`,
 		).join('\n');
 	repo = await createRepo([
 		{
