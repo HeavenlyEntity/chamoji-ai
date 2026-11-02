@@ -10,6 +10,9 @@ import {
 
 export const MEMORY_REF = 'refs/chamoji/memory';
 
+/** The last fetched copy of origin's memory. A fetch never lands on `MEMORY_REF`. */
+export const MEMORY_REMOTE_REF = 'refs/chamoji/remotes/origin/memory';
+
 const OBJECT_ID = /^[0-9a-f]{40,64}$/;
 
 /**
@@ -64,9 +67,9 @@ export class MemoryError extends Error {
 	}
 }
 
-const livePath = (slug: string) => `workstreams/${slug}.json`;
-const archivePath = (slug: string) => `archive/${slug}.json`;
-const purgedPath = (slug: string) => `purged/${slug}`;
+export const livePath = (slug: string) => `workstreams/${slug}.json`;
+export const archivePath = (slug: string) => `archive/${slug}.json`;
+export const purgedPath = (slug: string) => `purged/${slug}`;
 
 /** The live entries, and the archived ones too with `archived`, by slug. */
 export async function listMemory(
@@ -164,8 +167,9 @@ export async function archiveMemory(cwd: string, slug: string): Promise<void> {
 /**
  * Removes an entry for good, leaving a tombstone so a merge can't bring it
  * back. Blobs stay reachable through parents, so the ref restarts from a new
- * root commit; the old objects remain on disk until git collects them. It
- * goes by path, so an entry too damaged to read can still be removed.
+ * root commit, and the fetched copy of origin goes too because it holds the
+ * text; the old objects remain on disk until git collects them. It goes by
+ * path, so an entry too damaged to read can still be removed.
  */
 export async function purgeMemory(cwd: string, slug: string): Promise<void> {
 	assertSlug(slug);
@@ -183,6 +187,9 @@ export async function purgeMemory(cwd: string, slug: string): Promise<void> {
 		},
 		{root: true},
 	);
+	if ((await headOf(cwd, MEMORY_REMOTE_REF)) !== undefined) {
+		await runGit(['update-ref', '-d', MEMORY_REMOTE_REF], cwd);
+	}
 }
 
 /**
@@ -261,7 +268,10 @@ async function writeBlob(cwd: string, text: string): Promise<string> {
 }
 
 /** Refuses an entry it couldn't read back, so a good one is never replaced by it. */
-async function writeEntry(cwd: string, entry: MemoryEntry): Promise<string> {
+export async function writeEntry(
+	cwd: string,
+	entry: MemoryEntry,
+): Promise<string> {
 	if (!toEntry(entry, entry.slug, entry.archived)) {
 		throw new MemoryError(`The entry for ${entry.slug} would not read back`);
 	}
@@ -274,7 +284,10 @@ async function memoryHead(cwd: string): Promise<string | undefined> {
 	return headOf(cwd, MEMORY_REF);
 }
 
-async function headOf(cwd: string, ref: string): Promise<string | undefined> {
+export async function headOf(
+	cwd: string,
+	ref: string,
+): Promise<string | undefined> {
 	try {
 		const args = ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`];
 		return (await runGit(args, cwd)).trim();
@@ -332,7 +345,7 @@ function isMemoryPath(file: string): boolean {
 	);
 }
 
-function slugOf(file: string): string {
+export function slugOf(file: string): string {
 	return file.slice(file.indexOf('/') + 1).replace(/\.json$/, '');
 }
 
@@ -365,7 +378,7 @@ async function load(
  * Builds an entry from untrusted JSON, picking each known field so nothing
  * else survives. Where it lives says what it is, not what it claims.
  */
-function toEntry(
+export function toEntry(
 	raw: unknown,
 	slug: string,
 	archived: boolean,
@@ -462,7 +475,7 @@ function isWhole({hash, body}: RawCommit): boolean {
  * The union by hash, newest first, with what HEAD says now beating what was
  * kept. A date JavaScript can't read sorts as the oldest.
  */
-function mergeCommits(
+export function mergeCommits(
 	kept: MemoryCommit[],
 	current: MemoryCommit[],
 ): MemoryCommit[] {

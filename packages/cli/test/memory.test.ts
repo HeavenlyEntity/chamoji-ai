@@ -164,7 +164,76 @@ test('an unknown subcommand is a usage error', async () => {
 	const dir = await remembered();
 	const {code, stderr} = await chamoji(['memory', 'nope'], dir);
 	expect(code).toBe(2);
-	expect(stderr).toContain('memory needs list, show or archive');
+	expect(stderr).toContain('memory needs list, show, archive or sync');
+});
+
+async function bareOrigin(dir: string): Promise<string> {
+	loose = await mkdtemp(path.join(tmpdir(), 'chamoji-memory-'));
+	await gitOutput(loose, ['init', '-q', '--bare']);
+	await gitOutput(dir, ['remote', 'add', 'origin', loose]);
+	return loose;
+}
+
+test('memory sync pushes and says what it did', async () => {
+	const dir = await remembered();
+	const remote = await bareOrigin(dir);
+	const {code, stdout} = await chamoji(['memory', 'sync'], dir);
+	expect(code).toBe(0);
+	expect(stdout).toBe('Synced memory with origin: 2 entries.\n');
+	expect(await gitOutput(remote, ['rev-parse', 'refs/chamoji/memory'])).toBe(
+		await gitOutput(dir, ['rev-parse', 'refs/chamoji/memory']),
+	);
+	const again = await chamoji(['memory', 'sync'], dir);
+	expect(again.stdout).toBe('Memory already matches origin: 2 entries.\n');
+});
+
+test('memory sync --json prints the result', async () => {
+	const dir = await remembered();
+	await bareOrigin(dir);
+	const {code, stdout} = await chamoji(['memory', 'sync', '--json'], dir);
+	expect(code).toBe(0);
+	expect(JSON.parse(stdout)).toEqual({
+		fetched: false,
+		merged: false,
+		pushed: true,
+		needsForce: false,
+		entries: 2,
+	});
+});
+
+test('memory sync with nothing anywhere says so', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await bareOrigin(repo.dir);
+	const {code, stdout} = await chamoji(['memory', 'sync'], repo.dir);
+	expect(code).toBe(0);
+	expect(stdout).toBe('Nothing to sync: no memory here or on origin yet.\n');
+});
+
+test('memory sync with no origin exits 1 and says so', async () => {
+	const dir = await remembered();
+	const {code, stderr} = await chamoji(['memory', 'sync'], dir);
+	expect(code).toBe(1);
+	expect(stderr).toBe('chamoji: No remote named origin\n');
+});
+
+test('memory sync after a purge gives the exact step and pushes nothing', async () => {
+	const dir = await remembered();
+	const remote = await bareOrigin(dir);
+	await chamoji(['memory', 'sync'], dir);
+	const before = await gitOutput(remote, ['rev-parse', 'refs/chamoji/memory']);
+	await chamoji(['memory', 'archive', 'auth', '--purge'], dir);
+	const {code, stdout} = await chamoji(['memory', 'sync'], dir);
+	expect(code).toBe(0);
+	expect(stdout).toContain('git push --force origin refs/chamoji/memory\n');
+	expect(stdout).toContain('still on origin');
+	expect(await gitOutput(remote, ['rev-parse', 'refs/chamoji/memory'])).toBe(
+		before,
+	);
+});
+
+test('memory sync takes no arguments', async () => {
+	const dir = await remembered();
+	expect((await chamoji(['memory', 'sync', 'auth'], dir)).code).toBe(2);
 });
 
 test('outside a repo reports it plainly', async () => {

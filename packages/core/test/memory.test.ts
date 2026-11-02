@@ -4,6 +4,7 @@ import {afterEach, expect, test, vi} from 'vitest';
 import {runGitWithInput} from '../src/git.js';
 import {
 	MEMORY_REF,
+	MEMORY_REMOTE_REF,
 	MemoryError,
 	archiveMemory,
 	listMemory,
@@ -450,6 +451,21 @@ test("purge leaves no trace in the ref's history", async () => {
 	// A new root commit, and the other entry is unharmed.
 	expect(await gitOutput(dir, ['rev-list', '--count', MEMORY_REF])).toBe('1\n');
 	expect(await readMemory(dir, 'billing')).toBeDefined();
+});
+
+test('purge deletes the fetched copy of the remote, which holds the text', async () => {
+	const dir = await shippedRepo();
+	await snapshotWorkstream(dir, 'auth');
+	await snapshotWorkstream(dir, 'billing');
+	await gitOutput(dir, ['update-ref', MEMORY_REMOTE_REF, MEMORY_REF]);
+	await dropBranchCommits(dir);
+
+	await purgeMemory(dir, 'auth');
+
+	expect(await gitOutput(dir, ['for-each-ref', 'refs/chamoji/remotes'])).toBe(
+		'',
+	);
+	expect(await everyRef(dir)).not.toContain('the old form leaked');
 });
 
 test("purge removes a live entry, and one that can't be parsed", async () => {
