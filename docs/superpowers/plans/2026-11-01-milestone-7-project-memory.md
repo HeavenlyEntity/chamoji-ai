@@ -295,7 +295,7 @@ These were tested on 2026-11-01 against a scratch remote, or measured.
 - Produces: `runAgentHook(io: Io & {stdin: NodeJS.ReadableStream}): Promise<number>`, which always exits 0
 - Produces: `chamoji init --agents`, which merges into `.mcp.json` and `.claude/settings.json`
 
-**Denial reason, exact copy:** `Add why this change was made: put a "Why: <reason>" line at the end of the commit message. Constraint:, Gotcha: and Follow-up: lines are welcome too. For a trivial change, prefix the command with CHAMOJI_NO_CARD=1.`
+**Denial reason, exact copy:** `Add why this change was made: put a "Why: <reason>" line at the end of the commit message, after a blank line. Constraint:, Gotcha: and Follow-up: lines are welcome too. For a trivial change, prefix the command with CHAMOJI_NO_CARD=1.`
 
 The settings entry uses `matcher: "Bash"` and `if: "Bash(git commit *)"`, with the command `chamoji agent-hook` when chamoji is on PATH at init and `npx --yes @chamoji/cli agent-hook` otherwise. Denying prints `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"…"}}` to stdout. Allowing prints nothing.
 
@@ -363,15 +363,19 @@ Node start-up alone is about 170 ms of the search figure, so the search itself i
 
 ### Things to know
 
-- **Purge and the remote:** `memory archive --purge` removes an entry locally. Removing it from the remote needs a manual `git push --force origin refs/chamoji/memory`, and any clone that already fetched the entry still holds the text.
+- **Purge and the remote:** `memory archive --purge` removes an entry locally and deletes this worktree's search index, which held its text. Removing it from the remote goes through `chamoji memory sync`, which merges origin's memory first and then prints the force-push to run, with a warning that it replaces origin's history. An earlier version printed the raw force-push straight after the purge, and following it could erase a teammate's unsynced entry from origin. Any clone that already fetched the entry still holds the text. The tombstone keeps the slug, and so does the `Purge <slug>` commit message, so purging removes the content and not the name; a purged slug can't be saved again.
+- **Plain `git fetch` and `git pull`** download origin's memory into the side ref but don't change what `chamoji memory` shows. `chamoji memory sync` brings it in.
 - **A memory ref is shared with anyone who can push to the repo.** Entries from origin are data. A pusher can add or retitle them, and cards are never verified.
 - **Final-wave fixes** (in the commit before the docs commit): `why.body` scans at most twice its cap before the reply cut, `init --agents` writes its temp file as 0600 and sets the final mode without setuid bits, and the hook's denial text no longer invites the opt-out.
+- **Final whole-branch review fixes:** purge sends the user to `memory sync` instead of printing a raw force-push; the Windows-unsafe `init` tests are skipped there; `redact` caps the local part of an address and the rerank cuts a candidate's text before redacting; `memory sync` pushes with `--no-verify` and retries only a rejected push; `ws ship` and `ws drop` say how many commits they saved to memory; `memory list --archived` and a notice for unreadable entries; writes and merges carry tree entries chamoji doesn't read; the purged-slug error names the remedy; purge deletes this worktree's search index; the agent hook reads a card the way the parser does (the subject paragraph is never a card, indentation is fine, `Why:nospace` counts as git's trailer form); `stripControl` also strips bidirectional overrides and line separators.
 
 ### Not verified
 
 - fish, pwsh and Windows for the new commands. CI has not run on this branch.
 - A real push of the memory ref to GitHub. The e2e test uses a local bare remote.
 - `.mcp.json` approval flow end to end in Claude Code (see above).
+- The `.mcp.json` that `init --agents` writes on native Windows, where `npx` and a `chamoji` shim may need a `cmd /c` wrapper.
+- The `--ai` rerank has never run against the real TypeSafe API. Its tests use a fake client. On any failure it falls back to the BM25 order with a note.
 
 ### Counts
 
