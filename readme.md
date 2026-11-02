@@ -175,7 +175,7 @@ git commit -m "✨ Retry idle connections" \
   --trailer "Gotcha: the retry must not repeat a POST"
 ```
 
-A line can run on over the lines that follow it, until a blank line or the next `Key: value` line, and a key can repeat. Chamoji only reads cards. It never writes one, and `--ai` never touches them.
+A line can run on over the lines that follow it, until a blank line or the next `Key: value` line, and a key can repeat. Jev never writes or changes a card.
 
 **Squash merges:** chamoji reads card lines anywhere in a commit's body, so a squash keeps them as long as the body survives. On GitHub that is the same table as for `Workstream:` lines: "Default message" and "Pull request title and commit details" keep the cards. "Pull request title and description" keeps only what is in the PR description, and "Pull request title" drops the whole body, cards included. If you run `chamoji ws ship` on the branch before the squash, the summary saved on the memory ref keeps the cards even then (see below).
 
@@ -203,7 +203,7 @@ chamoji memory sync                     # merge with origin and push
 
 - **Archive, never delete:** `archive` hides an entry from the list, and `memory show` still finds it. Only `--purge` removes one.
 - **Purge is local:** it removes the entry from your ref and leaves a marker, so a later sync can't bring it back. It doesn't reach origin. For that, run `git push --force origin refs/chamoji/memory` yourself; `chamoji memory sync` prints the step when it is needed, and chamoji never force-pushes. Any other clone that has already fetched the entry still holds the text.
-- **Search** is keyword search (BM25) over every commit on `HEAD`, with its subject, body and card, and over every remembered workstream. The index is a cache at `.git/chamoji/memory-index.json`. It rebuilds itself when `HEAD` or memory changes, and `memory reindex` forces it. It needs no network and no key. With `--ai`, Jev reorders the ten best matches (see below).
+- **Search** is keyword search (BM25) over every commit on `HEAD`, with its subject, body and card, and over the live workstream entries, not the archived ones. The index is a cache at `.git/chamoji/memory-index.json`. It rebuilds itself when `HEAD` or memory changes, and `memory reindex` forces it. It needs no network and no key. With `--ai`, Jev reorders the ten best matches (see below).
 
 ### Sharing memory
 
@@ -243,7 +243,7 @@ Everything the tools return is commit text that other people wrote, and each too
 
 **The commit hook** is a `PreToolUse` hook on Claude Code's Bash tool. When the agent runs a `git commit` whose message has no card line, the hook denies it and says what to add:
 
-> Add why this change was made: put a "Why: <reason>" line at the end of the commit message. Constraint:, Gotcha: and Follow-up: lines are welcome too. Only if the user told you to skip this, prefix the command with CHAMOJI_NO_CARD=1.
+> `Add why this change was made: put a "Why: <reason>" line at the end of the commit message. Constraint:, Gotcha: and Follow-up: lines are welcome too. Only if the user told you to skip this, prefix the command with CHAMOJI_NO_CARD=1.`
 
 The agent retries with a `Why:` line. Any one of the four lines counts. `CHAMOJI_NO_CARD=1` in front of the command is the opt-out, meant for when you've told the agent to skip cards. Commits that take their message from a file or another commit (`-F`, `-C`) and commands that only look (`--dry-run`, `--help`) pass. The hook reads the command text, so a commit hidden inside `sh -c '…'`, `xargs` or a shell alias isn't seen. If anything goes wrong inside the hook, it says nothing and lets the command through, and the committed command ends in `|| true`, so a chamoji too old to know the hook can't block your commits.
 
@@ -423,12 +423,12 @@ chamoji changelog --ai
 ```
 
 - **What is sent:** only the commits no rule could sort, at most 300 characters each of subject and body, with email addresses and trailer lines such as `Signed-off-by:` removed. Never diffs, code or author details. `next-version --ai` sends only unreleased commits.
-- **Memory search:** `chamoji memory search --ai` and `chamoji mcp --ai` send the query and, for each of the ten best matches, at most 300 characters of its subject and card text, with email addresses replaced by `<email>`. Never diffs, code or authors. Jev only reorders what keyword search found; it doesn't write or change a card. The key comes from the same places as below.
+- **Memory search:** `chamoji memory search --ai` and `chamoji mcp --ai` send the query and, for each of the ten best matches, at most 300 characters of its subject and card text, with email addresses replaced by `<email>`. Never diffs, code or authors. Jev only reorders what keyword search found; it doesn't write or change a card. The key comes from the `TYPESAFE_API_KEY` environment variable or an untracked `.env.local` or `.env`. A tracked file is ignored here, because a cloned repo could otherwise name someone else's account.
 - **If a request fails:** chamoji stops sending, keeps the picks it already has, and leaves the rest in Miscellaneous.
 - **What it never does:** override an emoji or type the author wrote, or mark a change as breaking. Only authors declare breaking changes.
 - **Where the key comes from:** the `TYPESAFE_API_KEY` environment variable, or else that one line from `.env.local` or `.env` in the current folder. No other variable in those files is read.
 - **Asking once:** Jev's answers are kept in `.git/chamoji/cache.json`, keyed by commit, so the next run doesn't ask about those commits again. The file holds only each commit's pick and confidence.
-- **Without `--ai`:** chamoji makes no network calls.
+- **Without `--ai`:** chamoji sends nothing to TypeSafe.
 
 ## Update notice
 
