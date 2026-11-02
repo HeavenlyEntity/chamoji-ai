@@ -750,6 +750,25 @@ test('init --agents leaves no temp file and keeps the permissions of a file it r
 	expect(await readdir(path.join(dir, '.claude'))).toEqual(['settings.json']);
 });
 
+test('init --agents gives a new file the default permissions', async () => {
+	const dir = await plainRepo();
+	const {code} = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+	expect(code).toBe(0);
+	const expected = 0o666 & ~process.umask();
+	expect((await stat(path.join(dir, '.mcp.json'))).mode & 0o7777).toBe(
+		expected,
+	);
+});
+
+test('init --agents does not carry setuid or setgid over to the file it replaces', async () => {
+	const dir = await plainRepo();
+	await writeFile(path.join(dir, '.mcp.json'), '{}\n');
+	await chmod(path.join(dir, '.mcp.json'), 0o6664);
+	const {code} = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+	expect(code).toBe(0);
+	expect((await stat(path.join(dir, '.mcp.json'))).mode & 0o7777).toBe(0o664);
+});
+
 test.skipIf(process.getuid?.() === 0)(
 	'init --agents says which file it already changed when the next cannot be written',
 	async () => {

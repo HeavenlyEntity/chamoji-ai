@@ -13,14 +13,22 @@ import {
 	writeTree,
 	type MemoryHit,
 } from '@chamoji/core';
-import {afterEach, expect, test} from 'vitest';
+import {afterEach, expect, test, vi} from 'vitest';
 import {
 	createRepo,
 	gitOutput,
 	type FixtureRepo,
 } from '../../core/test/helpers/fixture-repo.js';
 import {MISSING_KEY} from '../src/env.js';
+import {redact} from '../src/jev-classifier.js';
 import {createTools, handleMessage, runMcp, type McpTools} from '../src/mcp.js';
+
+// The real redact, wrapped so a test can see how much text it was given.
+vi.mock('../src/jev-classifier.js', async importOriginal => {
+	const original =
+		await importOriginal<typeof import('../src/jev-classifier.js')>();
+	return {...original, redact: vi.fn(original.redact)};
+});
 
 const cliJs = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
 
@@ -863,6 +871,26 @@ test('why leaves out the trailer block and any address in the body', async () =>
 	expect(text).not.toMatch(/example\.com|Eve|Bob|Co-Authored|Signed-off/);
 	expect(data.body).toContain('Thanks to <email> for the report.');
 	expect(data.card.why).toEqual(['the form leaked']);
+});
+
+test('why scans only the start of a huge body for addresses', async () => {
+	repo = await createRepo([
+		{
+			commit: '✨ Add a',
+			body: `${'word '.repeat(40_000)}\nMail carol@example.com`,
+			files: {'src/a.ts': 'one\n'},
+		},
+	]);
+	vi.mocked(redact).mockClear();
+	const {data} = await callTool(createTools(repo.dir), 'why', {
+		file: 'src/a.ts',
+		line: 1,
+	});
+	const seen = vi.mocked(redact).mock.calls.map(([text]) => text.length);
+	expect(seen.length).toBeGreaterThan(0);
+	expect(Math.max(...seen)).toBeLessThanOrEqual(8000);
+	expect(data.body.length).toBeLessThanOrEqual(4000);
+	expect(data.truncated).toBe(true);
 });
 
 test('U+2028 and U+2029 are escaped, so a reply stays one line', async () => {
