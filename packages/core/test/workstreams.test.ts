@@ -674,3 +674,61 @@ test('stampWorkstream still treats empty, scissors and sign-off messages as empt
 		expect(await readFile(message, 'utf8')).toBe(text);
 	}
 });
+
+const OUTSIDE =
+	'workstreams:\n  leak:\n    title: Leaked\n    status: active\n';
+
+test.skipIf(process.platform === 'win32')(
+	'readWorkstreams refuses a workstreams file that is a symlink',
+	async () => {
+		repo = await createRepo([{commit: '🎉 Init'}]);
+		const target = `${repo.dir}.outside.yml`;
+		await writeFile(target, OUTSIDE);
+		await mkdir(path.dirname(fileIn(repo.dir)), {recursive: true});
+		await symlink(target, fileIn(repo.dir));
+		try {
+			await expect(readWorkstreams(repo.dir)).rejects.toThrow(WorkstreamError);
+			await expect(readWorkstreams(repo.dir)).rejects.toThrow(/symlink/);
+		} finally {
+			await rm(target, {force: true});
+		}
+	},
+);
+
+test.skipIf(process.platform === 'win32')(
+	'readWorkstreams refuses a .chamoji folder that is a symlink',
+	async () => {
+		repo = await createRepo([{commit: '🎉 Init'}]);
+		const outside = `${repo.dir}.outside`;
+		await mkdir(outside);
+		await writeFile(path.join(outside, 'workstreams.yml'), OUTSIDE);
+		await symlink(outside, path.join(repo.dir, '.chamoji'));
+		try {
+			await expect(readWorkstreams(repo.dir)).rejects.toThrow(WorkstreamError);
+			await expect(readWorkstreams(repo.dir)).rejects.toThrow(/\.chamoji/);
+		} finally {
+			await rm(outside, {recursive: true, force: true});
+		}
+	},
+);
+
+test('readWorkstreams refuses a file over 1 MiB and one that is not a file', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await writeWorkstreams(
+		repo.dir,
+		`workstreams:\n  a:\n    title: A\n    status: active\n    description: ${'x'.repeat(1024 * 1024)}\n`,
+	);
+	await expect(readWorkstreams(repo.dir)).rejects.toThrow(/larger than 1 MiB/);
+	await rm(fileIn(repo.dir));
+	await mkdir(fileIn(repo.dir));
+	await expect(readWorkstreams(repo.dir)).rejects.toThrow(/not a regular file/);
+});
+
+test('readWorkstreams still reads a plain file and an absent one', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	expect(await readWorkstreams(repo.dir)).toEqual([]);
+	await writeWorkstreams(repo.dir, OUTSIDE);
+	expect((await readWorkstreams(repo.dir)).map(item => item.slug)).toEqual([
+		'leak',
+	]);
+});

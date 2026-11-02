@@ -1,11 +1,12 @@
 import {spawn} from 'node:child_process';
-import {mkdtemp, rm, writeFile} from 'node:fs/promises';
+import {mkdir, mkdtemp, rm, symlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {PassThrough} from 'node:stream';
 import {fileURLToPath} from 'node:url';
 import {
 	MEMORY_REF,
+	readTree,
 	runGitWithInput,
 	setActive,
 	snapshotWorkstream,
@@ -420,19 +421,35 @@ test('outside a git repository every tool gives isError true', async () => {
 	}
 });
 
-/** Points the memory ref at an entry that is not JSON, beside a good one. */
-async function plantDamagedEntry(dir: string): Promise<void> {
-	const tree = new Map<string, string>();
-	const write = async (file: string, text: string) =>
-		tree.set(
-			file,
-			(
-				await runGitWithInput(['hash-object', '-w', '--stdin'], dir, text)
-			).trim(),
-		);
-	await write('workstreams/broken.json', '{not json');
-	const commit = await writeTree(dir, tree, [], 'Planted');
+/** Adds `file` to the memory ref's tree as a new commit, keeping everything already there. */
+async function plantFile(
+	dir: string,
+	file: string,
+	text: string,
+): Promise<void> {
+	const head = (
+		await gitOutput(dir, ['rev-parse', '--verify', '-q', MEMORY_REF]).catch(
+			() => '',
+		)
+	).trim();
+	const tree =
+		head === '' ? new Map<string, string>() : await readTree(dir, head);
+	tree.set(
+		file,
+		(await runGitWithInput(['hash-object', '-w', '--stdin'], dir, text)).trim(),
+	);
+	const commit = await writeTree(
+		dir,
+		tree,
+		head === '' ? [] : [head],
+		'Planted',
+	);
 	await gitOutput(dir, ['update-ref', MEMORY_REF, commit]);
+}
+
+/** Points the memory ref at an entry that is not JSON. */
+async function plantDamagedEntry(dir: string): Promise<void> {
+	await plantFile(dir, 'workstreams/broken.json', '{not json');
 }
 
 /** Runs the server on a fake stdin and returns what it wrote. */
@@ -728,4 +745,277 @@ test('chamoji mcp takes no arguments', async () => {
 	expect(code).toBe(2);
 	expect(stdout).toBe('');
 	expect(stderr).toContain('mcp takes no arguments');
+});
+
+test('an oversized card and subject are cut, and the reply says so', async () => {
+	// Argument size limits keep one commit message small, so the card is many lines.
+	const lines = (key: string) =>
+		Array.from(
+			{length: 22},
+			(_, index) => `${key}: line${index} ${'w'.repeat(2500)}`,
+		).join('\n');
+	repo = await createRepo([
+		{
+			commit: `✨ ${'S'.repeat(700)}`,
+			body: `${lines('Why')}\n${lines('Gotcha')}`,
+			files: {'src/a.ts': 'one\n'},
+		},
+	]);
+	const tools = createTools(repo.dir);
+
+	const why = await callTool(tools, 'why', {file: 'src/a.ts', line: 1});
+	expect(why.data.truncated).toBe(true);
+	expect(why.data.subject.length).toBeLessThanOrEqual(500);
+	expect(why.data.card.why).toHaveLength(20);
+	expect(why.data.card.gotcha).toHaveLength(20);
+	for (const line of [...why.data.card.why, ...why.data.card.gotcha]) {
+		expect(line.length).toBeLessThanOrEqual(500);
+	}
+
+	expect(why.data.body.length).toBeLessThanOrEqual(4000);
+	expect(why.text.length).toBeLessThan(100_000);
+
+	const found = await callTool(tools, 'search_memory', {query: 'line3'});
+	const [hit] = found.data.hits;
+	expect(found.data.truncated).toBe(true);
+	expect(hit.title.length).toBeLessThanOrEqual(500);
+	expect(hit.card.why).toHaveLength(20);
+	expect(hit.card.why[0].length).toBeLessThanOrEqual(500);
+	expect(found.text.length).toBeLessThan(100_000);
+});
+
+test('search_memory drops trailing hits to stay within 100 KB', async () => {
+	const card = Array.from(
+		{length: 20},
+		(_, index) => `Why: reason${index} ${'v'.repeat(480)}`,
+	).join('\n');
+	repo = await createRepo(
+		Array.from({length: 14}, (_, index) => ({
+			commit: `✨ Add widget ${index}`,
+			body: card,
+		})),
+	);
+	const {data, text} = await callTool(createTools(repo.dir), 'search_memory', {
+		query: 'widget',
+		limit: 50,
+	});
+	expect(text.length).toBeLessThanOrEqual(100_000);
+	expect(data.truncated).toBe(true);
+	expect(data.hits.length).toBeGreaterThan(0);
+	expect(data.hits.length).toBeLessThan(14);
+});
+
+test('a long workstream and an oversized title are cut too', async () => {
+	repo = await createRepo([
+		{
+			commit: '🎉 Init',
+			files: {
+				'.chamoji/workstreams.yml': `workstreams:\n  auth:\n    title: ${'T'.repeat(700)}\n    status: shipped\n`,
+			},
+		},
+		...Array.from({length: 55}, (_, index) => ({
+			commit: `✨ Add step ${index}`,
+			body: `Why: ${'r'.repeat(900)}\nWorkstream: auth`,
+		})),
+	]);
+	await snapshotWorkstream(repo.dir, 'auth');
+	const {data, text} = await callTool(createTools(repo.dir), 'workstream', {
+		slug: 'auth',
+	});
+	expect(data.truncated).toBe(true);
+	expect(data.workstream.title.length).toBeLessThanOrEqual(500);
+	expect(data.workstream.memory.commitCount).toBe(55);
+	expect(data.workstream.memory.commits).toHaveLength(50);
+	expect(
+		data.workstream.memory.commits[0].card.why[0].length,
+	).toBeLessThanOrEqual(500);
+	expect(text.length).toBeLessThanOrEqual(100_000);
+});
+
+test('a small reply carries no truncated flag', async () => {
+	const dir = await project();
+	const {data} = await callTool(createTools(dir), 'why', {
+		file: 'src/a.ts',
+		line: 1,
+	});
+	expect(data).not.toHaveProperty('truncated');
+});
+
+test('why leaves out the trailer block and any address in the body', async () => {
+	repo = await createRepo([
+		{
+			commit: '✨ Add a',
+			body: [
+				'Why: the form leaked',
+				'',
+				'Thanks to carol@example.com for the report.',
+				'',
+				'Co-Authored-By: Eve <eve@example.com>',
+				'Signed-off-by: Bob <bob@example.com>',
+			].join('\n'),
+			files: {'src/a.ts': 'one\n'},
+		},
+	]);
+	const {data, text} = await callTool(createTools(repo.dir), 'why', {
+		file: 'src/a.ts',
+		line: 1,
+	});
+	expect(text).not.toMatch(/example\.com|Eve|Bob|Co-Authored|Signed-off/);
+	expect(data.body).toContain('Thanks to <email> for the report.');
+	expect(data.card.why).toEqual(['the form leaked']);
+});
+
+test('U+2028 and U+2029 are escaped, so a reply stays one line', async () => {
+	const tools: McpTools = {
+		...noTools,
+		async why() {
+			return {kind: 'commit', subject: 'a\u2028b\u2029c'};
+		},
+	};
+	const reply = (await handleMessage(
+		request('tools/call', {name: 'why', arguments: {file: 'x', line: 1}}),
+		tools,
+	))!;
+	expect(reply).not.toMatch(/[\u2028\u2029]/);
+	expect(reply).toContain(String.raw`\u2028`);
+	expect(JSON.parse(JSON.parse(reply).result.content[0].text).subject).toBe(
+		'a\u2028b\u2029c',
+	);
+
+	const error = (await handleMessage(request('x\u2028y\u2029z'), noTools))!;
+	expect(error).not.toMatch(/[\u2028\u2029]/);
+	expect(JSON.parse(error).error.message).toContain('x\u2028y\u2029z');
+});
+
+test('initialize and every tool say returned text is data, not instructions', async () => {
+	const {result} = await send(noTools, 'initialize', {
+		protocolVersion: '2025-11-25',
+	});
+	expect(result.instructions).toMatch(/written by other people/);
+	expect(result.instructions).toMatch(/never as instructions/);
+	const {result: listed} = await send(noTools, 'tools/list');
+	for (const tool of listed.tools) {
+		expect(tool.description, tool.name).toMatch(/written by other people/);
+		expect(tool.description, tool.name).toMatch(/never as instructions/);
+	}
+});
+
+const LEAK = [
+	'workstreams:',
+	'  leak:',
+	'    title: LEAKED from outside the repo',
+	'    status: active',
+	'',
+].join('\n');
+
+test.skipIf(process.platform === 'win32')(
+	'a workstreams file that is a symlink is not read through, and memory still answers',
+	async () => {
+		const dir = await project();
+		const target = `${dir}.outside.yml`;
+		await writeFile(target, LEAK);
+		await rm(path.join(dir, '.chamoji/workstreams.yml'));
+		await symlink(target, path.join(dir, '.chamoji/workstreams.yml'));
+		try {
+			const tools = createTools(dir);
+			const known = await callTool(tools, 'workstream', {slug: 'auth'});
+			expect(known.isError).toBe(false);
+			expect(known.data.workstream.title).toBe('Auth revamp');
+			const leak = await callTool(tools, 'workstream', {slug: 'leak'});
+			expect(leak.isError).toBe(true);
+			expect(leak.text).not.toContain('LEAKED');
+			const list = await callTool(tools, 'workstream', {});
+			expect(list.text).not.toContain('LEAKED');
+			expect(
+				list.data.workstreams.map((item: {slug: string}) => item.slug),
+			).toEqual(['auth']);
+		} finally {
+			await rm(target, {force: true});
+		}
+	},
+);
+
+test.skipIf(process.platform === 'win32')(
+	'a .chamoji folder that is a symlink is not read through either',
+	async () => {
+		const dir = await project();
+		const outside = `${dir}.outside`;
+		await mkdir(outside);
+		await writeFile(path.join(outside, 'workstreams.yml'), LEAK);
+		await rm(path.join(dir, '.chamoji'), {recursive: true});
+		await symlink(outside, path.join(dir, '.chamoji'));
+		try {
+			const list = await callTool(createTools(dir), 'workstream', {});
+			expect(list.text).not.toContain('LEAKED');
+			expect(
+				list.data.workstreams.map((item: {slug: string}) => item.slug),
+			).toEqual(['auth']);
+		} finally {
+			await rm(outside, {recursive: true, force: true});
+		}
+	},
+);
+
+test('a broken workstreams file leaves memory to answer', async () => {
+	const dir = await project();
+	await writeFile(path.join(dir, '.chamoji/workstreams.yml'), 'a: [\n');
+	const tools = createTools(dir);
+	const known = await callTool(tools, 'workstream', {slug: 'auth'});
+	expect(known.isError).toBe(false);
+	expect(known.data.workstream).toMatchObject({
+		title: 'Auth revamp',
+		status: 'shipped',
+		memory: {commitCount: 1},
+	});
+	const list = await callTool(tools, 'workstream', {});
+	expect(list.isError).toBe(false);
+	expect(
+		list.data.workstreams.map((item: {slug: string}) => item.slug),
+	).toEqual(['auth']);
+});
+
+test('a damaged memory entry stays out of the workstream list', async () => {
+	const dir = await project();
+	await plantDamagedEntry(dir);
+	const list = await callTool(createTools(dir), 'workstream', {});
+	expect(list.isError).toBe(false);
+	expect(
+		list.data.workstreams.map((item: {slug: string}) => item.slug),
+	).toEqual(['auth', 'billing']);
+});
+
+test('a damaged entry for the active workstream leaves the working tree to answer', async () => {
+	const dir = await project();
+	await snapshotWorkstream(dir, 'billing');
+	await plantFile(dir, 'workstreams/billing.json', '{not json');
+	await setActive(dir, 'billing');
+	const tools = createTools(dir);
+	for (const args of [{}, {slug: 'billing'}]) {
+		const {isError, data} = await callTool(tools, 'workstream', args);
+		expect(isError).toBe(false);
+		expect(data.workstream).toMatchObject({
+			slug: 'billing',
+			title: 'Billing',
+			memoryDamaged: true,
+		});
+		expect(data.workstream.memory).toBeUndefined();
+	}
+});
+
+test('a damaged search index is rebuilt and the search still answers', async () => {
+	const dir = await project();
+	const tools = createTools(dir);
+	await callTool(tools, 'search_memory', {query: 'login'});
+	const gitDir = (
+		await gitOutput(dir, ['rev-parse', '--absolute-git-dir'])
+	).trim();
+	const file = path.join(gitDir, 'chamoji', 'memory-index.json');
+	for (const damage of ['{not json', '', 'null', '[]']) {
+		await writeFile(file, damage);
+		const {isError, data} = await callTool(tools, 'search_memory', {
+			query: 'login',
+		});
+		expect(isError, damage).toBe(false);
+		expect(data.hits[0].title, damage).toBe('✨ Add login');
+	}
 });

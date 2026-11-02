@@ -50,9 +50,13 @@ export function isSlug(value: string): boolean {
 	return value.length <= MAX_SLUG && SLUG.test(value);
 }
 
-/** The workstreams in the working tree; `[]` when the file is absent. */
+/**
+ * The workstreams in the working tree; `[]` when the file is absent. A cloned
+ * repo can make the file or its folder a symlink or a pipe, or make the file
+ * huge, so those throw a WorkstreamError instead of being read.
+ */
 export async function readWorkstreams(cwd: string): Promise<Workstream[]> {
-	const text = await readFileIfExists(await workstreamsPath(cwd));
+	const text = await readWorkstreamsFile(await workstreamsPath(cwd));
 	return text === undefined ? [] : parseWorkstreams(text);
 }
 
@@ -292,6 +296,31 @@ async function readFileIfExists(file: string): Promise<string | undefined> {
 	}
 }
 
+/** The most of the workstreams file that is read; a real one is a few hundred bytes a workstream. */
+const MAX_FILE_BYTES = 1024 * 1024;
+
+async function readWorkstreamsFile(file: string): Promise<string | undefined> {
+	await refuseSymlinks(file, 'read');
+	let size: number;
+	try {
+		const info = await lstat(file);
+		if (!info.isFile()) {
+			throw new WorkstreamError(`${WORKSTREAMS_FILE} is not a regular file`);
+		}
+
+		size = info.size;
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+		throw error;
+	}
+
+	if (size > MAX_FILE_BYTES) {
+		throw new WorkstreamError(`${WORKSTREAMS_FILE} is larger than 1 MiB`);
+	}
+
+	return readFileIfExists(file);
+}
+
 /** Parses the file for editing; absent is empty. Refuses a corrupt file. */
 async function openDocument(file: string): Promise<Document> {
 	await refuseSymlinks(file);
@@ -301,10 +330,13 @@ async function openDocument(file: string): Promise<Document> {
 }
 
 /**
- * A cloned repo can commit `.chamoji` or the file as a symlink, and writing
+ * A cloned repo can commit `.chamoji` or the file as a symlink, and going
  * through it would reach outside the repo. A missing path is fine.
  */
-async function refuseSymlinks(file: string): Promise<void> {
+async function refuseSymlinks(
+	file: string,
+	verb: 'read' | 'write' = 'write',
+): Promise<void> {
 	for (const target of [path.dirname(file), file]) {
 		let isLink: boolean;
 		try {
@@ -316,7 +348,7 @@ async function refuseSymlinks(file: string): Promise<void> {
 
 		if (isLink) {
 			throw new WorkstreamError(
-				`${target === file ? WORKSTREAMS_FILE : '.chamoji'} is a symlink, so chamoji will not write through it`,
+				`${target === file ? WORKSTREAMS_FILE : '.chamoji'} is a symlink, so chamoji will not ${verb} through it`,
 			);
 		}
 	}

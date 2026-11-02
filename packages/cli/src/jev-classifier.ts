@@ -189,7 +189,7 @@ export function redact(text: string): string {
 }
 
 /** Drops the final paragraph when it is all `Key: value` trailer lines. */
-function withoutTrailers(body: string): string {
+export function withoutTrailers(body: string): string {
 	const paragraphs = body.trim().split(/\n\s*\n/);
 	const last = paragraphs.at(-1)?.split('\n') ?? [];
 	if (last.length > 0 && last.every(line => TRAILER_LINE.test(line.trim()))) {
