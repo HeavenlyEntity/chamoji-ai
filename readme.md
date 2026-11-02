@@ -189,10 +189,11 @@ It blames the line in your working copy and prints the commit that wrote it, wit
 
 ### The memory ref
 
-When you mark a workstream shipped or dropped (`chamoji ws ship`, `chamoji ws drop`), chamoji saves a summary of it on `refs/chamoji/memory`: its title, emoji, status, and its commits with their cards. The summary comes from the commits on `HEAD` that name the workstream, so run the command on the branch that holds the work. The ref is written with git plumbing, so your working tree and index are never touched. The summary survives deleting the branch and a squash merge.
+When you mark a workstream shipped or dropped (`chamoji ws ship`, `chamoji ws drop`), chamoji saves a summary of it on `refs/chamoji/memory`: its title, emoji, status, and its commits with their cards. The summary comes from the commits on `HEAD` that name the workstream, so run the command on the branch that holds the work. The ref is written with git plumbing, so your working tree and index are never touched. The summary survives deleting the branch and a squash merge. Both commands say how many commits they saved (`Saved 2 commits to memory.`) and warn when it is none, which means this branch has no commits for that workstream: run the command again on the branch that has them.
 
 ```bash
 chamoji memory                          # list what is remembered
+chamoji memory list --archived          # list the archived entries too
 chamoji memory show <slug>              # one entry with its commits and cards
 chamoji memory search <query>           # find commits and workstreams by what they say
 chamoji memory reindex                  # rebuild the search index
@@ -201,8 +202,9 @@ chamoji memory archive <slug> --purge   # delete it for good
 chamoji memory sync                     # merge with origin and push
 ```
 
-- **Archive, never delete:** `archive` hides an entry from the list, and `memory show` still finds it. Only `--purge` removes one.
-- **Purge is local:** it removes the entry from your ref and leaves a marker, so a later sync can't bring it back. It doesn't reach origin. For that, run `git push --force origin refs/chamoji/memory` yourself; `chamoji memory sync` prints the step when it is needed, and chamoji never force-pushes. Any other clone that has already fetched the entry still holds the text.
+- **Archive, never delete:** `archive` hides an entry from the list and from search, and `memory show` still finds it. `memory list --archived` lists the archived entries with the live ones. Only `--purge` removes one. `memory list` also says when an entry is there but can't be read, instead of calling memory empty.
+- **Purge is local until you sync:** it removes the entry from your ref, deletes this worktree's search index, which held the entry's text, and leaves a marker so that a later sync can't bring it back. Other worktrees keep their own index file until their next search, which sees that the memory ref moved and rebuilds it. Purge doesn't reach origin. Run `chamoji memory sync` next: it merges origin's memory into yours first, and if origin still holds the entry it prints the command that removes it there. That command is a force-push, and it replaces origin's memory history with yours, so run it only after a `memory sync` has merged. Chamoji never force-pushes itself. Any other clone that has already fetched the entry still holds the text.
+- **A purge keeps the name:** the marker is the slug, and the commit message `Purge <slug>` names it too. Purging removes the content, not the name, and a purged slug can't be saved to memory again, so start that workstream again under a new name.
 - **Search** is keyword search (BM25) over every commit on `HEAD`, with its subject, body and card, and over the live workstream entries, not the archived ones. The index is a cache at `.git/chamoji/memory-index.json`. It rebuilds itself when `HEAD` or memory changes, and `memory reindex` forces it. It needs no network and no key. With `--ai`, Jev reorders the ten best matches (see below).
 
 ### Sharing memory
@@ -212,9 +214,11 @@ chamoji init              # once per clone
 chamoji memory sync       # merge with origin, then push
 ```
 
-`chamoji init` adds a fetch line for `refs/chamoji/*` to `origin` and takes in whatever memory origin has, so a fresh clone needs only `init`. Git doesn't clone these refs, so every clone runs `init` once. `chamoji memory sync` merges both sides and pushes the result; two clones that remembered different workstreams keep both. `chamoji release --push` also syncs memory, but only in a clone that ran `init`.
+`chamoji init` adds a fetch line for `refs/chamoji/*` to `origin` and takes in whatever memory origin has, so a fresh clone needs only `init`. Git doesn't clone these refs, so every clone runs `init` once. `chamoji memory sync` merges both sides and pushes the result; two clones that remembered different workstreams keep both. It skips your pre-push hook, since the ref holds no code, and it tries again only when the push lost a race to another clone. Entries chamoji doesn't read, such as a folder added by a newer chamoji, are kept through its writes and merges. `chamoji release --push` also syncs memory, but only in a clone that ran `init`.
 
 **`init` leaves `git push` alone.** The roadmap planned to set `remote.origin.push` so that a plain `git push` would carry memory. Tested, that setting made a plain `git push` push only the memory ref and leave the branch behind, and an explicit `git push origin main` ignored it anyway. So memory goes out through `memory sync` and `release --push`, and `init` sets only the fetch line. Plain `git fetch` and `git pull` keep working before origin has any memory.
+
+**Plain `git fetch` and `git pull` don't change what `chamoji memory` shows.** They download origin's memory into `refs/chamoji/remotes/origin/memory`, and nothing reads it from there. `chamoji memory sync` brings it in, and `chamoji init` says so when it runs.
 
 **Who can change it:** a memory ref is shared with everyone who can push to the repo. Entries that come from origin are data. A pusher can add an entry or change a title or a card, and chamoji never verifies a card. Read them as you would a teammate's commit message. Chamoji prints them with control characters removed, and `chamoji mcp` tells the model they are data, not instructions.
 
@@ -243,11 +247,13 @@ Everything the tools return is commit text that other people wrote, and each too
 
 **The commit hook** is a `PreToolUse` hook on Claude Code's Bash tool. When the agent runs a `git commit` whose message has no card line, the hook denies it and says what to add:
 
-> `Add why this change was made: put a "Why: <reason>" line at the end of the commit message. Constraint:, Gotcha: and Follow-up: lines are welcome too. Only if the user told you to skip this, prefix the command with CHAMOJI_NO_CARD=1.`
+> `Add why this change was made: put a "Why: <reason>" line at the end of the commit message, after a blank line. Constraint:, Gotcha: and Follow-up: lines are welcome too. Only if the user told you to skip this, prefix the command with CHAMOJI_NO_CARD=1.`
 
-The agent retries with a `Why:` line. Any one of the four lines counts. `CHAMOJI_NO_CARD=1` in front of the command is the opt-out, meant for when you've told the agent to skip cards. Commits that take their message from a file or another commit (`-F`, `-C`) and commands that only look (`--dry-run`, `--help`) pass. The hook reads the command text, so a commit hidden inside `sh -c '…'`, `xargs` or a shell alias isn't seen. If anything goes wrong inside the hook, it says nothing and lets the command through, and the committed command ends in `|| true`, so a chamoji too old to know the hook can't block your commits.
+The agent retries with a `Why:` line. Any one of the four lines counts, as long as chamoji would read it: below the subject paragraph, so `-m "Why: because"` is a subject, not a card. `CHAMOJI_NO_CARD=1` in front of the command is the opt-out, meant for when you've told the agent to skip cards. Commits that take their message from a file or another commit (`-F`, `-C`) and commands that only look (`--dry-run`, `--help`) pass. The hook reads the command text, so a commit hidden inside `sh -c '…'`, `xargs` or a shell alias isn't seen. If anything goes wrong inside the hook, it says nothing and lets the command through, and the committed command ends in `|| true`, so a chamoji too old to know the hook can't block your commits.
 
 The hook covers Claude Code only. Other agents can use the MCP server, but write their cards by hand.
+
+**Not verified:** the `.mcp.json` that `init --agents` writes on native Windows, where `npx` and a `chamoji` shim may need a `cmd /c` wrapper.
 
 ## Cutting a release
 
@@ -423,7 +429,7 @@ chamoji changelog --ai
 ```
 
 - **What is sent:** only the commits no rule could sort, at most 300 characters each of subject and body, with email addresses and trailer lines such as `Signed-off-by:` removed. Never diffs, code or author details. `next-version --ai` sends only unreleased commits.
-- **Memory search:** `chamoji memory search --ai` and `chamoji mcp --ai` send the query and, for each of the ten best matches, at most 300 characters of its subject and card text, with email addresses replaced by `<email>`. Never diffs, code or authors. Jev only reorders what keyword search found; it doesn't write or change a card. The key comes from the `TYPESAFE_API_KEY` environment variable or an untracked `.env.local` or `.env`. A tracked file is ignored here, because a cloned repo could otherwise name someone else's account.
+- **Memory search:** `chamoji memory search --ai` and `chamoji mcp --ai` send the query and, for each of the ten best matches, at most 300 characters of its subject and card text, with email addresses replaced by `<email>`. Never diffs, code or authors. Jev only reorders what keyword search found; it doesn't write or change a card. The rerank has never run against the real TypeSafe API; on any failure it keeps the keyword order and prints a note. The key comes from the `TYPESAFE_API_KEY` environment variable or an untracked `.env.local` or `.env`. A tracked file is ignored here, because a cloned repo could otherwise name someone else's account.
 - **If a request fails:** chamoji stops sending, keeps the picks it already has, and leaves the rest in Miscellaneous.
 - **What it never does:** override an emoji or type the author wrote, or mark a change as breaking. Only authors declare breaking changes.
 - **Where the key comes from:** the `TYPESAFE_API_KEY` environment variable, or else that one line from `.env.local` or `.env` in the current folder. No other variable in those files is read.
