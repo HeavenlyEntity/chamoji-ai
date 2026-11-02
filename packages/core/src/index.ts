@@ -35,6 +35,7 @@ export {
 	MEMORY_REMOTE_REF,
 	MemoryError,
 	archiveMemory,
+	inspectMemory,
 	listMemory,
 	purgeMemory,
 	readMemory,

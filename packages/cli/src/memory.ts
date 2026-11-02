@@ -3,7 +3,7 @@ import {
 	MemoryError,
 	archiveMemory,
 	assertGitRepo,
-	listMemory,
+	inspectMemory,
 	purgeMemory,
 	readMemory,
 	reindexMemory,
@@ -22,8 +22,12 @@ import {cardLines} from './why.js';
 /** Same code run.ts uses for a command that was used wrongly. */
 const USAGE_ERROR = 2;
 
-/** What to do about an entry purged here that origin still holds. */
-export const FORCE_STEP = `A purged entry is still on origin, so nothing was pushed. To remove it there: git push --force origin ${MEMORY_REF}`;
+/**
+ * What to do about an entry purged here that origin still holds. It's said
+ * only after a merge, so the local ref has all that origin held when it was
+ * fetched. A force-push still replaces origin's history, and the text says so.
+ */
+export const FORCE_STEP = `A purged entry is still on origin, so nothing was pushed. Origin's memory is merged into yours already. To remove the entry there, replace origin's memory with yours. This overwrites origin's history, and drops anything pushed there since this sync: git push --force origin ${MEMORY_REF}`;
 
 /**
  * `chamoji memory`: `input` is what follows `memory`. Problems with memory
@@ -34,7 +38,7 @@ export const FORCE_STEP = `A purged entry is still on origin, so nothing was pus
  */
 export async function runMemory(
 	input: string[],
-	flags: {json?: boolean; purge?: boolean; ai?: boolean},
+	flags: {json?: boolean; purge?: boolean; ai?: boolean; archived?: boolean},
 	io: Io,
 	reranker: () => Promise<MemoryReranker | undefined> = async () => undefined,
 ): Promise<number> {
@@ -42,7 +46,7 @@ export async function runMemory(
 	await assertGitRepo(io.cwd);
 	switch (command) {
 		case 'list': {
-			return list(io, flags.json ?? false);
+			return list(io, flags.json ?? false, flags.archived ?? false);
 		}
 
 		case 'show': {
@@ -103,24 +107,43 @@ function usage(io: Io, message: string): number {
 	return USAGE_ERROR;
 }
 
-async function list(io: Io, json: boolean): Promise<number> {
-	const entries = await listMemory(io.cwd);
+async function list(io: Io, json: boolean, archived: boolean): Promise<number> {
+	const {entries, unreadable} = await inspectMemory(io.cwd, {archived});
 	if (json) {
 		io.stdout(`${JSON.stringify(entries, null, 2)}\n`);
 	} else if (entries.length === 0) {
-		io.stdout(
-			'Nothing in memory yet. Shipping or dropping a workstream saves it here.\n',
-		);
+		// An empty list that hides damaged entries must not read as an empty memory.
+		const hidden = archived
+			? 0
+			: (await inspectMemory(io.cwd, {archived: true})).entries.length;
+		if (hidden > 0) {
+			io.stdout(
+				`No live entries. ${entryCount(hidden)} archived: chamoji memory list --archived shows ${hidden === 1 ? 'it' : 'them'}.\n`,
+			);
+		} else if (unreadable.length === 0) {
+			io.stdout(
+				'Nothing in memory yet. Shipping or dropping a workstream saves it here.\n',
+			);
+		}
 	} else {
 		const slugWidth = Math.max(...entries.map(entry => entry.slug.length));
-		const statusWidth = Math.max(...entries.map(entry => entry.status.length));
+		const statuses = entries.map(entry =>
+			entry.archived ? `${entry.status}, archived` : entry.status,
+		);
+		const statusWidth = Math.max(...statuses.map(status => status.length));
 		const counts = entries.map(entry => commitCount(entry));
 		const countWidth = Math.max(...counts.map(count => count.length));
 		for (const [index, entry] of entries.entries()) {
 			io.stdout(
-				`${entry.slug.padEnd(slugWidth)}  ${entry.status.padEnd(statusWidth)}  ${(counts[index] ?? '').padEnd(countWidth)}  ${label(entry)}\n`,
+				`${entry.slug.padEnd(slugWidth)}  ${(statuses[index] ?? '').padEnd(statusWidth)}  ${(counts[index] ?? '').padEnd(countWidth)}  ${label(entry)}\n`,
 			);
 		}
+	}
+
+	if (unreadable.length > 0) {
+		io.stderr(
+			`chamoji: memory has ${entryCount(unreadable.length)} that can't be read: ${unreadable.map(slug => stripControl(slug)).join(', ')}. chamoji memory show <slug> says what is wrong.\n`,
+		);
 	}
 
 	return 0;
@@ -193,7 +216,7 @@ async function archive(io: Io, slug: string, purge: boolean): Promise<number> {
 	if (purge) {
 		await purgeMemory(io.cwd, slug);
 		io.stdout(
-			`Purged ${slug} from local memory. If it was ever synced, the remote still has it; remove it there with: git push --force origin ${MEMORY_REF}\n`,
+			`Purged ${slug} from local memory. If it was ever synced, origin still has it. Run chamoji memory sync: it merges origin's memory into yours first, and says what to do if origin then needs replacing.\n`,
 		);
 	} else {
 		await archiveMemory(io.cwd, slug);

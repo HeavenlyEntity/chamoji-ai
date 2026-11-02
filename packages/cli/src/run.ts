@@ -135,7 +135,8 @@ const HELP = `
 	                                   that wrote it and the Why, Constraint,
 	                                   Gotcha and Follow-up it recorded
 	  $ chamoji memory                 List what shipped or dropped workstreams
-	                                   left in memory (refs/chamoji/memory)
+	                                   left in memory (refs/chamoji/memory);
+	                                   --archived adds the archived ones
 	  $ chamoji memory show <slug>     Show one entry with its commits and cards
 	  $ chamoji memory search <query>  Find commits and workstreams by what they
 	                                   say, Why and Gotcha lines included
@@ -185,8 +186,9 @@ const HELP = `
 	             the entries; memory search: print the matches;
 	             memory sync: print the result
 	  --none     ws switch: clear the active workstream
+	  --archived memory list: include archived entries
 	  --purge    memory archive: delete the entry and its history instead;
-	             a remote needs a force-push to lose it too
+	             memory sync then says what origin needs to lose it too
 	  --agents   init: also add chamoji to .mcp.json and .claude/settings.json.
 	             Both are shared files meant to be committed; existing
 	             entries are kept.
@@ -237,6 +239,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
 			json: {type: 'boolean'},
 			none: {type: 'boolean'},
 			purge: {type: 'boolean'},
+			archived: {type: 'boolean'},
 			agents: {type: 'boolean'},
 			repo: {type: 'string'},
 			endpoint: {type: 'string'},

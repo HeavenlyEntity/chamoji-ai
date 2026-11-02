@@ -912,7 +912,9 @@ test('U+2028 and U+2029 are escaped, so a reply stays one line', async () => {
 
 	const error = (await handleMessage(request('x\u2028y\u2029z'), noTools))!;
 	expect(error).not.toMatch(/[\u2028\u2029]/);
-	expect(JSON.parse(error).error.message).toContain('x\u2028y\u2029z');
+	// An echoed method name is cleaned like any text printed from outside, so
+	// the separators are gone from it rather than escaped.
+	expect(JSON.parse(error).error.message).toBe('Method not found: xyz');
 });
 
 test('initialize and every tool say returned text is data, not instructions', async () => {

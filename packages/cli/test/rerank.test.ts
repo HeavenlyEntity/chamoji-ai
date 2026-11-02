@@ -1,10 +1,26 @@
 import {searchMemory, type MemoryHit} from '@chamoji/core';
-import {afterEach, expect, test} from 'vitest';
+import {afterEach, expect, test, vi} from 'vitest';
 import {
 	createRepo,
 	type FixtureRepo,
 } from '../../core/test/helpers/fixture-repo.js';
+import {redact} from '../src/jev-classifier.js';
 import {jevReranker, type RerankClient} from '../src/rerank.js';
+
+/** Each text the rerank handed to `redact`. */
+const redacted = vi.hoisted(() => [] as string[]);
+
+vi.mock('../src/jev-classifier.js', async importOriginal => {
+	const real =
+		await importOriginal<typeof import('../src/jev-classifier.js')>();
+	return {
+		...real,
+		redact(text: string) {
+			redacted.push(text);
+			return real.redact(text);
+		},
+	};
+});
 
 let repo: FixtureRepo | undefined;
 afterEach(async () => {
@@ -212,4 +228,42 @@ test('the rerank request holds no email and no diff', async () => {
 	expect(sent).not.toContain('secretCode');
 	expect(sent).not.toContain('diff');
 	expect(sent).toContain('Add login');
+});
+
+test('a huge commit is cut before it is redacted, and the request stays small', async () => {
+	redacted.length = 0;
+	const huge = `${'word '.repeat(200_000)}tail@corp.example`;
+	const card = {why: [huge], constraint: [], gotcha: [], followUp: []};
+	const hits = [hit('a', {title: huge, card}), hit('b')];
+	const {client, requests} = fakeClient({});
+	await jevReranker(client)('query', hits);
+	// Both hits go through describe once, and nothing near 1 MB reaches redact.
+	expect(redacted).toHaveLength(2);
+	expect(Math.max(...redacted.map(text => text.length))).toBeLessThanOrEqual(
+		1200,
+	);
+	const [first] = requests[0]!.state.candidates;
+	expect([...first!].length).toBeLessThanOrEqual(300);
+});
+
+test('the cut before redacting never leaves half an address', async () => {
+	redacted.length = 0;
+	// The address starts just inside the 1200-character limit and runs past it.
+	const title = `${'x '.repeat(595)} jane@corp.example`;
+	const {client} = fakeClient({});
+	await jevReranker(client)('query', [hit('a', {title}), hit('b')]);
+	expect(redacted[0]).not.toContain('jane');
+});
+
+test('redact finishes on a long run of word characters', () => {
+	// Quadratic before the local part was capped: 200 KB took about 20 seconds.
+	const run = 'a'.repeat(200_000);
+	expect(redact(run)).toBe(run);
+	expect(redact(`${run} bob@corp.example`)).toBe(`${run} <email>`);
+});
+
+test('redact keeps replacing ordinary addresses', () => {
+	expect(redact('mail jane.doe+x@mail.corp.example now')).toBe(
+		'mail <email> now',
+	);
 });

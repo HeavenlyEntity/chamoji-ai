@@ -180,7 +180,12 @@ export function createJevClassifier(
 	};
 }
 
-const EMAIL = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
+/**
+ * The local part is capped at 64 characters, which is all an address may have.
+ * Without a cap the pattern is quadratic on a long run of word characters,
+ * and commit text can hold one.
+ */
+const EMAIL = /[\w.+-]{1,64}@[\w-]+(?:\.[\w-]+)+/g;
 const TRAILER_LINE = /^[\w-]+:\s/;
 
 /** Replaces email addresses, which often appear in commit text. */

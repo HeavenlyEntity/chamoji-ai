@@ -7,6 +7,7 @@ import {
 	MEMORY_REMOTE_REF,
 	MemoryError,
 	archiveMemory,
+	inspectMemory,
 	listMemory,
 	purgeMemory,
 	readMemory,
@@ -19,6 +20,7 @@ import {
 	gitOutput,
 	type FixtureRepo,
 } from './helpers/fixture-repo.js';
+import {lsTree, plantForeign} from './helpers/raw-tree.js';
 
 /** Runs just before the next real `update-ref`, to move the ref under a write. */
 const race = vi.hoisted(() => ({before: [] as Array<() => Promise<unknown>>}));
@@ -499,6 +501,151 @@ test('a purged slug is not snapshotted back', async () => {
 	await expect(snapshotWorkstream(dir, 'auth')).rejects.toThrow('purged');
 	expect(await refHistory(dir)).not.toContain('the old form leaked');
 	expect(await listMemory(dir, {archived: true})).toEqual([]);
+});
+
+test('the error for a purged slug says what happened and what to do', async () => {
+	const dir = await shippedRepo();
+	await snapshotWorkstream(dir, 'auth');
+	await purgeMemory(dir, 'auth');
+	await expect(snapshotWorkstream(dir, 'auth')).rejects.toThrow(
+		'auth was purged from memory, and a purged name stays out for good. Start the workstream again under a new name',
+	);
+});
+
+test('inspectMemory names the entries it cannot read', async () => {
+	const dir = await shippedRepo();
+	await plant(dir, {
+		'workstreams/broken.json': '{not json',
+		'workstreams/fine.json': entry('fine'),
+		'archive/old.json': '[]',
+		'archive/older.json': entry('older', {archived: true}),
+	});
+	const live = await inspectMemory(dir);
+	expect(live.entries.map(item => item.slug)).toEqual(['fine']);
+	// A damaged archived entry is hidden along with the archived ones.
+	expect(live.unreadable).toEqual(['broken']);
+	const all = await inspectMemory(dir, {archived: true});
+	expect(all.entries.map(item => item.slug)).toEqual(['fine', 'older']);
+	expect(all.unreadable).toEqual(['broken', 'old']);
+	expect(await listMemory(dir, {archived: true})).toEqual(all.entries);
+});
+
+test('inspectMemory has nothing to report before the first write', async () => {
+	const dir = await shippedRepo();
+	expect(await inspectMemory(dir)).toEqual({entries: [], unreadable: []});
+});
+
+/** The entries `plantForeign` adds, none of which chamoji reads. */
+const FOREIGN = [
+	{path: 'v2/index/a.json', text: 'from a newer chamoji'},
+	{path: 'v2/readme', text: 'top of the new folder'},
+	{path: 'workstreams/exec.json', text: 'not a plain file', mode: '100755'},
+	{path: 'archive/link.json', text: 'target', mode: '120000'},
+	{path: 'notes/odd\nname', text: 'a name with a newline'},
+	{path: 'vendor/sub', mode: '160000', id: 'a'.repeat(40)},
+];
+
+const foreignOf = async (dir: string, ref = MEMORY_REF) => {
+	const wanted = new Set(FOREIGN.map(item => item.path));
+	return (await lsTree(dir, ref)).filter(item => wanted.has(item.path));
+};
+
+test('a write carries over what readTree leaves out', async () => {
+	const dir = await shippedRepo();
+	await snapshotWorkstream(dir, 'auth');
+	await plantForeign(dir, FOREIGN);
+	const before = await foreignOf(dir);
+	expect(before).toHaveLength(FOREIGN.length);
+	// None of it is visible to a reader.
+	expect(await listMemory(dir, {archived: true})).toHaveLength(1);
+	expect([...(await readTree(dir, MEMORY_REF)).keys()]).toEqual([
+		'workstreams/auth.json',
+	]);
+
+	await snapshotWorkstream(dir, 'billing');
+	expect(await foreignOf(dir)).toEqual(before);
+	await archiveMemory(dir, 'auth');
+	expect(await foreignOf(dir)).toEqual(before);
+	// The entries themselves are written as before.
+	expect(
+		(await listMemory(dir, {archived: true})).map(item => item.slug),
+	).toEqual(['auth', 'billing']);
+});
+
+test('purge restarts the ref and keeps the foreign entries as they are', async () => {
+	const dir = await shippedRepo();
+	await snapshotWorkstream(dir, 'auth');
+	await snapshotWorkstream(dir, 'billing');
+	await plantForeign(dir, FOREIGN);
+	const before = await foreignOf(dir);
+	await dropBranchCommits(dir);
+
+	await purgeMemory(dir, 'auth');
+
+	expect(await foreignOf(dir)).toEqual(before);
+	expect(await gitOutput(dir, ['rev-list', '--count', MEMORY_REF])).toBe('1\n');
+	expect(await everyRef(dir)).not.toContain('the old form leaked');
+	expect(await readMemory(dir, 'billing')).toBeDefined();
+});
+
+test("purge drops foreign entries on the purged slug's own paths", async () => {
+	const dir = await shippedRepo();
+	await snapshotWorkstream(dir, 'auth');
+	await archiveMemory(dir, 'auth');
+	// Same slug, other mode: invisible to readers, but still the entry's text.
+	await plantForeign(dir, [
+		{
+			path: 'workstreams/auth.json',
+			text: 'planted secret text',
+			mode: '100755',
+		},
+		{path: 'v2/keep', text: 'unrelated'},
+	]);
+	await purgeMemory(dir, 'auth');
+	const paths = (await lsTree(dir)).map(item => item.path);
+	expect(paths).toContain('purged/auth');
+	expect(paths).toContain('v2/keep');
+	expect(paths).not.toContain('workstreams/auth.json');
+	expect(await everyRef(dir)).not.toContain('planted secret text');
+});
+
+test('a snapshot replaces a foreign entry at its own path', async () => {
+	const dir = await shippedRepo();
+	await snapshotWorkstream(dir, 'billing');
+	await plantForeign(dir, [
+		{path: 'workstreams/auth.json', text: 'odd', mode: '100755'},
+	]);
+	await snapshotWorkstream(dir, 'auth');
+	const found = (await lsTree(dir)).filter(
+		item => item.path === 'workstreams/auth.json',
+	);
+	expect(found).toHaveLength(1);
+	expect(found[0]!.mode).toBe('100644');
+	expect((await readMemory(dir, 'auth'))?.title).toBe('Auth revamp');
+});
+
+test('writeTree writes foreign entries back, and leaves out ones git would refuse', async () => {
+	const dir = await shippedRepo();
+	const blob = (
+		await runGitWithInput(['hash-object', '-w', '--stdin'], dir, 'x')
+	).trim();
+	const plain = {mode: '100644', type: 'blob', id: blob};
+	const commit = await writeTree(
+		dir,
+		new Map(),
+		[],
+		'x',
+		new Map([
+			['v2/ok', plain],
+			['v2/../escape', plain],
+			['v2/./dot', plain],
+			['.git/config', plain],
+			['v2/.GIT/config', plain],
+			['v2//empty', plain],
+			[`${'d/'.repeat(100)}deep`, plain],
+		]),
+	);
+	expect((await lsTree(dir, commit)).map(item => item.path)).toEqual(['v2/ok']);
 });
 
 test('update-ref is compare-and-swap', async () => {

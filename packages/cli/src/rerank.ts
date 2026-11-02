@@ -29,6 +29,9 @@ const MAX_CANDIDATES = 10;
 /** Characters of each candidate's subject and card text sent. */
 const MAX_CHARS = 300;
 
+/** Characters of that text read before redacting, so one huge commit can't stall a search. */
+const SCAN_CHARS = MAX_CHARS * 4;
+
 /** Levels 0 to 3. The score Jev returns is the probability-weighted level. */
 const CRITERIA: [string, string, ...string[]] = [
 	'Has nothing to do with the search.',
@@ -111,7 +114,24 @@ function describe({title, card}: MemoryHit): string {
 			(card?.[key] ?? []).map(value => `${label}: ${value}`),
 		),
 	];
-	// Redact before cutting, so no address is left half-cut and slips past.
-	const text = redact(lines.join('\n'));
+	// Redact before the final cut, so no address is left half-cut and slips
+	// past. A commit can hold megabytes, so the text is bounded first.
+	const text = redact(readable(lines.join('\n'), SCAN_CHARS));
 	return [...text.slice(0, MAX_CHARS * 2)].slice(0, MAX_CHARS).join('');
+}
+
+/**
+ * The start of `text`, at most `limit` characters, cut after whitespace so
+ * that no address is left half-cut for `redact` to miss. A cut with no
+ * whitespace in it leaves nothing.
+ */
+function readable(text: string, limit: number): string {
+	if (text.length <= limit) return text;
+	const cut = text.slice(0, limit);
+	const space = Math.max(
+		cut.lastIndexOf(' '),
+		cut.lastIndexOf('\n'),
+		cut.lastIndexOf('\t'),
+	);
+	return cut.slice(0, space + 1);
 }

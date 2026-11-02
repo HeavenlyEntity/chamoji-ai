@@ -2,7 +2,7 @@ import {readFile, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {afterEach, expect, test} from 'vitest';
 import {reindexMemory, searchMemory} from '../src/memory-index.js';
-import {archiveMemory, snapshotWorkstream} from '../src/memory.js';
+import {archiveMemory, purgeMemory, snapshotWorkstream} from '../src/memory.js';
 import {
 	createRepo,
 	gitOutput,
@@ -266,4 +266,42 @@ test('a read-only index location does not stop a search', async () => {
 	await writeFile(path.join(gitDir, 'chamoji'), 'in the way');
 	expect(await searchMemory(repo.dir, 'login')).toHaveLength(1);
 	await expect(reindexMemory(repo.dir)).rejects.toThrow();
+});
+
+test('purge deletes this worktree index, and another worktree rebuilds its own', async () => {
+	repo = await createRepo([
+		{commit: '🎉 Init', files: WORKSTREAMS},
+		{commit: '✨ Add login', body: 'Workstream: auth'},
+	]);
+	await snapshotWorkstream(repo.dir, 'auth');
+	const other = `${repo.dir}-other`;
+	await gitOutput(repo.dir, ['worktree', 'add', '-q', '-b', 'other', other]);
+	try {
+		// The workstream title is only in memory, so it shows where entry text is.
+		for (const dir of [repo.dir, other]) {
+			expect(await searchMemory(dir, 'revamp')).toHaveLength(1);
+			expect(await readFile(await indexFile(dir), 'utf8')).toContain(
+				'Auth revamp',
+			);
+		}
+
+		await purgeMemory(repo.dir, 'auth');
+
+		await expect(readFile(await indexFile(repo.dir), 'utf8')).rejects.toThrow();
+		// The other worktree's file waits for its next search, which sees that
+		// the memory ref moved and rebuilds it.
+		expect(await readFile(await indexFile(other), 'utf8')).toContain(
+			'Auth revamp',
+		);
+		expect(await searchMemory(other, 'revamp')).toEqual([]);
+		expect(await readFile(await indexFile(other), 'utf8')).not.toContain(
+			'Auth revamp',
+		);
+		expect(await searchMemory(repo.dir, 'revamp')).toEqual([]);
+		expect(await readFile(await indexFile(repo.dir), 'utf8')).not.toContain(
+			'Auth revamp',
+		);
+	} finally {
+		await gitOutput(repo.dir, ['worktree', 'remove', '--force', other]);
+	}
 });

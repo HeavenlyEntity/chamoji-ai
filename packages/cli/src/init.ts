@@ -24,6 +24,10 @@ import {entryCount, FORCE_STEP} from './memory.js';
 import type {Io} from './run.js';
 import {stripControlLines} from './text.js';
 
+/** A plain fetch only downloads memory into a side ref; `memory` reads the local one. */
+const SYNC_NOTE =
+	"A plain git fetch or git pull downloads origin's memory but doesn't change what chamoji memory shows. Run chamoji memory sync to take it in and share yours.\n";
+
 /**
  * `chamoji init`: sets this clone up to share memory, and takes in what origin
  * has so a fresh clone needs nothing else. It adds a fetch refspec and leaves
@@ -56,6 +60,7 @@ export async function runInit(
 			? 'origin now fetches chamoji memory.\n'
 			: 'origin already fetches chamoji memory.\n',
 	);
+	io.stdout(SYNC_NOTE);
 	// The setup is done and sound; the next sync can do the rest.
 	try {
 		const {fetched, entries, needsForce} = await pullMemory(io.cwd);

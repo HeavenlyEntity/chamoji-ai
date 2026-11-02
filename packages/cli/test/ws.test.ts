@@ -903,6 +903,38 @@ test('ws drop writes a snapshot', async () => {
 	expect((await readMemory(repo.dir, 'billing'))?.status).toBe('dropped');
 });
 
+test('ws ship says how many commits it saved to memory', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await chamoji(['ws', 'start', 'Auth revamp'], repo.dir);
+	await gitOutput(repo.dir, ['commit', '-q', '-m', '🔧 Track workstreams']);
+	await commitFile(
+		repo.dir,
+		'a.txt',
+		'✨ Add a',
+		'Why: because\nWorkstream: auth-revamp',
+	);
+	const {stdout, stderr} = await chamoji(['ws', 'ship'], repo.dir);
+	expect(stdout).toContain('Saved 1 commit to memory.\n');
+	expect(stderr).toBe('');
+});
+
+test('ws ship and drop warn when no commit names the workstream', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await chamoji(['ws', 'start', 'Auth revamp'], repo.dir);
+	await chamoji(['ws', 'start', 'Billing'], repo.dir);
+	const shipped = await chamoji(['ws', 'ship', 'auth-revamp'], repo.dir);
+	expect(shipped.code).toBe(0);
+	expect(shipped.stdout).toContain('Saved 0 commits to memory.\n');
+	expect(shipped.stderr).toContain(
+		'chamoji: memory has no commits for auth-revamp',
+	);
+	expect(shipped.stderr).toContain('chamoji ws ship auth-revamp there');
+	const dropped = await chamoji(['ws', 'drop', 'billing'], repo.dir);
+	expect(dropped.code).toBe(0);
+	expect(dropped.stdout).toContain('Saved 0 commits to memory.\n');
+	expect(dropped.stderr).toContain('chamoji ws drop billing there');
+});
+
 test('a failed snapshot warns and ws ship still succeeds', async () => {
 	repo = await createRepo([{commit: '🎉 Init'}]);
 	await chamoji(['ws', 'start', 'Auth revamp'], repo.dir);

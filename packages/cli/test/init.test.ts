@@ -28,6 +28,9 @@ import {
 } from '../../core/test/helpers/fixture-repo.js';
 import {run} from '../src/run.js';
 
+/** Native Windows has no POSIX modes, `/bin/sh` or unprivileged symlinks. */
+const WINDOWS = process.platform === 'win32';
+
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
 	await Promise.all(cleanups.splice(0).map(async cleanup => cleanup()));
@@ -117,6 +120,38 @@ test('init adds the wildcard fetch refspec once', async () => {
 	expect(MEMORY_FETCH_REFSPEC).toBe(
 		'+refs/chamoji/*:refs/chamoji/remotes/origin/*',
 	);
+});
+
+test('init says that plain git fetch and pull do not change what memory shows', async () => {
+	const {clone} = await withOrigin();
+	const {stdout} = await chamoji(['init'], clone);
+	expect(stdout).toContain(
+		"A plain git fetch or git pull downloads origin's memory but doesn't change what chamoji memory shows.",
+	);
+	expect(stdout).toContain('Run chamoji memory sync');
+	// Printed when the setup was already done, too.
+	const again = await chamoji(['init'], clone);
+	expect(again.stdout).toContain('A plain git fetch or git pull');
+});
+
+test('plain git fetch downloads memory but memory shows it only after memory sync', async () => {
+	const {remote, dir, clone} = await withOrigin();
+	await chamoji(['init'], clone);
+	await snapshotWorkstream(dir, 'auth');
+	await syncMemory(dir);
+
+	await gitOutput(clone, ['fetch', '-q']);
+	// The fetch downloaded it, into the side ref, and nothing else changed.
+	expect(await gitOutput(clone, ['rev-parse', MEMORY_REMOTE_REF])).toBe(
+		await gitOutput(remote, ['rev-parse', MEMORY_REF]),
+	);
+	expect(await listMemory(clone)).toEqual([]);
+	expect((await chamoji(['memory', 'list'], clone)).stdout).toContain(
+		'Nothing in memory yet',
+	);
+
+	await chamoji(['memory', 'sync'], clone);
+	expect((await listMemory(clone)).map(entry => entry.slug)).toEqual(['auth']);
 });
 
 test('init leaves remote.origin.push unset', async () => {
@@ -543,30 +578,36 @@ test('init --agents refuses files that are not the shape it needs', async () => 
 	}
 });
 
-test('init --agents refuses a symlinked file and writes through nothing', async () => {
-	const dir = await plainRepo();
-	const elsewhere = path.join(await tempDir(), 'shared.json');
-	await writeFile(elsewhere, '{}\n');
-	await symlink(elsewhere, path.join(dir, '.mcp.json'));
-	const {code, stderr} = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
-	expect(code).toBe(1);
-	expect(stderr).toContain('.mcp.json is a symlink');
-	expect(await readFile(elsewhere, 'utf8')).toBe('{}\n');
-	expect(await missing(dir, '.claude')).toBe(true);
-});
+test.skipIf(WINDOWS)(
+	'init --agents refuses a symlinked file and writes through nothing',
+	async () => {
+		const dir = await plainRepo();
+		const elsewhere = path.join(await tempDir(), 'shared.json');
+		await writeFile(elsewhere, '{}\n');
+		await symlink(elsewhere, path.join(dir, '.mcp.json'));
+		const {code, stderr} = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+		expect(code).toBe(1);
+		expect(stderr).toContain('.mcp.json is a symlink');
+		expect(await readFile(elsewhere, 'utf8')).toBe('{}\n');
+		expect(await missing(dir, '.claude')).toBe(true);
+	},
+);
 
-test('init --agents refuses a symlinked .claude folder', async () => {
-	const dir = await plainRepo();
-	const elsewhere = await tempDir();
-	await symlink(elsewhere, path.join(dir, '.claude'));
-	const {code, stderr} = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
-	expect(code).toBe(1);
-	expect(stderr).toContain(
-		'.claude/settings.json is inside a symlinked folder',
-	);
-	expect(await missing(elsewhere, 'settings.json')).toBe(true);
-	expect(await missing(dir, '.mcp.json')).toBe(true);
-});
+test.skipIf(WINDOWS)(
+	'init --agents refuses a symlinked .claude folder',
+	async () => {
+		const dir = await plainRepo();
+		const elsewhere = await tempDir();
+		await symlink(elsewhere, path.join(dir, '.claude'));
+		const {code, stderr} = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+		expect(code).toBe(1);
+		expect(stderr).toContain(
+			'.claude/settings.json is inside a symlinked folder',
+		);
+		expect(await missing(elsewhere, 'settings.json')).toBe(true);
+		expect(await missing(dir, '.mcp.json')).toBe(true);
+	},
+);
 
 test('init --agents refuses a folder where a file should be', async () => {
 	const dir = await plainRepo();
@@ -654,40 +695,43 @@ test('the hook commands are exactly these, each ending in || true', async () => 
 	}
 });
 
-test('the hook command exits 0 through a real shell when chamoji exits 2', async () => {
-	for (const [name, env] of [
-		['chamoji', undefined],
-		['npx', NO_CHAMOJI],
-	] as const) {
-		const dir = await plainRepo();
-		const bin = await tempDir();
-		await chamoji(
-			['init', '--agents'],
-			dir,
-			env ?? (await withChamojiOnPath()),
-		);
-		const {command} = JSON.parse(await read(dir, '.claude/settings.json')).hooks
-			.PreToolUse[0].hooks[0];
-		const stub = async (script: string) => {
-			await writeFile(path.join(bin, name), `#!/bin/sh\n${script}\n`);
-			await chmod(path.join(bin, name), 0o755);
-			return spawnSync('/bin/sh', ['-c', command], {
-				env: {PATH: bin},
-				encoding: 'utf8',
-			});
-		};
+test.skipIf(WINDOWS)(
+	'the hook command exits 0 through a real shell when chamoji exits 2',
+	async () => {
+		for (const [name, env] of [
+			['chamoji', undefined],
+			['npx', NO_CHAMOJI],
+		] as const) {
+			const dir = await plainRepo();
+			const bin = await tempDir();
+			await chamoji(
+				['init', '--agents'],
+				dir,
+				env ?? (await withChamojiOnPath()),
+			);
+			const {command} = JSON.parse(await read(dir, '.claude/settings.json'))
+				.hooks.PreToolUse[0].hooks[0];
+			const stub = async (script: string) => {
+				await writeFile(path.join(bin, name), `#!/bin/sh\n${script}\n`);
+				await chmod(path.join(bin, name), 0o755);
+				return spawnSync('/bin/sh', ['-c', command], {
+					env: {PATH: bin},
+					encoding: 'utf8',
+				});
+			};
 
-		// An older chamoji prints its help and exits 2, which would block the commit.
-		const old = await stub('echo usage >&2\nexit 2');
-		expect(old.status).toBe(0);
-		expect(old.stdout).toBe('');
+			// An older chamoji prints its help and exits 2, which would block the commit.
+			const old = await stub('echo usage >&2\nexit 2');
+			expect(old.status).toBe(0);
+			expect(old.stdout).toBe('');
 
-		// A denial is JSON on stdout with exit 0, and gets through.
-		const deny = await stub('echo \'{"deny":true}\'');
-		expect(deny.status).toBe(0);
-		expect(deny.stdout).toBe('{"deny":true}\n');
-	}
-});
+			// A denial is JSON on stdout with exit 0, and gets through.
+			const deny = await stub('echo \'{"deny":true}\'');
+			expect(deny.status).toBe(0);
+			expect(deny.stdout).toBe('{"deny":true}\n');
+		}
+	},
+);
 
 test('init --agents refuses a number that would not be written back exactly', async () => {
 	for (const number of [
@@ -737,39 +781,48 @@ test('init --agents says the layout of a changed file may differ', async () => {
 	expect(stdout).toContain('layout');
 });
 
-test('init --agents leaves no temp file and keeps the permissions of a file it replaces', async () => {
-	const dir = await plainRepo();
-	await writeFile(path.join(dir, '.mcp.json'), '{}\n');
-	await chmod(path.join(dir, '.mcp.json'), 0o600);
-	const {code} = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
-	expect(code).toBe(0);
-	expect((await stat(path.join(dir, '.mcp.json'))).mode & 0o777).toBe(0o600);
-	expect((await readdir(dir)).filter(name => name.endsWith('.tmp'))).toEqual(
-		[],
-	);
-	expect(await readdir(path.join(dir, '.claude'))).toEqual(['settings.json']);
-});
+test.skipIf(WINDOWS)(
+	'init --agents leaves no temp file and keeps the permissions of a file it replaces',
+	async () => {
+		const dir = await plainRepo();
+		await writeFile(path.join(dir, '.mcp.json'), '{}\n');
+		await chmod(path.join(dir, '.mcp.json'), 0o600);
+		const {code} = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+		expect(code).toBe(0);
+		expect((await stat(path.join(dir, '.mcp.json'))).mode & 0o777).toBe(0o600);
+		expect((await readdir(dir)).filter(name => name.endsWith('.tmp'))).toEqual(
+			[],
+		);
+		expect(await readdir(path.join(dir, '.claude'))).toEqual(['settings.json']);
+	},
+);
 
-test('init --agents gives a new file the default permissions', async () => {
-	const dir = await plainRepo();
-	const {code} = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
-	expect(code).toBe(0);
-	const expected = 0o666 & ~process.umask();
-	expect((await stat(path.join(dir, '.mcp.json'))).mode & 0o7777).toBe(
-		expected,
-	);
-});
+test.skipIf(WINDOWS)(
+	'init --agents gives a new file the default permissions',
+	async () => {
+		const dir = await plainRepo();
+		const {code} = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+		expect(code).toBe(0);
+		const expected = 0o666 & ~process.umask();
+		expect((await stat(path.join(dir, '.mcp.json'))).mode & 0o7777).toBe(
+			expected,
+		);
+	},
+);
 
-test('init --agents does not carry setuid or setgid over to the file it replaces', async () => {
-	const dir = await plainRepo();
-	await writeFile(path.join(dir, '.mcp.json'), '{}\n');
-	await chmod(path.join(dir, '.mcp.json'), 0o6664);
-	const {code} = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
-	expect(code).toBe(0);
-	expect((await stat(path.join(dir, '.mcp.json'))).mode & 0o7777).toBe(0o664);
-});
+test.skipIf(WINDOWS)(
+	'init --agents does not carry setuid or setgid over to the file it replaces',
+	async () => {
+		const dir = await plainRepo();
+		await writeFile(path.join(dir, '.mcp.json'), '{}\n');
+		await chmod(path.join(dir, '.mcp.json'), 0o6664);
+		const {code} = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+		expect(code).toBe(0);
+		expect((await stat(path.join(dir, '.mcp.json'))).mode & 0o7777).toBe(0o664);
+	},
+);
 
-test.skipIf(process.getuid?.() === 0)(
+test.skipIf(WINDOWS || process.getuid?.() === 0)(
 	'init --agents says which file it already changed when the next cannot be written',
 	async () => {
 		const dir = await plainRepo();
@@ -805,7 +858,7 @@ test.skipIf(process.getuid?.() === 0)(
 	},
 );
 
-test.skipIf(process.getuid?.() === 0)(
+test.skipIf(WINDOWS || process.getuid?.() === 0)(
 	'init --agents says nothing was changed when the first file cannot be written',
 	async () => {
 		const dir = await plainRepo();

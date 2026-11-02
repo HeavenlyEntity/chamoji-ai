@@ -1,7 +1,12 @@
 import {mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {listMemory, snapshotWorkstream} from '@chamoji/core';
+import {
+	listMemory,
+	readTree,
+	snapshotWorkstream,
+	writeTree,
+} from '@chamoji/core';
 import {afterEach, expect, test} from 'vitest';
 import {
 	createRepo,
@@ -12,7 +17,9 @@ import {run, type Io} from '../src/run.js';
 
 let repo: FixtureRepo | undefined;
 let loose: string | undefined;
+const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
+	await Promise.all(cleanups.splice(0).map(async cleanup => cleanup()));
 	await repo?.cleanup();
 	repo = undefined;
 	if (loose) await rm(loose, {recursive: true, force: true});
@@ -68,6 +75,86 @@ test('memory list prints each entry, with its status and commit count', async ()
 	expect(stdout).toMatch(/billing +dropped +1 commit +Billing \[31mred\n/);
 });
 
+/** Commits a memory file holding `text` at `file`, on top of the ref if it has one. */
+async function plantFile(dir: string, file: string, text: string) {
+	const source = path.join(await tempFolder(), 'blob.txt');
+	await writeFile(source, text);
+	const blob = (await gitOutput(dir, ['hash-object', '-w', source])).trim();
+	const head = await gitOutput(dir, [
+		'rev-parse',
+		'--verify',
+		'-q',
+		'refs/chamoji/memory',
+	])
+		.then(stdout => stdout.trim())
+		.catch(() => undefined);
+	const tree = head === undefined ? new Map() : await readTree(dir, head);
+	tree.set(file, blob);
+	const commit = await writeTree(dir, tree, head ? [head] : [], 'Planted');
+	await gitOutput(dir, ['update-ref', 'refs/chamoji/memory', commit]);
+}
+
+async function tempFolder(): Promise<string> {
+	const folder = await mkdtemp(path.join(tmpdir(), 'chamoji-memory-'));
+	cleanups.push(async () => rm(folder, {recursive: true, force: true}));
+	return folder;
+}
+
+test('memory list --archived includes archived entries, marked', async () => {
+	const dir = await remembered();
+	await chamoji(['memory', 'archive', 'auth'], dir);
+	const live = await chamoji(['memory', 'list'], dir);
+	expect(live.stdout).not.toContain('Auth revamp');
+	const all = await chamoji(['memory', 'list', '--archived'], dir);
+	expect(all.code).toBe(0);
+	expect(all.stdout).toMatch(
+		/auth +shipped, archived +1 commit +🔐 Auth revamp\n/,
+	);
+	expect(all.stdout).toMatch(/billing +dropped +1 commit/);
+	const json = await chamoji(['memory', 'list', '--archived', '--json'], dir);
+	expect(
+		JSON.parse(json.stdout).map((item: {slug: string; archived: boolean}) => [
+			item.slug,
+			item.archived,
+		]),
+	).toEqual([
+		['auth', true],
+		['billing', false],
+	]);
+});
+
+test('memory list points at --archived when only archived entries exist', async () => {
+	const dir = await remembered();
+	await chamoji(['memory', 'archive', 'auth'], dir);
+	await chamoji(['memory', 'archive', 'billing'], dir);
+	const {code, stdout} = await chamoji(['memory', 'list'], dir);
+	expect(code).toBe(0);
+	expect(stdout).toContain('No live entries. 2 entries archived');
+	expect(stdout).toContain('chamoji memory list --archived');
+	expect(stdout).not.toContain('Nothing in memory yet');
+});
+
+test('memory list says when an entry is there but cannot be read', async () => {
+	const dir = await remembered();
+	await plantFile(dir, 'workstreams/broken.json', '{not json');
+	const {code, stdout, stderr} = await chamoji(['memory', 'list'], dir);
+	expect(code).toBe(0);
+	expect(stdout).toMatch(/auth +shipped/);
+	expect(stderr).toBe(
+		"chamoji: memory has 1 entry that can't be read: broken. chamoji memory show <slug> says what is wrong.\n",
+	);
+});
+
+test('memory list does not call an unreadable memory empty', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await plantFile(repo.dir, 'workstreams/broken.json', '{not json');
+	await plantFile(repo.dir, 'workstreams/worse.json', '[]');
+	const {code, stdout, stderr} = await chamoji(['memory', 'list'], repo.dir);
+	expect(code).toBe(0);
+	expect(stdout).not.toContain('Nothing in memory yet');
+	expect(stderr).toContain("2 entries that can't be read: broken, worse");
+});
+
 test('memory with no subcommand lists, and --json prints the entries', async () => {
 	const dir = await remembered();
 	const {code, stdout} = await chamoji(['memory', '--json'], dir);
@@ -105,6 +192,27 @@ test('memory show strips terminal escapes', async () => {
 	expect(stdout).not.toMatch(/[\u0000-\u0009\u000B-\u001F\u007F-\u009F]/);
 });
 
+test('memory list and show strip bidirectional overrides from a title', async () => {
+	repo = await createRepo([
+		{
+			commit: '🎉 Init',
+			files: {
+				'.chamoji/workstreams.yml':
+					'workstreams:\n  auth:\n    title: "evil \\u202Egnp.exe"\n    status: shipped\n',
+			},
+		},
+	]);
+	await snapshotWorkstream(repo.dir, 'auth');
+	for (const argv of [
+		['memory', 'list'],
+		['memory', 'show', 'auth'],
+	]) {
+		const {stdout} = await chamoji(argv, repo.dir);
+		expect(stdout).toContain('evil gnp.exe');
+		expect(stdout).not.toContain('\u202E');
+	}
+});
+
 test('memory show --json prints the MemoryEntry', async () => {
 	const dir = await remembered();
 	const {code, stdout} = await chamoji(
@@ -138,7 +246,7 @@ test('memory archive <slug> hides the entry and show still finds it', async () =
 	expect(shown.stdout).toContain('archived');
 });
 
-test('memory archive <slug> --purge prints the force-push step', async () => {
+test('memory archive <slug> --purge sends the user to memory sync, not to a raw force-push', async () => {
 	const dir = await remembered();
 	const {code, stdout} = await chamoji(
 		['memory', 'archive', 'auth', '--purge'],
@@ -146,7 +254,8 @@ test('memory archive <slug> --purge prints the force-push step', async () => {
 	);
 	expect(code).toBe(0);
 	expect(stdout).toContain('Purged auth');
-	expect(stdout).toContain('git push --force origin refs/chamoji/memory');
+	expect(stdout).toContain('chamoji memory sync');
+	expect(stdout).not.toContain('--force');
 	expect(
 		await gitOutput(dir, ['log', '-p', 'refs/chamoji/memory']),
 	).not.toContain('the old form leaked');
@@ -365,8 +474,49 @@ test('memory sync after a purge gives the exact step and pushes nothing', async 
 	expect(code).toBe(0);
 	expect(stdout).toContain('git push --force origin refs/chamoji/memory\n');
 	expect(stdout).toContain('still on origin');
+	expect(stdout).toContain("overwrites origin's history");
 	expect(await gitOutput(remote, ['rev-parse', 'refs/chamoji/memory'])).toBe(
 		before,
+	);
+});
+
+test("following purge's advice keeps a teammate's entry on origin", async () => {
+	const dir = await remembered();
+	const remote = await bareOrigin(dir);
+	await chamoji(['memory', 'sync'], dir);
+
+	// A teammate ships and syncs another workstream that this clone never fetched.
+	const mate = await createRepo([
+		{
+			commit: '🎉 Init',
+			files: {
+				'.chamoji/workstreams.yml':
+					'workstreams:\n  search:\n    title: Search\n    status: shipped\n',
+			},
+		},
+	]);
+	try {
+		await gitOutput(mate.dir, ['remote', 'add', 'origin', remote]);
+		await snapshotWorkstream(mate.dir, 'search');
+		expect((await chamoji(['memory', 'sync'], mate.dir)).code).toBe(0);
+	} finally {
+		await mate.cleanup();
+	}
+
+	// This clone purges a different slug, and does what purge says next.
+	const purged = await chamoji(['memory', 'archive', 'auth', '--purge'], dir);
+	expect(purged.stdout).not.toContain('--force');
+	const synced = await chamoji(['memory', 'sync'], dir);
+	expect(synced.stdout).toContain("overwrites origin's history");
+	expect((await listMemory(dir, {archived: true})).map(e => e.slug)).toEqual([
+		'billing',
+		'search',
+	]);
+
+	// The sync merged first, so the step it printed keeps the teammate's entry.
+	await gitOutput(dir, ['push', '--force', 'origin', 'refs/chamoji/memory']);
+	expect((await listMemory(remote, {archived: true})).map(e => e.slug)).toEqual(
+		['billing', 'search'],
 	);
 });
 
