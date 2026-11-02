@@ -68,6 +68,19 @@ const ALLOWED: Array<[string, string]> = [
 	['the opt-out through env', 'env CHAMOJI_NO_CARD=1 git commit -m x'],
 	['the opt-out and git options', 'CHAMOJI_NO_CARD=1 git -C repo commit -m x'],
 	['an empty command', ''],
+	["a Why line in $'…' quotes", "git commit -m $'x\\n\\nWhy: y'"],
+	[
+		"a Why line with an escaped quote in $'…'",
+		"git commit -m $'it\\'s\\nWhy: y'",
+	],
+	[
+		"a Why line with hex and octal escapes in $'…'",
+		"git commit -m $'\\x78\\012Why: \\171'",
+	],
+	['a Why line in $"…" quotes', 'git commit -m $"x\n\nWhy: y"'],
+	// Known gap, pinned: shell keywords such as then and do are not skipped,
+	// so a commit that follows one is not seen.
+	['a commit after then (known gap)', 'if true; then git commit -m x; fi'],
 ];
 
 const DENIED: Array<[string, string]> = [
@@ -104,6 +117,10 @@ const DENIED: Array<[string, string]> = [
 	['-m "-F"', 'git commit -m "-F"'],
 	['an unterminated quote', 'git commit -m "x'],
 	['a here-string', 'git commit -m x <<< "Why: y"'],
+	["no card in $'…' quotes", "git commit -m $'x'"],
+	['a quoted newline escape that is not a line', "git commit -m 'x\\nWhy: y'"],
+	["an escaped backslash before n in $'…'", "git commit -m $'x\\\\nWhy: y'"],
+	["$'…' that hides a semicolon", "git add $'a;b' && git commit -m $'x'"],
 ];
 
 test.each(ALLOWED)('decideCommit allows %s', (_name, command) => {
@@ -116,6 +133,10 @@ test.each(DENIED)('decideCommit denies %s', (_name, command) => {
 
 test('decideCommit does not choke on odd text', () => {
 	for (const command of [
+		"git commit -m $'x",
+		"git commit -m $'x\\",
+		"git commit -m $'\\x",
+		'echo "$(echo $\'a)b\')" && git commit -m x',
 		'git commit -m "$(',
 		"git commit -m \"$(cat <<'EOF'",
 		'git commit <<',

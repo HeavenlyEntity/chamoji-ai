@@ -102,8 +102,13 @@ function split(text: string): Segment[] {
 			const end = close === -1 ? text.length : close;
 			word = (word ?? '') + text.slice(i + 1, end);
 			i = end + 1;
-		} else if (char === '"') {
-			const [value, next] = doubleQuoted(text, i + 1);
+		} else if (char === '"' || (char === '$' && text[i + 1] === '"')) {
+			// $"…" is a double-quoted string that bash may translate.
+			const [value, next] = doubleQuoted(text, i + (char === '$' ? 2 : 1));
+			word = (word ?? '') + value;
+			i = next;
+		} else if (char === '$' && text[i + 1] === "'") {
+			const [value, next] = ansiQuoted(text, i + 2);
 			word = (word ?? '') + value;
 			i = next;
 		} else if (char === '#' && word === undefined) {
@@ -210,6 +215,65 @@ function doubleQuoted(text: string, start: number): [string, number] {
 	return [value, text.length];
 }
 
+/** What `\n` and the like mean inside `$'…'`. */
+const ANSI_ESCAPES = new Map([
+	['n', '\n'],
+	['t', '\t'],
+	['r', '\r'],
+	['a', '\x07'],
+	['b', '\b'],
+	['e', '\x1B'],
+	['E', '\x1B'],
+	['f', '\f'],
+	['v', '\v'],
+	['\\', '\\'],
+	["'", "'"],
+	['"', '"'],
+	['?', '?'],
+]);
+
+/**
+ * Reads a `$'…'` string that starts after its opening quote, with the
+ * escapes bash gives it (`\n`, `\x41`, `é`, `\101`, `\'`). Returns the
+ * text and where the string ends.
+ */
+function ansiQuoted(text: string, start: number): [string, number] {
+	let value = '';
+	let i = start;
+	while (i < text.length) {
+		const char = text[i]!;
+		if (char === "'") return [value, i + 1];
+		if (char !== '\\' || i + 1 >= text.length) {
+			value += char;
+			i++;
+			continue;
+		}
+
+		const next = text[i + 1]!;
+		const simple = ANSI_ESCAPES.get(next);
+		const numeric =
+			/^(?:x([\da-f]{1,2})|u([\da-f]{1,4})|U([\da-f]{1,8})|([0-7]{1,3}))/i.exec(
+				text.slice(i + 1, i + 11),
+			);
+		if (simple !== undefined) {
+			value += simple;
+			i += 2;
+		} else if (numeric) {
+			const code = Number.parseInt(
+				numeric[1] ?? numeric[2] ?? numeric[3] ?? numeric[4]!,
+				numeric[4] === undefined ? 16 : 8,
+			);
+			value += code <= 0x10_ffff ? String.fromCodePoint(code) : '';
+			i += 1 + numeric[0].length;
+		} else {
+			value += char + next;
+			i += 2;
+		}
+	}
+
+	return [value, text.length];
+}
+
 /** Where the `$(` that opened before `start` closes: past its `)`, or the end of the text. */
 function substitutionEnd(text: string, start: number): number {
 	let depth = 1;
@@ -222,6 +286,8 @@ function substitutionEnd(text: string, start: number): number {
 		} else if (char === "'") {
 			const close = text.indexOf("'", i + 1);
 			i = close === -1 ? text.length : close + 1;
+		} else if (char === '$' && text[i + 1] === "'") {
+			i = ansiQuoted(text, i + 2)[1];
 		} else if (char === '"') {
 			i = doubleQuoted(text, i + 1)[1];
 		} else if (char === '(') {
