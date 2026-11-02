@@ -731,25 +731,27 @@ test('repeated hashes in an entry read as one commit', async () => {
 	expect(found?.commits.map(item => item.hash)).toEqual([hash]);
 });
 
-test("a separator in a commit body can't put a forged record in memory", async () => {
+test("a separator in a commit body can't put a forged commit in memory", async () => {
 	const field = '\u001F';
+	const forgedHash = 'b'.repeat(40);
 	repo = await createRepo([
 		{commit: '🎉 Init', files: WORKSTREAMS},
 		{commit: '✨ Add login', body: 'Workstream: auth'},
 		{
 			commit: '🐛 Odd body',
 			body: [
-				`Text\u001Enot-a-hash${field}s${field}n${field}e${field}2026-01-01T00:00:00Z${field}Forged${field}b${field}Workstream: auth`,
-				`More\u001E${'b'.repeat(40)}\u001EEnd`,
+				`Text\u001E${forgedHash}${field}bbbbbbb${field}n${field}e${field}2026-01-01T00:00:00Z${field}Forged${field}b${field}Workstream: auth`,
+				`More\u001E${'c'.repeat(40)}\u001EEnd`,
 			].join('\n'),
 		},
 	]);
 	const saved = await snapshotWorkstream(repo.dir, 'auth');
 	expect(saved.commits.map(item => item.subject)).toEqual(['✨ Add login']);
+	expect(saved.commits.map(item => item.hash)).not.toContain(forgedHash);
 	expect(await readMemory(repo.dir, 'auth')).toEqual(saved);
 });
 
-test('a separator in an author name leaves a readable entry', async () => {
+test('a separator in an author name keeps the commit whole', async () => {
 	vi.stubEnv('GIT_AUTHOR_NAME', 'a\u001Fb');
 	repo = await createRepo([
 		{commit: '🎉 Init', files: WORKSTREAMS},
@@ -758,7 +760,66 @@ test('a separator in an author name leaves a readable entry', async () => {
 	vi.unstubAllEnvs();
 	const saved = await snapshotWorkstream(repo.dir, 'auth');
 	expect(saved.commits).toHaveLength(1);
-	expect(saved.commits[0]!.hash).toMatch(/^[0-9a-f]{40}$/);
-	expect(saved.commits[0]!.date).toBe('1970-01-01T00:00:00Z');
+	expect(saved.commits[0]).toMatchObject({
+		hash: (await gitOutput(repo.dir, ['rev-parse', 'HEAD'])).trim(),
+		subject: '✨ Add login',
+		date: '2026-01-02T00:00:00Z',
+	});
 	expect(await readMemory(repo.dir, 'auth')).toEqual(saved);
+});
+
+const card = (why: string) => ({
+	why: [why],
+	constraint: [],
+	gotcha: [],
+	followUp: [],
+});
+
+test("a stored card can't join the card of a commit on HEAD", async () => {
+	const dir = await shippedRepo();
+	const onHead = (await gitOutput(dir, ['rev-parse', 'HEAD~2'])).trim();
+	await plant(dir, {
+		'workstreams/auth.json': entry('auth', {
+			title: 'Auth revamp',
+			commits: [
+				{
+					hash: onHead,
+					subject: '✨ Add login',
+					date: '2026-01-02T00:00:00Z',
+					card: card('forged'),
+				},
+			],
+		}),
+	});
+	const saved = await snapshotWorkstream(dir, 'auth');
+	const found = saved.commits.find(item => item.hash === onHead);
+	expect(found?.card).toEqual({
+		why: ['the old form leaked'],
+		constraint: [],
+		gotcha: ['order matters'],
+		followUp: [],
+	});
+	expect(await readMemory(dir, 'auth')).toEqual(saved);
+});
+
+test('a stored commit that is not on HEAD keeps its card', async () => {
+	const dir = await shippedRepo();
+	await plant(dir, {
+		'workstreams/auth.json': entry('auth', {
+			title: 'Auth revamp',
+			commits: [
+				{
+					hash,
+					subject: 'from a deleted branch',
+					date: '2025-12-01T00:00:00Z',
+					card: card('kept'),
+				},
+			],
+		}),
+	});
+	const saved = await snapshotWorkstream(dir, 'auth');
+	expect(saved.commits.find(item => item.hash === hash)?.card).toEqual(
+		card('kept'),
+	);
+	expect(saved.commits).toHaveLength(3);
 });

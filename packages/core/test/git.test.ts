@@ -1,4 +1,4 @@
-import {afterEach, expect, test} from 'vitest';
+import {afterEach, expect, test, vi} from 'vitest';
 import {listReleaseTags, readCommits, toWebUrl} from '../src/git.js';
 import {
 	createRepo,
@@ -46,6 +46,76 @@ test('readCommits returns body and trailers and skips merges', async () => {
 	});
 	expect(commits[1]!.body).toContain('Explains why.');
 	expect(commits[1]!.hash).toMatch(/^[\da-f]{40}$/);
+});
+
+test("a commit body holding a record separator doesn't create a record", async () => {
+	const body = 'Before\u001EAfter\n\nWorkstream: auth';
+	repo = await createRepo([{commit: '✨ Add login', body}]);
+
+	const commits = await readCommits(repo.dir, 'HEAD');
+	expect(commits).toHaveLength(1);
+	expect(commits[0]!.hash).toBe(
+		(await gitOutput(repo.dir, ['rev-parse', 'HEAD'])).trim(),
+	);
+	expect(commits[0]!.body.trim()).toBe(body);
+	expect(commits[0]!.trailers).toBe('Workstream: auth\n');
+});
+
+test("a body holding a forged record with a 40-hex hash doesn't create a record", async () => {
+	const field = '\u001F';
+	const forged = [
+		'a'.repeat(40),
+		'aaaaaaa',
+		'Mallory',
+		'mallory@example.com',
+		'2026-01-01T00:00:00Z',
+		'💥 Forged',
+		'forged body',
+		'Workstream: auth',
+	].join(field);
+	repo = await createRepo([
+		{commit: '✨ Add login', body: `Text\u001E${forged}\u001EEnd`},
+	]);
+
+	const commits = await readCommits(repo.dir, 'HEAD');
+	expect(commits.map(c => c.subject)).toEqual(['✨ Add login']);
+	expect(commits[0]!.body).toContain(forged);
+});
+
+test('an author name holding a field separator leaves the fields in place', async () => {
+	vi.stubEnv('GIT_AUTHOR_NAME', 'a\u001Fb');
+	repo = await createRepo([{commit: '✨ Add login'}]);
+	vi.unstubAllEnvs();
+
+	const [commit] = await readCommits(repo.dir, 'HEAD');
+	expect(commit).toMatchObject({
+		authorName: 'a\u001Fb',
+		authorEmail: 'fixture@example.com',
+		subject: '✨ Add login',
+		hash: (await gitOutput(repo.dir, ['rev-parse', 'HEAD'])).trim(),
+	});
+	expect(commit!.date).toMatch(/^2026-01-01T/);
+});
+
+test('a subject holding a field separator is kept as text', async () => {
+	repo = await createRepo([{commit: '✨ Add\u001Flogin', body: 'Why.'}]);
+
+	const commits = await readCommits(repo.dir, 'HEAD');
+	expect(commits).toHaveLength(1);
+	expect(commits[0]!.subject).toBe('✨ Add\u001Flogin');
+	expect(commits[0]!.body.trim()).toBe('Why.');
+});
+
+test('an empty body and no trailers still give a whole record', async () => {
+	repo = await createRepo([{commit: '✨ Add login'}, {commit: '🐛 Fix crash'}]);
+
+	const commits = await readCommits(repo.dir, 'HEAD');
+	expect(commits.map(c => c.subject)).toEqual(['🐛 Fix crash', '✨ Add login']);
+	for (const commit of commits) {
+		expect(commit.hash).toMatch(/^[\da-f]{40}$/);
+		expect(commit.body.trim()).toBe('');
+		expect(commit.trailers).toBe('');
+	}
 });
 
 test('listReleaseTags keeps semver tags sorted newest first', async () => {

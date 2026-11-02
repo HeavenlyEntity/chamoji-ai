@@ -721,9 +721,9 @@ export async function run(argv: string[], io: Io): Promise<number> {
 				githubRelease = result.ok;
 				pushed += result.ok
 					? '; GitHub release created'
-					: `; GitHub release not created: ${result.message}`;
+					: `; GitHub release not created: ${stripControlLines(result.message)}`;
 			} catch (error) {
-				pushError = (error as Error).message;
+				pushError = stripControlLines((error as Error).message);
 				pushed = `failed: ${pushError}`;
 			}
 		}
