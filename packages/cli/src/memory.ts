@@ -6,10 +6,15 @@ import {
 	listMemory,
 	purgeMemory,
 	readMemory,
+	reindexMemory,
+	searchMemory,
 	syncMemory,
 	type MemoryEntry,
+	type MemoryHit,
 	type SyncResult,
 } from '@chamoji/core';
+import {MISSING_KEY} from './env.js';
+import type {MemoryReranker} from './rerank.js';
 import type {Io} from './run.js';
 import {stripControl} from './text.js';
 import {cardLines} from './why.js';
@@ -23,13 +28,15 @@ export const FORCE_STEP = `A purged entry is still on origin, so nothing was pus
 /**
  * `chamoji memory`: `input` is what follows `memory`. Problems with memory
  * itself throw a MemoryError, which run.ts reports and exits 1 for; misuse of
- * the command exits 2. Only `sync` touches the network; the rest work on the
- * local ref.
+ * the command exits 2. Only `sync` touches the network, and `search --ai` the
+ * TypeSafe API through `reranker`, which gives undefined when there is no key;
+ * the rest work on the local ref.
  */
 export async function runMemory(
 	input: string[],
-	flags: {json?: boolean; purge?: boolean},
+	flags: {json?: boolean; purge?: boolean; ai?: boolean},
 	io: Io,
+	reranker: () => Promise<MemoryReranker | undefined> = async () => undefined,
 ): Promise<number> {
 	const [command = 'list', ...args] = input;
 	await assertGitRepo(io.cwd);
@@ -42,6 +49,29 @@ export async function runMemory(
 			return args.length === 1
 				? show(io, args[0]!, flags.json ?? false)
 				: usage(io, 'memory show needs one slug: chamoji memory show <slug>');
+		}
+
+		case 'search': {
+			return args.length > 0
+				? search(
+						io,
+						args.join(' '),
+						{json: flags.json ?? false, ai: flags.ai ?? false},
+						reranker,
+					)
+				: usage(
+						io,
+						'memory search needs a query: chamoji memory search <query> [--ai]',
+					);
+		}
+
+		case 'reindex': {
+			return args.length === 0
+				? reindex(io)
+				: usage(
+						io,
+						'memory reindex takes no arguments: chamoji memory reindex',
+					);
 		}
 
 		case 'archive': {
@@ -62,7 +92,7 @@ export async function runMemory(
 		default: {
 			return usage(
 				io,
-				`memory needs list, show, archive or sync, not "${command}"`,
+				`memory needs list, show, search, reindex, archive or sync, not "${command}"`,
 			);
 		}
 	}
@@ -117,6 +147,45 @@ async function show(io: Io, slug: string, json: boolean): Promise<number> {
 	}
 
 	io.stdout(`${lines.join('\n')}\n`);
+	return 0;
+}
+
+async function search(
+	io: Io,
+	query: string,
+	{json, ai}: {json: boolean; ai: boolean},
+	reranker: () => Promise<MemoryReranker | undefined>,
+): Promise<number> {
+	const rerank = ai ? await reranker() : undefined;
+	if (ai && !rerank) return usage(io, MISSING_KEY);
+	let hits = await searchMemory(io.cwd, query);
+	if (rerank) hits = await rerank(query, hits);
+	if (json) {
+		io.stdout(`${JSON.stringify(hits, null, 2)}\n`);
+	} else if (hits.length === 0) {
+		io.stdout(`Nothing in memory matches "${stripControl(query)}".\n`);
+	} else {
+		io.stdout(hits.map(hit => hitLines(hit)).join(''));
+	}
+
+	return 0;
+}
+
+/** A hit and its card, safe to print: both come from commits and memory that others wrote. */
+function hitLines({kind, id, title, card}: MemoryHit): string {
+	const where = kind === 'commit' ? id.slice(0, 7) : `workstream ${id}`;
+	const lines = [
+		`${stripControl(where)} ${stripControl(title)}`,
+		...cardLines(card).map(line => `  ${line}`),
+	];
+	return `${lines.join('\n')}\n`;
+}
+
+async function reindex(io: Io): Promise<number> {
+	const {documents} = await reindexMemory(io.cwd);
+	io.stdout(
+		`Indexed ${documents} ${documents === 1 ? 'document' : 'documents'}.\n`,
+	);
 	return 0;
 }
 

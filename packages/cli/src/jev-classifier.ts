@@ -184,7 +184,7 @@ const EMAIL = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
 const TRAILER_LINE = /^[\w-]+:\s/;
 
 /** Replaces email addresses, which often appear in commit text. */
-function redact(text: string): string {
+export function redact(text: string): string {
 	return text.replaceAll(EMAIL, '<email>');
 }
 

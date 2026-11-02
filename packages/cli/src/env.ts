@@ -5,6 +5,10 @@ import {runGit} from '@chamoji/core';
 
 const KEY = 'TYPESAFE_API_KEY';
 
+/** What `--ai` says when it has no key. */
+export const MISSING_KEY =
+	'--ai needs a TypeSafe API key: set TYPESAFE_API_KEY in the environment or in .env.local (get one at https://typesafe.ai)';
+
 /** Checked in order; the first file that sets the key wins. */
 const ENV_FILES = ['.env.local', '.env'];
 
