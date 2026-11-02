@@ -4,10 +4,17 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {PassThrough, Readable} from 'node:stream';
 import {fileURLToPath} from 'node:url';
-import {expect, test} from 'vitest';
+import {parseCommit, readCommits} from '@chamoji/core';
+import {afterEach, expect, test} from 'vitest';
+import {createRepo, gitOutput} from '../../core/test/helpers/fixture-repo.js';
 import {DENY_REASON, decideCommit, runAgentHook} from '../src/agent-hook.js';
 
 const cliJs = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
+
+const cleanups: Array<() => Promise<void>> = [];
+afterEach(async () => {
+	await Promise.all(cleanups.splice(0).map(async cleanup => cleanup()));
+});
 
 const heredoc = (card: string) =>
 	[
@@ -30,6 +37,18 @@ const ALLOWED: Array<[string, string]> = [
 	['a Why trailer', 'git commit -m x --trailer "Why: y"'],
 	['a Why trailer after =', 'git commit -m x --trailer="Why: y"'],
 	['a lower-case key', 'git commit -m "x\n\nwhy: y"'],
+	[
+		'an indented Why line, which the parser trims',
+		'git commit -m "x\n\n  Why: y"',
+	],
+	[
+		'a Why trailer with no space, as git writes it',
+		'git commit -m "x\n\nWhy:y"',
+	],
+	[
+		'a Why trailer with no space after --trailer',
+		'git commit -m x --trailer "Why:y"',
+	],
 	['a Follow-up line', 'git commit -m "x\n\nFollow-up: y"'],
 	['a Gotcha line', 'git commit -m "x\n\nGotcha: y"'],
 	['a heredoc holding Constraint', heredoc('Constraint: y')],
@@ -39,7 +58,7 @@ const ALLOWED: Array<[string, string]> = [
 	],
 	['a heredoc fed to -F', "git commit -F - <<'EOF'\nx\n\nWhy: y\nEOF"],
 	['a heredoc and a later command', `${heredoc('Why: y')}\ngit status`],
-	['an escaped quote around Why', 'git commit -m "x\n\\"quoted\\"\nWhy: y"'],
+	['an escaped quote around Why', 'git commit -m "x\n\n\\"quoted\\"\nWhy: y"'],
 	['--amend --no-edit', 'git commit --amend --no-edit'],
 	['--no-edit alone', 'git commit --no-edit'],
 	['-F with a file', 'git commit -F msg.txt'],
@@ -71,11 +90,11 @@ const ALLOWED: Array<[string, string]> = [
 	["a Why line in $'…' quotes", "git commit -m $'x\\n\\nWhy: y'"],
 	[
 		"a Why line with an escaped quote in $'…'",
-		"git commit -m $'it\\'s\\nWhy: y'",
+		"git commit -m $'it\\'s\\n\\nWhy: y'",
 	],
 	[
 		"a Why line with hex and octal escapes in $'…'",
-		"git commit -m $'\\x78\\012Why: \\171'",
+		"git commit -m $'\\x78\\012\\012Why: \\171'",
 	],
 	['a Why line in $"…" quotes', 'git commit -m $"x\n\nWhy: y"'],
 	// Known gap, pinned: shell keywords such as then and do are not skipped,
@@ -86,6 +105,17 @@ const ALLOWED: Array<[string, string]> = [
 const DENIED: Array<[string, string]> = [
 	['no card', 'git commit -m "x"'],
 	['no card, single quotes', "git commit -m 'x'"],
+	['a card line as the subject', 'git commit -m "Why: because"'],
+	[
+		'a card line as the subject in single quotes',
+		"git commit -m 'Why: because'",
+	],
+	['a card line as the subject, then no card', 'git commit -m "Why: a" -m b'],
+	['a card line as the subject with a body', 'git commit -m "Why: a\n\nmore"'],
+	['a Why line in the subject paragraph', 'git commit -m "x\nWhy: y"'],
+	['a no-space Why in the subject paragraph', 'git commit -m "x\nWhy:y"'],
+	['a no-space Why among prose', 'git commit -m "x\n\nsome prose\nWhy:y"'],
+	['a no-space Why before more prose', 'git commit -m "x\n\nWhy:y\n\nmore"'],
 	['a lone -m without a message', 'git commit -m'],
 	['add then commit', 'git add . && git commit -m x'],
 	['commit after a semicolon', 'git add .; git commit -m x'],
@@ -129,6 +159,48 @@ test.each(ALLOWED)('decideCommit allows %s', (_name, command) => {
 
 test.each(DENIED)('decideCommit denies %s', (_name, command) => {
 	expect(decideCommit(command)).toBe('deny');
+});
+
+test('decideCommit agrees with the card parser on real commits', async () => {
+	// Each message goes through a real `git commit` and the parser, then the
+	// hook is asked about the same text. Single quotes keep the shell text plain.
+	const messages = [
+		'Why: because',
+		'Why: because\n\nmore words',
+		'x',
+		'x\n\nWhy: y',
+		'x\n\n  Why: y',
+		'x\n\n\tWhy: y',
+		'x\nWhy: y',
+		'x\n\nWhy:y',
+		'x\n\nGotcha:y\nFollow-up:\tz',
+		'x\nWhy:y',
+		'x\n\nsome prose\nWhy:y',
+		'x\n\nWhy:y\n\nclosing prose',
+		'x\n\nWhy:',
+		'x\n\nWhy: y\nSigned-off-by: A <a@b.example>',
+		'x\n\nSigned-off-by: A <a@b.example>\nWhy:y',
+		'x\n\nI wonder Why: this',
+		'x\n\nWhy y',
+	];
+	const repo = await createRepo([{commit: '🎉 Init'}]);
+	cleanups.push(async () => repo.cleanup());
+	for (const message of messages) {
+		await gitOutput(repo.dir, [
+			'commit',
+			'-q',
+			'--allow-empty',
+			'--cleanup=verbatim',
+			'-m',
+			message,
+		]);
+		const [raw] = await readCommits(repo.dir, 'HEAD');
+		const hasCard = parseCommit(raw!).card !== undefined;
+		expect([message, decideCommit(`git commit -m '${message}'`)]).toEqual([
+			message,
+			hasCard ? 'allow' : 'deny',
+		]);
+	}
 });
 
 test('decideCommit does not choke on odd text', () => {
@@ -184,7 +256,7 @@ test('a commit with no card is denied with the reason', async () => {
 	});
 	expect(stdout.endsWith('\n')).toBe(true);
 	expect(DENY_REASON).toBe(
-		'Add why this change was made: put a "Why: <reason>" line at the end of the commit message. Constraint:, Gotcha: and Follow-up: lines are welcome too. Only if the user told you to skip this, prefix the command with CHAMOJI_NO_CARD=1.',
+		'Add why this change was made: put a "Why: <reason>" line at the end of the commit message, after a blank line. Constraint:, Gotcha: and Follow-up: lines are welcome too. Only if the user told you to skip this, prefix the command with CHAMOJI_NO_CARD=1.',
 	);
 });
 

@@ -9,8 +9,14 @@ import {
 	type Bm25Index,
 	type SearchDocument,
 } from './bm25.js';
-import {readCommits, runGit} from './git.js';
-import {MEMORY_REF, headOf, listMemory, toCard} from './memory.js';
+import {readCommits} from './git.js';
+import {
+	MEMORY_REF,
+	headOf,
+	listMemory,
+	memoryIndexPath,
+	toCard,
+} from './memory.js';
 import {parseCommit} from './parse.js';
 import type {IntentCard} from './types.js';
 
@@ -193,13 +199,6 @@ function joinCards(cards: IntentCard[]): IntentCard | undefined {
 		: undefined;
 }
 
-async function indexPath(cwd: string): Promise<string> {
-	const gitDir = (
-		await runGit(['rev-parse', '--absolute-git-dir'], cwd)
-	).trim();
-	return path.join(gitDir, 'chamoji', 'memory-index.json');
-}
-
 /**
  * The stored index when it was built from this HEAD and memory ref. The file
  * is local but can be cut short or edited, so anything that does not check
@@ -211,7 +210,7 @@ async function readIndex(
 ): Promise<Loaded | undefined> {
 	let raw: unknown;
 	try {
-		raw = JSON.parse(await readFile(await indexPath(cwd), 'utf8'));
+		raw = JSON.parse(await readFile(await memoryIndexPath(cwd), 'utf8'));
 	} catch {
 		return undefined;
 	}
@@ -261,7 +260,7 @@ async function writeIndex(
 	stamp: Stamp,
 	{documents, index}: Loaded,
 ): Promise<void> {
-	const file = await indexPath(cwd);
+	const file = await memoryIndexPath(cwd);
 	const temporary = `${file}.${randomUUID()}.tmp`;
 	await mkdir(path.dirname(file), {recursive: true});
 	try {

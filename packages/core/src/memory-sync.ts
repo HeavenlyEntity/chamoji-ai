@@ -8,8 +8,10 @@ import {
 	listMemory,
 	livePath,
 	mergeCommits,
+	isSameForeign,
+	mergeForeign,
 	purgedPath,
-	readTree,
+	readFullTree,
 	slugOf,
 	toEntry,
 	writeEntry,
@@ -117,7 +119,8 @@ export async function pullMemory(cwd: string): Promise<PullResult> {
 
 /**
  * Merges origin's memory in and pushes the result, and nothing but the memory
- * ref. A push that fails starts again from origin's new tip, once. It never
+ * ref. A push that loses a race starts again from origin's new tip, once; any
+ * other failure is reported as it is. It skips the pre-push hook. It never
  * forces: when only a force-push would do, the result says so.
  */
 export async function syncMemory(cwd: string): Promise<SyncResult> {
@@ -127,19 +130,38 @@ export async function syncMemory(cwd: string): Promise<SyncResult> {
 		merged ||= pull.merged;
 		if (!ahead || pull.needsForce) return {...pull, merged, pushed: false};
 		try {
+			// --no-verify: the ref holds no code, so the user's pre-push hook,
+			// which checks code, has nothing to say about it.
 			await runGit(
-				['push', '--quiet', 'origin', `${MEMORY_REF}:${MEMORY_REF}`],
+				[
+					'push',
+					'--quiet',
+					'--no-verify',
+					'origin',
+					`${MEMORY_REF}:${MEMORY_REF}`,
+				],
 				cwd,
 			);
 			return {...pull, merged, pushed: true};
 		} catch (error) {
-			if (attempt === 2) {
+			// Only a push that lost a race can win on a second try. A hook that
+			// declined it, a network failure or a missing right would just fail again.
+			if (attempt === 2 || !wasRejected(error)) {
 				throw new MemoryError(
 					`Could not push memory to origin: ${gitMessage(error)}`,
 				);
 			}
 		}
 	}
+}
+
+/**
+ * Whether git refused the push because origin's ref moved on, which it says as
+ * `! [rejected]`. A remote hook's refusal is `! [remote rejected]` instead.
+ */
+function wasRejected(error: unknown): boolean {
+	const {stderr} = error as {stderr?: string};
+	return stderr?.includes('[rejected]') ?? false;
 }
 
 /** The commit the local ref should be on, given that origin is on `remote`. */
@@ -153,14 +175,20 @@ async function combine(
 	if (!behind && (await isAncestor(cwd, remote, local))) return local;
 	// Being behind says nothing about what origin's tip holds. Anyone who can
 	// push can drop an entry or a tombstone on top of it, so it merges too.
-	const ours = await readTree(cwd, local);
-	const theirs = await readTree(cwd, remote);
+	const {files: ours, foreign: ourForeign} = await readFullTree(cwd, local);
+	const {files: theirs, foreign: theirForeign} = await readFullTree(
+		cwd,
+		remote,
+	);
 	const merged = await mergeTrees(
 		ours,
 		theirs,
 		async blob => runGit(['cat-file', 'blob', blob], cwd),
 		async entry => writeEntry(cwd, entry),
 	);
+	// What this version doesn't read, such as a folder from a newer chamoji, is
+	// carried over, so that a merge here can't strip it from the shared ref.
+	const foreign = mergeForeign(ourForeign, theirForeign, merged);
 	// A purge restarts the ref so that its text is unreachable, and a parent
 	// that still holds that text would make it reachable again, and push it.
 	// When each side purged what the other holds, neither can be a parent.
@@ -173,10 +201,16 @@ async function combine(
 	];
 	const [only] = parents;
 	if (parents.length === 1 && only !== undefined) {
-		if (isSameTree(merged, only === local ? ours : theirs)) return only;
+		const isOurs = only === local;
+		if (
+			isSameTree(merged, isOurs ? ours : theirs) &&
+			isSameForeign(foreign, isOurs ? ourForeign : theirForeign)
+		) {
+			return only;
+		}
 	}
 
-	return writeTree(cwd, merged, parents, 'Merge memory from origin');
+	return writeTree(cwd, merged, parents, 'Merge memory from origin', foreign);
 }
 
 /** Whether `other` still has an entry that a tombstone in `tree` removed. */

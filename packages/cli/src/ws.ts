@@ -182,7 +182,14 @@ async function finish(
 	io.stdout(staged(status === 'shipped' ? 'Shipped' : 'Dropped', slug));
 	// The status change is what was asked for, and it has happened.
 	try {
-		await snapshotWorkstream(io.cwd, slug);
+		const {commits} = await snapshotWorkstream(io.cwd, slug);
+		const count = `${commits.length} ${commits.length === 1 ? 'commit' : 'commits'}`;
+		io.stdout(`Saved ${count} to memory.\n`);
+		if (commits.length === 0) {
+			io.stderr(
+				`chamoji: memory has no commits for ${slug}: none on this branch carry its Workstream line. If they are on another branch, run chamoji ws ${verb} ${slug} there.\n`,
+			);
+		}
 	} catch (error) {
 		io.stderr(
 			`chamoji: ${slug} was not saved to memory (${stripControl((error as Error).message)})\n`,

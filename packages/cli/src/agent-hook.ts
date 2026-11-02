@@ -2,16 +2,27 @@ import type {Io} from './run.js';
 
 /** Said to the agent when it commits with no card. */
 export const DENY_REASON =
-	'Add why this change was made: put a "Why: <reason>" line at the end of the commit message. Constraint:, Gotcha: and Follow-up: lines are welcome too. Only if the user told you to skip this, prefix the command with CHAMOJI_NO_CARD=1.';
+	'Add why this change was made: put a "Why: <reason>" line at the end of the commit message, after a blank line. Constraint:, Gotcha: and Follow-up: lines are welcome too. Only if the user told you to skip this, prefix the command with CHAMOJI_NO_CARD=1.';
 
 /** More than a hook input ever holds: a command and a few fields. */
 const MAX_INPUT = 1024 * 1024;
 
+const CARD_KEY = '(?:why|constraint|gotcha|follow-up)';
+
 /**
- * The same line the intent card parser reads (core's intent.ts): a card key,
- * a colon, and some text, at the start of a line.
+ * A line of the body that the intent card parser reads (core's intent.ts): it
+ * trims the line, then wants a card key, a colon, a space and some text.
  */
-const CARD_LINE = /^(?:why|constraint|gotcha|follow-up):[ \t]+\S/im;
+const CARD_LINE = new RegExp(`^[ \\t]*${CARD_KEY}:[ \\t]+\\S`, 'im');
+
+/**
+ * A card line in git's trailer form, which `--trailer` values and the last
+ * paragraph of a message use, and which lets the colon touch the value.
+ */
+const CARD_TRAILER = new RegExp(`^[ \\t]*${CARD_KEY}[ \\t]*:[ \\t]*\\S`, 'i');
+
+/** A line git would count as part of a trailer block: `Key: value`, or a continuation. */
+const TRAILER_LINE = /^(?:[\w-]+[ \t]*:|[ \t]+\S)/;
 
 /** Long flags whose next word is their value, so that word is not read as a flag. */
 const TAKES_VALUE = new Set([
@@ -323,10 +334,41 @@ function substitutionEnd(text: string, start: number): number {
 	return text.length;
 }
 
+/**
+ * Whether the message the commit will have carries a card, by the parser's
+ * own rules. The subject is the first paragraph, as git counts it, and is never
+ * read for a card, so `-m "Why: because"` is a subject, not a card. A
+ * `$(cat <<EOF ...)` in `-m` is the heredoc's text, which is read as the
+ * message instead.
+ */
+function hasCard(
+	messages: string[],
+	trailers: string[],
+	heredocs: string[],
+): boolean {
+	if (trailers.some(trailer => CARD_TRAILER.test(trailer))) return true;
+	const own =
+		heredocs.length > 0
+			? messages.filter(text => !text.includes('$(') && !text.includes('`'))
+			: messages;
+	const message = [...own, ...heredocs].join('\n\n').trimStart();
+	const [, ...paragraphs] = message.trimEnd().split(/\n[ \t]*\n/);
+	if (paragraphs.some(paragraph => CARD_LINE.test(paragraph))) return true;
+	// The parser also takes git's trailer block, the last paragraph, and that
+	// reads `Why:nospace`, which a line scan does not.
+	const last = paragraphs.at(-1)?.split('\n') ?? [];
+	return (
+		last.length > 0 &&
+		last.every(line => TRAILER_LINE.test(line)) &&
+		last.some(line => CARD_TRAILER.test(line))
+	);
+}
+
 /** Whether one `git commit` leaves its message without a card the agent could have written. */
 function lacksCard(args: string[], heredocs: string[]): boolean {
 	// Only what goes into the message can hold a card: -m, --trailer and heredocs.
-	const texts = [...heredocs];
+	const messages: string[] = [];
+	const trailers: string[] = [];
 	let noEdit = false;
 	let hasMessage = false;
 	for (let i = 0; i < args.length; i++) {
@@ -340,7 +382,10 @@ function lacksCard(args: string[], heredocs: string[]): boolean {
 				noEdit = true;
 			} else if (name === '--message' || name === '--trailer') {
 				const value = equals === -1 ? args[++i] : word.slice(equals + 1);
-				if (value !== undefined) texts.push(value);
+				if (value !== undefined) {
+					(name === '--trailer' ? trailers : messages).push(value);
+				}
+
 				hasMessage ||= name === '--message';
 			} else if (equals === -1 && TAKES_VALUE.has(name)) {
 				i++;
@@ -352,7 +397,7 @@ function lacksCard(args: string[], heredocs: string[]): boolean {
 				if (flag === 'h' || 'FCc'.includes(flag)) return false;
 				if (flag === 'm' || flag === 't') {
 					const value = at === word.length - 1 ? args[++i] : word.slice(at + 1);
-					if (value !== undefined && flag === 'm') texts.push(value);
+					if (value !== undefined && flag === 'm') messages.push(value);
 					hasMessage ||= flag === 'm';
 					break;
 				}
@@ -366,7 +411,7 @@ function lacksCard(args: string[], heredocs: string[]): boolean {
 	// --no-edit reuses the message of an amend or a merge. Given a message too,
 	// it is a plain commit and that message needs its card.
 	if (noEdit && !hasMessage) return false;
-	return !texts.some(text => CARD_LINE.test(text));
+	return !hasCard(messages, trailers, heredocs);
 }
 
 /**
