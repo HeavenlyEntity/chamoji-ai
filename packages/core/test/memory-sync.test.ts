@@ -22,7 +22,6 @@ import {
 	gitOutput,
 	type FixtureRepo,
 } from './helpers/fixture-repo.js';
-import {lsTree, plantForeign} from './helpers/raw-tree.js';
 
 /**
  * `before` runs just before the next real `push`, to lose a race with another
@@ -849,92 +848,23 @@ test('a push the remote refuses is a MemoryError, tried once, and keeps the loca
 	expect(await readFile(path.join(remote, 'tries'), 'utf8')).toBe('x\n');
 });
 
-const pathsOf = async (dir: string, ref = MEMORY_REF) =>
-	(await lsTree(dir, ref)).map(item => item.path);
-
-test('a merge carries the foreign entries of both sides, and pushes them', async () => {
-	const {remote, a, b} = await world();
-	await snapshotWorkstream(a, 'auth');
-	await plantForeign(a, [{path: 'v2/from-a', text: 'A'}]);
-	await snapshotWorkstream(b, 'billing');
-	await plantForeign(b, [
-		{path: 'v2/from-b', text: 'B'},
-		{path: 'vendor/sub', mode: '160000', id: 'b'.repeat(40)},
-		{path: 'workstreams/exec.json', text: 'x', mode: '100755'},
-	]);
-	await syncMemory(b);
-	expect(await syncMemory(a)).toMatchObject({merged: true, pushed: true});
-	const merged = await pathsOf(a);
-	for (const file of [
-		'v2/from-a',
-		'v2/from-b',
-		'vendor/sub',
-		'workstreams/exec.json',
-		'workstreams/auth.json',
-		'workstreams/billing.json',
-	]) {
-		expect(merged).toContain(file);
-	}
-
-	expect(await tip(remote)).toBe(await tip(a));
-	expect(await slugs(a)).toEqual(['auth', 'billing']);
-	// The clone that was merged into settles on the same tree.
-	await syncMemory(b);
-	expect(await lsTree(b)).toEqual(await lsTree(a));
-});
-
-test('a foreign path with two contents settles on one, on every clone', async () => {
-	const {a, b} = await world();
-	await plantForeign(a, [{path: 'v2/x', text: 'one'}]);
-	await plantForeign(b, [{path: 'v2/x', text: 'two'}]);
-	const ids = await Promise.all(
-		['one', 'two'].map(async text =>
-			(await runGitWithInput(['hash-object', '--stdin'], a, text)).trim(),
-		),
-	);
-	await syncMemory(b);
-	await syncMemory(a);
-	await syncMemory(b);
-	const found = (dir: string) =>
-		lsTree(dir).then(items => items.find(item => item.path === 'v2/x')?.id);
-	expect(await found(a)).toBe(ids.sort().at(-1));
-	expect(await found(b)).toBe(await found(a));
-	expect(await tip(a)).toBe(await tip(b));
-});
-
-test('a foreign file and a foreign folder of one name merge to the folder', async () => {
-	const {a, b} = await world();
-	await plantForeign(a, [{path: 'v2', text: 'a plain file'}]);
-	await plantForeign(b, [{path: 'v2/inside', text: 'in a folder'}]);
-	await syncMemory(b);
-	expect(await syncMemory(a)).toMatchObject({merged: true});
-	expect(await pathsOf(a)).toEqual(['v2/inside']);
-});
-
-test('a fast-forward over foreign entries keeps them', async () => {
-	const {remote, a, b} = await world();
-	await snapshotWorkstream(a, 'auth');
-	await syncMemory(a);
-	await syncMemory(b);
-	await plantForeign(b, [{path: 'v2/x', text: 'new'}], MEMORY_REF);
-	await gitOutput(b, ['push', '-q', 'origin', `${MEMORY_REF}:${MEMORY_REF}`]);
-	expect(await syncMemory(a)).toMatchObject({merged: true, pushed: false});
-	expect(await tip(a)).toBe(await tip(remote));
-	expect(await pathsOf(a)).toContain('v2/x');
-});
-
-test('sync does not run the pre-push hook', async () => {
+test('a failing pre-push hook is a MemoryError after one run', async () => {
 	const {remote, a} = await world();
 	await snapshotWorkstream(a, 'auth');
 	const marker = path.join(await tempDir(), 'ran');
 	await writeFile(
 		path.join(a, '.git/hooks/pre-push'),
-		`#!/bin/sh\necho ran >> "${marker}"\nexit 1\n`,
+		`#!/bin/sh\necho ran >> "${marker}"\necho blocked by policy >&2\nexit 1\n`,
 		{mode: 0o755},
 	);
-	expect(await syncMemory(a)).toMatchObject({pushed: true});
-	expect(await tip(remote)).toBe(await tip(a));
-	await expect(readFile(marker, 'utf8')).rejects.toThrow();
+	const failure = await syncMemory(a).catch((error: unknown) => error);
+	expect(failure).toBeInstanceOf(MemoryError);
+	expect((failure as Error).message).toContain(
+		'Could not push memory to origin',
+	);
+	// A refusal is the same on a second push, so the hook ran once.
+	expect(await readFile(marker, 'utf8')).toBe('ran\n');
+	expect(await gitOutput(remote, ['for-each-ref', 'refs/chamoji'])).toBe('');
 });
 
 test('a fetch that fails is a MemoryError', async () => {
@@ -1073,7 +1003,7 @@ test('sync works from a subdirectory', async () => {
 	expect(await tip(remote)).toBe(await tip(a));
 });
 
-test('junk on the remote stays out of what readers see, and a merge keeps it', async () => {
+test('junk on the remote stays out of what readers and merges see', async () => {
 	const {a, b} = await world();
 	await snapshotWorkstream(a, 'auth');
 	await syncMemory(a);
@@ -1087,10 +1017,8 @@ test('junk on the remote stays out of what readers see, and a merge keeps it', a
 		'workstreams/auth.json',
 		'workstreams/billing.json',
 	]);
-	// Not read, but not dropped either: an older chamoji must not strip what a
-	// newer one put on the shared ref.
 	expect(await gitOutput(b, ['ls-tree', '-r', '--name-only', MEMORY_REF])).toBe(
-		'stray.txt\nworkstreams/auth.json\nworkstreams/billing.json\n',
+		'workstreams/auth.json\nworkstreams/billing.json\n',
 	);
 });
 

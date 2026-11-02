@@ -226,144 +226,51 @@ export async function memoryIndexPath(cwd: string): Promise<string> {
 }
 
 /**
- * A tree entry that chamoji does not own: a path outside the layout this
- * version knows, such as a folder a newer chamoji added, or a layout path with
- * a mode other than a plain file. Reads leave these out. Writes and merges
- * carry them along, so an older chamoji can't strip them from a shared ref.
- */
-export type Foreign = {mode: string; type: string; id: string};
-
-/** The files in a memory commit, and the entries that were left out of them. */
-export type MemoryTree = {
-	files: Map<string, string>;
-	foreign: Map<string, Foreign>;
-};
-
-/** Deeper than any real layout; a longer path is dropped, not rebuilt. */
-const MAX_DEPTH = 64;
-
-/**
  * The files in a memory commit, as path to blob id. The ref is fetched from
  * other people, so anything but a regular file at a path of the layout is
- * left out here, and no caller sees it.
+ * left out here, and no caller sees it. A write keeps only what this returns.
  */
 export async function readTree(
 	cwd: string,
 	commit: string,
 ): Promise<Map<string, string>> {
-	return (await readFullTree(cwd, commit)).files;
-}
-
-/** `readTree`, and what it left out, for a caller that writes the tree back. */
-export async function readFullTree(
-	cwd: string,
-	commit: string,
-): Promise<MemoryTree> {
 	// Without --full-tree, ls-tree answers relative to cwd.
 	const stdout = await runGit(
 		['ls-tree', '-r', '-z', '--full-tree', commit],
 		cwd,
 	);
-	const files = new Map<string, string>();
-	const foreign = new Map<string, Foreign>();
+	const tree = new Map<string, string>();
 	for (const line of stdout.split('\0')) {
-		const match = /^(\d{6}) (blob|commit) ([0-9a-f]{40,64})\t(.+)$/s.exec(line);
-		if (!match) continue;
-		const [, mode = '', type = '', id = '', file = ''] = match;
-		if (mode === '100644' && type === 'blob' && isMemoryPath(file)) {
-			files.set(file, id);
-		} else {
-			foreign.set(file, {mode, type, id});
-		}
+		const match = /^100644 blob ([0-9a-f]{40,64})\t(.+)$/s.exec(line);
+		if (match && isMemoryPath(match[2]!)) tree.set(match[2]!, match[1]!);
 	}
 
-	return {files, foreign};
+	return tree;
 }
 
-const describeEntry = ({mode, type, id}: Foreign) => `${mode} ${type} ${id}`;
-
-/**
- * The foreign entries of two trees, together. Where both have a path with
- * different content, the larger of the two wins, which every clone picks, so
- * they settle on one tree. Entries on a path of a purged slug go.
- */
-export function mergeForeign(
-	ours: Map<string, Foreign>,
-	theirs: Map<string, Foreign>,
-	files: Map<string, string>,
-): Map<string, Foreign> {
-	const merged = new Map(ours);
-	for (const [file, entry] of theirs) {
-		const other = merged.get(file);
-		if (!other || describeEntry(entry) > describeEntry(other)) {
-			merged.set(file, entry);
-		}
-	}
-
-	return withoutPurged(merged, files);
-}
-
-/** Whether two sets of foreign entries are the same. */
-export function isSameForeign(
-	a: Map<string, Foreign>,
-	b: Map<string, Foreign>,
-): boolean {
-	return (
-		a.size === b.size &&
-		[...a].every(([file, entry]) => {
-			const other = b.get(file);
-			return (
-				other !== undefined && describeEntry(entry) === describeEntry(other)
-			);
-		})
-	);
-}
-
-/** Drops entries on a layout path of a slug that `files` has a tombstone for. */
-export function withoutPurged(
-	foreign: Map<string, Foreign>,
-	files: Map<string, string>,
-): Map<string, Foreign> {
-	return new Map(
-		[...foreign].filter(
-			([file]) => !(isMemoryPath(file) && files.has(purgedPath(slugOf(file)))),
-		),
-	);
-}
-
-/** A leaf of the tree being written: where it goes, and whether chamoji owns it. */
-type Leaf = {path: string[]; entry: Foreign; owned: boolean};
-
-/**
- * Writes `entries` as a commit on top of `parents`, without moving any ref.
- * `foreign` entries are written back as they were, except those whose path
- * `entries` has too.
- */
+/** Writes `entries` as a commit on top of `parents`, without moving any ref. */
 export async function writeTree(
 	cwd: string,
 	entries: Map<string, string>,
 	parents: string[],
 	message: string,
-	foreign: Map<string, Foreign> = new Map(),
 ): Promise<string> {
-	const leaves: Leaf[] = [];
+	const folders = new Map<string, string[]>();
 	for (const [file, blob] of entries) {
 		if (!isMemoryPath(file) || !OBJECT_ID.test(blob)) {
 			throw new MemoryError(`"${file}" does not belong in memory`);
 		}
 
-		leaves.push({
-			path: file.split('/'),
-			entry: {mode: '100644', type: 'blob', id: blob},
-			owned: true,
-		});
+		const [folder, name] = file.split('/') as [string, string];
+		folders.set(folder, [
+			...(folders.get(folder) ?? []),
+			`100644 blob ${blob}\t${name}`,
+		]);
 	}
 
-	for (const [file, entry] of foreign) {
-		const path = file.split('/');
-		if (!entries.has(file) && isRebuildable(path)) {
-			leaves.push({path, entry, owned: false});
-		}
+	const root: string[] = [];
+	for (const [folder, lines] of folders) {
+		root.push(`040000 tree ${await makeTree(cwd, lines)}\t${folder}`);
 	}
 
 	const stdout = await runGitWithInput(
@@ -373,7 +280,7 @@ export async function writeTree(
 			'-c',
 			`user.email=${AUTHOR.email}`,
 			'commit-tree',
-			await makeNested(cwd, leaves),
+			await makeTree(cwd, root),
 			...parents.flatMap(parent => ['-p', parent]),
 		],
 		cwd,
@@ -383,57 +290,9 @@ export async function writeTree(
 	return stdout.trim();
 }
 
-/** A path of names git accepts, not absurdly deep. */
-function isRebuildable(path: string[]): boolean {
-	return (
-		path.length <= MAX_DEPTH &&
-		path.every(
-			name => !['', '.', '..'].includes(name) && !/^\.git$/i.test(name),
-		)
-	);
-}
-
-/**
- * Builds the trees for `leaves`, folder by folder. A name can't be a file in
- * one leaf and a folder in another: chamoji's own file keeps its name, and
- * otherwise the folder does.
- */
-async function makeNested(cwd: string, leaves: Leaf[]): Promise<string> {
-	const files = new Map<string, Leaf>();
-	const folders = new Map<string, Leaf[]>();
-	for (const leaf of leaves) {
-		const [name = '', ...rest] = leaf.path;
-		if (rest.length > 0) {
-			folders.set(name, [...(folders.get(name) ?? []), {...leaf, path: rest}]);
-		} else if (!files.get(name)?.owned) {
-			files.set(name, leaf);
-		}
-	}
-
-	const lines: string[] = [];
-	for (const [name, below] of folders) {
-		if (files.get(name)?.owned && !below.some(leaf => leaf.owned)) continue;
-		files.delete(name);
-		lines.push(`040000 tree ${await makeNested(cwd, below)}\t${name}`);
-	}
-
-	for (const [name, {entry}] of files) {
-		lines.push(`${entry.mode} ${entry.type} ${entry.id}\t${name}`);
-	}
-
-	return makeTree(cwd, lines);
-}
-
 async function makeTree(cwd: string, lines: string[]): Promise<string> {
-	// -z, because a name in a fetched tree may hold a newline.
-	const input = lines.map(line => `${line}\0`).join('');
-	// A submodule's commit is not in this repo, and mktree would refuse it.
-	const missing = lines.some(line => line.startsWith('160000 '))
-		? ['--missing']
-		: [];
-	return (
-		await runGitWithInput(['mktree', '-z', ...missing], cwd, input)
-	).trim();
+	const input = lines.map(line => `${line}\n`).join('');
+	return (await runGitWithInput(['mktree'], cwd, input)).trim();
 }
 
 async function writeBlob(cwd: string, text: string): Promise<string> {
@@ -474,7 +333,6 @@ export async function headOf(
  * Applies `change` to the tree and moves the ref with compare-and-swap, so a
  * writer in another process can't be overwritten. Losing that race starts
  * again from the new tip, once. Nothing here goes near HEAD or the index.
- * What `readTree` leaves out is written back as it was.
  */
 async function update<T>(
 	cwd: string,
@@ -484,22 +342,10 @@ async function update<T>(
 ): Promise<T> {
 	for (let attempt = 1; ; attempt++) {
 		const head = await memoryHead(cwd);
-		const {files: tree, foreign} =
-			head === undefined
-				? {
-						files: new Map<string, string>(),
-						foreign: new Map<string, Foreign>(),
-					}
-				: await readFullTree(cwd, head);
+		const tree = head === undefined ? new Map() : await readTree(cwd, head);
 		const result = await change(tree);
 		const parents = root || head === undefined ? [] : [head];
-		const commit = await writeTree(
-			cwd,
-			tree,
-			parents,
-			message,
-			withoutPurged(foreign, tree),
-		);
+		const commit = await writeTree(cwd, tree, parents, message);
 		try {
 			// An empty old value means the ref must not exist yet.
 			await runGit(['update-ref', MEMORY_REF, commit, head ?? ''], cwd);

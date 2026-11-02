@@ -352,7 +352,7 @@ function hasCard(
 			? messages.filter(text => !text.includes('$(') && !text.includes('`'))
 			: messages;
 	const message = [...own, ...heredocs].join('\n\n').trimStart();
-	const [, ...paragraphs] = message.trimEnd().split(/\n[ \t]*\n/);
+	const [, ...paragraphs] = message.trimEnd().split(/\r?\n[ \t\r]*\n/);
 	if (paragraphs.some(paragraph => CARD_LINE.test(paragraph))) return true;
 	// The parser also takes git's trailer block, the last paragraph, and that
 	// reads `Why:nospace`, which a line scan does not.
