@@ -11,7 +11,7 @@ export type MemoryReranker = (
 /** The slice of the TypeSafe client this file uses (easy to fake in tests). */
 export type RerankClient = {
 	systemOne(request: {
-		state: {query: string};
+		state: {query: string; candidates: string[]};
 		questions: Record<
 			string,
 			{
@@ -61,16 +61,23 @@ export function jevReranker(
 		if (hits.length < 2) return hits;
 		const candidates = hits.slice(0, MAX_CANDIDATES);
 		const questions: Parameters<RerankClient['systemOne']>[0]['questions'] = {};
-		for (const [index, candidate] of candidates.entries()) {
+		// The instructions are fixed text. What commits say stays in the state.
+		for (const index of candidates.keys()) {
 			questions[`candidate_${index}`] = {
 				type: 'score',
-				instructions: `A developer is searching a project's history for \`query\`. How well does this entry answer that search?\n\n${describe(candidate)}`,
+				instructions: `A developer is searching a project's history for \`query\`. How well does the history entry \`candidates[${index}]\` answer that search?`,
 				criteria: CRITERIA,
 			};
 		}
 
 		try {
-			const {answers} = await client.systemOne({state: {query}, questions});
+			const {answers} = await client.systemOne({
+				state: {
+					query,
+					candidates: candidates.map(candidate => describe(candidate)),
+				},
+				questions,
+			});
 			const scores = candidates.map((_, index) => {
 				const score = answers[`candidate_${index}`]?.score;
 				if (typeof score !== 'number' || !Number.isFinite(score)) {

@@ -261,6 +261,31 @@ test('memory search --ai with no key says so and exits 2', async () => {
 	}
 });
 
+test('memory search --ai ignores a key from a tracked env file', async () => {
+	const dir = await remembered();
+	await writeFile(path.join(dir, '.env'), 'TYPESAFE_API_KEY=bad…\n');
+	const saved = process.env['TYPESAFE_API_KEY'];
+	delete process.env['TYPESAFE_API_KEY'];
+	try {
+		// Untracked, the file's key reaches client setup, which rejects this one.
+		const untracked = await chamoji(
+			['memory', 'search', 'leaked', '--ai'],
+			dir,
+		);
+		expect(untracked.code).toBe(1);
+		expect(untracked.stderr).toContain('looks truncated');
+		// Tracked, a clone could have named someone else's account, so it is not read.
+		await gitOutput(dir, ['add', '.env']);
+		const tracked = await chamoji(['memory', 'search', 'leaked', '--ai'], dir);
+		expect(tracked.code).toBe(2);
+		expect(tracked.stdout).toBe('');
+		expect(tracked.stderr).toContain('--ai needs a TypeSafe API key');
+		expect(tracked.stderr).not.toContain('truncated');
+	} finally {
+		if (saved !== undefined) process.env['TYPESAFE_API_KEY'] = saved;
+	}
+});
+
 test('memory search --ai prints the matches in the order the rerank gives', async () => {
 	const dir = await remembered();
 	const seen: string[][] = [];

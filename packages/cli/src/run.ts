@@ -878,10 +878,13 @@ async function realAdvisor(
 
 /**
  * The TypeSafe client, or undefined without a key. A key that can't go in a
- * header throws.
+ * header throws. With `untrackedOnly`, a key from a file git tracks is not used.
  */
-async function typesafeClient(io: Io): Promise<TypeSafeClient | undefined> {
-	const key = await readTypesafeKey(io.cwd, process.env);
+async function typesafeClient(
+	io: Io,
+	options: {untrackedOnly?: boolean} = {},
+): Promise<TypeSafeClient | undefined> {
+	const key = await readTypesafeKey(io.cwd, process.env, options);
 	if (!key) return undefined;
 	// Keys copied from a dashboard often end in "…"; headers can't carry it.
 	const invalid = /[^\x21-\x7E]/.exec(key);
@@ -896,10 +899,14 @@ async function typesafeClient(io: Io): Promise<TypeSafeClient | undefined> {
 	return new TypeSafeClient({apiKey: key});
 }
 
-/** `memory search --ai`'s reorder on the TypeSafe API, or undefined without a key. */
+/**
+ * `memory search --ai`'s reorder on the TypeSafe API, or undefined without a
+ * key. It sends what a repository's commits say, so a tracked `.env` can't
+ * supply the key: a cloned repo could name someone else's account.
+ */
 async function realReranker(io: Io): Promise<MemoryReranker | undefined> {
 	if (io.rerank) return io.rerank;
-	const client = await typesafeClient(io);
+	const client = await typesafeClient(io, {untrackedOnly: true});
 	if (!client) return undefined;
 	return jevReranker(
 		{
