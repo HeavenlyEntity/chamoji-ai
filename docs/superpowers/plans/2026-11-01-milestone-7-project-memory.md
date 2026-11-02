@@ -328,7 +328,9 @@ The settings entry uses `matcher: "Bash"` and `if: "Bash(git commit *)"`, with t
 
 ## Results
 
-**Status (2026-11-01):** built on the `worktree-milestone-7` branch, not released. The roadmap requires a sprint of real use before the milestone is done, and that has not happened. `chamoji ws ship` and `chamoji memory sync` for `project-memory` wait until just before release.
+**Status (2026-11-01):** merged in [PR #5](https://github.com/HeavenlyEntity/chamoji-ai/pull/5), not released. 0.11.0 is planned for 2026-11-03. The roadmap requires a sprint of real use before the milestone is done. We decided to release without it, so the milestone stays open until that sprint happens. `chamoji ws ship` and `chamoji memory sync` for `project-memory` run just before the release.
+
+**CI:** all 19 checks passed on PR #5. The test suite, which runs the new commands, passed on Ubuntu, macOS and Windows with Node 22 and 24. The Hook workflow passed in bash, zsh, fish and pwsh; it checks the commit hook, not the new commands.
 
 ### Exit criteria
 
@@ -372,7 +374,6 @@ Node start-up alone is about 170 ms of the search figure, so the search itself i
 
 ### Not verified
 
-- fish, pwsh and Windows for the new commands. CI has not run on this branch.
 - A real push of the memory ref to GitHub. The e2e test uses a local bare remote.
 - `.mcp.json` approval flow end to end in Claude Code (see above).
 - The `.mcp.json` that `init --agents` writes on native Windows, where `npx` and a `chamoji` shim may need a `cmd /c` wrapper.
