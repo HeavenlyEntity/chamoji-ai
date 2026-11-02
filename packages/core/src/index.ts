@@ -39,6 +39,7 @@ export {
 } from './memory.js';
 export {
 	MEMORY_FETCH_REFSPEC,
+	fetchesMemory,
 	hasOrigin,
 	mergeTrees,
 	pullMemory,

@@ -23,14 +23,27 @@ import {
 	type FixtureRepo,
 } from './helpers/fixture-repo.js';
 
-/** Runs just before the next real `push`, to lose a race with another clone. */
-const race = vi.hoisted(() => ({before: [] as Array<() => Promise<unknown>>}));
+/**
+ * `before` runs just before the next real `push`, to lose a race with another
+ * clone. `broken` makes one git command fail the way a damaged repo would.
+ */
+const race = vi.hoisted(() => ({
+	before: [] as Array<() => Promise<unknown>>,
+	broken: undefined as string | undefined,
+}));
 
 vi.mock('../src/git.js', async importOriginal => {
 	const real = await importOriginal<typeof import('../src/git.js')>();
 	return {
 		...real,
 		async runGit(args: string[], cwd: string) {
+			if (args[0] === race.broken) {
+				throw Object.assign(new Error('git failed'), {
+					code: 128,
+					stderr: 'fatal: bad object',
+				});
+			}
+
 			if (args[0] === 'push') await race.before.shift()?.();
 			return real.runGit(args, cwd);
 		},
@@ -40,6 +53,7 @@ vi.mock('../src/git.js', async importOriginal => {
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
 	race.before = [];
+	race.broken = undefined;
 	await Promise.all(cleanups.splice(0).map(async cleanup => cleanup()));
 });
 
@@ -398,6 +412,84 @@ test('the newer entry wins when both changed the same slug', async () => {
 			'b'.repeat(40),
 		]);
 	}
+});
+
+const card = (fields: Partial<Record<string, string[]>>) => ({
+	why: [],
+	constraint: [],
+	gotcha: [],
+	followUp: [],
+	...fields,
+});
+
+test('a forged entry with no card on a shared hash keeps the card', async () => {
+	const {tree, written} = await merge(
+		{'workstreams/auth.json': 'ours'},
+		{'workstreams/auth.json': 'theirs'},
+		{
+			ours: entryText('auth', {commits: [commitFor('a', 'the real reason')]}),
+			theirs: entryText('auth', {
+				title: 'Forged',
+				updatedAt: '9999-12-31T23:59:59.000Z',
+				commits: [commitFor('a')],
+			}),
+		},
+	);
+	expect(tree).toEqual({'workstreams/auth.json': 'written-1'});
+	expect(written[0]).toMatchObject({title: 'Forged'});
+	expect(written[0]!.commits[0]!.card?.why).toEqual(['the real reason']);
+});
+
+test('two cards on a shared hash are joined field by field', async () => {
+	const {written} = await merge(
+		{'workstreams/auth.json': 'ours'},
+		{'workstreams/auth.json': 'theirs'},
+		{
+			ours: entryText('auth', {
+				commits: [
+					{
+						...commitFor('a'),
+						card: card({why: ['one'], gotcha: ['shared']}),
+					},
+				],
+			}),
+			theirs: entryText('auth', {
+				updatedAt: '2026-03-01T00:00:00.000Z',
+				commits: [
+					{
+						...commitFor('a'),
+						card: card({
+							why: ['two'],
+							gotcha: ['shared'],
+							constraint: ['tight'],
+							followUp: ['later'],
+						}),
+					},
+				],
+			}),
+		},
+	);
+	const merged = written[0]!.commits[0]!.card!;
+	expect([...merged.why].sort()).toEqual(['one', 'two']);
+	expect(merged.gotcha).toEqual(['shared']);
+	expect(merged.constraint).toEqual(['tight']);
+	expect(merged.followUp).toEqual(['later']);
+});
+
+test('an entry with the same hashes in another order keeps its blob', async () => {
+	const {tree, written} = await merge(
+		{'workstreams/auth.json': 'ours'},
+		{'workstreams/auth.json': 'theirs'},
+		{
+			ours: entryText('auth', {commits: [commitFor('a'), commitFor('b')]}),
+			theirs: entryText('auth', {
+				updatedAt: '2026-03-01T00:00:00.000Z',
+				commits: [commitFor('b'), commitFor('a')],
+			}),
+		},
+	);
+	expect(tree).toEqual({'workstreams/auth.json': 'theirs'});
+	expect(written).toEqual([]);
 });
 
 test('a forged far-future date loses no commits', async () => {
@@ -759,6 +851,121 @@ test('a fetch that fails is a MemoryError', async () => {
 	await gitOutput(a, ['remote', 'set-url', 'origin', `${a}-missing`]);
 	await expect(syncMemory(a)).rejects.toBeInstanceOf(MemoryError);
 	await expect(syncMemory(a)).rejects.toThrow('Could not fetch memory');
+});
+
+/** Pushes, without force, a commit on top of origin's memory holding `tree`. */
+async function pushDescendant(
+	dir: string,
+	tree: Map<string, string>,
+): Promise<string> {
+	const commit = await writeTree(dir, tree, [await tip(dir)], 'Forged');
+	await gitOutput(dir, ['push', '-q', 'origin', `${commit}:${MEMORY_REF}`]);
+	return commit;
+}
+
+test('a descendant that drops an entry does not take it away', async () => {
+	const {remote, a, b} = await synced();
+	const tree = await readTree(b, MEMORY_REF);
+	tree.delete('workstreams/auth.json');
+	const forged = await pushDescendant(b, tree);
+
+	expect(await syncMemory(a)).toEqual({
+		fetched: true,
+		merged: true,
+		pushed: true,
+		needsForce: false,
+		entries: 2,
+	});
+	expect(await parentsOf(a, MEMORY_REF)).toEqual([forged]);
+	expect((await readMemory(a, 'auth'))?.commits[0]?.card?.why).toEqual([
+		'the old form leaked',
+	]);
+	expect(await tip(remote)).toBe(await tip(a));
+});
+
+test('a descendant with an empty tree empties nothing', async () => {
+	const {a, b} = await synced();
+	await pushDescendant(b, new Map());
+	expect(await syncMemory(a)).toMatchObject({entries: 2, pushed: true});
+	expect(await slugs(a)).toEqual(['auth', 'billing']);
+});
+
+test('a descendant that drops an entry cannot empty a clone through init', async () => {
+	const {a, b} = await synced();
+	await pushDescendant(b, new Map());
+	expect(await pullMemory(a)).toMatchObject({entries: 2, ahead: true});
+});
+
+/** `a` and `b` both on a tree with auth purged, and that on origin too. */
+async function purgedEverywhere() {
+	const setup = await synced();
+	const {a, b} = setup;
+	await purgeMemory(a, 'auth');
+	await syncMemory(a);
+	await gitOutput(a, ['push', '--force', 'origin', MEMORY_REF]);
+	await syncMemory(b);
+	return setup;
+}
+
+test('a descendant that drops a tombstone does not lift it', async () => {
+	const {remote, a, b} = await purgedEverywhere();
+	const tree = await readTree(b, MEMORY_REF);
+	tree.delete('purged/auth');
+	const forged = await pushDescendant(b, tree);
+
+	expect(await syncMemory(a)).toMatchObject({
+		merged: true,
+		pushed: true,
+		needsForce: false,
+	});
+	expect(await parentsOf(a, MEMORY_REF)).toEqual([forged]);
+	expect((await readTree(a, MEMORY_REF)).has('purged/auth')).toBe(true);
+	expect(await tip(remote)).toBe(await tip(a));
+});
+
+test('a descendant that drops a tombstone and brings the entry back is left out', async () => {
+	const {a, b} = await purgedEverywhere();
+	const purged = await tip(a);
+	const tree = await readTree(b, MEMORY_REF);
+	tree.delete('purged/auth');
+	const args = ['hash-object', '-w', '--stdin'];
+	const text = entryText('auth', {title: 'the old form leaked'});
+	tree.set(
+		'workstreams/auth.json',
+		(await runGitWithInput(args, b, text)).trim(),
+	);
+	await pushDescendant(b, tree);
+
+	expect(await syncMemory(a)).toMatchObject({
+		merged: false,
+		pushed: false,
+		needsForce: true,
+	});
+	expect(await tip(a)).toBe(purged);
+	expect(await readMemory(a, 'auth')).toBeUndefined();
+	expect(await historyOf(a)).not.toContain('the old form leaked');
+});
+
+test('a git failure comparing commits is not read as a need to force', async () => {
+	const {a, b} = await world();
+	await snapshotWorkstream(a, 'auth');
+	await syncMemory(a);
+	await snapshotWorkstream(b, 'billing');
+	const before = await tip(b);
+	race.broken = 'merge-base';
+	const failure = await syncMemory(b).catch((error: unknown) => error);
+	expect(failure).toBeInstanceOf(MemoryError);
+	expect((failure as Error).message).toContain('fatal: bad object');
+	expect(await tip(b)).toBe(before);
+});
+
+test('a git failure asking for origin is not read as no origin', async () => {
+	const {a} = await world();
+	race.broken = 'remote';
+	const failure = await syncMemory(a).catch((error: unknown) => error);
+	expect(failure).toBeInstanceOf(MemoryError);
+	expect((failure as Error).message).toContain('fatal: bad object');
+	expect((failure as Error).message).not.toContain('No remote named origin');
 });
 
 test('sync with no origin throws MemoryError', async () => {

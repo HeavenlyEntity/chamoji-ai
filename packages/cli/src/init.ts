@@ -2,13 +2,14 @@ import {
 	MEMORY_FETCH_REFSPEC,
 	MemoryError,
 	assertGitRepo,
+	fetchesMemory,
 	hasOrigin,
 	pullMemory,
 	runGit,
 } from '@chamoji/core';
 import {entryCount, FORCE_STEP} from './memory.js';
 import type {Io} from './run.js';
-import {stripControl} from './text.js';
+import {stripControlLines} from './text.js';
 
 /**
  * `chamoji init`: sets this clone up to share memory, and takes in what origin
@@ -44,7 +45,7 @@ export async function runInit(
 		if (needsForce) io.stdout(`${FORCE_STEP}\n`);
 	} catch (error) {
 		if (!(error instanceof MemoryError)) throw error;
-		io.stderr(`chamoji: ${stripControl(error.message)}\n`);
+		io.stderr(`chamoji: ${stripControlLines(error.message)}\n`);
 	}
 
 	return 0;
@@ -52,12 +53,7 @@ export async function runInit(
 
 /** Adds the refspec unless it's there. Says whether it was added. */
 async function addFetchRefspec(cwd: string): Promise<boolean> {
-	// Exit 1 means no values at all.
-	const lines = await runGit(
-		['config', '--get-all', 'remote.origin.fetch'],
-		cwd,
-	).catch(() => '');
-	if (lines.split('\n').includes(MEMORY_FETCH_REFSPEC)) return false;
+	if (await fetchesMemory(cwd)) return false;
 	await runGit(
 		['config', '--add', 'remote.origin.fetch', MEMORY_FETCH_REFSPEC],
 		cwd,

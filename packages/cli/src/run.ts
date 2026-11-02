@@ -8,9 +8,11 @@ import {
 	buildChangelog,
 	CARD_ENDPOINT,
 	cardUrl,
+	fetchesMemory,
 	getActive,
 	getRemoteWebUrl,
 	hasMessageContent,
+	listMemory,
 	loadComposeConfig,
 	loadConfig,
 	openJudgmentCache,
@@ -43,7 +45,7 @@ import {HookError, installHook, uninstallHook} from './hook.js';
 import {createJevClassifier, JUDGMENT_VERSION} from './jev-classifier.js';
 import {runInit} from './init.js';
 import {runMemory, syncSummary} from './memory.js';
-import {stripControl} from './text.js';
+import {stripControlLines} from './text.js';
 import {openTerminal} from './tty.js';
 import type {UpdateCheck} from './update-check.js';
 import {runWhy} from './why.js';
@@ -151,8 +153,9 @@ const HELP = `
 	             each such commit's subject and body, with emails and
 	             trailer lines removed; never diffs, code or authors.
 	  --dry-run  release: show the version and notes, change nothing
-	  --push     release: push HEAD and the tag, sync memory, then create
-	             the GitHub release when the gh CLI is installed
+	  --push     release: push HEAD and the tag, sync memory if chamoji init
+	             ran here, then create the GitHub release when the gh CLI
+	             is installed
 	  --trailer  release: add "Key: value" to the release commit (repeatable)
 	  --any-branch
 	             release: allow a branch other than origin's default
@@ -343,7 +346,8 @@ export async function run(argv: string[], io: Io): Promise<number> {
 				}
 			}
 		} catch (error) {
-			io.stderr(`chamoji: ${(error as Error).message}\n`);
+			// Git's errors can carry what a remote or a hook printed.
+			io.stderr(`chamoji: ${stripControlLines((error as Error).message)}\n`);
 			return error instanceof ReleaseError ? PREFLIGHT_FAILED : 1;
 		}
 	}
@@ -757,12 +761,23 @@ export async function run(argv: string[], io: Io): Promise<number> {
 		return pushError ? 1 : 0;
 	}
 
-	/** The release is out by now, so a problem here is only ever reported. */
+	/**
+	 * Syncs only a clone that opted in with `chamoji init`, and otherwise says
+	 * how to, if there's anything to share. The release is out by now, so a
+	 * problem here is only ever reported.
+	 */
 	async function syncAfterRelease(): Promise<string | undefined> {
 		try {
-			return syncSummary(await syncMemory(io.cwd));
+			if (await fetchesMemory(io.cwd)) {
+				return syncSummary(await syncMemory(io.cwd));
+			}
+
+			const entries = await listMemory(io.cwd, {archived: true});
+			return entries.length > 0
+				? 'not synced; run chamoji init to share it with origin'
+				: undefined;
 		} catch (error) {
-			return `not synced: ${stripControl((error as Error).message)}`;
+			return `not synced: ${stripControlLines((error as Error).message)}`;
 		}
 	}
 }

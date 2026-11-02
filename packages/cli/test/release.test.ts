@@ -1,7 +1,7 @@
 import {mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {snapshotWorkstream} from '@chamoji/core';
+import {MEMORY_FETCH_REFSPEC, snapshotWorkstream} from '@chamoji/core';
 import {afterEach, expect, test} from 'vitest';
 import {
 	createRepo,
@@ -166,10 +166,22 @@ async function rememberedOnOrigin() {
 	return {dir: repo.dir, remote};
 }
 
+/** The same, in a clone that ran `chamoji init`. */
+async function sharedOnOrigin() {
+	const shared = await rememberedOnOrigin();
+	await gitOutput(shared.dir, [
+		'config',
+		'--add',
+		'remote.origin.fetch',
+		MEMORY_FETCH_REFSPEC,
+	]);
+	return shared;
+}
+
 const noGh: GhRunner = async () => ({ok: true, message: ''});
 
-test('release --push syncs memory', async () => {
-	const {dir, remote} = await rememberedOnOrigin();
+test('release --push syncs memory after chamoji init', async () => {
+	const {dir, remote} = await sharedOnOrigin();
 	const {code, stdout} = await chamoji(['release', '--push'], dir, noGh);
 	expect(code).toBe(0);
 	expect(stdout).toContain('memory: Synced memory with origin: 1 entry.');
@@ -178,8 +190,21 @@ test('release --push syncs memory', async () => {
 	);
 });
 
-test("a failed sync doesn't fail the release", async () => {
+test('release --push publishes no memory without chamoji init, and says how', async () => {
 	const {dir, remote} = await rememberedOnOrigin();
+	const {code, stdout} = await chamoji(['release', '--push'], dir, noGh);
+	expect(code).toBe(0);
+	expect(stdout).toContain(
+		'memory: not synced; run chamoji init to share it with origin',
+	);
+	expect(await gitOutput(remote, ['tag', '--list'])).toContain('v1.1.0');
+	await expect(
+		gitOutput(remote, ['rev-parse', '--verify', 'refs/chamoji/memory']),
+	).rejects.toThrow();
+});
+
+test("a failed sync doesn't fail the release", async () => {
+	const {dir, remote} = await sharedOnOrigin();
 	await writeFile(
 		path.join(remote, 'hooks/update'),
 		'#!/bin/sh\ncase "$1" in refs/chamoji/*) exit 1;; esac\n',
