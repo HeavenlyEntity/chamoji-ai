@@ -1,7 +1,9 @@
+import {spawnSync} from 'node:child_process';
 import {
 	chmod,
 	mkdir,
 	mkdtemp,
+	readdir,
 	readFile,
 	rm,
 	stat,
@@ -259,6 +261,9 @@ async function withChamojiOnPath(): Promise<Record<string, string>> {
 
 const NO_CHAMOJI = {PATH: ''};
 
+/** A byte order mark, built so that no invisible character sits in this source. */
+const BOM = String.fromCharCode(0xfe_ff);
+
 const read = async (dir: string, file: string) =>
 	readFile(path.join(dir, file), 'utf8');
 
@@ -269,8 +274,10 @@ async function plainRepo(): Promise<string> {
 	return (await repoFrom([{commit: '🎉 Init'}])).dir;
 }
 
-const HOOK_COMMAND = 'chamoji agent-hook';
-const NPX_HOOK_COMMAND = 'npx --yes @chamoji/cli agent-hook';
+// The `|| true` keeps an older chamoji, which exits 2 on an unknown command,
+// from blocking every commit.
+const HOOK_COMMAND = 'chamoji agent-hook || true';
+const NPX_HOOK_COMMAND = 'npx --yes @chamoji/cli agent-hook || true';
 
 const hookEntry = (command: string) => ({
 	matcher: 'Bash',
@@ -417,11 +424,11 @@ test('init --agents keeps Windows line endings and a byte order mark', async () 
 	const dir = await plainRepo();
 	await writeFile(
 		path.join(dir, '.mcp.json'),
-		`﻿${JSON.stringify({mcpServers: {}}, null, 2).replace(/\n/g, '\r\n')}\r\n`,
+		`${BOM}${JSON.stringify({mcpServers: {}}, null, 2).replace(/\n/g, '\r\n')}\r\n`,
 	);
 	await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
 	const text = await read(dir, '.mcp.json');
-	expect(text.startsWith('﻿{\r\n  "mcpServers": {\r\n    "chamoji"')).toBe(
+	expect(text.startsWith(`${BOM}{\r\n  "mcpServers": {\r\n    "chamoji"`)).toBe(
 		true,
 	);
 	expect(text.endsWith('}\r\n')).toBe(true);
@@ -631,4 +638,201 @@ test('plain init writes neither file', async () => {
 	await chamoji(['init'], none, NO_CHAMOJI);
 	expect(await missing(none, '.mcp.json')).toBe(true);
 	expect(await missing(none, '.claude')).toBe(true);
+});
+
+test('the hook commands are exactly these, each ending in || true', async () => {
+	expect(HOOK_COMMAND).toBe('chamoji agent-hook || true');
+	expect(NPX_HOOK_COMMAND).toBe('npx --yes @chamoji/cli agent-hook || true');
+	for (const [env, command] of [
+		[await withChamojiOnPath(), 'chamoji agent-hook || true'],
+		[NO_CHAMOJI, 'npx --yes @chamoji/cli agent-hook || true'],
+	] as const) {
+		const dir = await plainRepo();
+		await chamoji(['init', '--agents'], dir, env);
+		const settings = JSON.parse(await read(dir, '.claude/settings.json'));
+		expect(settings.hooks.PreToolUse[0].hooks[0].command).toBe(command);
+	}
+});
+
+test('the hook command exits 0 through a real shell when chamoji exits 2', async () => {
+	for (const [name, env] of [
+		['chamoji', undefined],
+		['npx', NO_CHAMOJI],
+	] as const) {
+		const dir = await plainRepo();
+		const bin = await tempDir();
+		await chamoji(
+			['init', '--agents'],
+			dir,
+			env ?? (await withChamojiOnPath()),
+		);
+		const {command} = JSON.parse(await read(dir, '.claude/settings.json')).hooks
+			.PreToolUse[0].hooks[0];
+		const stub = async (script: string) => {
+			await writeFile(path.join(bin, name), `#!/bin/sh\n${script}\n`);
+			await chmod(path.join(bin, name), 0o755);
+			return spawnSync('/bin/sh', ['-c', command], {
+				env: {PATH: bin},
+				encoding: 'utf8',
+			});
+		};
+
+		// An older chamoji prints its help and exits 2, which would block the commit.
+		const old = await stub('echo usage >&2\nexit 2');
+		expect(old.status).toBe(0);
+		expect(old.stdout).toBe('');
+
+		// A denial is JSON on stdout with exit 0, and gets through.
+		const deny = await stub('echo \'{"deny":true}\'');
+		expect(deny.status).toBe(0);
+		expect(deny.stdout).toBe('{"deny":true}\n');
+	}
+});
+
+test('init --agents refuses a number that would not be written back exactly', async () => {
+	for (const number of [
+		'12345678901234567890',
+		'1e999',
+		'0.1000000000000000055511',
+	]) {
+		const dir = await plainRepo();
+		const text = `{"id": ${number}, "mcpServers": {}}`;
+		await writeFile(path.join(dir, '.mcp.json'), text);
+		const {code, stdout, stderr} = await chamoji(
+			['init', '--agents'],
+			dir,
+			NO_CHAMOJI,
+		);
+		expect(code).toBe(1);
+		expect(stderr).toContain(`.mcp.json has the number ${number}`);
+		expect(stderr).toContain('Nothing was changed');
+		expect(stdout).toBe('');
+		expect(await read(dir, '.mcp.json')).toBe(text);
+		expect(await missing(dir, '.claude')).toBe(true);
+	}
+});
+
+test('init --agents keeps numbers that come back the same', async () => {
+	const dir = await plainRepo();
+	await writeFile(
+		path.join(dir, '.mcp.json'),
+		'{"a": 1.5e3, "b": 0.10, "c": -0, "d": 9007199254740991, "e": 1E2, "s": "12345678901234567890 1e999", "mcpServers": {}}',
+	);
+	const {code} = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+	expect(code).toBe(0);
+	const after = JSON.parse(await read(dir, '.mcp.json'));
+	expect(after).toMatchObject({
+		a: 1500,
+		b: 0.1,
+		d: 9_007_199_254_740_991,
+		e: 100,
+	});
+	expect(after.s).toBe('12345678901234567890 1e999');
+});
+
+test('init --agents says the layout of a changed file may differ', async () => {
+	const dir = await plainRepo();
+	const {stdout} = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+	expect(stdout).toContain('written back as plain JSON');
+	expect(stdout).toContain('layout');
+});
+
+test('init --agents leaves no temp file and keeps the permissions of a file it replaces', async () => {
+	const dir = await plainRepo();
+	await writeFile(path.join(dir, '.mcp.json'), '{}\n');
+	await chmod(path.join(dir, '.mcp.json'), 0o600);
+	const {code} = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+	expect(code).toBe(0);
+	expect((await stat(path.join(dir, '.mcp.json'))).mode & 0o777).toBe(0o600);
+	expect((await readdir(dir)).filter(name => name.endsWith('.tmp'))).toEqual(
+		[],
+	);
+	expect(await readdir(path.join(dir, '.claude'))).toEqual(['settings.json']);
+});
+
+test.skipIf(process.getuid?.() === 0)(
+	'init --agents says which file it already changed when the next cannot be written',
+	async () => {
+		const dir = await plainRepo();
+		const claude = path.join(dir, '.claude');
+		await mkdir(claude);
+		const before = '{"model": "opus"}\n';
+		await writeFile(path.join(claude, 'settings.json'), before);
+		await chmod(claude, 0o555);
+		let result;
+		try {
+			result = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+		} finally {
+			// Back before the folder is removed.
+			await chmod(claude, 0o755);
+		}
+
+		const {code, stdout, stderr} = result;
+		expect(code).toBe(1);
+		expect(stderr).toContain("chamoji: couldn't write .claude/settings.json");
+		expect(stderr).toContain('.mcp.json was already changed');
+		expect(stderr).not.toContain('Nothing was changed');
+		expect(stdout).toContain('.mcp.json: added');
+		expect(
+			JSON.parse(await read(dir, '.mcp.json')).mcpServers.chamoji,
+		).toBeDefined();
+		// The file it could not replace is whole, and no temp file is left.
+		expect(await read(dir, '.claude/settings.json')).toBe(before);
+		expect(await readdir(claude)).toEqual(['settings.json']);
+		expect(await readdir(dir)).not.toContain('.mcp.json.tmp');
+		expect((await readdir(dir)).filter(name => name.endsWith('.tmp'))).toEqual(
+			[],
+		);
+	},
+);
+
+test.skipIf(process.getuid?.() === 0)(
+	'init --agents says nothing was changed when the first file cannot be written',
+	async () => {
+		const dir = await plainRepo();
+		await chmod(dir, 0o555);
+		let result;
+		try {
+			result = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+		} finally {
+			await chmod(dir, 0o755);
+		}
+
+		const {code, stderr} = result;
+		expect(code).toBe(1);
+		expect(stderr).toContain("chamoji: couldn't write .mcp.json");
+		expect(stderr).toContain('Nothing was changed');
+	},
+);
+
+test('init --agents gives a plain refusal when .claude is a file', async () => {
+	const dir = await plainRepo();
+	await writeFile(path.join(dir, '.claude'), 'not a folder');
+	const {code, stderr} = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+	expect(code).toBe(1);
+	expect(stderr).toContain(
+		'.claude/settings.json needs .claude to be a folder, but it is something else',
+	);
+	expect(stderr).toContain('Nothing was changed');
+	expect(stderr).not.toContain('ENOTDIR');
+	expect(await read(dir, '.claude')).toBe('not a folder');
+	expect(await missing(dir, '.mcp.json')).toBe(true);
+});
+
+test('init --agents treats an empty or blank file as {}', async () => {
+	for (const blank of ['', '   ', '\n\n', BOM, ' \t\r\n']) {
+		const dir = await plainRepo();
+		await mkdir(path.join(dir, '.claude'));
+		await writeFile(path.join(dir, '.mcp.json'), blank);
+		await writeFile(path.join(dir, '.claude', 'settings.json'), blank);
+		const {code, stderr} = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+		expect(stderr).toBe('');
+		expect(code).toBe(0);
+		const json = async (file: string) =>
+			JSON.parse((await read(dir, file)).replace(BOM, ''));
+		expect((await json('.mcp.json')).mcpServers.chamoji).toBeDefined();
+		expect((await json('.claude/settings.json')).hooks.PreToolUse).toHaveLength(
+			1,
+		);
+	}
 });

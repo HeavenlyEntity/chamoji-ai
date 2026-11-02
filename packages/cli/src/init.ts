@@ -1,5 +1,14 @@
 import {accessSync, constants, statSync} from 'node:fs';
-import {lstat, mkdir, readFile, writeFile} from 'node:fs/promises';
+import {randomBytes} from 'node:crypto';
+import {
+	chmod,
+	lstat,
+	mkdir,
+	readFile,
+	rename,
+	rm,
+	writeFile,
+} from 'node:fs/promises';
 import path from 'node:path';
 import {
 	MEMORY_FETCH_REFSPEC,
@@ -91,12 +100,20 @@ type Plan = {
 	/** What to write, or null when the file needs nothing. */
 	text: string | null;
 	existed: boolean;
+	/** Permissions of the file being replaced, to carry over. */
+	mode?: number;
 	merge: Merge;
 };
 
-/** Runs the hook with `command` through `chamoji`, or through `npx` when chamoji isn't installed. */
+/**
+ * The command a shared file runs: `chamoji`, or `npx` when chamoji isn't
+ * installed. The `|| true` is for a chamoji that is older than the command:
+ * it prints help and exits 2, which Claude Code reads as "block this", and the
+ * file is committed, so that would block every commit. A denial is JSON on
+ * stdout with exit 0, so it still gets through.
+ */
 const runChamoji = (viaNpx: boolean, subcommand: string) =>
-	viaNpx ? `npx --yes @chamoji/cli ${subcommand}` : `chamoji ${subcommand}`;
+	`${viaNpx ? 'npx --yes @chamoji/cli' : 'chamoji'} ${subcommand} || true`;
 
 /** `chamoji agent-hook`, `npx --yes @chamoji/cli agent-hook` and the like. */
 const RUNS_AGENT_HOOK = /chamoji\S*\s+agent-hook\b/;
@@ -123,27 +140,63 @@ async function setUpAgents(io: Io): Promise<number> {
 		return 1;
 	}
 
-	let changed = false;
-	for (const {file, path: target, text, existed, merge} of plans) {
+	const changed: string[] = [];
+	for (const {file, path: target, text, mode, merge} of plans) {
 		if (text === null) {
 			io.stdout(`${file}: ${merge.present}\n`);
 			continue;
 		}
 
-		await mkdir(path.dirname(target), {recursive: true});
-		// A new file must be new: `wx` fails if something appeared there since the check.
-		await writeFile(target, text, {flag: existed ? 'w' : 'wx'});
-		changed = true;
+		try {
+			await writeAtomically(target, text, mode);
+		} catch (error) {
+			io.stderr(
+				`chamoji: couldn't write ${file} (${stripControlLines((error as Error).message)}). ${
+					changed.length > 0
+						? `${changed.join(' and ')} was already changed; run chamoji init --agents again once this is fixed.`
+						: 'Nothing was changed.'
+				}\n`,
+			);
+			return 1;
+		}
+
+		changed.push(file);
 		io.stdout(`${file}: ${merge.added}\n`);
 	}
 
-	if (changed) {
+	if (changed.length > 0) {
 		io.stdout(
-			`These files are meant to be committed, so everyone who uses Claude Code here gets the same setup.${viaNpx ? ' chamoji is not on your PATH, so they start it with npx.' : ''}\n`,
+			`These files are meant to be committed, so everyone who uses Claude Code here gets the same setup. A changed file is written back as plain JSON with its indent kept, so other layout, such as blank lines or how short lists wrap, may differ.${viaNpx ? ' chamoji is not on your PATH, so they start it with npx.' : ''}\n`,
 		);
 	}
 
 	return 0;
+}
+
+/**
+ * Writes `text` to a temp file beside `target` and renames it into place, so
+ * a failure never leaves a half-written shared file. A new file takes the
+ * default permissions; a replaced one keeps its own.
+ */
+async function writeAtomically(
+	target: string,
+	text: string,
+	mode: number | undefined,
+): Promise<void> {
+	const dir = path.dirname(target);
+	await mkdir(dir, {recursive: true});
+	const temp = path.join(
+		dir,
+		`.${path.basename(target)}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`,
+	);
+	try {
+		await writeFile(temp, text, {flag: 'wx'});
+		if (mode !== undefined) await chmod(temp, mode & 0o7777);
+		await rename(temp, target);
+	} catch (error) {
+		await rm(temp, {force: true});
+		throw error;
+	}
 }
 
 /** The MCP server entry in `.mcp.json`. An entry that is already there is the user's to keep. */
@@ -233,8 +286,14 @@ async function plan(root: string, merge: Merge): Promise<Plan> {
 		);
 	// `.claude` could point anywhere; the file in it could too.
 	const dir = path.dirname(target);
-	if (dir !== root && (await lstat(dir).catch(() => null))?.isSymbolicLink()) {
-		throw refuse('is inside a symlinked folder');
+	if (dir !== root) {
+		const folder = await lstat(dir).catch(() => null);
+		if (folder?.isSymbolicLink()) throw refuse('is inside a symlinked folder');
+		if (folder && !folder.isDirectory()) {
+			throw refuse(
+				`needs ${path.basename(dir)} to be a folder, but it is something else`,
+			);
+		}
 	}
 
 	const found = await lstat(target).catch((error: NodeJS.ErrnoException) => {
@@ -247,7 +306,8 @@ async function plan(root: string, merge: Merge): Promise<Plan> {
 	const original = found ? await readFile(target, 'utf8') : '';
 	const body = original.replace(/^\uFEFF/, '');
 	let data: Record<string, unknown> = {};
-	if (found) {
+	// An empty file is as good as `{}`.
+	if (found && body.trim() !== '') {
 		let parsed: unknown;
 		try {
 			parsed = JSON.parse(body);
@@ -259,7 +319,13 @@ async function plan(root: string, merge: Merge): Promise<Plan> {
 		data = parsed;
 	}
 
-	const base = {file: merge.file, path: target, existed: found !== null, merge};
+	const base = {
+		file: merge.file,
+		path: target,
+		existed: found !== null,
+		...(found ? {mode: found.mode} : {}),
+		merge,
+	};
 	try {
 		if (!merge.apply(data)) return {...base, text: null};
 	} catch (error) {
@@ -267,7 +333,47 @@ async function plan(root: string, merge: Merge): Promise<Plan> {
 		throw error;
 	}
 
+	// Writing the file back must not change a value in it.
+	const lost = inexactNumber(body);
+	if (lost !== undefined) {
+		throw refuse(`has the number ${lost}, which can't be written back exactly`);
+	}
+
 	return {...base, text: render(data, original)};
+}
+
+const JSON_NUMBER = /^(-?)(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/;
+
+/** A number as digits and a power of ten, so `1.50`, `15e-1` and `1.5` compare equal. */
+function numberValue(text: string): string | undefined {
+	const match = JSON_NUMBER.exec(text);
+	if (!match) return undefined;
+	const [, sign = '', whole = '', fraction = '', exponent = '0'] = match;
+	const digits = (whole + fraction).replace(/^0+/, '');
+	if (digits === '') return '0';
+	const trimmed = digits.replace(/0+$/, '');
+	const power =
+		Number(exponent) - fraction.length + (digits.length - trimmed.length);
+	return `${sign}${trimmed}e${power}`;
+}
+
+/**
+ * The first number in JSON text that `JSON.parse` and `JSON.stringify` would
+ * change in value, such as `12345678901234567890` or `1e999`. Strings are
+ * skipped. Undefined when every number comes back the same.
+ */
+function inexactNumber(json: string): string | undefined {
+	for (const [token] of json.matchAll(
+		/"(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g,
+	)) {
+		if (token.startsWith('"')) continue;
+		const back = JSON.stringify(Number(token));
+		if (numberValue(token) !== numberValue(back)) {
+			return token.length > 40 ? `${token.slice(0, 40)}…` : token;
+		}
+	}
+
+	return undefined;
 }
 
 /** JSON in the style of `original`: its indent, line endings and final newline. */
