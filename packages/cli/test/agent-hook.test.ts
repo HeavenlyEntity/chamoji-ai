@@ -37,6 +37,19 @@ const ALLOWED: Array<[string, string]> = [
 	['a Why trailer', 'git commit -m x --trailer "Why: y"'],
 	['a Why trailer after =', 'git commit -m x --trailer="Why: y"'],
 	['a lower-case key', 'git commit -m "x\n\nwhy: y"'],
+	['a Why line with CRLF line endings', 'git commit -m "x\r\n\r\nWhy: y"'],
+	[
+		'a Why line after a CRLF blank line with spaces',
+		'git commit -m "x\r\n \r\nWhy: y"',
+	],
+	[
+		'a no-space Why trailer with CRLF line endings',
+		'git commit -m "x\r\n\r\nWhy:y"',
+	],
+	[
+		'a Why trailer after other trailers with CRLF',
+		'git commit -m "x\r\n\r\nSigned-off-by: A <a@b.example>\r\nWhy:y"',
+	],
 	[
 		'an indented Why line, which the parser trims',
 		'git commit -m "x\n\n  Why: y"',
@@ -106,6 +119,15 @@ const DENIED: Array<[string, string]> = [
 	['no card', 'git commit -m "x"'],
 	['no card, single quotes', "git commit -m 'x'"],
 	['a card line as the subject', 'git commit -m "Why: because"'],
+	[
+		'a card line as the subject with CRLF',
+		'git commit -m "Why: a\r\n\r\nmore"',
+	],
+	[
+		'a Why line in the subject paragraph with CRLF',
+		'git commit -m "x\r\nWhy: y"',
+	],
+	['CRLF line endings and no card', 'git commit -m "x\r\n\r\nmore words"'],
 	[
 		'a card line as the subject in single quotes',
 		"git commit -m 'Why: because'",
@@ -182,6 +204,9 @@ test('decideCommit agrees with the card parser on real commits', async () => {
 		'x\n\nSigned-off-by: A <a@b.example>\nWhy:y',
 		'x\n\nI wonder Why: this',
 		'x\n\nWhy y',
+		'x\r\n\r\nWhy: y',
+		'x\r\n\r\nWhy:y',
+		'x\r\nWhy: y',
 	];
 	const repo = await createRepo([{commit: '🎉 Init'}]);
 	cleanups.push(async () => repo.cleanup());

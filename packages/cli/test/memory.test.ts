@@ -145,6 +145,20 @@ test('memory list says when an entry is there but cannot be read', async () => {
 	);
 });
 
+test('memory list does not call a memory empty when its only entry is a damaged archived one', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await plantFile(repo.dir, 'archive/broken.json', '{not json');
+	for (const argv of [
+		['memory', 'list'],
+		['memory', 'list', '--archived'],
+	]) {
+		const {code, stdout, stderr} = await chamoji(argv, repo.dir);
+		expect(code).toBe(0);
+		expect(stdout).not.toContain('Nothing in memory yet');
+		expect(stderr).toContain("1 entry that can't be read: broken");
+	}
+});
+
 test('memory list does not call an unreadable memory empty', async () => {
 	repo = await createRepo([{commit: '🎉 Init'}]);
 	await plantFile(repo.dir, 'workstreams/broken.json', '{not json');

@@ -108,14 +108,22 @@ function usage(io: Io, message: string): number {
 }
 
 async function list(io: Io, json: boolean, archived: boolean): Promise<number> {
-	const {entries, unreadable} = await inspectMemory(io.cwd, {archived});
+	const {entries, unreadable: damaged} = await inspectMemory(io.cwd, {
+		archived,
+	});
+	let unreadable = damaged;
 	if (json) {
 		io.stdout(`${JSON.stringify(entries, null, 2)}\n`);
 	} else if (entries.length === 0) {
 		// An empty list that hides damaged entries must not read as an empty memory.
-		const hidden = archived
-			? 0
-			: (await inspectMemory(io.cwd, {archived: true})).entries.length;
+		let hidden = 0;
+		if (!archived) {
+			// The live list left out archived entries, readable or not.
+			const all = await inspectMemory(io.cwd, {archived: true});
+			hidden = all.entries.length;
+			unreadable = all.unreadable;
+		}
+
 		if (hidden > 0) {
 			io.stdout(
 				`No live entries. ${entryCount(hidden)} archived: chamoji memory list --archived shows ${hidden === 1 ? 'it' : 'them'}.\n`,
