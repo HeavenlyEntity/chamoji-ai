@@ -25,6 +25,7 @@ export {splitHighlights} from './highlights.js';
 export {readIntent} from './intent.js';
 export {
 	MEMORY_REF,
+	MEMORY_REMOTE_REF,
 	MemoryError,
 	archiveMemory,
 	listMemory,
@@ -36,6 +37,15 @@ export {
 	type MemoryCommit,
 	type MemoryEntry,
 } from './memory.js';
+export {
+	MEMORY_FETCH_REFSPEC,
+	hasOrigin,
+	mergeTrees,
+	pullMemory,
+	syncMemory,
+	type PullResult,
+	type SyncResult,
+} from './memory-sync.js';
 export {parseCommit} from './parse.js';
 export {
 	escapeHtml,

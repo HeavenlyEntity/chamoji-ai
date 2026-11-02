@@ -6,7 +6,9 @@ import {
 	listMemory,
 	purgeMemory,
 	readMemory,
+	syncMemory,
 	type MemoryEntry,
+	type SyncResult,
 } from '@chamoji/core';
 import type {Io} from './run.js';
 import {stripControl} from './text.js';
@@ -15,10 +17,14 @@ import {cardLines} from './why.js';
 /** Same code run.ts uses for a command that was used wrongly. */
 const USAGE_ERROR = 2;
 
+/** What to do about an entry purged here that origin still holds. */
+export const FORCE_STEP = `A purged entry is still on origin, so nothing was pushed. To remove it there: git push --force origin ${MEMORY_REF}`;
+
 /**
  * `chamoji memory`: `input` is what follows `memory`. Problems with memory
  * itself throw a MemoryError, which run.ts reports and exits 1 for; misuse of
- * the command exits 2. It works on the local ref and never touches the network.
+ * the command exits 2. Only `sync` touches the network; the rest work on the
+ * local ref.
  */
 export async function runMemory(
 	input: string[],
@@ -47,8 +53,17 @@ export async function runMemory(
 					);
 		}
 
+		case 'sync': {
+			return args.length === 0
+				? sync(io, flags.json ?? false)
+				: usage(io, 'memory sync takes no arguments: chamoji memory sync');
+		}
+
 		default: {
-			return usage(io, `memory needs list, show or archive, not "${command}"`);
+			return usage(
+				io,
+				`memory needs list, show, archive or sync, not "${command}"`,
+			);
 		}
 	}
 }
@@ -119,6 +134,32 @@ async function archive(io: Io, slug: string, purge: boolean): Promise<number> {
 	}
 
 	return 0;
+}
+
+async function sync(io: Io, json: boolean): Promise<number> {
+	const result = await syncMemory(io.cwd);
+	const summary =
+		syncSummary(result) ?? 'Nothing to sync: no memory here or on origin yet.';
+	io.stdout(json ? `${JSON.stringify(result, null, 2)}\n` : `${summary}\n`);
+	return 0;
+}
+
+/** One line on what a sync did, or undefined when there was no memory to sync. */
+export function syncSummary({
+	fetched,
+	merged,
+	pushed,
+	needsForce,
+	entries,
+}: SyncResult): string | undefined {
+	const count = entryCount(entries);
+	if (needsForce) return `Merged memory here: ${count}. ${FORCE_STEP}`;
+	if (pushed || merged) return `Synced memory with origin: ${count}.`;
+	return fetched ? `Memory already matches origin: ${count}.` : undefined;
+}
+
+export function entryCount(entries: number): string {
+	return `${entries} ${entries === 1 ? 'entry' : 'entries'}`;
 }
 
 function commitCount({commits}: MemoryEntry): string {

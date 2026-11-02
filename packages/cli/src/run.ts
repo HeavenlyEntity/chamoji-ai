@@ -24,6 +24,7 @@ import {
 	shouldPrompt,
 	shouldStamp,
 	stampWorkstream,
+	syncMemory,
 	type CommitClassifier,
 	type ComposeConfig,
 	type OutputFormat,
@@ -40,7 +41,9 @@ import {compose} from './composer.js';
 import {readTypesafeKey} from './env.js';
 import {HookError, installHook, uninstallHook} from './hook.js';
 import {createJevClassifier, JUDGMENT_VERSION} from './jev-classifier.js';
-import {runMemory} from './memory.js';
+import {runInit} from './init.js';
+import {runMemory, syncSummary} from './memory.js';
+import {stripControl} from './text.js';
 import {openTerminal} from './tty.js';
 import type {UpdateCheck} from './update-check.js';
 import {runWhy} from './why.js';
@@ -129,6 +132,9 @@ const HELP = `
 	  $ chamoji memory show <slug>     Show one entry with its commits and cards
 	  $ chamoji memory archive <slug>  Hide an entry from the list and keep it
 	                                   (--purge deletes it for good)
+	  $ chamoji memory sync            Merge memory with origin and push it
+	  $ chamoji init                   Set this clone up to share memory, and
+	                                   take in what origin has
 
 	Options
 	  --format   markdown (default), md, json or html
@@ -145,15 +151,15 @@ const HELP = `
 	             each such commit's subject and body, with emails and
 	             trailer lines removed; never diffs, code or authors.
 	  --dry-run  release: show the version and notes, change nothing
-	  --push     release: push HEAD and the tag, then create the GitHub
-	             release when the gh CLI is installed
+	  --push     release: push HEAD and the tag, sync memory, then create
+	             the GitHub release when the gh CLI is installed
 	  --trailer  release: add "Key: value" to the release commit (repeatable)
 	  --any-branch
 	             release: allow a branch other than origin's default
 	  --json     release: print the result as JSON; card: print the numbers;
 	             ws list: print the workstreams as an array;
 	             why: print the blame result; memory list and show: print
-	             the entries
+	             the entries; memory sync: print the result
 	  --none     ws switch: clear the active workstream
 	  --purge    memory archive: delete the entry and its history instead;
 	             a remote needs a force-push to lose it too
@@ -323,6 +329,10 @@ export async function run(argv: string[], io: Io): Promise<number> {
 
 				case 'memory': {
 					return await runMemory(cli.input.slice(1), flags, io);
+				}
+
+				case 'init': {
+					return await runInit({}, io);
 				}
 
 				default: {
@@ -683,10 +693,12 @@ export async function run(argv: string[], io: Io): Promise<number> {
 		let pushed: string = `no; to ship: git push origin HEAD ${plan.tag}`;
 		let pushError: string | undefined;
 		let githubRelease = false;
+		let memory: string | undefined;
 		if (flags.push) {
 			try {
 				await pushRelease(plan);
 				pushed = `yes (HEAD and ${plan.tag})`;
+				memory = await syncAfterRelease();
 				const notesFile = path.join(
 					(await runGit(['rev-parse', '--absolute-git-dir'], plan.root)).trim(),
 					'chamoji-release-notes.md',
@@ -721,6 +733,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
 				`commit: ${commit} ${plan.subject}`,
 				`tag: ${plan.tag} (annotated)`,
 				`pushed: ${pushed}`,
+				...(memory === undefined ? [] : [`memory: ${memory}`]),
 				...plan.warnings.map(warning => `warning: ${warning}`),
 				...(githubRelease || pushed.startsWith('yes')
 					? []
@@ -737,10 +750,20 @@ export async function run(argv: string[], io: Io): Promise<number> {
 				pushed: pushed.startsWith('yes'),
 				githubRelease,
 				...(pushError ? {error: pushError} : {}),
+				...(memory === undefined ? {} : {memory}),
 				notes: plan.notes,
 			},
 		);
 		return pushError ? 1 : 0;
+	}
+
+	/** The release is out by now, so a problem here is only ever reported. */
+	async function syncAfterRelease(): Promise<string | undefined> {
+		try {
+			return syncSummary(await syncMemory(io.cwd));
+		} catch (error) {
+			return `not synced: ${stripControl((error as Error).message)}`;
+		}
 	}
 }
 

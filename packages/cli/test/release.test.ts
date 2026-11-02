@@ -1,6 +1,7 @@
 import {mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
+import {snapshotWorkstream} from '@chamoji/core';
 import {afterEach, expect, test} from 'vitest';
 import {
 	createRepo,
@@ -142,4 +143,79 @@ test('release --push pushes and creates the GitHub release', async () => {
 		'v1.1.0',
 	]);
 	expect(calls[0]![5]).toBe('--notes-file');
+});
+
+/** A repo with something in memory, on a bare origin. */
+async function rememberedOnOrigin() {
+	const repo = await repoFrom([
+		{
+			commit: '🎉 Init',
+			files: {
+				'.chamoji/workstreams.yml':
+					'workstreams:\n  auth:\n    title: Auth\n    status: shipped\n',
+			},
+		},
+		{tag: 'v1.0.0', annotated: true},
+		{commit: '✨ Add search', body: 'Workstream: auth'},
+	]);
+	const remote = await mkdtemp(path.join(tmpdir(), 'chamoji-remote-'));
+	cleanups.push(async () => rm(remote, {recursive: true, force: true}));
+	await gitOutput(remote, ['init', '-q', '--bare']);
+	await gitOutput(repo.dir, ['remote', 'add', 'origin', remote]);
+	await snapshotWorkstream(repo.dir, 'auth');
+	return {dir: repo.dir, remote};
+}
+
+const noGh: GhRunner = async () => ({ok: true, message: ''});
+
+test('release --push syncs memory', async () => {
+	const {dir, remote} = await rememberedOnOrigin();
+	const {code, stdout} = await chamoji(['release', '--push'], dir, noGh);
+	expect(code).toBe(0);
+	expect(stdout).toContain('memory: Synced memory with origin: 1 entry.');
+	expect(await gitOutput(remote, ['rev-parse', 'refs/chamoji/memory'])).toBe(
+		await gitOutput(dir, ['rev-parse', 'refs/chamoji/memory']),
+	);
+});
+
+test("a failed sync doesn't fail the release", async () => {
+	const {dir, remote} = await rememberedOnOrigin();
+	await writeFile(
+		path.join(remote, 'hooks/update'),
+		'#!/bin/sh\ncase "$1" in refs/chamoji/*) exit 1;; esac\n',
+		{mode: 0o755},
+	);
+	const {code, stdout} = await chamoji(
+		['release', '--push', '--json'],
+		dir,
+		noGh,
+	);
+	expect(code).toBe(0);
+	const printed = JSON.parse(stdout);
+	expect(printed).toMatchObject({pushed: true, githubRelease: true});
+	expect(printed.memory).toContain('not synced: Could not push memory');
+	expect(await gitOutput(remote, ['tag', '--list'])).toContain('v1.1.0');
+	const text = await chamoji(['changelog'], dir);
+	expect(text.code).toBe(0);
+});
+
+test('release --push says nothing of memory in a repo that has none', async () => {
+	const repo = await repoFrom(history);
+	const remote = await mkdtemp(path.join(tmpdir(), 'chamoji-remote-'));
+	cleanups.push(async () => rm(remote, {recursive: true, force: true}));
+	await gitOutput(remote, ['init', '-q', '--bare']);
+	await gitOutput(repo.dir, ['remote', 'add', 'origin', remote]);
+	const {code, stdout} = await chamoji(['release', '--push'], repo.dir, noGh);
+	expect(code).toBe(0);
+	expect(stdout).not.toContain('memory:');
+});
+
+test('release without --push leaves memory alone', async () => {
+	const {dir, remote} = await rememberedOnOrigin();
+	const {code, stdout} = await chamoji(['release'], dir);
+	expect(code).toBe(0);
+	expect(stdout).not.toContain('memory:');
+	await expect(
+		gitOutput(remote, ['rev-parse', '--verify', 'refs/chamoji/memory']),
+	).rejects.toThrow();
 });
