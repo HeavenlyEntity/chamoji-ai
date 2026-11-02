@@ -802,6 +802,41 @@ test("a stored card can't join the card of a commit on HEAD", async () => {
 	expect(await readMemory(dir, 'auth')).toEqual(saved);
 });
 
+test.each([
+	['commit that names no workstream', 'HEAD~1'],
+	['merge commit', 'MERGE'],
+])(
+	'a stored %s on HEAD is dropped, forged card and all',
+	async (_name, rev) => {
+		repo = await createRepo([
+			{commit: '🎉 Init', files: WORKSTREAMS},
+			{commit: '✨ Add login', body: 'Workstream: auth'},
+			{commit: '🐛 Fix footer'},
+			{mergeBranch: 'feature', commits: ['🐛 Fix crash']},
+		]);
+		const dir = repo.dir;
+		const forgedHash = (
+			await gitOutput(dir, ['rev-parse', rev === 'MERGE' ? 'HEAD' : rev])
+		).trim();
+		await plant(dir, {
+			'workstreams/auth.json': entry('auth', {
+				title: 'Auth revamp',
+				commits: [
+					{
+						hash: forgedHash,
+						subject: 'not ours',
+						date: '2026-01-02T00:00:00Z',
+						card: card('forged'),
+					},
+				],
+			}),
+		});
+		const saved = await snapshotWorkstream(dir, 'auth');
+		expect(saved.commits.map(item => item.subject)).toEqual(['✨ Add login']);
+		expect(await readMemory(dir, 'auth')).toEqual(saved);
+	},
+);
+
 test('a stored commit that is not on HEAD keeps its card', async () => {
 	const dir = await shippedRepo();
 	await plant(dir, {

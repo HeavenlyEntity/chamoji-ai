@@ -123,6 +123,7 @@ export async function snapshotWorkstream(
 	const workstream = workstreams.find(item => item.slug === slug);
 	if (!workstream) throw new MemoryError(`No workstream named "${slug}"`);
 	const commits = await commitsNaming(cwd, slug);
+	const onHead = await hashesOnHead(cwd);
 	return update(cwd, `Snapshot ${slug}`, async tree => {
 		if (tree.has(purgedPath(slug))) {
 			throw new MemoryError(`${slug} was purged, so it stays out of memory`);
@@ -137,7 +138,7 @@ export async function snapshotWorkstream(
 			status: workstream.status,
 			updatedAt: new Date().toISOString(),
 			archived: false,
-			commits: refreshCommits(previous?.commits ?? [], commits),
+			commits: refreshCommits(previous?.commits ?? [], commits, onHead),
 		};
 		tree.delete(archivePath(slug));
 		tree.set(livePath(slug), await writeEntry(cwd, entry));
@@ -462,17 +463,24 @@ async function commitsNaming(
 		}));
 }
 
+/** The hash of every commit reachable from HEAD, merges included. */
+async function hashesOnHead(cwd: string): Promise<Set<string>> {
+	if ((await headOf(cwd, 'HEAD')) === undefined) return new Set(); // No commits yet.
+	return new Set((await runGit(['rev-list', 'HEAD'], cwd)).split('\n'));
+}
+
 /**
  * What a snapshot keeps: every commit HEAD names, as HEAD has it and card
  * included, plus the stored commits HEAD doesn't have, such as those of a
- * deleted branch. A stored card can come from another clone, so it never
- * joins the card of a commit that HEAD can vouch for.
+ * deleted branch. A stored card can come from another clone, so a stored
+ * commit that is on HEAD is dropped: if it named this workstream it is in
+ * `current`, and if it doesn't, it never belonged here.
  */
-export function refreshCommits(
+function refreshCommits(
 	kept: MemoryCommit[],
 	current: MemoryCommit[],
+	onHead: Set<string>,
 ): MemoryCommit[] {
-	const onHead = new Set(current.map(commit => commit.hash));
 	return mergeCommits(
 		kept.filter(commit => !onHead.has(commit.hash)),
 		current,
