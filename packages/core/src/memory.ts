@@ -1,6 +1,6 @@
 import {readCommits, runGit, runGitWithInput} from './git.js';
 import {parseCommit} from './parse.js';
-import type {IntentCard, RawCommit} from './types.js';
+import type {IntentCard} from './types.js';
 import {
 	STATUSES,
 	isSlug,
@@ -137,7 +137,7 @@ export async function snapshotWorkstream(
 			status: workstream.status,
 			updatedAt: new Date().toISOString(),
 			archived: false,
-			commits: mergeCommits(previous?.commits ?? [], commits),
+			commits: refreshCommits(previous?.commits ?? [], commits),
 		};
 		tree.delete(archivePath(slug));
 		tree.set(livePath(slug), await writeEntry(cwd, entry));
@@ -452,7 +452,6 @@ async function commitsNaming(
 	if ((await headOf(cwd, 'HEAD')) === undefined) return []; // No commits yet.
 	const raw = await readCommits(cwd, 'HEAD');
 	return raw
-		.filter(commit => isWhole(commit))
 		.map(commit => parseCommit(commit))
 		.filter(commit => commit.workstream === slug)
 		.map(({hash, subject, date, card}) => ({
@@ -464,11 +463,20 @@ async function commitsNaming(
 }
 
 /**
- * A separator byte in a commit's text can split its record in `readCommits`.
- * The pieces after the split aren't commits, and may not have every field.
+ * What a snapshot keeps: every commit HEAD names, as HEAD has it and card
+ * included, plus the stored commits HEAD doesn't have, such as those of a
+ * deleted branch. A stored card can come from another clone, so it never
+ * joins the card of a commit that HEAD can vouch for.
  */
-function isWhole({hash, body}: RawCommit): boolean {
-	return OBJECT_ID.test(hash) && body !== undefined;
+export function refreshCommits(
+	kept: MemoryCommit[],
+	current: MemoryCommit[],
+): MemoryCommit[] {
+	const onHead = new Set(current.map(commit => commit.hash));
+	return mergeCommits(
+		kept.filter(commit => !onHead.has(commit.hash)),
+		current,
+	);
 }
 
 /**

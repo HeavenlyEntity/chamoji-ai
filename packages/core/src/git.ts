@@ -5,8 +5,8 @@ import type {RawCommit} from './types.js';
 
 const execFileAsync = promisify(execFile);
 
+// Tag lines are framed with this; commit text is not, see `readCommits`.
 const FIELD = '\u001F';
-const RECORD = '\u001E';
 
 export type ReleaseTag = {name: string; date: string};
 
@@ -70,27 +70,34 @@ export async function assertRevision(cwd: string, ref: string): Promise<void> {
 	}
 }
 
-/** Non-merge commits in `range` (anything `git log` accepts), newest first. */
+const COMMIT_FIELDS = [
+	'%H',
+	'%h',
+	'%an',
+	'%ae',
+	'%aI',
+	'%s',
+	'%b',
+	'%(trailers:only,unfold)',
+];
+
+/**
+ * Non-merge commits in `range` (anything `git log` accepts), newest first.
+ * Fields are framed with NUL, which a commit message can't hold, so no commit
+ * text can forge or split a record. `-z` ends each record with a NUL too, so
+ * the output is a flat list of fields, read one record's worth at a time.
+ */
 export async function readCommits(
 	cwd: string,
 	range: string,
 ): Promise<RawCommit[]> {
-	const format = [
-		'%H',
-		'%h',
-		'%an',
-		'%ae',
-		'%aI',
-		'%s',
-		'%b',
-		'%(trailers:only,unfold)',
-	].join('%x1f');
 	const stdout = await runGit(
 		[
 			'log',
+			'-z',
 			'--no-merges',
 			'--no-show-signature',
-			`--format=${format}%x1e`,
+			`--format=${COMMIT_FIELDS.join('%x00')}`,
 			'--end-of-options',
 			range,
 			'--',
@@ -98,32 +105,34 @@ export async function readCommits(
 		cwd,
 	);
 
-	return stdout
-		.split(RECORD)
-		.map(record => record.replace(/^\n/, ''))
-		.filter(record => record.length > 0)
-		.map(record => {
-			const [
-				hash,
-				shortHash,
-				authorName,
-				authorEmail,
-				date,
-				subject,
-				body,
-				trailers,
-			] = record.split(FIELD);
-			return {
-				hash: hash!,
-				shortHash: shortHash!,
-				authorName: authorName!,
-				authorEmail: authorEmail!,
-				date: date!,
-				subject: subject!,
-				body: body!,
-				trailers: trailers ?? '',
-			};
+	const fields = stdout.split('\0');
+	fields.pop(); // Empty: the last record's NUL ends the output.
+	const size = COMMIT_FIELDS.length;
+	const commits: RawCommit[] = [];
+	for (let i = 0; i + size <= fields.length; i += size) {
+		const [
+			hash,
+			shortHash,
+			authorName,
+			authorEmail,
+			date,
+			subject,
+			body,
+			trailers,
+		] = fields.slice(i, i + size);
+		commits.push({
+			hash: hash!,
+			shortHash: shortHash!,
+			authorName: authorName!,
+			authorEmail: authorEmail!,
+			date: date!,
+			subject: subject!,
+			body: body!,
+			trailers: trailers!,
 		});
+	}
+
+	return commits;
 }
 
 /**
