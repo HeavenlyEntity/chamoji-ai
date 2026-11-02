@@ -44,6 +44,7 @@ import {MISSING_KEY, readTypesafeKey} from './env.js';
 import {HookError, installHook, uninstallHook} from './hook.js';
 import {createJevClassifier, JUDGMENT_VERSION} from './jev-classifier.js';
 import {runInit} from './init.js';
+import {runMcp} from './mcp.js';
 import {runMemory, syncSummary} from './memory.js';
 import {jevReranker, type MemoryReranker, type RerankClient} from './rerank.js';
 import {stripControlLines} from './text.js';
@@ -141,6 +142,9 @@ const HELP = `
 	  $ chamoji memory archive <slug>  Hide an entry from the list and keep it
 	                                   (--purge deletes it for good)
 	  $ chamoji memory sync            Merge memory with origin and push it
+	  $ chamoji mcp                    Serve project memory to AI agents over
+	                                   MCP (stdio): search_memory, why and
+	                                   workstream, all read-only
 	  $ chamoji init                   Set this clone up to share memory, and
 	                                   take in what origin has
 
@@ -161,6 +165,7 @@ const HELP = `
 	             memory search: Jev reorders the ten best matches.
 	             It sees the query and, per match, up to 300 characters of
 	             the subject and card text, with emails removed.
+	             mcp: the same reorder, for the search_memory tool.
 	  --dry-run  release: show the version and notes, change nothing
 	  --push     release: push HEAD and the tag, sync memory if chamoji init
 	             ran here, then create the GitHub release when the gh CLI
@@ -245,7 +250,9 @@ export async function run(argv: string[], io: Io): Promise<number> {
 	// The refresh runs detached and the notice comes from the cache, so the
 	// check never delays the command or touches stdout.
 	const check =
-		flags.updateCheck && cli.input[0] !== 'hook' ? io.updateCheck : undefined;
+		flags.updateCheck && cli.input[0] !== 'hook' && cli.input[0] !== 'mcp'
+			? io.updateCheck
+			: undefined;
 	check?.refreshIfStale();
 	const code = await execute(cli.input[0]);
 	const notice = check?.notice();
@@ -258,9 +265,13 @@ export async function run(argv: string[], io: Io): Promise<number> {
 	async function execute(command: string | undefined): Promise<number> {
 		try {
 			// card ignores --ai: it counts what the rules sort and sends nothing out.
-			// memory search has its own use for it, and asks for its key itself.
+			// memory search and mcp have their own use for it, and ask for their key
+			// themselves.
 			const classify =
-				flags.ai && command !== 'card' && command !== 'memory'
+				flags.ai &&
+				command !== 'card' &&
+				command !== 'memory' &&
+				command !== 'mcp'
 					? await jevClassifier(io)
 					: undefined;
 			switch (command) {
@@ -345,6 +356,17 @@ export async function run(argv: string[], io: Io): Promise<number> {
 
 				case 'memory': {
 					return await runMemory(cli.input.slice(1), flags, io, async () =>
+						realReranker(io),
+					);
+				}
+
+				case 'mcp': {
+					if (cli.input.length > 1) {
+						io.stderr('chamoji: mcp takes no arguments: chamoji mcp [--ai]\n');
+						return 2;
+					}
+
+					return await runMcp(flags, {...io, stdin: process.stdin}, async () =>
 						realReranker(io),
 					);
 				}
