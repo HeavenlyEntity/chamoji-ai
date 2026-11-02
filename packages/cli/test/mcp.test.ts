@@ -877,7 +877,9 @@ test('why scans only the start of a huge body for addresses', async () => {
 	repo = await createRepo([
 		{
 			commit: '✨ Add a',
-			body: `${'word '.repeat(40_000)}\nMail carol@example.com`,
+			// 25 KB: over both caps, under the limit on one argument (128 KB on
+			// Linux) and on a whole command line (32 KB on Windows).
+			body: `${'word '.repeat(5000)}\nMail carol@example.com`,
 			files: {'src/a.ts': 'one\n'},
 		},
 	]);
