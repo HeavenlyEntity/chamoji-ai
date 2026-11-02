@@ -1,4 +1,4 @@
-import {mkdtemp, rm} from 'node:fs/promises';
+import {mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {listMemory, snapshotWorkstream} from '@chamoji/core';
@@ -229,6 +229,22 @@ test('memory sync after a purge gives the exact step and pushes nothing', async 
 	expect(await gitOutput(remote, ['rev-parse', 'refs/chamoji/memory'])).toBe(
 		before,
 	);
+});
+
+test('text from a remote reaches the terminal with no control characters, line by line', async () => {
+	const dir = await remembered();
+	const remote = await bareOrigin(dir);
+	await writeFile(
+		path.join(remote, 'hooks/update'),
+		"#!/bin/sh\nprintf '\\033]0;pwned\\007\\033[31mfirst line\\nsecond line\\n' >&2\nexit 1\n",
+		{mode: 0o755},
+	);
+	const {code, stderr} = await chamoji(['memory', 'sync'], dir);
+	expect(code).toBe(1);
+	// eslint-disable-next-line no-control-regex
+	expect(stderr).not.toMatch(/[\u0000-\u0009\u000B-\u001F\u007F-\u009F]/);
+	// Git pads each line a remote sends.
+	expect(stderr).toMatch(/first line *\n.*second line/);
 });
 
 test('memory sync takes no arguments', async () => {

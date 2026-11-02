@@ -473,15 +473,40 @@ function isWhole({hash, body}: RawCommit): boolean {
 
 /**
  * The union by hash, newest first, with what HEAD says now beating what was
- * kept. A date JavaScript can't read sorts as the oldest.
+ * kept, except that a card is never lost: repeats of a hash join theirs. A date
+ * JavaScript can't read sorts as the oldest.
  */
 export function mergeCommits(
 	kept: MemoryCommit[],
 	current: MemoryCommit[],
 ): MemoryCommit[] {
-	const byHash = new Map(kept.map(commit => [commit.hash, commit]));
-	for (const commit of current) byHash.set(commit.hash, commit);
+	const byHash = new Map<string, MemoryCommit>();
+	for (const commit of [...kept, ...current]) {
+		const earlier = byHash.get(commit.hash);
+		byHash.set(commit.hash, earlier ? keepCard(earlier, commit) : commit);
+	}
+
 	return [...byHash.values()].sort((a, b) => time(b.date) - time(a.date));
+}
+
+function keepCard(earlier: MemoryCommit, commit: MemoryCommit): MemoryCommit {
+	if (!earlier.card) return commit;
+	return {
+		...commit,
+		card: commit.card ? joinCards(earlier.card, commit.card) : earlier.card,
+	};
+}
+
+function joinCards(a: IntentCard, b: IntentCard): IntentCard {
+	const join = (first: string[], second: string[]) => [
+		...new Set([...first, ...second]),
+	];
+	return {
+		why: join(a.why, b.why),
+		constraint: join(a.constraint, b.constraint),
+		gotcha: join(a.gotcha, b.gotcha),
+		followUp: join(a.followUp, b.followUp),
+	};
 }
 
 function time(date: string): number {

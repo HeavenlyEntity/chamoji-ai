@@ -43,13 +43,29 @@ export type PullResult = {
 
 export type SyncResult = Omit<PullResult, 'ahead'> & {pushed: boolean};
 
+/** Whether this repo has an origin. Git failing for any other reason throws. */
 export async function hasOrigin(cwd: string): Promise<boolean> {
 	try {
 		await runGit(['remote', 'get-url', 'origin'], cwd);
 		return true;
-	} catch {
-		return false;
+	} catch (error) {
+		if (exitCode(error) === 2) return false; // How git says there's no such remote.
+		throw new MemoryError(`Could not read the remotes: ${gitMessage(error)}`);
 	}
+}
+
+/**
+ * Whether `chamoji init` set this clone up to share memory. Entries can hold
+ * cards from branches never pushed, so publishing them on the way past, as
+ * `release --push` does, waits for that opt-in.
+ */
+export async function fetchesMemory(cwd: string): Promise<boolean> {
+	// Exit 1 means no values at all.
+	const lines = await runGit(
+		['config', '--get-all', 'remote.origin.fetch'],
+		cwd,
+	).catch(() => '');
+	return lines.split('\n').includes(MEMORY_FETCH_REFSPEC);
 }
 
 /** Fetches origin's memory and merges it into the local ref. Pushes nothing. */
@@ -132,11 +148,11 @@ async function combine(
 	local: string | undefined,
 	remote: string,
 ): Promise<string> {
-	if (local === undefined || (await isAncestor(cwd, local, remote))) {
-		return remote;
-	}
-
-	if (await isAncestor(cwd, remote, local)) return local;
+	if (local === undefined || local === remote) return remote;
+	const behind = await isAncestor(cwd, local, remote);
+	if (!behind && (await isAncestor(cwd, remote, local))) return local;
+	// Being behind says nothing about what origin's tip holds. Anyone who can
+	// push can drop an entry or a tombstone on top of it, so it merges too.
 	const ours = await readTree(cwd, local);
 	const theirs = await readTree(cwd, remote);
 	const merged = await mergeTrees(
@@ -150,12 +166,16 @@ async function combine(
 	// When each side purged what the other holds, neither can be a parent.
 	const keepOurs = !holdsPurged(theirs, ours);
 	const keepTheirs = !holdsPurged(ours, theirs);
-	if (keepOurs && !keepTheirs && isSameTree(merged, ours)) return local;
-	if (keepTheirs && !keepOurs && isSameTree(merged, theirs)) return remote;
+	// When we're behind and can keep theirs, ours is in its history already.
 	const parents = [
-		...(keepOurs ? [local] : []),
+		...(keepOurs && !(behind && keepTheirs) ? [local] : []),
 		...(keepTheirs ? [remote] : []),
 	];
+	const [only] = parents;
+	if (parents.length === 1 && only !== undefined) {
+		if (isSameTree(merged, only === local ? ours : theirs)) return only;
+	}
+
 	return writeTree(cwd, merged, parents, 'Merge memory from origin');
 }
 
@@ -185,8 +205,11 @@ async function isAncestor(
 	try {
 		await runGit(['merge-base', '--is-ancestor', commit, descendant], cwd);
 		return true;
-	} catch {
-		return false; // Exit 1 is the plain "no", and unrelated roots give it too.
+	} catch (error) {
+		if (exitCode(error) === 1) return false; // The plain "no", for unrelated roots too.
+		throw new MemoryError(
+			`Could not compare memory commits: ${gitMessage(error)}`,
+		);
 	}
 }
 
@@ -197,8 +220,9 @@ type Version = {file: string; blob: string; entry: MemoryEntry | undefined};
  * removes the slug from both sides. Otherwise the entry with the newest
  * `updatedAt` supplies everything but its commits, and archived beats live on
  * a tie. `updatedAt` comes from other people, so commits don't follow it: they
- * are the union by hash, and a forged date can't erase any. `read` and `write`
- * fetch a blob's text and store a merged entry as a blob.
+ * are the union by hash with their cards joined, and a forged date can't erase
+ * either. `read` and `write` fetch a blob's text and store a merged entry as a
+ * blob.
  */
 export async function mergeTrees(
 	ours: Map<string, string>,
@@ -260,9 +284,21 @@ async function mergeSlug(
 		[] as MemoryEntry['commits'],
 	);
 	// An entry with nothing to add keeps its blob, so two clones settle on one.
-	return commits.length === winner.entry!.commits.length
+	return isSameCommits(commits, winner.entry!.commits)
 		? [winner.file, winner.blob]
 		: [winner.file, await write({...winner.entry!, commits})];
+}
+
+/** The same commits with the same content, in any order. */
+function isSameCommits(
+	a: MemoryEntry['commits'],
+	b: MemoryEntry['commits'],
+): boolean {
+	const texts = new Map(a.map(item => [item.hash, JSON.stringify(item)]));
+	return (
+		a.length === b.length &&
+		b.every(item => texts.get(item.hash) === JSON.stringify(item))
+	);
 }
 
 async function readVersion(
@@ -282,4 +318,8 @@ async function readVersion(
 function gitMessage(error: unknown): string {
 	const {stderr, message} = error as Error & {stderr?: string};
 	return stderr?.trim() || message;
+}
+
+function exitCode(error: unknown): unknown {
+	return (error as {code?: unknown}).code;
 }
