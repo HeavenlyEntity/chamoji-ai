@@ -2,7 +2,7 @@ import type {Io} from './run.js';
 
 /** Said to the agent when it commits with no card. */
 export const DENY_REASON =
-	'Add why this change was made: put a "Why: <reason>" line at the end of the commit message. Constraint:, Gotcha: and Follow-up: lines are welcome too. For a trivial change, prefix the command with CHAMOJI_NO_CARD=1.';
+	'Add why this change was made: put a "Why: <reason>" line at the end of the commit message. Constraint:, Gotcha: and Follow-up: lines are welcome too. Only if the user told you to skip this, prefix the command with CHAMOJI_NO_CARD=1.';
 
 /** More than a hook input ever holds: a command and a few fields. */
 const MAX_INPUT = 1024 * 1024;

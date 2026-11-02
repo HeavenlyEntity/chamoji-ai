@@ -176,7 +176,9 @@ async function setUpAgents(io: Io): Promise<number> {
 /**
  * Writes `text` to a temp file beside `target` and renames it into place, so
  * a failure never leaves a half-written shared file. A new file takes the
- * default permissions; a replaced one keeps its own.
+ * default permissions; a replaced one keeps its own. The temp file starts
+ * owner-only, since a settings file can hold secrets, and gets its final
+ * permissions just before the rename. Setuid and the like are not carried over.
  */
 async function writeAtomically(
 	target: string,
@@ -190,8 +192,8 @@ async function writeAtomically(
 		`.${path.basename(target)}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`,
 	);
 	try {
-		await writeFile(temp, text, {flag: 'wx'});
-		if (mode !== undefined) await chmod(temp, mode & 0o7777);
+		await writeFile(temp, text, {flag: 'wx', mode: 0o600});
+		await chmod(temp, (mode ?? 0o666 & ~process.umask()) & 0o777);
 		await rename(temp, target);
 	} catch (error) {
 		await rm(temp, {force: true});

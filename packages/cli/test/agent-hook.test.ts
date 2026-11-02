@@ -184,7 +184,7 @@ test('a commit with no card is denied with the reason', async () => {
 	});
 	expect(stdout.endsWith('\n')).toBe(true);
 	expect(DENY_REASON).toBe(
-		'Add why this change was made: put a "Why: <reason>" line at the end of the commit message. Constraint:, Gotcha: and Follow-up: lines are welcome too. For a trivial change, prefix the command with CHAMOJI_NO_CARD=1.',
+		'Add why this change was made: put a "Why: <reason>" line at the end of the commit message. Constraint:, Gotcha: and Follow-up: lines are welcome too. Only if the user told you to skip this, prefix the command with CHAMOJI_NO_CARD=1.',
 	);
 });
 

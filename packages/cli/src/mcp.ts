@@ -219,12 +219,14 @@ export function createTools(cwd: string, rerank?: MemoryReranker): McpTools {
 					? undefined
 					: await findWorkstream(cwd, workstream);
 			// No author email: the trailer block goes, which holds Co-Authored-By
-			// and Signed-off-by, and any address left in the prose with it.
+			// and Signed-off-by, and any address left in the prose with it. The
+			// body is cut to twice its cap first, so the scan never reads a whole
+			// huge message; limitReply makes the final cut.
 			return {
 				kind: 'commit',
 				hash,
 				subject,
-				body: redact(withoutTrailers(body)),
+				body: redact(withoutTrailers(body.slice(0, 2 * MAX_BODY))),
 				author: authorName,
 				date,
 				card,
