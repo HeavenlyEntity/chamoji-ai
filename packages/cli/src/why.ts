@@ -62,7 +62,7 @@ export async function runWhy(
  * outlives the branch. This only adds to the answer, so a damaged entry or
  * file leaves it out instead of failing the command.
  */
-async function findWorkstream(
+export async function findWorkstream(
 	cwd: string,
 	slug: string,
 ): Promise<Pick<Workstream, 'title' | 'emoji' | 'status'> | undefined> {
