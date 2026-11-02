@@ -181,11 +181,12 @@ export function createJevClassifier(
 }
 
 /**
- * The local part is capped at 64 characters, which is all an address may have.
- * Without a cap the pattern is quadratic on a long run of word characters,
- * and commit text can hold one.
+ * A match may only start where a run of address characters starts. Without
+ * the lookbehind the pattern is quadratic on a long run of word characters,
+ * and commit text can hold one. A length cap would do too, but it leaves the
+ * start of a longer address behind.
  */
-const EMAIL = /[\w.+-]{1,64}@[\w-]+(?:\.[\w-]+)+/g;
+const EMAIL = /(?<![\w.+-])[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
 const TRAILER_LINE = /^[\w-]+:\s/;
 
 /** Replaces email addresses, which often appear in commit text. */
