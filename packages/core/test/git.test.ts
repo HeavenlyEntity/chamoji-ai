@@ -174,8 +174,10 @@ test('quietGitEnv adds batch ssh only when nothing sets an ssh command', async (
 	vi.stubEnv('GIT_CONFIG_GLOBAL', emptyConfig);
 	vi.stubEnv('GIT_CONFIG_NOSYSTEM', '1');
 	const saved = process.env.GIT_SSH_COMMAND;
+	const savedSsh = process.env.GIT_SSH;
 	try {
 		delete process.env.GIT_SSH_COMMAND;
+		delete process.env.GIT_SSH;
 		expect(await quietGitEnv(repo.dir)).toEqual({
 			GIT_TERMINAL_PROMPT: '0',
 			GIT_SSH_COMMAND: 'ssh -o BatchMode=yes',
@@ -187,9 +189,15 @@ test('quietGitEnv adds batch ssh only when nothing sets an ssh command', async (
 		await gitOutput(repo.dir, ['config', '--unset', 'core.sshCommand']);
 		process.env.GIT_SSH_COMMAND = 'ssh -v';
 		expect(await quietGitEnv(repo.dir)).toEqual({GIT_TERMINAL_PROMPT: '0'});
+
+		delete process.env.GIT_SSH_COMMAND;
+		process.env.GIT_SSH = '/usr/local/bin/plink';
+		expect(await quietGitEnv(repo.dir)).toEqual({GIT_TERMINAL_PROMPT: '0'});
 	} finally {
 		if (saved === undefined) delete process.env.GIT_SSH_COMMAND;
 		else process.env.GIT_SSH_COMMAND = saved;
+		if (savedSsh === undefined) delete process.env.GIT_SSH;
+		else process.env.GIT_SSH = savedSsh;
 		vi.unstubAllEnvs();
 		await rm(isolated, {recursive: true, force: true});
 	}
