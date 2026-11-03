@@ -33,7 +33,7 @@ These would make it a failure even if it works:
 - **Breaking scripts.** Any escape code, spinner frame or extra line in stdout, in `--json` output, in a pipe or in a CI log.
 - **Slowing chamoji down.** A face that delays a fast command, or that flickers onto the screen for a step that finishes in 50 ms.
 - **Leaving a mess.** A hidden cursor or a half-drawn line after Ctrl-C or an error.
-- **Breaking the brand rules.** Foil-coloured text on a white background (`docs/brand/BRAND.md`), or anything derived from licensed files (the Marow Block font, the purchased emoji pack) in this public repo.
+- **Breaking the brand rules.** Foil-coloured text on a white background (`docs/brand/BRAND.md`), or licensed files in this public repo: the Marow Block font files and the purchased emoji pack. The wordmark artwork generated from the font is logo art, not the font, and may be committed.
 - **Copying Anthropic's writing.** Claude Code's verb list stays theirs.
 
 ## How Claude Code does it
@@ -50,17 +50,29 @@ chamoji takes the method: text frames, a timer, full colour and an eased shimmer
 ## Decided in conversation (2026-11-03)
 
 - **Follow Claude Code's practice.** Use text characters in full colour, redrawn on a timer. No images, canvas or GUI window.
-- **The wordmark is hand-drawn block letters**, with the face from the icon in the O and the foil gradient across it. The letters echo the logo but aren't traced from Marow Block. The M has two rounded arches, matching the A, so it doesn't read as a W:
+- **The wordmark is the real Marow Block lettering, drawn in quadrant blocks.** A terminal can't load a font, so the letter shapes become artwork instead. Each character cell holds 2×2 pixels using the quadrant characters `▗ ▖ ▘ ▝ ▚ ▞ ▙ ▛ ▜ ▟ ▄ ▀ ▌ ▐ █`. The O becomes a ring, with the icon's face centred inside it: two round eyes at different heights and the tilted wedge grin. The foil gradient runs across it all. Alec chose this over hand-drawn block letters on 2026-11-03, after a live demo. The prototype frame:
 
   ```
-   ▄█████▄  ██    ██   ▄████▄    ▄██▄▄██▄    ▄█████████▄         ██  ██
-  ██▀       ██    ██  ██▀  ▀██  ██▀ ██ ▀██  ██     ●   ██        ██  ██
-  ██        ████████  ████████  ██  ██  ██  ██  ●      ██        ██  ██
-  ██▄       ██    ██  ██    ██  ██  ██  ██  ██  ◥███◤  ██  ██▄  ▄██  ██
-   ▀█████▀  ██    ██  ██    ██  ██  ██  ██   ▀█████████▀    ▀████▀   ██
+   ▗▄████  ███▌███▌   ▗▟███▌   ▄▟█▄▖ ▄█▙▄     ▗▟█████▙▖   ▐████▌ ▐███▌
+  ▗██████  ███▌███▌  ▐█████▌  ▟████▙▟████▙   ▐▛▘   ▄▖ ▜▌  ▐████▌ ▐███▌
+  ▐██████  ███▌███▌  ██████▌ ▗███▀████▀███▖  █▘▗▄  █▌  █  ▝▀▀▜█▌ ▐█▀▀▘
+  ███▛███  ███▌███▌ ▐██████▌ ▐███▌████▐███▌ ▐█ ▐█▌ ▝ ▖ █▌ ▐████▌ ▐███▌
+  ███▙▄▄▄  ███▛███▌ ▐██▙▄██▌ ▐███▌████▐███▌ ▐█  ▘ ▗▄█▌ █▌ ▐████▌ ▐███▌
+  ▐██████  ███▌███▌  ██████▌ ▐███▌████▐███▌  █  ▗▟███▌ █  ▐████▌ ▐███▌
+  ▝██████  ███▌███▌  ▜█████▌ ▐███▌████▐███▌  ▐▙  ▜██▛ ▟▌  ▐████  ▐███▌
+   ▝▀████  ███▌███▌   ▀▜█▜█▌ ▐███▘▝▜▛▘▝███▌   ▝▜█████▛▘   ▐██▛▘  ▐███▌
   ```
 
-  It's 69 columns wide. The face inside the O is 9 columns by 3 rows: two eyes at different heights and the wedge grin, as on the icon.
+  It's 68 columns by 8 rows. The prototype is a Python script, `logo.py`, which isn't in the repo. It:
+  - renders each letter from the font at 12× size, with 4 px between letters;
+  - draws the O as a rounded ring 3 px wider than the glyph;
+  - shrinks everything to 2×2 pixels per cell and keeps a pixel when it's over 85% covered.
+
+  **How it ships:**
+  - **A generator script in `scripts/`** reads `docs/brand/fonts/MarowBlock-Regular.ttf` and writes the frames as plain strings into a source file in `packages/cli/src`. Only the generated strings are committed. Font files stay out of git, as `docs/brand/fonts/README.md` requires, and the script fails with a clear message when the font isn't there. The output is logo artwork, like `docs/brand/chamoji-logo.png`, which is already in the repo.
+  - **Generated frames can be touched up by hand.** Quantising can make the two eyes differ by a pixel, and the prototype's grin frame ("happy" eyes) comes out as stray marks at this size. The builder fixes both, and replaces the grin frame with a wink or with wider round eyes.
+  - **Frames:** rest, glance left, glance right, blink, and the grin or wink. Only the inside of the O differs from frame to frame, and every frame has the same width.
+  - **The language** is the builder's choice. Node fits the repo's other scripts; a dev-only dependency for reading the font is fine.
 
 - **Loading screens use a one-line text face** with the same gradient:
 
@@ -181,8 +193,8 @@ When bare `chamoji` has nothing to animate, it prints the wordmark once, plain o
    4. **No answer means dark, so the foil shows.** Alec chose this default on 2026-11-03: it looks right on most developer setups, and a white terminal that answers neither check can set `CHAMOJI_THEME=light`.
 2. **The intro plays once, about 1.2 s, then the prompt comes back.** It doesn't stay alive until a keypress.
 3. **Bare `chamoji` exits 0 and writes to stdout,** where today it writes to stderr and exits 2. An unknown command still exits 2.
-4. **Narrow terminals.** Below 72 columns, the wordmark is replaced by the one-line face and a gradient `chamoji`.
-5. **Wide or ambiguous characters.** `●`, `•`, `◥`, `◤` and box-drawing characters are single width in Western terminals but can be double width in East Asian locales. An ASCII face set is the fallback, used when `CHAMOJI_ASCII=1` is set or on the legacy Windows console (win32 with no `WT_SESSION`):
+4. **Narrow terminals.** Below 70 columns, the wordmark is replaced by the one-line face and a gradient `chamoji`.
+5. **Wide or ambiguous characters.** `●`, `•` and the quadrant and block characters are single width in Western terminals but can be double width in East Asian locales. The ASCII fallback below also replaces the wordmark with the one-line logo. An ASCII face set is the fallback, used when `CHAMOJI_ASCII=1` is set or on the legacy Windows console (win32 with no `WT_SESSION`):
 
    ```
    ( o_o )   ( ^_^ )   ( ;_; )
