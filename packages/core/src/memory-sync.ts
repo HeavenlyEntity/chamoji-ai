@@ -41,6 +41,16 @@ export type PullResult = {
 	entries: number;
 };
 
+/** The slow parts of a sync, named as they start. */
+export type SyncStep = 'fetch' | 'merge' | 'push';
+
+export type SyncOptions = {
+	/** Called as each step begins, `push` again for a second attempt. */
+	onStep?: (step: SyncStep) => void;
+	/** Added to the environment of the fetch and the push, nothing else. */
+	env?: Record<string, string>;
+};
+
 export type SyncResult = Omit<PullResult, 'ahead'> & {pushed: boolean};
 
 /** Whether this repo has an origin. Git failing for any other reason throws. */
@@ -69,8 +79,12 @@ export async function fetchesMemory(cwd: string): Promise<boolean> {
 }
 
 /** Fetches origin's memory and merges it into the local ref. Pushes nothing. */
-export async function pullMemory(cwd: string): Promise<PullResult> {
+export async function pullMemory(
+	cwd: string,
+	options: SyncOptions = {},
+): Promise<PullResult> {
 	if (!(await hasOrigin(cwd))) throw new MemoryError('No remote named origin');
+	options.onStep?.('fetch');
 	try {
 		// --prune so that a copy of a ref origin has lost can't pass for its memory.
 		await runGit(
@@ -83,6 +97,7 @@ export async function pullMemory(cwd: string): Promise<PullResult> {
 				MEMORY_FETCH_REFSPEC,
 			],
 			cwd,
+			options.env,
 		);
 	} catch (error) {
 		throw new MemoryError(
@@ -90,6 +105,7 @@ export async function pullMemory(cwd: string): Promise<PullResult> {
 		);
 	}
 
+	options.onStep?.('merge');
 	const local = await headOf(cwd, MEMORY_REF);
 	const remote = await headOf(cwd, MEMORY_REMOTE_REF);
 	const head = remote === undefined ? local : await combine(cwd, local, remote);
@@ -121,16 +137,21 @@ export async function pullMemory(cwd: string): Promise<PullResult> {
  * other failure, a pre-push hook's refusal included, is reported as it is. It never
  * forces: when only a force-push would do, the result says so.
  */
-export async function syncMemory(cwd: string): Promise<SyncResult> {
+export async function syncMemory(
+	cwd: string,
+	options: SyncOptions = {},
+): Promise<SyncResult> {
 	let merged = false;
 	for (let attempt = 1; ; attempt++) {
-		const {ahead, ...pull} = await pullMemory(cwd);
+		const {ahead, ...pull} = await pullMemory(cwd, options);
 		merged ||= pull.merged;
 		if (!ahead || pull.needsForce) return {...pull, merged, pushed: false};
+		options.onStep?.('push');
 		try {
 			await runGit(
 				['push', '--quiet', 'origin', `${MEMORY_REF}:${MEMORY_REF}`],
 				cwd,
+				options.env,
 			);
 			return {...pull, merged, pushed: true};
 		} catch (error) {

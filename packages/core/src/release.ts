@@ -51,6 +51,10 @@ export type ReleaseOptions = {
 	/** `YYYY-MM-DD` for the new section; defaults to the current UTC date. */
 	today?: string;
 	classify?: CommitClassifier;
+	/** Called just before the tags are fetched from origin. */
+	onStep?: (step: 'fetch-tags') => void;
+	/** Added to the environment of the tag fetches, nothing else. */
+	env?: Record<string, string>;
 };
 
 export type FileChange = {file: string; text: string; how: string};
@@ -91,6 +95,12 @@ export async function planRelease(
 	).trim();
 	const git = async (...args: string[]) => (await runGit(args, root)).trim();
 	const tryGit = async (...args: string[]) => git(...args).catch(() => null);
+	const fetchTags = async (...args: string[]) => {
+		options.onStep?.('fetch-tags');
+		return (
+			await runGit(['fetch', '--quiet', ...args], root, options.env)
+		).trim();
+	};
 	const warnings: string[] = [];
 
 	const dirty = await git('status', '--porcelain');
@@ -116,7 +126,7 @@ export async function planRelease(
 	}
 
 	if ((await git('rev-parse', '--is-shallow-repository')) === 'true') {
-		if ((await tryGit('fetch', '--quiet', '--unshallow', '--tags')) === null) {
+		if ((await fetchTags('--unshallow', '--tags').catch(() => null)) === null) {
 			throw new ReleaseError(
 				'shallow',
 				'this is a shallow clone and fetching the full history failed; chamoji needs every commit and tag (in CI, check out with fetch-depth: 0)',
@@ -125,7 +135,7 @@ export async function planRelease(
 	} else if (
 		options.fetch !== false &&
 		(await tryGit('remote', 'get-url', 'origin')) !== null &&
-		(await tryGit('fetch', '--quiet', '--tags')) === null
+		(await fetchTags('--tags').catch(() => null)) === null
 	) {
 		warnings.push('could not fetch tags from origin; used the local tags');
 	}
@@ -304,9 +314,16 @@ export async function applyRelease(
 }
 
 /** Pushes HEAD and the release tag, by name, to origin. A failure keeps the local release. */
-export async function pushRelease(plan: ReadyPlan): Promise<void> {
+export async function pushRelease(
+	plan: ReadyPlan,
+	env?: Record<string, string>,
+): Promise<void> {
 	try {
-		await runGit(['push', '--quiet', 'origin', 'HEAD', plan.tag], plan.root);
+		await runGit(
+			['push', '--quiet', 'origin', 'HEAD', plan.tag],
+			plan.root,
+			env,
+		);
 	} catch (error) {
 		throw new Error(
 			`released ${plan.tag} locally, but the push failed; the release commit and tag are kept:\n${gitMessage(error)}`,

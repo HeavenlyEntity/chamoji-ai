@@ -10,13 +10,62 @@ const FIELD = '\u001F';
 
 export type ReleaseTag = {name: string; date: string};
 
-/** Runs git without a shell and returns stdout. */
-export async function runGit(args: string[], cwd: string): Promise<string> {
+/**
+ * Runs git without a shell and returns stdout. `env` adds to the process
+ * environment; it's for the commands that talk to a remote.
+ */
+export async function runGit(
+	args: string[],
+	cwd: string,
+	env?: Record<string, string>,
+): Promise<string> {
 	const {stdout} = await execFileAsync('git', args, {
 		cwd,
+		...(env ? {env: {...process.env, ...env}} : {}),
 		maxBuffer: 64 * 1024 * 1024,
 	});
 	return stdout;
+}
+
+/**
+ * The environment that keeps a network git command from asking anything, so a
+ * redrawing line can't overwrite a prompt. A missing password then fails the
+ * command, which `isAuthFailure` recognises. A configured ssh command is left
+ * alone, and so is one in the environment.
+ */
+export async function quietGitEnv(
+	cwd: string,
+): Promise<Record<string, string>> {
+	const env: Record<string, string> = {GIT_TERMINAL_PROMPT: '0'};
+	if (process.env.GIT_SSH_COMMAND !== undefined) return env;
+	// Exit 1 means no value at all.
+	const configured = await runGit(['config', '--get', 'core.sshCommand'], cwd)
+		.then(stdout => stdout.trim())
+		.catch(() => '');
+	if (configured === '') env.GIT_SSH_COMMAND = 'ssh -o BatchMode=yes';
+	return env;
+}
+
+const AUTH_FAILURES = [
+	'terminal prompts disabled',
+	'could not read Username',
+	'could not read Password',
+	'Authentication failed',
+	'Permission denied (publickey',
+	'Host key verification failed',
+];
+
+/**
+ * Whether a git failure was a credential or key problem. Core wraps git's
+ * stderr into its own messages, so the message is searched as well as `stderr`.
+ */
+export function isAuthFailure(error: unknown): boolean {
+	if (typeof error !== 'object' || error === null) return false;
+	const {message, stderr} = error as {message?: unknown; stderr?: unknown};
+	const text = [message, stderr]
+		.filter((part): part is string => typeof part === 'string')
+		.join('\n');
+	return AUTH_FAILURES.some(phrase => text.includes(phrase));
 }
 
 /**
