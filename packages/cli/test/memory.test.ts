@@ -14,6 +14,7 @@ import {
 	type FixtureRepo,
 } from '../../core/test/helpers/fixture-repo.js';
 import {run, type Io} from '../src/run.js';
+import {recordingFace} from './helpers/recording-face.js';
 
 let repo: FixtureRepo | undefined;
 let loose: string | undefined;
@@ -583,4 +584,111 @@ test('a commit dated past year 9999 leaves memory readable', async () => {
 	// Git for Windows can't print this date, so the year isn't pinned there.
 	expect(shown.stdout).toMatch(/[0-9a-f]{7} 🐛 Peer, \d{4,5}-\d{2}-\d{2}\n/);
 	expect(shown.stdout).toContain('  Why: from the future\n');
+});
+
+test('memory sync reports fetch, merge and push, then ends ok', async () => {
+	const dir = await remembered();
+	await bareOrigin(dir);
+	const {face, calls} = recordingFace();
+	const {code, stdout, stderr} = await chamoji(['memory', 'sync'], dir, {
+		face,
+	});
+	expect(code).toBe(0);
+	expect(stdout).toBe('Synced memory with origin: 2 entries.\n');
+	expect(stderr).toBe('');
+	expect(calls).toEqual([
+		['step', 'Syncing memory with origin'],
+		['update', "Fetching origin's memory"],
+		['update', "Merging origin's memory into yours"],
+		['update', 'Pushing memory to origin'],
+		['end', 'ok', 'Synced memory with origin: 2 entries'],
+		['stop'],
+	]);
+});
+
+test('memory sync with nothing to sync ends ok', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await bareOrigin(repo.dir);
+	const {face, calls} = recordingFace();
+	const {stdout} = await chamoji(['memory', 'sync'], repo.dir, {face});
+	expect(stdout).toBe('Nothing to sync: no memory here or on origin yet.\n');
+	expect(calls).toContainEqual(['end', 'ok', 'Nothing to sync']);
+});
+
+test('memory sync ending in needsForce ends warn', async () => {
+	const dir = await remembered();
+	await bareOrigin(dir);
+	await chamoji(['memory', 'sync'], dir);
+	await chamoji(['memory', 'archive', 'auth', '--purge'], dir);
+	const {face, calls} = recordingFace();
+	const plain = await chamoji(['memory', 'sync'], dir);
+	const faced = await chamoji(['memory', 'sync'], dir, {face});
+	expect(faced.stdout).toBe(plain.stdout);
+	expect(faced.code).toBe(0);
+	expect(calls.at(-2)).toEqual([
+		'end',
+		'warn',
+		'A purged entry is still on origin, so nothing was pushed',
+	]);
+});
+
+test('a thrown step ends fail with its label, and stderr has chamoji: <message> once', async () => {
+	const dir = await remembered();
+	const {face, calls} = recordingFace();
+	const {code, stderr} = await chamoji(['memory', 'sync'], dir, {face});
+	expect(code).toBe(1);
+	expect(stderr).toBe('chamoji: No remote named origin\n');
+	expect(calls).toEqual([
+		['step', 'Syncing memory with origin'],
+		['end', 'fail', 'Syncing memory with origin'],
+		['stop'],
+	]);
+});
+
+test('a push that fails ends fail with the push label', async () => {
+	const dir = await remembered();
+	const remote = await bareOrigin(dir);
+	await writeFile(path.join(remote, 'hooks/update'), '#!/bin/sh\nexit 1\n', {
+		mode: 0o755,
+	});
+	const {face, calls} = recordingFace();
+	const {code, stderr} = await chamoji(['memory', 'sync'], dir, {face});
+	expect(code).toBe(1);
+	expect(stderr.match(/chamoji: /g)).toHaveLength(1);
+	expect(calls.at(-2)).toEqual(['end', 'fail', 'Pushing memory to origin']);
+});
+
+test('memory search --ai shows Jev ranking the matches', async () => {
+	const dir = await remembered();
+	const {face, calls} = recordingFace();
+	const {code} = await chamoji(['memory', 'search', 'login', '--ai'], dir, {
+		face,
+		async rerank(_query, hits) {
+			return hits;
+		},
+	});
+	expect(code).toBe(0);
+	expect(calls).toEqual([
+		['step', 'Jev is ranking the matches'],
+		['end', 'ok', 'Jev ranked the matches'],
+		['stop'],
+	]);
+});
+
+test('memory reindex is one step', async () => {
+	const dir = await remembered();
+	const {face, calls} = recordingFace();
+	const {stdout} = await chamoji(['memory', 'reindex'], dir, {face});
+	expect(stdout).toMatch(/^Indexed \d+ documents\.\n$/);
+	expect(calls[0]).toEqual(['step', 'Rebuilding the search index']);
+	expect(calls[1]?.slice(0, 2)).toEqual(['end', 'ok']);
+});
+
+test('memory list and show never call the face', async () => {
+	const dir = await remembered();
+	const {face, calls} = recordingFace();
+	await chamoji(['memory', 'list'], dir, {face});
+	await chamoji(['memory', 'show', 'auth'], dir, {face});
+	await chamoji(['memory', 'search', 'login'], dir, {face});
+	expect(calls).toEqual([]);
 });

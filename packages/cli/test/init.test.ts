@@ -27,6 +27,7 @@ import {
 	type FixtureRepo,
 } from '../../core/test/helpers/fixture-repo.js';
 import {run} from '../src/run.js';
+import {recordingFace} from './helpers/recording-face.js';
 
 /** Native Windows has no POSIX modes, `/bin/sh` or unprivileged symlinks. */
 const WINDOWS = process.platform === 'win32';
@@ -907,4 +908,52 @@ test('init --agents treats an empty or blank file as {}', async () => {
 			1,
 		);
 	}
+});
+
+async function withFace(argv: string[], cwd: string) {
+	const {face, calls} = recordingFace();
+	let stdout = '';
+	let stderr = '';
+	const code = await run(argv, {
+		cwd,
+		stdout: text => (stdout += text),
+		stderr: text => (stderr += text),
+		face,
+	});
+	return {code, stdout, stderr, calls};
+}
+
+test("init takes in origin's memory as one step", async () => {
+	const {dir, clone} = await withOrigin();
+	await snapshotWorkstream(dir, 'auth');
+	await syncMemory(dir);
+	const {code, stdout, calls} = await withFace(['init'], clone);
+	expect(code).toBe(0);
+	expect(stdout).toContain('Took in memory from origin: 1 entry.\n');
+	expect(calls).toEqual([
+		['step', "Taking in origin's memory"],
+		['end', 'ok', 'Took in memory from origin: 1 entry'],
+		['stop'],
+	]);
+});
+
+test('init with no memory on origin ends ok and says so', async () => {
+	const {clone} = await withOrigin();
+	const {calls} = await withFace(['init'], clone);
+	expect(calls).toContainEqual(['end', 'ok', 'No memory on origin yet']);
+});
+
+test('init that cannot reach origin ends the step as fail and reports once', async () => {
+	const {dir} = await withOrigin();
+	await gitOutput(dir, ['remote', 'set-url', 'origin', `${dir}-missing`]);
+	const {code, stderr, calls} = await withFace(['init'], dir);
+	expect(code).toBe(0);
+	expect(stderr.match(/chamoji: /g)).toHaveLength(1);
+	expect(calls).toContainEqual(['end', 'fail', "Taking in origin's memory"]);
+});
+
+test('init with no origin starts no step', async () => {
+	const {dir} = await repoFrom([{commit: '🎉 Init'}]);
+	const {calls} = await withFace(['init'], dir);
+	expect(calls).toEqual([['stop']]);
 });

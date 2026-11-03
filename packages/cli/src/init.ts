@@ -20,6 +20,7 @@ import {
 	runGit,
 } from '@chamoji/core';
 import {isRecord, own} from './agent-hook.js';
+import {gitStep, NO_FACE} from './face.js';
 import {entryCount, FORCE_STEP} from './memory.js';
 import type {Io} from './run.js';
 import {stripControlLines} from './text.js';
@@ -63,7 +64,24 @@ export async function runInit(
 	io.stdout(SYNC_NOTE);
 	// The setup is done and sound; the next sync can do the rest.
 	try {
-		const {fetched, entries, needsForce} = await pullMemory(io.cwd);
+		const {fetched, entries, needsForce} = await gitStep(
+			io.face ?? NO_FACE,
+			io.cwd,
+			"Taking in origin's memory",
+			async env => pullMemory(io.cwd, {env}),
+			pulled =>
+				pulled.needsForce
+					? {
+							outcome: 'warn',
+							text: 'A purged entry is still on origin',
+						}
+					: {
+							outcome: 'ok',
+							text: pulled.fetched
+								? `Took in memory from origin: ${entryCount(pulled.entries)}`
+								: 'No memory on origin yet',
+						},
+		);
 		io.stdout(
 			fetched
 				? `Took in memory from origin: ${entryCount(entries)}.\n`

@@ -12,6 +12,7 @@ import {
 	getActive,
 	getRemoteWebUrl,
 	hasMessageContent,
+	isAuthFailure,
 	listMemory,
 	loadComposeConfig,
 	loadConfig,
@@ -19,6 +20,7 @@ import {
 	readStagedChanges,
 	planRelease,
 	pushRelease,
+	quietGitEnv,
 	ReleaseError,
 	render,
 	repoStats,
@@ -42,11 +44,24 @@ import {
 } from './advisor.js';
 import {compose} from './composer.js';
 import {MISSING_KEY, readTypesafeKey} from './env.js';
+import {gitStep, NO_FACE, runStep, type Face, type Step} from './face.js';
+import {hasFace} from './face-settings.js';
 import {HookError, installHook, uninstallHook} from './hook.js';
-import {createJevClassifier, JUDGMENT_VERSION} from './jev-classifier.js';
+import {
+	createJevClassifier,
+	jevFace,
+	JUDGMENT_VERSION,
+	type JevClassifierOptions,
+} from './jev-classifier.js';
 import {runInit} from './init.js';
 import {runMcp} from './mcp.js';
-import {runMemory, syncSummary} from './memory.js';
+import {
+	relabel,
+	runMemory,
+	SYNC_LABEL,
+	syncOutcome,
+	syncSummary,
+} from './memory.js';
 import {jevReranker, type MemoryReranker, type RerankClient} from './rerank.js';
 import {stripControlLines} from './text.js';
 import {openTerminal} from './tty.js';
@@ -74,6 +89,12 @@ export type Io = {
 	advise?: ReturnType<typeof createCommitAdvisor>;
 	/** Jev's `memory search --ai` reorder; tests pass a fake. Defaults to the TypeSafe API. */
 	rerank?: MemoryReranker;
+	/**
+	 * The loading face on stderr. cli.ts builds one only when it may animate,
+	 * and passes stdout and stderr through its `wrap`. Without one, nothing is
+	 * drawn and the output is what it always was.
+	 */
+	face?: Face;
 };
 
 export type ComposerTerminal = {
@@ -216,8 +237,8 @@ const FORMATS: Record<string, OutputFormat> = {
 	html: 'html',
 };
 
-export async function run(argv: string[], io: Io): Promise<number> {
-	const cli = meow(HELP, {
+function parse(argv: string[]) {
+	return meow(HELP, {
 		importMeta: import.meta,
 		argv,
 		autoHelp: false,
@@ -248,48 +269,68 @@ export async function run(argv: string[], io: Io): Promise<number> {
 			version: {type: 'boolean', shortFlag: 'v'},
 		},
 	});
+}
+
+/** Whether the command in `argv` can wait on something slow, and so shows a face. */
+export function wantsFace(argv: string[]): boolean {
+	const {input, flags} = parse(argv);
+	return hasFace(input, flags);
+}
+
+export async function run(argv: string[], given: Io): Promise<number> {
+	const cli = parse(argv);
 	const {flags} = cli;
+	// Commands that never wait never touch the face, whatever was passed.
+	const face = given.face && hasFace(cli.input, flags) ? given.face : NO_FACE;
+	const io: Io = {...given, face};
+	/** A step a command is running that Jev's progress shows on, if any. */
+	let jevHost: Step | undefined;
+	try {
+		if (flags.help) {
+			io.stdout(`${cli.help}\n`);
+			return 0;
+		}
 
-	if (flags.help) {
-		io.stdout(`${cli.help}\n`);
-		return 0;
+		if (flags.version) {
+			io.stdout(`${cli.pkg.version ?? 'unknown'}\n`);
+			return 0;
+		}
+
+		// The refresh runs detached and the notice comes from the cache, so the
+		// check never delays the command or touches stdout.
+		const check =
+			flags.updateCheck &&
+			cli.input[0] !== 'hook' &&
+			cli.input[0] !== 'mcp' &&
+			cli.input[0] !== 'agent-hook'
+				? io.updateCheck
+				: undefined;
+		check?.refreshIfStale();
+		const code = await execute(cli.input[0]);
+		const notice = check?.notice();
+		if (notice) {
+			io.stderr(`\n${notice}\n`);
+		}
+
+		return code;
+	} finally {
+		// The cursor must never be left hidden, whatever happened.
+		face.stop();
 	}
-
-	if (flags.version) {
-		io.stdout(`${cli.pkg.version ?? 'unknown'}\n`);
-		return 0;
-	}
-
-	// The refresh runs detached and the notice comes from the cache, so the
-	// check never delays the command or touches stdout.
-	const check =
-		flags.updateCheck &&
-		cli.input[0] !== 'hook' &&
-		cli.input[0] !== 'mcp' &&
-		cli.input[0] !== 'agent-hook'
-			? io.updateCheck
-			: undefined;
-	check?.refreshIfStale();
-	const code = await execute(cli.input[0]);
-	const notice = check?.notice();
-	if (notice) {
-		io.stderr(`\n${notice}\n`);
-	}
-
-	return code;
 
 	async function execute(command: string | undefined): Promise<number> {
 		try {
 			// card ignores --ai: it counts what the rules sort and sends nothing out.
 			// memory search and mcp have their own use for it, and ask for their key
 			// themselves. agent-hook has none, and stdout is its decision.
+			const jev = jevFace(face, () => jevHost);
 			const classify =
 				flags.ai &&
 				command !== 'card' &&
 				command !== 'memory' &&
 				command !== 'mcp' &&
 				command !== 'agent-hook'
-					? await jevClassifier(io)
+					? jev.wrap(await jevClassifier(io, jev.progress))
 					: undefined;
 			switch (command) {
 				case 'changelog': {
@@ -703,16 +744,43 @@ export async function run(argv: string[], io: Io): Promise<number> {
 		version: string | undefined,
 		classify: CommitClassifier | undefined,
 	): Promise<number> {
-		const plan = await planRelease({
-			cwd: io.cwd,
-			config: await loadConfig(io.cwd, flags.config),
-			...(version === undefined ? {} : {version}),
-			anyBranch: flags.anyBranch,
-			fetch: io.fetchTags ?? true,
-			allowDirty: flags.dryRun,
-			today: io.today,
-			classify,
-		});
+		const config = await loadConfig(io.cwd, flags.config);
+		// Under a face the tag fetch must not ask for a password, or the face
+		// would draw over the prompt. planRelease keeps a failed fetch as a
+		// warning, so there is no second try here: the warning says so.
+		const env = face === NO_FACE ? undefined : await quietGitEnv(io.cwd);
+		const plan = await runStep(
+			face,
+			'Planning the release',
+			async step => {
+				jevHost = step;
+				try {
+					return await planRelease({
+						cwd: io.cwd,
+						config,
+						...(version === undefined ? {} : {version}),
+						anyBranch: flags.anyBranch,
+						fetch: io.fetchTags ?? true,
+						allowDirty: flags.dryRun,
+						today: io.today,
+						classify,
+						onStep() {
+							step.update('Fetching tags from origin');
+						},
+						...(env ? {env} : {}),
+					});
+				} finally {
+					jevHost = undefined;
+				}
+			},
+			result => ({
+				outcome: 'ok',
+				text:
+					result.status === 'nothing'
+						? 'Nothing to release'
+						: `Ready to release ${result.tag}`,
+			}),
+		);
 		const print = (lines: string[], json: Record<string, unknown>) => {
 			io.stdout(
 				flags.json
@@ -760,24 +828,60 @@ export async function run(argv: string[], io: Io): Promise<number> {
 		let memory: string | undefined;
 		if (flags.push) {
 			try {
-				await pushRelease(plan);
+				// Each step here that goes wrong is folded into the summary, so its
+				// face ends on a warning; the error is thrown on as before.
+				unsettle(
+					await gitStep(
+						face,
+						plan.root,
+						`Pushing HEAD and ${plan.tag}`,
+						async env => settle(pushRelease(plan, env)),
+						result =>
+							result.ok
+								? {outcome: 'ok', text: `Pushed HEAD and ${plan.tag}`}
+								: {
+										outcome: 'warn',
+										text: `The push failed; ${plan.tag} is kept here`,
+									},
+					),
+				);
 				pushed = `yes (HEAD and ${plan.tag})`;
 				memory = await syncAfterRelease();
-				const notesFile = path.join(
-					(await runGit(['rev-parse', '--absolute-git-dir'], plan.root)).trim(),
-					'chamoji-release-notes.md',
+				const result = unsettle(
+					await runStep(
+						face,
+						'Creating the GitHub release',
+						async () =>
+							settle(
+								(async () => {
+									const notesFile = path.join(
+										(
+											await runGit(
+												['rev-parse', '--absolute-git-dir'],
+												plan.root,
+											)
+										).trim(),
+										'chamoji-release-notes.md',
+									);
+									await writeFile(notesFile, `${plan.notes}\n`);
+									return (io.gh ?? runGh)([
+										'release',
+										'create',
+										plan.tag,
+										'--title',
+										plan.tag,
+										'--notes-file',
+										notesFile,
+										...(plan.bump === 'prerelease' ? ['--prerelease'] : []),
+									]);
+								})(),
+							),
+						created =>
+							created.ok && created.value.ok
+								? {outcome: 'ok', text: 'Created the GitHub release'}
+								: {outcome: 'warn', text: 'GitHub release not created'},
+					),
 				);
-				await writeFile(notesFile, `${plan.notes}\n`);
-				const result = await (io.gh ?? runGh)([
-					'release',
-					'create',
-					plan.tag,
-					'--title',
-					plan.tag,
-					'--notes-file',
-					notesFile,
-					...(plan.bump === 'prerelease' ? ['--prerelease'] : []),
-				]);
 				githubRelease = result.ok;
 				pushed += result.ok
 					? '; GitHub release created'
@@ -829,7 +933,20 @@ export async function run(argv: string[], io: Io): Promise<number> {
 	async function syncAfterRelease(): Promise<string | undefined> {
 		try {
 			if (await fetchesMemory(io.cwd)) {
-				return syncSummary(await syncMemory(io.cwd));
+				const result = unsettle(
+					await gitStep(
+						face,
+						io.cwd,
+						SYNC_LABEL,
+						async (env, step) =>
+							settle(syncMemory(io.cwd, {env, onStep: relabel(step)})),
+						synced =>
+							synced.ok
+								? syncOutcome(synced.value)
+								: {outcome: 'warn', text: 'Memory was not synced'},
+					),
+				);
+				return syncSummary(result);
 			}
 
 			const entries = await listMemory(io.cwd, {archived: true});
@@ -840,6 +957,28 @@ export async function run(argv: string[], io: Io): Promise<number> {
 			return `not synced: ${stripControlLines((error as Error).message)}`;
 		}
 	}
+}
+
+type Settled<T> = {ok: true; value: T} | {ok: false; error: unknown};
+
+/**
+ * A failure as a value, so the step around it can end on a warning when the
+ * failure is folded into the summary. A credential failure still throws, so
+ * gitStep can run the work again where git may ask.
+ */
+async function settle<T>(work: Promise<T>): Promise<Settled<T>> {
+	try {
+		return {ok: true, value: await work};
+	} catch (error) {
+		if (isAuthFailure(error)) throw error;
+		return {ok: false, error};
+	}
+}
+
+/** The value, or the failure thrown again. */
+function unsettle<T>(settled: Settled<T>): T {
+	if (settled.ok) return settled.value;
+	throw settled.error;
 }
 
 /** Exit code for a release check that failed before anything changed. */
@@ -965,7 +1104,10 @@ async function realReranker(io: Io): Promise<MemoryReranker | undefined> {
 	);
 }
 
-async function jevClassifier(io: Io): Promise<CommitClassifier> {
+async function jevClassifier(
+	io: Io,
+	progress: JevClassifierOptions['progress'],
+): Promise<CommitClassifier> {
 	const client = await typesafeClient(io);
 	if (!client) throw new Error(MISSING_KEY);
 	// Outside a repository there's nowhere to keep judgments, so none are cached.
@@ -974,6 +1116,6 @@ async function jevClassifier(io: Io): Promise<CommitClassifier> {
 	);
 	return createJevClassifier(
 		{systemOne: async request => client.systemOne(request)},
-		{report: line => io.stderr(`${line}\n`), cache},
+		{report: line => io.stderr(`${line}\n`), cache, progress},
 	);
 }
