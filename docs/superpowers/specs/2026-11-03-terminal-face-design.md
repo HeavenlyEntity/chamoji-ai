@@ -70,15 +70,15 @@ chamoji takes the method: text frames, a timer, full colour and an eased shimmer
 
   **How it ships:**
   - **A generator script in `scripts/`** reads `docs/brand/fonts/MarowBlock-Regular.ttf` and writes the frames as plain strings into a source file in `packages/cli/src`. Only the generated strings are committed. Font files stay out of git, as `docs/brand/fonts/README.md` requires, and the script fails with a clear message when the font isn't there. The output is logo artwork, like `docs/brand/chamoji-logo.png`, which is already in the repo.
-  - **Generated frames can be touched up by hand.** Quantising can make the two eyes differ by a pixel, and the prototype's grin frame ("happy" eyes) comes out as stray marks at this size. The builder fixes both, and replaces the grin frame with a wink or with wider round eyes.
-  - **Frames:** rest, glance left, glance right, blink, and the grin or wink. Only the inside of the O differs from frame to frame, and every frame has the same width.
+  - **Generated frames can be touched up by hand.** Quantising can make the two eyes differ by a pixel; the builder evens them out. The prototype's "happy eyes" grin read as stray marks at this size, so Alec swapped it for a wink and sunglasses (2026-11-03).
+  - **Frames:** rest, glance left, glance right, blink, wink (left eye a flat line, right eye open), and shades: a solid pair of level lenses joined by a bridge, `▄▄▄▄▄▄▄` over `███ ███`. The shades also have three drop frames that slide them down from the top of the O into place. Only the inside of the O differs from frame to frame, and every frame has the same width.
   - **The language** is the builder's choice. Node fits the repo's other scripts; a dev-only dependency for reading the font is fine.
 
 - **Loading screens use a one-line text face** with the same gradient:
 
   ```
   ( •‿• ) Syncing memory… 2s
-  ( ^‿^ ) ✓ Synced memory in 4s
+  ( ■‿■ ) ✓ Synced memory in 4s
   ( ;_; ) ✗ Couldn't reach origin
   ```
 
@@ -100,11 +100,11 @@ chamoji takes the method: text frames, a timer, full colour and an eased shimmer
 - **The face loop:** look ahead, glance left, glance right, blink, perk up. Every frame is exactly 7 columns, so the text beside it never moves:
 
   ```
-  ( •‿• )   (•‿•  )   (  •‿•)   ( -‿- )   ( ◕‿◕ )
+  ( •‿• )   (•‿•  )   (  •‿•)   ( -‿- )   ( •‿- )
   ```
 
 - **Speed:** the colour redraws about every 100 ms. The expression changes more slowly, every 600 to 900 ms, so the face looks calm, not frantic.
-- **On success:** the line becomes `( ^‿^ ) ✓ <what happened> in <time>`.
+- **On success:** the face puts on its shades: `( ■‿■ ) ✓ <what happened> in <time>`.
 - **On failure:** the line becomes `( ;_; ) ✗ <the step that failed>`, for example `✗ Pushing memory to origin`. It names the step, not the error. The command's own `chamoji: <message>` line follows unchanged, so nothing is said twice.
 - **A warning:** a step that ends badly without throwing ends on `( •_• ) ! <what happened>`. Examples: a `release --push` sub-step that is caught and folded into the `pushed:` or `memory:` text today, or `syncMemory` returning `needsForce`. The command's summary lines are unchanged.
 - **Nothing to do:** exit code 3 from `next-version` or `release` ends on `( •‿• ) ✓ Nothing to release`.
@@ -116,8 +116,8 @@ chamoji takes the method: text frames, a timer, full colour and an eased shimmer
 
 **Typing `chamoji` with no command:**
 
-1. The wordmark draws with the foil shimmering. The face in the O glances, blinks, then grins: about 1.2 s in all.
-2. It settles on the grin, still in colour.
+1. The wordmark draws with the foil shimmering. The face in the O glances left and right, blinks, winks, then the shades drop into place: about 2.5 s in all, tuned by the builder.
+2. It settles on the shades, still in colour.
 3. The short help prints below it.
 4. The prompt comes back.
 
@@ -191,7 +191,7 @@ When bare `chamoji` has nothing to animate, it prints the wordmark once, plain o
    2. **Ask the terminal.** chamoji sends the OSC 11 background-colour query and waits up to 100 ms for the reply, only when stdin and stderr are both terminals and something is about to animate. A reply whose luminance is above the midpoint means light. The builder checks the reply in Terminal.app, iTerm2, Ghostty and the VS Code terminal.
    3. **`COLORFGBG`:** a background value of `7` or `15` means light.
    4. **No answer means dark, so the foil shows.** Alec chose this default on 2026-11-03: it looks right on most developer setups, and a white terminal that answers neither check can set `CHAMOJI_THEME=light`.
-2. **The intro plays once, about 1.2 s, then the prompt comes back.** It doesn't stay alive until a keypress.
+2. **The intro plays once, about 2.5 s, then the prompt comes back.** It doesn't stay alive until a keypress.
 3. **Bare `chamoji` exits 0 and writes to stdout,** where today it writes to stderr and exits 2. An unknown command still exits 2.
 4. **Narrow terminals.** Below 70 columns, the wordmark is replaced by the one-line face and a gradient `chamoji`.
 5. **Wide or ambiguous characters.** `●`, `•` and the quadrant and block characters are single width in Western terminals but can be double width in East Asian locales. The ASCII fallback below also replaces the wordmark with the one-line logo. An ASCII face set is the fallback, used when `CHAMOJI_ASCII=1` is set or on the legacy Windows console (win32 with no `WT_SESSION`):
