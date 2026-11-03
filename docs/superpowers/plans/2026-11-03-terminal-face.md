@@ -353,4 +353,53 @@ Never a face: `mcp`, `agent-hook`, `hook run`, the composer, `card`, the update 
 
 ## Results
 
-_Filled in after Task 8._
+Built on `feat/terminal-face`, not merged or released.
+
+### What was built
+
+| Task                              | Commits                            | What it did                                                                                                                                                                                                                                  |
+| --------------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Setup                             | `e993667`                          | Started the `terminal-face` workstream and committed `.chamoji/workstreams.yml`                                                                                                                                                              |
+| 1. Foil colour and theme          | `b8378ba`, `295edb8`               | `foil.ts`: the seven stops, the cosine blend, `paintFoil`, and the theme order (`CHAMOJI_THEME`, OSC 11, `COLORFGBG`, dark). A late reply is kept from reaching the shell                                                                    |
+| 2. One-line faces                 | `5ec8d35`                          | `faces.ts`: the eight 7-column faces, the ASCII set and `useAscii`                                                                                                                                                                           |
+| 3. The wordmark frames            | `c422e84`                          | `scripts/terminal-logo.mjs` and `pnpm logo:generate` draw Marow Block into `logo-frames.ts`: 68 by 8 quadrant characters, nine frames. Font not in git                                                                                       |
+| 4. The face helper                | `d698bf6`, `32ef007`               | `face.ts`: steps, the 200 ms delay, 100 ms redraw, ending lines and the elapsed format. Partial text survives the first draw                                                                                                                 |
+| 5. Steps and quiet git            | `1e74ecd`, `1b5d9f3`               | Sync reports its steps from core, and network git runs quiet. `GIT_SSH` is left alone                                                                                                                                                        |
+| 6. Faces in the commands          | `dc1f784`, `288577e`, `34bd087`    | `face-settings.ts`, `gitStep` and Jev's progress; faces in `memory sync`, `init`, `release`, `why`, `memory reindex`, `ws ship`, `ws drop` and the `--ai` runs. A quiet tag fetch retries, a failed Jev is counted and Ctrl-C passes through |
+| 7. The welcome screen and help    | `054336a`                          | `welcome.ts`: the animated intro, the short help in five groups, and bare `chamoji` now exits 0 with output on stdout                                                                                                                        |
+| 8. Byte-identity, docs and record | the commit that holds this section | The check below, a Terminal section in `BRAND.md`, the roadmap entry and the readme's environment variables                                                                                                                                  |
+
+The design and the plan are in `893c5a8`, `70f2b75`, `1708cb8`, `c3fe36c` and `2695e2e`.
+
+### The final gate
+
+`pnpm build && pnpm exec tsc -p tsconfig.test.json && pnpm exec prettier --check $(git ls-files '*.ts' '*.tsx' '*.mjs' '*.json' '*.md') && pnpm test` passes: **47 test files, 1,209 tests**.
+
+### Byte-identity against 0.11.0
+
+Checked in a scratch setup under the session scratchpad, never against the real chamoji-ai origin:
+
+- A bare repo as `origin`, and a clone `work` with a `v0.1.0` tag, two gitmoji commits on a `scratch-work` workstream (shipped, so it's in memory), a ship commit and one unreleased commit, all pushed.
+- A second clone, `work2`, that shipped `other-work` and ran `memory sync`, so `origin` holds memory `work` doesn't, and `work`'s sync has a real merge and push to do.
+- Set up with the new build. The whole folder was copied to `bi.base`; before every run it was copied back to the same path, so both versions ran from the same starting state at the same path.
+
+Old is `npx -y @chamoji/cli@0.11.0` (`--version` printed `0.11.0`), new is `node packages/cli/dist/cli.js`. Each ran in `bi/work` with `CHAMOJI_NO_UPDATE_CHECK=1`. Stdout, stderr and the exit code went to separate files, with both streams pipes (as in `| cat`), and the files were compared with `cmp`.
+
+| Command                    | stdout                | stderr              | Exit code     |
+| -------------------------- | --------------------- | ------------------- | ------------- |
+| `memory sync`              | identical (38 bytes)  | identical (0 bytes) | identical (0) |
+| `memory sync --json`       | identical (97 bytes)  | identical (0 bytes) | identical (0) |
+| `release --dry-run --json` | identical (429 bytes) | identical (0 bytes) | identical (0) |
+| `changelog`                | identical (295 bytes) | identical (0 bytes) | identical (0) |
+| `next-version`             | identical (6 bytes)   | identical (0 bytes) | identical (0) |
+
+- **With stderr on a terminal,** where the new build draws its face, stdout still matches. Run under `script`, with stdout redirected to a file and `TERM=xterm-256color`, no `CI`: `memory sync` (38 bytes) and `release --dry-run --json` (429 bytes) are identical. The new build's transcript shows the face, its two step names and the done line, `( ■‿■ ) ✓ Synced memory with origin: 2 entries in 0s`; 0.11.0's shows nothing.
+- **The refs left behind** match for `memory sync` and `release --dry-run --json`. For `memory sync --json` the memory commit differs between the two runs only because the merge commit takes its time from the clock, and the runs fell in different seconds.
+
+### Real terminals
+
+Filled in by the controller.
+
+### Rulings
+
+See the SDD ledger rulings in the PR description.

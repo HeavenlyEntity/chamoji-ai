@@ -47,6 +47,8 @@ chamoji ws                                 # list workstreams (see below)
 chamoji why src/auth.ts:42                 # why is this line here? (see Project memory)
 ```
 
+A bare `chamoji` draws the wordmark and a short help to stdout, and exits 0. `chamoji --help` lists every option. An unknown command prints a short message to stderr and exits 2.
+
 `next-version` exits with code 3 and prints nothing to stdout when no commit since the last tag implies a version bump (only docs, tests or refactors, say).
 
 | Option                | Meaning                                                                                                                                                 |
@@ -449,6 +451,20 @@ chamoji 0.5.0 is available (you have 0.4.0): npm i -g @chamoji/cli@latest
 - **It never touches stdout,** so pipes, `--format json` and `$(chamoji next-version)` are unaffected.
 - **It's off in CI, and whenever stderr isn't a terminal.** To turn it off yourself, use `--no-update-check`, `NO_UPDATE_NOTIFIER=1` or `CHAMOJI_NO_UPDATE_CHECK=1`.
 - **The cache** lives in `~/.config/chamoji/update-check.json`, or under `$XDG_CONFIG_HOME` or `%APPDATA%`.
+
+## The face and the environment
+
+Commands that wait, such as `memory sync`, show a small face on stderr while they work, with the step's name and a closing line like `( ■‿■ ) ✓ Synced memory with origin: 2 entries in 3s`. A bare `chamoji` plays a short intro. The faces use the logo's foil colours on a dark terminal and plain text on a light one.
+
+- **Nothing moves,** and the output is exactly what it was before, when stderr isn't a terminal, in CI, with `TERM=dumb`, with `--json`, or when `CHAMOJI_NO_ANIMATION=1` is set.
+- **It never touches stdout,** so pipes and `--json` are unaffected.
+- **Colour** follows `NO_COLOR` and `FORCE_COLOR`. `NO_COLOR` removes the colour but the faces still move.
+
+| Variable                 | Meaning                                                                                                                                                         |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CHAMOJI_NO_ANIMATION=1` | Turn off the moving faces and the intro                                                                                                                         |
+| `CHAMOJI_THEME`          | `light` or `dark`. Skips asking the terminal for its background, which chamoji otherwise does once, with `COLORFGBG` as a fallback. Light means no foil colours |
+| `CHAMOJI_ASCII=1`        | Draw the faces and the logo in plain ASCII. This is the default on the old Windows console                                                                      |
 
 ## Config
 
