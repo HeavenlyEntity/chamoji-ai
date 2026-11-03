@@ -3,9 +3,11 @@ import {expect, test} from 'vitest';
 import {commit} from '../../core/test/helpers/commit.js';
 import {
 	createJevClassifier,
+	jevFace,
 	redact,
 	type JevClient,
 } from '../src/jev-classifier.js';
+import {recordingFace} from './helpers/recording-face.js';
 
 type Request = Parameters<JevClient['systemOne']>[0];
 
@@ -286,4 +288,94 @@ test('redact stays quick on a long run with no address in it', () => {
 	const started = performance.now();
 	expect(redact(text)).toBe(text);
 	expect(performance.now() - started).toBeLessThan(1000);
+});
+
+test('jev progress counts only commits sent', async () => {
+	const {client} = fakeClient(() => ({choice: 'sparkles', confidence: 0.9}));
+	const memory = memoryCache();
+	const input = commits(40);
+	for (const cached of input.slice(0, 10)) {
+		memory.cache.set(cached.hash, {gitmoji: 'bug', confidence: 0.95});
+	}
+
+	const calls: Array<[number, number]> = [];
+	await createJevClassifier(client, {
+		cache: memory.cache,
+		batchSize: 25,
+		progress: (done, total) => calls.push([done, total]),
+	})(input);
+	expect(calls).toEqual([
+		[25, 30],
+		[30, 30],
+	]);
+});
+
+test('jev progress does not fire when nothing is sent', async () => {
+	const {client} = fakeClient(() => ({choice: 'sparkles', confidence: 0.9}));
+	const calls: Array<[number, number]> = [];
+	await createJevClassifier(client, {
+		progress: (done, total) => calls.push([done, total]),
+	})([]);
+	expect(calls).toEqual([]);
+});
+
+test('jevFace gives Jev a step of its own and counts the batches on it', async () => {
+	const {client} = fakeClient(() => ({choice: 'sparkles', confidence: 0.9}));
+	const {face, calls} = recordingFace();
+	const jev = jevFace(face);
+	const classify = jev.wrap(
+		createJevClassifier(client, {batchSize: 25, progress: jev.progress}),
+	);
+	await classify(commits(30));
+	expect(calls).toEqual([
+		['step', 'Jev is sorting commits'],
+		['update', 'Jev is sorting 25 of 30 commits'],
+		['update', 'Jev is sorting 30 of 30 commits'],
+		['end', 'ok', 'Jev sorted 30 commits'],
+	]);
+});
+
+test('jevFace ends warn when a failed request left commits unsorted', async () => {
+	let requests = 0;
+	const client: JevClient = {
+		async systemOne(request) {
+			if (++requests > 1) throw new Error('rate limited');
+			const answers: Record<string, {choice: string; confidence: number}> = {};
+			for (const name of Object.keys(request.questions)) {
+				answers[name] = {choice: 'bug', confidence: 0.9};
+			}
+
+			return {answers};
+		},
+	};
+	const {face, calls} = recordingFace();
+	const jev = jevFace(face);
+	await jev.wrap(
+		createJevClassifier(client, {
+			batchSize: 25,
+			concurrency: 1,
+			progress: jev.progress,
+		}),
+	)(commits(30));
+	expect(calls.at(-1)).toEqual([
+		'end',
+		'warn',
+		'Jev left 5 of 30 commits unsorted',
+	]);
+});
+
+test('jevFace relabels the step a command is already running, and leaves it running', async () => {
+	const {client} = fakeClient(() => ({choice: 'sparkles', confidence: 0.9}));
+	const {face, calls} = recordingFace();
+	const host = face.step('Planning the release');
+	const jev = jevFace(face, () => host);
+	await jev.wrap(
+		createJevClassifier(client, {batchSize: 25, progress: jev.progress}),
+	)(commits(30));
+	expect(calls).toEqual([
+		['step', 'Planning the release'],
+		['update', 'Jev is sorting commits'],
+		['update', 'Jev is sorting 25 of 30 commits'],
+		['update', 'Jev is sorting 30 of 30 commits'],
+	]);
 });

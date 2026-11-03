@@ -4,6 +4,7 @@ import {
 	type JudgmentCache,
 	type ParsedCommit,
 } from '@chamoji/core';
+import {runStep, type Face, type Step} from './face.js';
 
 /**
  * Names the question and options below. Change it whenever they change, so
@@ -35,6 +36,11 @@ export type JevClassifierOptions = {
 	report?: (line: string) => void;
 	/** Judgments from earlier runs; commits found here aren't sent again. */
 	cache?: JudgmentCache;
+	/**
+	 * Called after each finished batch with the commits sent so far and the
+	 * number to send, which leaves out the ones the cache already knew.
+	 */
+	progress?: (done: number, total: number) => void;
 };
 
 /** Characters of each subject and body sent. */
@@ -82,6 +88,7 @@ export function createJevClassifier(
 		minConfidence = 0.6,
 		report,
 		cache,
+		progress,
 	} = options;
 	if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > MAX_BATCH) {
 		throw new RangeError(`batchSize must be an integer from 1 to ${MAX_BATCH}`);
@@ -157,6 +164,7 @@ export function createJevClassifier(
 					}
 
 					sent += batch.length;
+					progress?.(sent, unknown.length);
 				} catch (error) {
 					failure ??= error as Error;
 				}
@@ -177,6 +185,75 @@ export function createJevClassifier(
 			`Jev sorted ${result.size} of ${commits.length} commits no rule could place${cached ? ` (${cached} from the cache, not asked again)` : ''}`,
 		);
 		return result;
+	};
+}
+
+const SORTING = 'Jev is sorting commits';
+
+/**
+ * Shows Jev's work on the face, counting commits as batches come back. Pass
+ * `progress` to createJevClassifier, and `wrap` the classifier it makes.
+ * `host` gives a step the command is already running, such as release's;
+ * Jev then relabels that one and leaves it running. Without one, Jev gets a
+ * step of its own, which ends with a warning when a failed request left
+ * commits unsorted.
+ */
+export function jevFace(
+	face: Face,
+	host: () => Step | undefined = () => undefined,
+): {
+	progress: (done: number, total: number) => void;
+	wrap: (classify: CommitClassifier) => CommitClassifier;
+} {
+	let target: Step | undefined;
+	let done = 0;
+	let total = 0;
+	return {
+		progress(sent, of) {
+			done = sent;
+			total = of;
+			target?.update(`Jev is sorting ${sent} of ${of} commits`);
+		},
+		wrap: classify => async commits => {
+			done = 0;
+			total = 0;
+			const own = host();
+			if (own) {
+				target = own;
+				own.update(SORTING);
+				try {
+					return await classify(commits);
+				} finally {
+					target = undefined;
+				}
+			}
+
+			return runStep(
+				face,
+				SORTING,
+				async step => {
+					target = step;
+					try {
+						return await classify(commits);
+					} finally {
+						target = undefined;
+					}
+				},
+				() =>
+					done < total
+						? {
+								outcome: 'warn',
+								text: `Jev left ${total - done} of ${total} commits unsorted`,
+							}
+						: {
+								outcome: 'ok',
+								text:
+									total === 0
+										? 'Jev had nothing new to sort'
+										: `Jev sorted ${total} ${total === 1 ? 'commit' : 'commits'}`,
+							},
+			);
+		},
 	};
 }
 
