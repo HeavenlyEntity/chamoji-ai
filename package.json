@@ -15,9 +15,11 @@
 		"format": "prettier --write .",
 		"release": "pnpm build && node packages/cli/dist/cli.js release",
 		"benchmark": "pnpm build && node scripts/benchmark.mjs",
-		"brand:preview": "node scripts/brand-preview.mjs"
+		"brand:preview": "node scripts/brand-preview.mjs",
+		"logo:generate": "node scripts/terminal-logo.mjs"
 	},
 	"devDependencies": {
+		"@napi-rs/canvas": "^1.1.0",
 		"@types/node": "^22.19.0",
 		"@vdemedes/prettier-config": "^2.0.1",
 		"prettier": "^3.6.2",
