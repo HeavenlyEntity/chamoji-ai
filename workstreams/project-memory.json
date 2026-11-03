@@ -1,0 +1,465 @@
+{
+  "version": 1,
+  "slug": "project-memory",
+  "title": "Project memory",
+  "emoji": "🧠",
+  "status": "shipped",
+  "updatedAt": "2026-11-03T21:46:18.501Z",
+  "archived": false,
+  "commits": [
+    {
+      "hash": "188edfbc5632cb1b433e1874aa83fb92d12a60fc",
+      "subject": "📝 Record the merge and the plan for 0.11.0",
+      "date": "2026-11-01T21:11:22-07:00",
+      "card": {
+        "why": [
+          "PR #5 passed CI on every platform, and we're releasing on 2026-11-03 without the sprint the roadmap asks for, so the roadmap should say both."
+        ],
+        "constraint": [],
+        "gotcha": [],
+        "followUp": []
+      }
+    },
+    {
+      "hash": "d74e1694c1f649fae83644e548dbe40adafff713",
+      "subject": "💚 Make the memory and MCP tests pass on Windows",
+      "date": "2026-11-01T20:59:02-07:00",
+      "card": {
+        "why": [
+          "Windows CI failed five tests that assumed POSIX behaviour: git there can't print dates this far out, a command line stops at 32 KB, and an absolute POSIX path gets a different error. Each commit still stays in memory and each path still errors, so only the tests change."
+        ],
+        "constraint": [],
+        "gotcha": [],
+        "followUp": []
+      }
+    },
+    {
+      "hash": "323626effabcc02b506af522a44fe6fdf9ece854",
+      "subject": "💚 Keep the huge-body test within argument limits",
+      "date": "2026-11-01T20:50:15-07:00",
+      "card": {
+        "why": [
+          "the fixture passes the body with git commit -m, and Linux refuses a single argument over 128 KB, so the test failed on Ubuntu with E2BIG."
+        ],
+        "constraint": [],
+        "gotcha": [],
+        "followUp": []
+      }
+    },
+    {
+      "hash": "7ecdfd6581aa81279c482175411b159432021c3a",
+      "subject": "🔒 Redact the whole of a long email address",
+      "date": "2026-11-01T20:49:24-07:00",
+      "card": {
+        "why": [
+          "the 64-character cap on the local part left the start of a longer address in the text sent to Jev."
+        ],
+        "constraint": [
+          "the pattern has to stay linear on a long run of word characters, so a lookbehind stops a match starting partway through a run."
+        ],
+        "gotcha": [],
+        "followUp": []
+      }
+    },
+    {
+      "hash": "289e296f30088b725ff22d4bbbf6c0c84f62b6a7",
+      "subject": "📝 Drop the docs for foreign entries and --no-verify",
+      "date": "2026-11-01T19:50:04-07:00",
+      "card": {
+        "why": [
+          "the readme and plan said memory sync skips the pre-push hook and that writes keep entries chamoji doesn't read; both are gone, and the plan's test name for purge is current."
+        ],
+        "constraint": [],
+        "gotcha": [],
+        "followUp": [
+          "none."
+        ]
+      }
+    },
+    {
+      "hash": "2af8565326d5b5a088e667a90565259eb1d05c89",
+      "subject": "⏪ Stop carrying foreign tree entries, and let the pre-push hook run",
+      "date": "2026-11-01T19:50:03-07:00",
+      "card": {
+        "why": [
+          "the re-review reproduced three breaks from carrying foreign entries (a pushed gitlink makes mktree die and blocks every write including purge, a blobless clone can't write, a behind clone can revert a newer edit), and the feature was speculative; a pre-push hook can be a user's policy check, so skipping it was not ours to decide."
+        ],
+        "constraint": [
+          "older clients drop what they don't know, so the memory ref's layout is fixed until a new format gets its own ref or a version bump."
+        ],
+        "gotcha": [],
+        "followUp": [
+          "a future memory format needs its own ref or a version bump, because released clients drop paths and modes they don't know."
+        ]
+      }
+    },
+    {
+      "hash": "843e32508a39510aa7d8331ed8d4d3300b2689cf",
+      "subject": "📝 Document the final review fixes for project memory",
+      "date": "2026-11-01T19:33:15-07:00",
+      "card": {
+        "why": [
+          "the fixes changed what the commands print and do, and the docs still told people to run a raw force-push after a purge."
+        ],
+        "constraint": [],
+        "gotcha": [],
+        "followUp": []
+      }
+    },
+    {
+      "hash": "46fbf39fd63adb812373abd93a71e6869dae08a5",
+      "subject": "🐛 Fix the issues found in the final review of project memory",
+      "date": "2026-11-01T19:33:07-07:00",
+      "card": {
+        "why": [
+          "a whole-branch review found that following the printed purge step could erase a teammate's unsynced memory from origin, that one huge commit could stall --ai search for minutes, and that an older chamoji would strip a newer one's entries from the shared ref."
+        ],
+        "constraint": [
+          "the memory ref is untrusted, so foreign tree entries are rebuilt only when their names are safe and their depth is bounded, and a larger mode and id wins a clash so every clone settles on one tree."
+        ],
+        "gotcha": [
+          "the card is read from below the first paragraph of a message, because git counts that whole paragraph as the subject, so git commit -m with a Why line on the second line has no card."
+        ],
+        "followUp": [
+          "run the rerank against the real TypeSafe API, and check the .mcp.json that init --agents writes on native Windows."
+        ]
+      }
+    },
+    {
+      "hash": "12d3b936784547f7bb94e823bcdeed4721651729",
+      "subject": "📝 Correct the project memory docs after review",
+      "date": "2026-11-01T18:49:19-07:00",
+      "card": {
+        "why": [
+          "a reviewer checked the docs against the code and found claims that were wrong or unsupported, and a README that overstates what is sent or searched misleads the people it is meant to protect."
+        ],
+        "constraint": [],
+        "gotcha": [
+          "memory search --ai and mcp --ai skip a tracked .env file, so the key sources differ from changelog --ai's."
+        ],
+        "followUp": []
+      }
+    },
+    {
+      "hash": "d066fadcac6314aef053642399bd965d745d0927",
+      "subject": "📝 Document project memory and record milestone 7",
+      "date": "2026-11-01T18:44:11-07:00",
+      "card": {
+        "why": [
+          "the milestone is built, and a reader needs to know what it does, what it sends, what was checked against real clients and what was not."
+        ],
+        "constraint": [
+          "Milestone 7 is not done until a sprint of real use, so the status stays \"Built, release pending\" and ws ship and memory sync wait for release."
+        ],
+        "gotcha": [
+          "fish, pwsh, Windows and a real push of the memory ref to GitHub are not verified, and the docs say so."
+        ],
+        "followUp": [
+          "run the sprint of real use on this repo, then ws ship, memory sync and release."
+        ]
+      }
+    },
+    {
+      "hash": "78c225f13e0d1e293d05c0a70413ee5d852fab42",
+      "subject": "🔒 Bound the why body, lock down temp files, stop inviting the opt-out",
+      "date": "2026-11-01T18:40:42-07:00",
+      "card": {
+        "why": [
+          "Real Claude Code took the CHAMOJI_NO_CARD opt-out on its first denial because the old text invited it, and the final security review asked for the body bound and the 0600 temp file."
+        ],
+        "constraint": [
+          "A new file still gets the default permissions (0666 minus the umask), so only the temp file starts at 0600."
+        ],
+        "gotcha": [
+          "The temp file's 0600 creation mode has no direct test, since it only exists between the write and the chmod; the tests cover the final modes."
+        ],
+        "followUp": []
+      }
+    },
+    {
+      "hash": "800050c9df3de7c30d94e99e605f3de569209189",
+      "subject": "🐛 Keep the agent hook from blocking commits and from changing shared files",
+      "date": "2026-11-01T18:32:13-07:00",
+      "card": {
+        "why": [
+          "a committed hook command that exits 2 on a chamoji without agent-hook blocks every commit in the repo, and a rewrite that silently changes a value or half-writes a shared file costs the team more than the setup saves"
+        ],
+        "constraint": [
+          "Claude Code reads exit 2 as a block, so both command forms end in `|| true`; a denial is JSON on stdout with exit 0 and still gets through"
+        ],
+        "gotcha": [
+          "decideCommit still skips shell keywords, so `if true; then git commit -m x; fi` is allowed; a table test pins that",
+          "the number check compares each number's digits before and after JSON.parse and stringify, so 1.50 and 1E2 are fine and 12345678901234567890 is refused"
+        ],
+        "followUp": []
+      }
+    },
+    {
+      "hash": "6617b2194c2121cc58050df63d51419b882340b3",
+      "subject": "✨ Make AI agents write an intent card when they commit",
+      "date": "2026-11-01T18:24:03-07:00",
+      "card": {
+        "why": [
+          "a denial reaches the agent while it can still write the card, whereas context added after the commit arrives too late to change it"
+        ],
+        "constraint": [
+          "the hook must print only the decision JSON or nothing and always exit 0, so a broken hook never stops the agent's work",
+          ".mcp.json and .claude/settings.json are shared files, so init merges into them, keeps their key order and indent, and refuses a corrupt file or a symlink without touching either"
+        ],
+        "gotcha": [
+          "decideCommit reads free-form shell text with a small quote and heredoc scanner, not a shell parser, so aliases, variables and sh -c are not seen",
+          "the hook command is chosen once, by whether chamoji is on PATH when init runs, and a committed file then carries that choice to teammates"
+        ],
+        "followUp": [
+          "try the hook with real Claude Code, which the controller runs after all tasks"
+        ]
+      }
+    },
+    {
+      "hash": "1ce0773d50f13fa3a1abe167684ee3475970ee91",
+      "subject": "🔒 Bound and sanitize what chamoji mcp sends to the model",
+      "date": "2026-11-01T18:12:16-07:00",
+      "card": {
+        "why": [
+          "commits and memory are written by other people, so the server must not hand a model unbounded text, other people's addresses, or a file a clone pointed it at"
+        ],
+        "constraint": [
+          "reads of the workstreams file now throw WorkstreamError for a symlink, so ws and the hook see that error where they used to follow the link"
+        ],
+        "gotcha": [
+          "JSON.stringify leaves U+2028 and U+2029 raw, which a client that splits on Unicode line separators would cut a reply at"
+        ],
+        "followUp": []
+      }
+    },
+    {
+      "hash": "0e561b5f3ff7ad9d814d3a17f5ac4f6dcf9f930c",
+      "subject": "✨ Serve project memory to AI agents with chamoji mcp",
+      "date": "2026-11-01T18:02:28-07:00",
+      "card": {
+        "why": [
+          "an agent editing a line should be able to ask why it is the way it is, and get the card its author wrote"
+        ],
+        "constraint": [
+          "no MCP SDK; it would double chamoji's install for five methods"
+        ],
+        "gotcha": [
+          "tool names and methods go through a Map or a switch, so \"constructor\" is unknown rather than found on Object.prototype",
+          "--ai must be skipped by the commit classifier in run.ts, or a missing key would exit 1 before the server starts"
+        ],
+        "followUp": [
+          "try it with the real Claude Code client (claude mcp add)"
+        ]
+      }
+    },
+    {
+      "hash": "641c6f098777639eff431fe26a8be767bb2ffd14",
+      "subject": "🔒 Keep commit text and tracked env files out of the memory rerank",
+      "date": "2026-11-01T17:55:33-07:00",
+      "card": {
+        "why": [
+          "a tracked .env could name another account's key and receive the query and history text, and commit text in the instructions could steer the ranking"
+        ],
+        "constraint": [
+          "changelog `--ai` keeps reading a tracked env file as before"
+        ],
+        "gotcha": [
+          "the TypeSafe docs don't spell out how a question refers to nested state, so the `candidates[i]` wording follows the commit classifier's `commits[i]`"
+        ],
+        "followUp": []
+      }
+    },
+    {
+      "hash": "90f36b698f9b1611c415e5c26bf834ef75855a31",
+      "subject": "✨ Search project memory with BM25 and an optional Jev rerank",
+      "date": "2026-11-01T17:50:49-07:00",
+      "card": {
+        "why": [
+          "a card nobody can find doesn't help the next person, and search has to work offline with no key so Jev can only ever reorder what BM25 already found"
+        ],
+        "constraint": [
+          "term lookups use a Map, because commit text is other people's and a word like `constructor` or `__proto__` must be an ordinary term",
+          "the index file is validated on load and rebuilt, never trusted, and a search still runs when it can't be saved"
+        ],
+        "gotcha": [
+          "`--ai` on `memory` no longer builds the changelog classifier, so `memory search --ai` without a key exits 2 like other misuse"
+        ],
+        "followUp": [
+          "tokenize splits on anything that isn't a letter or number as specified, so scripts that write words with combining marks are cut at the marks"
+        ]
+      }
+    },
+    {
+      "hash": "7e65c78736027558d36e609909371ca64fb3c3d7",
+      "subject": "🔒 Drop any stored commit that HEAD has but this workstream doesn't name",
+      "date": "2026-11-01T17:39:58-07:00",
+      "card": {
+        "why": [
+          "a stored entry can come from another clone, so a card on a hash HEAD can vouch for, but that doesn't name the workstream, was a forged card that survived snapshots"
+        ],
+        "constraint": [
+          "a stored commit absent from HEAD, such as one from a deleted branch, still keeps its card"
+        ],
+        "gotcha": [],
+        "followUp": []
+      }
+    },
+    {
+      "hash": "fde7e019ef7f35d2e188e76e6ae11cac1528f92a",
+      "subject": "🔒 Frame commit records with NUL so commit text can't forge them",
+      "date": "2026-11-01T17:36:43-07:00",
+      "card": {
+        "why": [
+          "commit text could forge records, so memory could store a commit that doesn't exist and parseCommit could throw on a piece with no subject"
+        ],
+        "constraint": [
+          "a stored card is kept only for hashes HEAD lacks, such as a deleted branch; the sync merge still joins cards"
+        ],
+        "gotcha": [
+          "a stored hash on HEAD that no commit there names for the workstream is still kept, since only commits naming it are compared"
+        ],
+        "followUp": []
+      }
+    },
+    {
+      "hash": "7f39c18f8cc3e979a4f9a10784785f4b0b1ec5d1",
+      "subject": "🐛 Stop a pushed tip or a forged entry from erasing memory",
+      "date": "2026-11-01T17:31:05-07:00",
+      "card": {
+        "why": [
+          "origin's tip is written by other people, and a sync that trusted it could empty a clone, undo a purge, or tell someone to force-push for a false reason. Entries can also hold cards from unpushed branches, so a release must not publish them without an opt-in."
+        ],
+        "constraint": [
+          "only a tombstone may remove an entry from memory."
+        ],
+        "gotcha": [
+          "when a descendant brings a purged entry back, its tip can't be a parent even though it's ahead, so that sync keeps local and needs a force-push like any other purge."
+        ],
+        "followUp": []
+      }
+    },
+    {
+      "hash": "635063cf17704a99c18e9f555dd88e010f8d1481",
+      "subject": "✨ Share project memory between clones",
+      "date": "2026-11-01T17:14:02-07:00",
+      "card": {
+        "why": [
+          "memory has to outlive a deleted branch and reach a fresh clone, or the reasons behind the code stay on one machine."
+        ],
+        "constraint": [
+          "init must not set remote.origin.push, and the fetch refspec must be a wildcard, or plain git push, fetch and pull break."
+        ],
+        "gotcha": [
+          "a merge parent that still holds purged text makes it reachable again and pushes it, so a tombstone side is the only parent, and when each side purged what the other holds the merge has none."
+        ],
+        "followUp": [
+          "nothing forces a push; after a purge the user runs the force-push sync prints."
+        ]
+      }
+    },
+    {
+      "hash": "8edea345347bb5028063fee1fae5a3911385fd93",
+      "subject": "🐛 Keep odd commit dates from poisoning a memory entry",
+      "date": "2026-11-01T16:58:50-07:00",
+      "card": {
+        "why": [
+          "a commit from a peer's clock or tools could silently destroy a workstream's memory while ws ship still exited 0"
+        ],
+        "constraint": [
+          "git limits neither the year nor the offset in %aI, so commit dates are checked for shape and only updatedAt must be a real time"
+        ],
+        "gotcha": [
+          "a separator byte in a commit splits or shifts readCommits' records, so fields can hold other text and later fields can be undefined"
+        ],
+        "followUp": [
+          "a commit body can still forge a whole record with a hash-shaped first field; fixing that means changing readCommits' format"
+        ]
+      }
+    },
+    {
+      "hash": "a7ab28b5a445c3a0f949e6b0c1bed30e20a94c7a",
+      "subject": "✨ Keep workstream summaries in refs/chamoji/memory",
+      "date": "2026-11-01T16:45:03-07:00",
+      "card": {
+        "why": [
+          "reasoning has to outlive the branch it was written on, and a git ref travels with the repo on any host"
+        ],
+        "constraint": [
+          "writes go through plumbing only, so HEAD, the index and the work tree are never touched",
+          "the ref is fetched from other people, so readTree drops anything off the layout and every entry is rebuilt field by field"
+        ],
+        "gotcha": [
+          "the environment and author.email outrank user.email, so the fixed identity is also set in the environment or a real address would reach the ref",
+          "ls-tree answers relative to cwd without --full-tree"
+        ],
+        "followUp": [
+          "memory sync must not keep a purged history as a merge parent, or the purge is undone"
+        ]
+      }
+    },
+    {
+      "hash": "2fd0da6a8fb8f7dea6a8366e3cc22b4c1858b660",
+      "subject": "✨ Add chamoji why to explain a line",
+      "date": "2026-11-01T16:30:30-07:00",
+      "card": {
+        "why": [
+          "the milestone exists to answer \"why is this line here\", and a line's intent lives on the commit that wrote it, so `why <file:line>` blames the line and prints that commit's card"
+        ],
+        "constraint": [
+          "blames the working copy, not HEAD, so line numbers match the editor and an edited line is reported as uncommitted instead of being blamed on an older commit"
+        ],
+        "gotcha": [
+          "the commit is read as `<hash>^!`, because readCommits takes one revision argument and a bare `-1 <hash>` would be a single bad argument; it also works for a root commit"
+        ],
+        "followUp": [
+          "a range such as file:10-20 would need one card per distinct commit"
+        ]
+      }
+    },
+    {
+      "hash": "a86ea5fc8d568689def5d76991ae1cd0857ad6fe",
+      "subject": "🐛 Read wrapped intent values and survive odd trailer keys",
+      "date": "2026-11-01T16:25:54-07:00",
+      "card": {
+        "why": [
+          "a wrapped Why: line was cut to its first line, and a trailer named constructor or toString crashed the whole changelog through an inherited property lookup."
+        ],
+        "constraint": [],
+        "gotcha": [
+          "git can hand back a trailer cut at its first line while the body has the whole value, so a value that only starts a longer one is dropped."
+        ],
+        "followUp": []
+      }
+    },
+    {
+      "hash": "991597675b1379edb354f8b8d8277003bc7e6420",
+      "subject": "✨ Read intent cards from commit messages",
+      "date": "2026-11-01T16:22:43-07:00",
+      "card": {
+        "why": [
+          "project memory needs a commit's reasons as data. Every later task reads the card, so parsing it once at the base keeps them from each scanning message bodies on their own."
+        ],
+        "constraint": [
+          "cards stay out of rendered changelogs, so the Markdown and HTML output is unchanged."
+        ],
+        "gotcha": [
+          "GitHub's squash message puts the lines mid-body where git's trailer parser skips them, so the body is scanned after the trailers."
+        ],
+        "followUp": []
+      }
+    },
+    {
+      "hash": "641cb6c9603668a853e04911e91fb321ac4994c1",
+      "subject": "📝 Plan milestone 7, Project memory",
+      "date": "2026-11-01T16:20:07-07:00",
+      "card": {
+        "why": [
+          "the roadmap makes this milestone the dogfooding for workstreams, so the plan is the first stamped commit."
+        ],
+        "constraint": [],
+        "gotcha": [],
+        "followUp": []
+      }
+    }
+  ]
+}
