@@ -31,13 +31,21 @@ export async function runGit(
  * The environment that keeps a network git command from asking anything, so a
  * redrawing line can't overwrite a prompt. A missing password then fails the
  * command, which `isAuthFailure` recognises. A configured ssh command is left
- * alone, and so is one in the environment.
+ * alone, and so is one in the environment (GIT_SSH_COMMAND or GIT_SSH).
  */
 export async function quietGitEnv(
 	cwd: string,
 ): Promise<Record<string, string>> {
 	const env: Record<string, string> = {GIT_TERMINAL_PROMPT: '0'};
-	if (process.env.GIT_SSH_COMMAND !== undefined) return env;
+	// GIT_SSH is the older way to name an ssh program; GIT_SSH_COMMAND would
+	// override it, so either one being set leaves ssh alone.
+	if (
+		process.env.GIT_SSH_COMMAND !== undefined ||
+		process.env.GIT_SSH !== undefined
+	) {
+		return env;
+	}
+
 	// Exit 1 means no value at all.
 	const configured = await runGit(['config', '--get', 'core.sshCommand'], cwd)
 		.then(stdout => stdout.trim())
