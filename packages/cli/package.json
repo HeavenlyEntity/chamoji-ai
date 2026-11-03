@@ -31,6 +31,7 @@
 	"dependencies": {
 		"@chamoji/core": "workspace:*",
 		"@typesafe-ai/sdk": "^0.7.0",
+		"chalk": "^6.0.1",
 		"ink": "^8.0.0",
 		"meow": "^14.1.0",
 		"react": "^19.3.1",
