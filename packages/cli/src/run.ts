@@ -46,6 +46,7 @@ import {compose} from './composer.js';
 import {MISSING_KEY, readTypesafeKey} from './env.js';
 import {gitStep, NO_FACE, runStep, type Face, type Step} from './face.js';
 import {hasFace} from './face-settings.js';
+import type {Theme} from './foil.js';
 import {HookError, installHook, uninstallHook} from './hook.js';
 import {
 	createJevClassifier,
@@ -66,6 +67,7 @@ import {jevReranker, type MemoryReranker, type RerankClient} from './rerank.js';
 import {stripControlLines} from './text.js';
 import {openTerminal} from './tty.js';
 import type {UpdateCheck} from './update-check.js';
+import {oneLineLogo, playWelcome, SHORT_HELP, TAGLINE} from './welcome.js';
 import {runWhy} from './why.js';
 import {runWorkstream} from './ws.js';
 
@@ -95,6 +97,28 @@ export type Io = {
 	 * drawn and the output is what it always was.
 	 */
 	face?: Face;
+	/**
+	 * How the wordmark and the logo draw, for bare `chamoji` and `--help`. cli.ts
+	 * builds it from the terminal. Without one, they print plain, with no escape
+	 * codes: the shades frame, or the one-line logo on a narrow screen.
+	 */
+	welcome?: WelcomeSettings;
+};
+
+export type WelcomeSettings = {
+	animate: boolean;
+	level: 0 | 1 | 2 | 3;
+	theme: Theme;
+	ascii: boolean;
+	columns: number;
+};
+
+const PLAIN_WELCOME: WelcomeSettings = {
+	animate: false,
+	level: 0,
+	theme: 'dark',
+	ascii: false,
+	columns: 80,
 };
 
 export type ComposerTerminal = {
@@ -134,17 +158,14 @@ const runGh: GhRunner = async args =>
 	});
 
 const HELP = `
-	Usage
+	Release
 	  $ chamoji changelog [options]    Generate a changelog from git history
 	  $ chamoji next-version [options] Print the next semver version
 	                                   (exits 3 when no release is needed)
 	  $ chamoji release [version]      Cut a release: CHANGELOG.md, version
 	                                   bumps, release commit and tag
-	  $ chamoji commit [-a]            Write a commit with the composer
-	                                   (-a commits all tracked changes)
-	  $ chamoji hook install           Offer the composer on a plain
-	                                   \`git commit\` (uninstall to remove)
-	  $ chamoji card [options]         Print the URL of the repo's card image
+
+	Workstreams
 	  $ chamoji ws                     List workstreams with their unreleased
 	                                   commits (* marks the active one)
 	  $ chamoji ws start <title> [emoji]
@@ -152,6 +173,8 @@ const HELP = `
 	  $ chamoji ws switch <slug>       Make a workstream active
 	  $ chamoji ws ship [slug]         Mark one shipped (default: the active one)
 	  $ chamoji ws drop [slug]         Mark one dropped
+
+	Memory
 	  $ chamoji why <file:line>        Show why a line is there: the commit
 	                                   that wrote it and the Why, Constraint,
 	                                   Gotcha and Follow-up it recorded
@@ -165,15 +188,24 @@ const HELP = `
 	  $ chamoji memory archive <slug>  Hide an entry from the list and keep it
 	                                   (--purge deletes it for good)
 	  $ chamoji memory sync            Merge memory with origin and push it
-	  $ chamoji mcp                    Serve project memory to AI agents over
-	                                   MCP (stdio): search_memory, why and
-	                                   workstream, all read-only
+
+	Commit
+	  $ chamoji commit [-a]            Write a commit with the composer
+	                                   (-a commits all tracked changes)
+	  $ chamoji hook install           Offer the composer on a plain
+	                                   \`git commit\` (uninstall to remove)
+
+	Setup
 	  $ chamoji init                   Set this clone up to share memory, and
 	                                   take in what origin has
 	  $ chamoji init --agents          The same, and set up Claude Code here:
 	                                   the MCP server in .mcp.json and a hook
 	                                   in .claude/settings.json that sends back
 	                                   a git commit with no Why: line
+	  $ chamoji card [options]         Print the URL of the repo's card image
+	  $ chamoji mcp                    Serve project memory to AI agents over
+	                                   MCP (stdio): search_memory, why and
+	                                   workstream, all read-only
 	  $ chamoji agent-hook             The hook itself; Claude Code runs it
 
 	Options
@@ -220,6 +252,18 @@ const HELP = `
 	             NO_UPDATE_NOTIFIER or CHAMOJI_NO_UPDATE_CHECK=1 is set,
 	             and when stderr isn't a terminal.
 
+	Environment
+	  CHAMOJI_NO_ANIMATION
+	             Set to 1 to turn off the moving faces and the intro. They
+	             are also off in CI, when TERM=dumb, with --json, and when
+	             the output isn't a terminal.
+	  CHAMOJI_THEME
+	             light or dark. Skips asking the terminal for its background.
+	             On light, chamoji draws without the foil colours.
+	  CHAMOJI_ASCII
+	             Set to 1 to draw the faces and the logo in plain ASCII. This
+	             is the default on the old Windows console.
+
 	Examples
 	  $ chamoji changelog --output CHANGELOG.md
 	  $ version=$(chamoji next-version) && chamoji changelog --release "$version" -o CHANGELOG.md
@@ -240,6 +284,7 @@ const FORMATS: Record<string, OutputFormat> = {
 function parse(argv: string[]) {
 	return meow(HELP, {
 		importMeta: import.meta,
+		description: TAGLINE,
 		argv,
 		autoHelp: false,
 		autoVersion: false,
@@ -271,6 +316,12 @@ function parse(argv: string[]) {
 	});
 }
 
+/** Whether `argv` shows the logo: a bare `chamoji`, or `--help`. */
+export function showsLogo(argv: string[]): boolean {
+	const {input, flags} = parse(argv);
+	return (input.length === 0 && !flags.version) || Boolean(flags.help);
+}
+
 /** Whether the command in `argv` can wait on something slow, and so shows a face. */
 export function wantsFace(argv: string[]): boolean {
 	const {input, flags} = parse(argv);
@@ -287,7 +338,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 	let jevHost: Step | undefined;
 	try {
 		if (flags.help) {
-			io.stdout(`${cli.help}\n`);
+			io.stdout(`${oneLineLogo(io.welcome ?? PLAIN_WELCOME)}\n${cli.help}\n`);
 			return 0;
 		}
 
@@ -439,9 +490,18 @@ export async function run(argv: string[], given: Io): Promise<number> {
 					return await runInit({agents: flags.agents}, io);
 				}
 
+				case undefined: {
+					await playWelcome({
+						...(io.welcome ?? PLAIN_WELCOME),
+						write: io.stdout,
+					});
+					io.stdout(`${TAGLINE}\n\n${SHORT_HELP}\n`);
+					return 0;
+				}
+
 				default: {
 					io.stderr(
-						`${command ? `chamoji: unknown command "${command}"\n` : ''}${cli.help}\n`,
+						`chamoji: unknown command "${command}"\nRun chamoji for the commands, or chamoji --help for every option.\n`,
 					);
 					return 2;
 				}

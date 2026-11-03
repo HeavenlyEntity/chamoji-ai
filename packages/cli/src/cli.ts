@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 import {readFileSync} from 'node:fs';
 import process from 'node:process';
-import {supportsColorStderr} from 'chalk';
+import {supportsColor, supportsColorStderr} from 'chalk';
 import {createFace} from './face.js';
 import {shouldAnimate} from './face-settings.js';
 import {useAscii} from './faces.js';
 import {detectTheme, queryBackground} from './foil.js';
-import {run, wantsFace} from './run.js';
+import {run, showsLogo, wantsFace, type WelcomeSettings} from './run.js';
 import {createUpdateCheck} from './update-check.js';
 
 const {version} = JSON.parse(
@@ -44,12 +44,38 @@ const face =
 			})
 		: undefined;
 
+// How the wordmark and the logo draw. They go to stdout, so the colour comes
+// from stdout, and the intro plays only when stdout is a terminal and none of
+// the "nothing animates" conditions hold (shouldAnimate wants a stream flag,
+// and here that is stdout's). A bare `chamoji` is the only command that plays
+// it. The terminal is asked for its background only then.
+const stdoutIsTTY = Boolean(process.stdout.isTTY);
+const welcome: WelcomeSettings | undefined = showsLogo(argv)
+	? await (async () => {
+			const animate =
+				argv.length === 0 &&
+				shouldAnimate({env: process.env, stderrIsTTY: stdoutIsTTY, argv});
+			return {
+				animate,
+				level: supportsColor ? supportsColor.level : 0,
+				theme: await detectTheme(process.env, async () =>
+					animate && process.stdin.isTTY
+						? queryBackground(process.stdin, process.stdout)
+						: undefined,
+				),
+				ascii: useAscii(process.env, process.platform),
+				columns: process.stdout.columns || 80,
+			};
+		})()
+	: undefined;
+
 process.exitCode = await run(argv, {
 	cwd: process.cwd(),
 	// The face owns the line it draws, so every write goes through it.
 	stdout: face ? face.wrap(stdout) : stdout,
 	stderr: face ? face.wrap(stderr) : stderr,
 	face,
+	welcome,
 	updateCheck: createUpdateCheck({
 		current: version,
 		env: process.env,
