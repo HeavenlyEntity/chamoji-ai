@@ -3,3 +3,7 @@ workstreams:
     title: Project memory
     emoji: 🧠
     status: shipped
+  terminal-face:
+    title: Terminal face
+    emoji: 😎
+    status: active
