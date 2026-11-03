@@ -174,7 +174,11 @@ When bare `chamoji` has nothing to animate, it prints the wordmark once, plain o
 
 ## Calls I made (check these)
 
-1. **Light terminals get no foil.** `BRAND.md` forbids foil-coloured text on white, and the pastels are unreadable there. When the terminal reports a light background (`COLORFGBG` ending in `;7` or `;15`), or `CHAMOJI_THEME=light` is set, the wordmark and faces use the default text colour, which on a light terminal is near ink. Terminals that report nothing are treated as dark, since most developer terminals are. `CHAMOJI_THEME=dark` forces dark.
+1. **Light terminals get no foil.** `BRAND.md` forbids foil-coloured text on white, and the pastels are unreadable there. On a light background, the wordmark and faces use the default text colour, which on a light terminal is near ink. chamoji decides light or dark in this order:
+   1. **`CHAMOJI_THEME=light` or `dark`,** if set, wins.
+   2. **Ask the terminal.** chamoji sends the OSC 11 background-colour query and waits up to 100 ms for the reply, only when stdin and stderr are both terminals and something is about to animate. A reply whose luminance is above the midpoint means light. The builder checks the reply in Terminal.app, iTerm2, Ghostty and the VS Code terminal.
+   3. **`COLORFGBG`:** a background value of `7` or `15` means light.
+   4. **No answer means dark, so the foil shows.** Alec chose this default on 2026-11-03: it looks right on most developer setups, and a white terminal that answers neither check can set `CHAMOJI_THEME=light`.
 2. **The intro plays once, about 1.2 s, then the prompt comes back.** It doesn't stay alive until a keypress.
 3. **Bare `chamoji` exits 0 and writes to stdout,** where today it writes to stderr and exits 2. An unknown command still exits 2.
 4. **Narrow terminals.** Below 72 columns, the wordmark is replaced by the one-line face and a gradient `chamoji`.
