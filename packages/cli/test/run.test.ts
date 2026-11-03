@@ -10,6 +10,8 @@ import {
 	type RepoStep,
 } from '../../core/test/helpers/fixture-repo.js';
 import {run, wantsFace} from '../src/run.js';
+import {LOGO_FRAMES} from '../src/logo-frames.js';
+import {SHORT_HELP, TAGLINE} from '../src/welcome.js';
 import {recordingFace} from './helpers/recording-face.js';
 
 const execFileAsync = promisify(execFile);
@@ -126,16 +128,140 @@ test('outside a repo exits 1 with a message', async () => {
 	}
 });
 
-test('no command prints help and exits 2', async () => {
-	const {code, stderr} = await chamoji([], tmpdir());
-	expect(code).toBe(2);
-	expect(stderr).toContain('$ chamoji changelog');
+test('bare chamoji prints the logo and the grouped help to stdout and exits 0', async () => {
+	const {code, stdout, stderr} = await chamoji([], tmpdir());
+	expect(code).toBe(0);
+	expect(stderr).toBe('');
+	expect(stdout).toContain(LOGO_FRAMES.shades[0]);
+	expect(stdout).toContain(TAGLINE);
+	expect(stdout).toContain(`\n\n${SHORT_HELP}\n`);
+	expect(stdout.endsWith('Every option: chamoji --help\n')).toBe(true);
+});
+
+test('bare chamoji piped writes no escape codes', async () => {
+	const {stdout} = await chamoji([], tmpdir());
+	expect(stdout).not.toContain('\u001B');
+});
+
+test('bare chamoji follows the welcome settings it is given', async () => {
+	let stdout = '';
+	const code = await run([], {
+		cwd: tmpdir(),
+		stdout: text => (stdout += text),
+		stderr() {},
+		welcome: {
+			animate: false,
+			level: 3,
+			theme: 'dark',
+			ascii: true,
+			columns: 120,
+		},
+	});
+	expect(code).toBe(0);
+	// eslint-disable-next-line no-control-regex
+	expect(stdout.replaceAll(/\u001B\[[\d;]*m/g, '')).toContain(
+		'( ^_^ ) chamoji\n',
+	);
+	expect(stdout).toContain('\u001B[38;');
 });
 
 test('--help exits 0', async () => {
 	const {code, stdout} = await chamoji(['--help'], tmpdir());
 	expect(code).toBe(0);
 	expect(stdout).toContain('$ chamoji next-version');
+});
+
+test('--help starts with the one-line logo and the tagline', async () => {
+	const {stdout} = await chamoji(['--help'], tmpdir());
+	expect(stdout.startsWith('( ■‿■ ) chamoji\n')).toBe(true);
+	expect(stdout).toContain(TAGLINE);
+	expect(stdout).not.toContain('\u001B');
+});
+
+test('--help lists every command and the three new environment variables', async () => {
+	const {stdout} = await chamoji(['--help'], tmpdir());
+	for (const command of [
+		'changelog [options]',
+		'next-version [options]',
+		'release [version]',
+		'ws ',
+		'ws start <title> [emoji]',
+		'ws switch <slug>',
+		'ws ship [slug]',
+		'ws drop [slug]',
+		'why <file:line>',
+		'memory ',
+		'memory show <slug>',
+		'memory search <query>',
+		'memory reindex',
+		'memory archive <slug>',
+		'memory sync',
+		'commit [-a]',
+		'hook install',
+		'init ',
+		'init --agents',
+		'card [options]',
+		'mcp ',
+		'agent-hook ',
+	]) {
+		expect(stdout, command).toContain(`$ chamoji ${command}`);
+	}
+
+	for (const group of [
+		'Release',
+		'Workstreams',
+		'Memory',
+		'Commit',
+		'Setup',
+		'Options',
+		'Environment',
+		'Examples',
+	]) {
+		expect(stdout, group).toMatch(new RegExp(`^ {2}${group}$`, 'm'));
+	}
+
+	for (const name of [
+		'CHAMOJI_NO_ANIMATION',
+		'CHAMOJI_THEME',
+		'CHAMOJI_ASCII',
+	]) {
+		expect(stdout).toContain(name);
+	}
+
+	// Every option stays.
+	for (const flag of [
+		'--format',
+		'--output',
+		'--from',
+		'--to',
+		'--release',
+		'--since',
+		'--config',
+		'--ai',
+		'--dry-run',
+		'--push',
+		'--trailer',
+		'--any-branch',
+		'--json',
+		'--none',
+		'--archived',
+		'--purge',
+		'--agents',
+		'--repo',
+		'--endpoint',
+		'--no-update-check',
+	]) {
+		expect(stdout, flag).toContain(`  ${flag}`);
+	}
+});
+
+test('an unknown command exits 2 with the pointer on stderr', async () => {
+	const {code, stdout, stderr} = await chamoji(['frobnicate'], tmpdir());
+	expect(code).toBe(2);
+	expect(stdout).toBe('');
+	expect(stderr).toBe(
+		'chamoji: unknown command "frobnicate"\nRun chamoji for the commands, or chamoji --help for every option.\n',
+	);
 });
 
 test('--ai without an API key exits 1 with a clear message', async () => {
