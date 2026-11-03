@@ -6,7 +6,7 @@
 - **When a milestone ships:** update its status, its exit-criteria results and the dogfooding log below.
 - **Background only:** [`docs/research/2026-10-27-chamoji-direction.md`](research/2026-10-27-chamoji-direction.md) holds the research and reasoning. If it disagrees with this file, this file wins.
 - **Look and feel:** [`docs/brand/BRAND.md`](brand/BRAND.md) sets the colours, the holographic foil effect, the type and the rules for every visual surface.
-- **Last updated:** 2026-10-31
+- **Last updated:** 2026-11-03
 
 ## Vision
 
@@ -37,6 +37,7 @@ These apply to every milestone. A plan that breaks one needs a written reason.
 | 3.5 | Repo card                           | 1 Activation & acquisition | Acquisition | M    | ✅ Shipped in 0.9.0 (own readme card left)     | [plan](superpowers/plans/2026-10-31-repo-card.md)                       |
 | 4   | Commit composer and git hook        | 2 Retention                | Retention   | L    | ✅ Shipped in 0.7.0                            | [plan](superpowers/plans/2026-10-28-milestone-4-commit-composer.md)     |
 | 5   | Jev in the composer                 | 2 Retention                | Retention   | M    | ✅ Shipped in 0.8.0                            | [plan](superpowers/plans/2026-10-28-milestone-5-jev-in-the-composer.md) |
+| 5.5 | Terminal face                       | 2 Retention                | Activation  | S    | 🚧 Built, unreleased (`feat/terminal-face`)    | [plan](superpowers/plans/2026-11-03-terminal-face.md)                   |
 | 6   | Workstreams                         | 3 Differentiation          | Retention   | L    | ✅ Shipped in 0.10.0 (dogfooding left)         | [plan](superpowers/plans/2026-10-31-milestone-6-workstreams.md)         |
 | 7   | Project memory                      | 3 Differentiation          | Retention   | L    | 🚧 Merged, 0.11.0 due 2026-11-03               | [plan](superpowers/plans/2026-11-01-milestone-7-project-memory.md)      |
 | 8   | Review packets                      | 3 Differentiation          | Expansion   | L    | Planned                                        | —                                                                       |
@@ -463,6 +464,31 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 - **What the composer does with it:** the gitmoji step comes before the title, so Jev sees only the file list there. Its top pick is preselected only at 90% or more; on non-bump commits that was right 74% of the time, against 53% at 70%. Below that, the three suggestions show as a hint and the list keeps its order.
 - **Tuning so far:** the official 📦️ description, "Add or update compiled files or packages", drew most file-list-only commits to 📦️ (top-1 7%). A narrower description, plus guidance used only when there's no title, raised that to 80% without hurting the with-title numbers. The 60% cutoff for `--ai` is unchanged: the eval measures the advisor, which asks a different question from the changelog classifier.
 - **Open question:** asking for the title before the gitmoji would give Jev the title, and the 72% top-3 instead of 44%. That changes the order gitmoji-cli users know.
+
+### 5.5. Terminal face — 🚧 built, unreleased
+
+**Why:** the CLI should feel like chamoji from the first run. A smile in the O of the wordmark, and the same face next to every command that makes you wait, so a slow `memory sync` or `--ai` run never looks stuck.
+
+**Scope:**
+
+- **An animated welcome:** a bare `chamoji` draws the Marow Block wordmark with the face in its O, then the short help, in five groups. It goes to stdout and exits 0. It used to print the help to stderr and exit 2.
+- **Faces in the commands that wait:** `memory sync`, `init`, `release`, `why`, `memory reindex`, `ws ship`, `ws drop` and the `--ai` runs show a one-line face, the step's name and, at the end, a done, warn or fail line with the time. They write to stderr only.
+- **Foil on dark only:** the wordmark and faces use the logo's foil on a dark background and the plain text colour on a light one. The theme comes from `CHAMOJI_THEME`, then the terminal's answer to OSC 11, then `COLORFGBG`.
+- **Three variables:** `CHAMOJI_NO_ANIMATION`, `CHAMOJI_THEME` and `CHAMOJI_ASCII`.
+- **Quiet git underneath:** network git calls report their steps and stay quiet themselves.
+- The design is in [`docs/superpowers/specs/2026-11-03-terminal-face-design.md`](superpowers/specs/2026-11-03-terminal-face-design.md) and the look in [`BRAND.md`](brand/BRAND.md#terminal).
+
+**Exit criteria:**
+
+- Nothing the commands print to stdout, and nothing under `--json`, changes: byte for byte the same as 0.11.0.
+- No animation when stderr isn't a terminal, in CI, with `TERM=dumb`, with `--json` or with `CHAMOJI_NO_ANIMATION=1`.
+- Ctrl-C mid-sync leaves a clean prompt.
+
+**Progress:** built on `feat/terminal-face`, not merged or released. The [plan's Results](superpowers/plans/2026-11-03-terminal-face.md#results) has the detail.
+
+- ✅ **Byte-identity:** `memory sync`, `memory sync --json`, `release --dry-run --json`, `changelog` and `next-version` print the same stdout, stderr and exit code as 0.11.0 when piped, and the same stdout when stderr is a terminal.
+- ⬜ **Real terminals:** Terminal.app, iTerm2, Ghostty and the VS Code terminal, each on a light and a dark profile, are checked by hand; the Results records which answered OSC 11.
+- ⬜ **Tagline:** the tagline now in `--help` and under the wordmark is a proposal and waits for approval. `packages/cli/package.json`'s description still has the old one.
 
 ---
 
