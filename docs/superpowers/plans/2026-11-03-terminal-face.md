@@ -398,7 +398,19 @@ Old is `npx -y @chamoji/cli@0.11.0` (`--version` printed `0.11.0`), new is `node
 
 ### Real terminals
 
-Filled in by the controller.
+Checked in the Claude desktop app's Terminal panel on macOS, on a dark background:
+
+- Bare `chamoji` played the intro and settled on the wordmark with the sunglasses on, then the tagline and the 24-line help. Exit 0.
+- `chamoji release --dry-run --any-branch` drew the face on stderr and ended `( ■‿■ ) ✓ Ready to release v0.12.0 in 0s`. Stdout was unchanged.
+
+Not checked yet:
+
+- Terminal.app, iTerm2, Ghostty and the VS Code terminal
+- the light profiles
+- which terminals answer OSC 11
+- Ctrl-C in the middle of a sync
+
+Alec checks these before the release.
 
 ### Rulings
 
