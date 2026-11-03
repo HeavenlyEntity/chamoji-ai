@@ -8,6 +8,7 @@ import {
 	type ParsedCommit,
 	type Workstream,
 } from '@chamoji/core';
+import {NO_FACE, runStep} from './face.js';
 import type {Io} from './run.js';
 import {stripControl} from './text.js';
 
@@ -40,17 +41,32 @@ export async function runWhy(
 
 	await assertGitRepo(io.cwd);
 	const {file, line} = parseLocation(location);
-	const result = await blameLine(io.cwd, file, line);
+	const {result, summary} = await runStep(
+		io.face ?? NO_FACE,
+		'Finding the commit that wrote the line',
+		async () => {
+			const result = await blameLine(io.cwd, file, line);
+			if (flags.json || result.kind === 'uncommitted') return {result};
+			const {card, workstream} = result.commit;
+			const summary =
+				card === undefined && workstream !== undefined
+					? await findWorkstream(io.cwd, workstream)
+					: undefined;
+			return {result, summary};
+		},
+		({result}) => ({
+			outcome: 'ok',
+			text:
+				result.kind === 'uncommitted'
+					? 'The line is not committed yet'
+					: 'Found the commit',
+		}),
+	);
 	if (flags.json) {
 		io.stdout(`${JSON.stringify(result, null, 2)}\n`);
 	} else if (result.kind === 'uncommitted') {
 		io.stdout(`${stripControl(`${file}:${line}`)} is not committed yet.\n`);
 	} else {
-		const {card, workstream} = result.commit;
-		const summary =
-			card === undefined && workstream !== undefined
-				? await findWorkstream(io.cwd, workstream)
-				: undefined;
 		io.stdout(describe(result.commit, summary));
 	}
 

@@ -8,6 +8,7 @@ import {
 	type FixtureRepo,
 } from '../../core/test/helpers/fixture-repo.js';
 import {run} from '../src/run.js';
+import {recordingFace} from './helpers/recording-face.js';
 
 let repo: FixtureRepo | undefined;
 let loose: string | undefined;
@@ -205,4 +206,26 @@ test('a separator byte in an author name puts no escape text on stdout', async (
 	expect(stdout).toContain('[31mevil');
 	// eslint-disable-next-line no-control-regex
 	expect(stdout).not.toMatch(/[\u0000-\u0009\u000B-\u001F\u007F-\u009F]/);
+});
+
+test('why is one step, and prints what it printed before', async () => {
+	repo = await createRepo([
+		{commit: '✨ Add a', body: 'Why: because', files: FILES},
+	]);
+	const plain = await chamoji(['why', 'src/a.ts:2'], repo.dir);
+	const {face, calls} = recordingFace();
+	let stdout = '';
+	const code = await run(['why', 'src/a.ts:2'], {
+		cwd: repo.dir,
+		stdout: text => (stdout += text),
+		stderr() {},
+		face,
+	});
+	expect(code).toBe(0);
+	expect(stdout).toBe(plain.stdout);
+	expect(calls).toEqual([
+		['step', 'Finding the commit that wrote the line'],
+		['end', 'ok', 'Found the commit'],
+		['stop'],
+	]);
 });

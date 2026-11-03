@@ -20,6 +20,7 @@ import {
 	type FixtureRepo,
 } from '../../core/test/helpers/fixture-repo.js';
 import {run} from '../src/run.js';
+import {recordingFace} from './helpers/recording-face.js';
 
 let repo: FixtureRepo | undefined;
 afterEach(async () => {
@@ -952,4 +953,59 @@ test('a failed snapshot warns and ws ship still succeeds', async () => {
 	);
 	await rm(path.join(refs, 'memory.lock'));
 	expect(await readMemory(repo.dir, 'auth-revamp')).toBeUndefined();
+});
+
+async function withFace(argv: string[], cwd: string) {
+	const {face, calls} = recordingFace();
+	let stdout = '';
+	let stderr = '';
+	const code = await run(argv, {
+		cwd,
+		stdout: text => (stdout += text),
+		stderr: text => (stderr += text),
+		face,
+	});
+	return {code, stdout, stderr, calls};
+}
+
+test('ws ship saves to memory as one step', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await chamoji(['ws', 'start', 'Auth revamp'], repo.dir);
+	await gitOutput(repo.dir, [
+		'commit',
+		'-q',
+		'-m',
+		'🔧 Track workstreams\n\nWorkstream: auth-revamp',
+	]);
+	const {code, stdout, calls} = await withFace(['ws', 'ship'], repo.dir);
+	expect(code).toBe(0);
+	expect(stdout).toContain('Saved 1 commit to memory.\n');
+	expect(calls).toEqual([
+		['step', 'Saving auth-revamp to memory'],
+		['end', 'ok', 'Saved 1 commit to memory'],
+		['stop'],
+	]);
+});
+
+test('ws drop with no commits to save ends warn', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	await chamoji(['ws', 'start', 'Billing'], repo.dir);
+	const {code, stderr, calls} = await withFace(['ws', 'drop'], repo.dir);
+	expect(code).toBe(0);
+	expect(stderr).toContain('memory has no commits for billing');
+	expect(calls).toContainEqual([
+		'end',
+		'warn',
+		'No commits for billing on this branch',
+	]);
+});
+
+test('ws list, start and switch never call the face', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	const {face, calls} = recordingFace();
+	const io = {cwd: repo.dir, stdout() {}, stderr() {}, face};
+	await run(['ws', 'start', 'Auth revamp'], io);
+	await run(['ws', 'switch', 'auth-revamp'], io);
+	await run(['ws'], io);
+	expect(calls).toEqual([]);
 });

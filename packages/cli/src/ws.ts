@@ -15,6 +15,7 @@ import {
 	type Workstream,
 	type WorkstreamStatus,
 } from '@chamoji/core';
+import {NO_FACE, runStep} from './face.js';
 import {readHookState} from './hook.js';
 import type {Io} from './run.js';
 import {stripControl} from './text.js';
@@ -180,23 +181,53 @@ async function finish(
 	await setWorkstreamStatus(io.cwd, slug, status);
 	if (slug === active) await setActive(io.cwd, null);
 	io.stdout(staged(status === 'shipped' ? 'Shipped' : 'Dropped', slug));
-	// The status change is what was asked for, and it has happened.
-	try {
-		const {commits} = await snapshotWorkstream(io.cwd, slug);
-		const count = `${commits.length} ${commits.length === 1 ? 'commit' : 'commits'}`;
-		io.stdout(`Saved ${count} to memory.\n`);
-		if (commits.length === 0) {
+	// The status change is what was asked for, and it has happened, so a
+	// problem saving to memory is reported and the step ends on a warning.
+	const saved = await runStep(
+		io.face ?? NO_FACE,
+		`Saving ${stripControl(slug)} to memory`,
+		async () =>
+			snapshotWorkstream(io.cwd, slug).then(
+				({commits}) => ({ok: true as const, commits: commits.length}),
+				(error: unknown) => ({ok: false as const, error: error as Error}),
+			),
+		result => {
+			if (!result.ok) {
+				return {
+					outcome: 'warn',
+					text: `${stripControl(slug)} was not saved to memory`,
+				};
+			}
+
+			return result.commits === 0
+				? {
+						outcome: 'warn',
+						text: `No commits for ${stripControl(slug)} on this branch`,
+					}
+				: {
+						outcome: 'ok',
+						text: `Saved ${commitCount(result.commits)} to memory`,
+					};
+		},
+	);
+	if (saved.ok) {
+		io.stdout(`Saved ${commitCount(saved.commits)} to memory.\n`);
+		if (saved.commits === 0) {
 			io.stderr(
 				`chamoji: memory has no commits for ${slug}: none on this branch carry its Workstream line. If they are on another branch, run chamoji ws ${verb} ${slug} there.\n`,
 			);
 		}
-	} catch (error) {
+	} else {
 		io.stderr(
-			`chamoji: ${slug} was not saved to memory (${stripControl((error as Error).message)})\n`,
+			`chamoji: ${slug} was not saved to memory (${stripControl(saved.error.message)})\n`,
 		);
 	}
 
 	return 0;
+}
+
+function commitCount(count: number): string {
+	return `${count} ${count === 1 ? 'commit' : 'commits'}`;
 }
 
 function staged(did: string, slug: string): string {

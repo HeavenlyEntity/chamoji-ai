@@ -9,7 +9,8 @@ import {
 	type FixtureRepo,
 	type RepoStep,
 } from '../../core/test/helpers/fixture-repo.js';
-import {run} from '../src/run.js';
+import {run, wantsFace} from '../src/run.js';
+import {recordingFace} from './helpers/recording-face.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -306,5 +307,66 @@ test('card never calls the classifier, even with --ai', async () => {
 		if (saved !== undefined) {
 			process.env['TYPESAFE_API_KEY'] = saved;
 		}
+	}
+});
+
+async function withFace(argv: string[], cwd: string) {
+	const {face, calls} = recordingFace();
+	let stdout = '';
+	let stderr = '';
+	const code = await run(argv, {
+		cwd,
+		stdout: text => (stdout += text),
+		stderr: text => (stderr += text),
+		today: '2026-10-27',
+		face,
+	});
+	return {code, stdout, stderr, calls};
+}
+
+test('mcp and agent-hook never call the face', async () => {
+	repo = await createRepo(history);
+	const mcp = await withFace(['mcp', 'extra'], repo.dir);
+	expect(mcp.code).toBe(2);
+	expect(mcp.calls).toEqual([]);
+	expect(wantsFace(['mcp'])).toBe(false);
+	expect(wantsFace(['agent-hook'])).toBe(false);
+	expect(wantsFace(['hook', 'run', '.git/COMMIT_EDITMSG'])).toBe(false);
+	expect(wantsFace(['commit'])).toBe(false);
+	expect(wantsFace(['card', '--ai'])).toBe(false);
+});
+
+test('commands that never wait never call the face', async () => {
+	repo = await createRepo(history);
+	for (const argv of [
+		['card', '--repo', 'acme/widgets'],
+		['changelog'],
+		['next-version'],
+		['hook', 'uninstall'],
+		['--help'],
+	]) {
+		const {calls} = await withFace(argv, repo.dir);
+		expect(calls, argv.join(' ')).toEqual([]);
+	}
+});
+
+test('wantsFace parses argv as run does', () => {
+	expect(wantsFace(['memory', 'sync'])).toBe(true);
+	expect(wantsFace(['--config', 'x.json', 'release'])).toBe(true);
+	expect(wantsFace(['changelog', '--ai'])).toBe(true);
+	expect(wantsFace(['changelog', '--format', 'release'])).toBe(false);
+	expect(wantsFace(['memory', 'search', 'q', '--ai'])).toBe(true);
+	expect(wantsFace(['release', '--help'])).toBe(false);
+});
+
+test('run stops the face on the way out, after an error too', async () => {
+	const dir = await mkdtemp(path.join(tmpdir(), 'chamoji-nogit-'));
+	try {
+		const {code, stderr, calls} = await withFace(['memory', 'sync'], dir);
+		expect(code).toBe(1);
+		expect(stderr).toBe(`chamoji: Not a git repository: ${dir}\n`);
+		expect(calls).toEqual([['stop']]);
+	} finally {
+		await rm(dir, {recursive: true, force: true});
 	}
 });

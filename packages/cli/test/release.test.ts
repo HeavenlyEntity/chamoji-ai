@@ -10,6 +10,7 @@ import {
 	type RepoStep,
 } from '../../core/test/helpers/fixture-repo.js';
 import {run, type GhRunner} from '../src/run.js';
+import {recordingFace} from './helpers/recording-face.js';
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -243,4 +244,173 @@ test('release without --push leaves memory alone', async () => {
 	await expect(
 		gitOutput(remote, ['rev-parse', '--verify', 'refs/chamoji/memory']),
 	).rejects.toThrow();
+});
+
+async function withFace(
+	argv: string[],
+	cwd: string,
+	options: {gh?: GhRunner; fetchTags?: boolean} = {},
+) {
+	const {face, calls} = recordingFace();
+	let stdout = '';
+	let stderr = '';
+	const code = await run(argv, {
+		cwd,
+		stdout: text => (stdout += text),
+		stderr: text => (stderr += text),
+		today: '2026-10-28',
+		fetchTags: options.fetchTags ?? false,
+		gh: options.gh,
+		face,
+	});
+	return {code, stdout, stderr, calls};
+}
+
+/** The summary lines that don't name the release commit, which differs per repo. */
+const summary = (stdout: string) =>
+	stdout.split('\n').filter(line => !line.startsWith('commit: '));
+
+test('release --push reports each sub-step in order', async () => {
+	const {dir} = await sharedOnOrigin();
+	const twin = await sharedOnOrigin();
+	const plain = await chamoji(['release', '--push'], twin.dir, noGh);
+	const {code, stdout, stderr, calls} = await withFace(
+		['release', '--push'],
+		dir,
+		{gh: noGh},
+	);
+	expect(code).toBe(0);
+	expect(stderr).toBe(plain.stderr);
+	expect(summary(stdout)).toEqual(summary(plain.stdout));
+	expect(calls).toEqual([
+		['step', 'Planning the release'],
+		['end', 'ok', 'Ready to release v1.1.0'],
+		['step', 'Pushing HEAD and v1.1.0'],
+		['end', 'ok', 'Pushed HEAD and v1.1.0'],
+		['step', 'Syncing memory with origin'],
+		['update', "Fetching origin's memory"],
+		['update', "Merging origin's memory into yours"],
+		['update', 'Pushing memory to origin'],
+		['end', 'ok', 'Synced memory with origin: 1 entry'],
+		['step', 'Creating the GitHub release'],
+		['end', 'ok', 'Created the GitHub release'],
+		['stop'],
+	]);
+});
+
+test('a GitHub release that is not created ends warn, and the summary is unchanged', async () => {
+	const {dir} = await rememberedOnOrigin();
+	const gh: GhRunner = async () => ({ok: false, message: 'gh: not logged in'});
+	const {code, stdout, calls} = await withFace(['release', '--push'], dir, {
+		gh,
+	});
+	expect(code).toBe(0);
+	expect(stdout).toContain(
+		'pushed: yes (HEAD and v1.1.0); GitHub release not created: gh: not logged in\n',
+	);
+	expect(calls.at(-2)).toEqual(['end', 'warn', 'GitHub release not created']);
+});
+
+test('a memory sync that fails in release --push ends warn', async () => {
+	const {dir, remote} = await sharedOnOrigin();
+	await writeFile(
+		path.join(remote, 'hooks/update'),
+		'#!/bin/sh\ncase "$1" in refs/chamoji/*) exit 1;; esac\n',
+		{mode: 0o755},
+	);
+	const {code, stdout, calls} = await withFace(['release', '--push'], dir, {
+		gh: noGh,
+	});
+	expect(code).toBe(0);
+	expect(stdout).toContain('memory: not synced: Could not push memory');
+	expect(calls).toContainEqual(['end', 'warn', 'Memory was not synced']);
+	expect(calls).toContainEqual(['end', 'ok', 'Created the GitHub release']);
+});
+
+test('a push that fails ends warn and starts no later step', async () => {
+	const repo = await repoFrom(history);
+	await gitOutput(repo.dir, ['remote', 'add', 'origin', `${repo.dir}-missing`]);
+	const {code, stdout, calls} = await withFace(
+		['release', '--push'],
+		repo.dir,
+		{
+			gh: noGh,
+		},
+	);
+	expect(code).toBe(1);
+	expect(stdout).toContain('pushed: failed: released v1.1.0 locally');
+	expect(calls).toEqual([
+		['step', 'Planning the release'],
+		['end', 'ok', 'Ready to release v1.1.0'],
+		['step', 'Pushing HEAD and v1.1.0'],
+		['end', 'warn', 'The push failed; v1.1.0 is kept here'],
+		['stop'],
+	]);
+});
+
+test('release with nothing to release ends ok Nothing to release, exit 3', async () => {
+	const steps: RepoStep[] = [
+		{commit: '🎉 Init'},
+		{tag: 'v1.0.0'},
+		{commit: '📝 Fix a typo'},
+	];
+	const plain = await chamoji(['release'], (await repoFrom(steps)).dir);
+	const {code, stdout, stderr, calls} = await withFace(
+		['release'],
+		(await repoFrom(steps)).dir,
+	);
+	expect(code).toBe(3);
+	expect(stdout).toBe(plain.stdout);
+	expect(stderr).toBe(plain.stderr);
+	expect(calls).toEqual([
+		['step', 'Planning the release'],
+		['end', 'ok', 'Nothing to release'],
+		['stop'],
+	]);
+});
+
+test('release --dry-run is one step and prints what it printed before', async () => {
+	const plain = await chamoji(
+		['release', '--dry-run'],
+		(await repoFrom(history)).dir,
+	);
+	const {code, stdout, calls} = await withFace(
+		['release', '--dry-run'],
+		(await repoFrom(history)).dir,
+	);
+	expect(code).toBe(0);
+	expect(stdout).toBe(plain.stdout);
+	expect(calls).toEqual([
+		['step', 'Planning the release'],
+		['end', 'ok', 'Ready to release v1.1.0'],
+		['stop'],
+	]);
+});
+
+test('release says when it fetches tags', async () => {
+	const repo = await repoFrom(history);
+	const remote = await mkdtemp(path.join(tmpdir(), 'chamoji-remote-'));
+	cleanups.push(async () => rm(remote, {recursive: true, force: true}));
+	await gitOutput(remote, ['init', '-q', '--bare']);
+	await gitOutput(repo.dir, ['remote', 'add', 'origin', remote]);
+	const {calls} = await withFace(['release', '--dry-run'], repo.dir, {
+		fetchTags: true,
+	});
+	expect(calls.slice(0, 2)).toEqual([
+		['step', 'Planning the release'],
+		['update', 'Fetching tags from origin'],
+	]);
+});
+
+test('a release that fails its checks ends fail, and says why once', async () => {
+	const repo = await repoFrom(history);
+	await writeFile(path.join(repo.dir, 'untracked.txt'), 'dirty\n');
+	const {code, stderr, calls} = await withFace(['release'], repo.dir);
+	expect(code).toBe(2);
+	expect(stderr.match(/chamoji: /g)).toHaveLength(1);
+	expect(calls).toEqual([
+		['step', 'Planning the release'],
+		['end', 'fail', 'Planning the release'],
+		['stop'],
+	]);
 });

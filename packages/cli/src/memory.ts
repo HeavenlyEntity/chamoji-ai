@@ -12,8 +12,16 @@ import {
 	type MemoryEntry,
 	type MemoryHit,
 	type SyncResult,
+	type SyncStep,
 } from '@chamoji/core';
 import {MISSING_KEY} from './env.js';
+import {
+	gitStep,
+	NO_FACE,
+	runStep,
+	type Step,
+	type StepOutcome,
+} from './face.js';
 import type {MemoryReranker} from './rerank.js';
 import type {Io} from './run.js';
 import {stripControl} from './text.js';
@@ -190,7 +198,16 @@ async function search(
 	const rerank = ai ? await reranker() : undefined;
 	if (ai && !rerank) return usage(io, MISSING_KEY);
 	let hits = await searchMemory(io.cwd, query);
-	if (rerank) hits = await rerank(query, hits);
+	if (rerank) {
+		const found = hits;
+		hits = await runStep(
+			io.face ?? NO_FACE,
+			'Jev is ranking the matches',
+			async () => rerank(query, found),
+			() => ({outcome: 'ok', text: 'Jev ranked the matches'}),
+		);
+	}
+
 	if (json) {
 		io.stdout(`${JSON.stringify(hits, null, 2)}\n`);
 	} else if (hits.length === 0) {
@@ -213,7 +230,15 @@ function hitLines({kind, id, title, card}: MemoryHit): string {
 }
 
 async function reindex(io: Io): Promise<number> {
-	const {documents} = await reindexMemory(io.cwd);
+	const {documents} = await runStep(
+		io.face ?? NO_FACE,
+		'Rebuilding the search index',
+		async () => reindexMemory(io.cwd),
+		result => ({
+			outcome: 'ok',
+			text: `Indexed ${result.documents} ${result.documents === 1 ? 'document' : 'documents'}`,
+		}),
+	);
 	io.stdout(
 		`Indexed ${documents} ${documents === 1 ? 'document' : 'documents'}.\n`,
 	);
@@ -237,11 +262,49 @@ async function archive(io: Io, slug: string, purge: boolean): Promise<number> {
 }
 
 async function sync(io: Io, json: boolean): Promise<number> {
-	const result = await syncMemory(io.cwd);
+	const result = await gitStep(
+		io.face ?? NO_FACE,
+		io.cwd,
+		SYNC_LABEL,
+		async (env, step) => syncMemory(io.cwd, {env, onStep: relabel(step)}),
+		syncOutcome,
+	);
 	const summary =
 		syncSummary(result) ?? 'Nothing to sync: no memory here or on origin yet.';
 	io.stdout(json ? `${JSON.stringify(result, null, 2)}\n` : `${summary}\n`);
 	return 0;
+}
+
+/** The face's label while memory syncs; `relabel` names each part as it starts. */
+export const SYNC_LABEL = 'Syncing memory with origin';
+
+const SYNC_STEPS: Record<SyncStep, string> = {
+	fetch: "Fetching origin's memory",
+	merge: "Merging origin's memory into yours",
+	push: 'Pushing memory to origin',
+};
+
+/** An `onStep` for syncMemory that relabels `step` as each part starts. */
+export function relabel(step: Step | undefined): (name: SyncStep) => void {
+	return name => step?.update(SYNC_STEPS[name]);
+}
+
+/** How a sync's step ends: a warning when only a force-push would finish it. */
+export function syncOutcome(result: SyncResult): {
+	outcome: StepOutcome;
+	text: string;
+} {
+	if (result.needsForce) {
+		return {
+			outcome: 'warn',
+			text: 'A purged entry is still on origin, so nothing was pushed',
+		};
+	}
+
+	return {
+		outcome: 'ok',
+		text: syncSummary(result)?.replace(/\.$/, '') ?? 'Nothing to sync',
+	};
 }
 
 /** One line on what a sync did, or undefined when there was no memory to sync. */
