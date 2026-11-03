@@ -1,7 +1,7 @@
 import {chmod, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {afterEach, expect, test} from 'vitest';
+import {afterEach, expect, test, vi} from 'vitest';
 import {DEFAULT_GROUP_CONFIG} from '../src/config.js';
 import {
 	applyRelease,
@@ -19,6 +19,7 @@ import {
 	type FixtureRepo,
 	type RepoStep,
 } from './helpers/fixture-repo.js';
+import {fakeSsh} from './helpers/fake-ssh.js';
 
 const SECTION =
 	'## [v1.3.0](https://x/compare/v1.2.0...v1.3.0) - 2026-10-28\n\n### Added\n\n- ✨ Add export';
@@ -520,4 +521,86 @@ test('planRelease and pushRelease hand the env to git', async () => {
 	expect(await gitOutput(remote, ['tag', '--list', 'v1.3.0'])).toContain(
 		'v1.3.0',
 	);
+});
+
+/** Points origin at the fake ssh, which refuses only when prompts are off. */
+async function overFakeSsh(repo: FixtureRepo): Promise<string> {
+	const remote = await withOrigin(repo);
+	const ssh = await fakeSsh();
+	cleanups.push(ssh.cleanup);
+	for (const [key, value] of Object.entries(ssh.env)) vi.stubEnv(key, value);
+	cleanups.push(async () => {
+		vi.unstubAllEnvs();
+	});
+	await gitOutput(repo.dir, [
+		'remote',
+		'set-url',
+		'origin',
+		`ssh://localhost${remote}`,
+	]);
+	return remote;
+}
+
+test.skipIf(process.platform === 'win32')(
+	'a quiet tag fetch that needs credentials is tried again without the env',
+	async () => {
+		const repo = await repoWith(widgets);
+		const remote = await overFakeSsh(repo);
+		// A tag only origin has, so the result shows the second fetch happened.
+		await gitOutput(remote, ['tag', 'v1.2.5', 'main~2']);
+		let asked = 0;
+		const result = await ready(repo.dir, {
+			fetch: true,
+			env: {GIT_TERMINAL_PROMPT: '0'},
+			onCredentials() {
+				asked++;
+			},
+		});
+		expect(asked).toBe(1);
+		expect(result.warnings).toEqual([]);
+		expect(result.lastTag).toBe('v1.2.5');
+	},
+);
+
+test.skipIf(process.platform === 'win32')(
+	'a tag fetch with no env is not tried again',
+	async () => {
+		const repo = await repoWith(widgets);
+		await overFakeSsh(repo);
+		vi.stubEnv('GIT_TERMINAL_PROMPT', '0');
+		let asked = 0;
+		const result = await ready(repo.dir, {
+			fetch: true,
+			onCredentials() {
+				asked++;
+			},
+		});
+		expect(asked).toBe(0);
+		expect(result.warnings).toEqual([
+			'could not fetch tags from origin; used the local tags',
+		]);
+	},
+);
+
+test('a tag fetch that fails for another reason keeps the warning and asks for nothing', async () => {
+	const repo = await repoWith(widgets);
+	await withOrigin(repo);
+	await gitOutput(repo.dir, [
+		'remote',
+		'set-url',
+		'origin',
+		`${repo.dir}-missing`,
+	]);
+	let asked = 0;
+	const result = await ready(repo.dir, {
+		fetch: true,
+		env: {GIT_TERMINAL_PROMPT: '0'},
+		onCredentials() {
+			asked++;
+		},
+	});
+	expect(asked).toBe(0);
+	expect(result.warnings).toEqual([
+		'could not fetch tags from origin; used the local tags',
+	]);
 });

@@ -2,13 +2,14 @@ import {mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {MEMORY_FETCH_REFSPEC, snapshotWorkstream} from '@chamoji/core';
-import {afterEach, expect, test} from 'vitest';
+import {afterEach, expect, test, vi} from 'vitest';
 import {
 	createRepo,
 	gitOutput,
 	type FixtureRepo,
 	type RepoStep,
 } from '../../core/test/helpers/fixture-repo.js';
+import {fakeSsh} from '../../core/test/helpers/fake-ssh.js';
 import {run, type GhRunner} from '../src/run.js';
 import {recordingFace} from './helpers/recording-face.js';
 
@@ -414,3 +415,42 @@ test('a release that fails its checks ends fail, and says why once', async () =>
 		['stop'],
 	]);
 });
+
+test.skipIf(process.platform === 'win32')(
+	'a tag fetch that needs credentials ends the step warn before git asks',
+	async () => {
+		const repo = await repoFrom([...history, {commit: '🐛 Fix search'}]);
+		const remote = await mkdtemp(path.join(tmpdir(), 'chamoji-remote-'));
+		cleanups.push(async () => rm(remote, {recursive: true, force: true}));
+		await gitOutput(remote, ['init', '-q', '--bare']);
+		await gitOutput(repo.dir, ['push', '-q', remote, 'HEAD:refs/heads/main']);
+		// A tag only origin has, so the output shows the second fetch got it.
+		await gitOutput(remote, ['tag', 'v1.0.5', 'main~1']);
+		await gitOutput(repo.dir, [
+			'remote',
+			'add',
+			'origin',
+			`ssh://localhost${remote}`,
+		]);
+		const ssh = await fakeSsh();
+		cleanups.push(ssh.cleanup);
+		for (const [key, value] of Object.entries(ssh.env)) vi.stubEnv(key, value);
+		cleanups.push(async () => {
+			vi.unstubAllEnvs();
+		});
+
+		const {code, stdout, calls} = await withFace(
+			['release', '--dry-run'],
+			repo.dir,
+			{fetchTags: true},
+		);
+		expect(code).toBe(0);
+		expect(stdout).toContain('from v1.0.5');
+		expect(stdout).not.toContain('could not fetch tags');
+		expect(calls.slice(0, 3)).toEqual([
+			['step', 'Planning the release'],
+			['update', 'Fetching tags from origin'],
+			['end', 'warn', 'git needs your credentials'],
+		]);
+	},
+);

@@ -275,3 +275,34 @@ test('queryBackground puts raw mode back as it found it', async () => {
 	expect(stdin.pause).toHaveBeenCalled();
 	expect(stdin.listenerCount('data')).toBe(0);
 });
+
+test('Ctrl-C during the query restores stdin and raises SIGINT', async () => {
+	vi.useFakeTimers();
+	const {stdin, input, stderr} = fakeStreams();
+	const interrupt = vi.fn();
+	const pending = queryBackground(input, stderr, 100, interrupt);
+	stdin.emit('data', Buffer.from('\u0003'));
+	expect(interrupt).toHaveBeenCalledTimes(1);
+	expect(stdin.setRawMode).toHaveBeenLastCalledWith(false);
+	expect(stdin.isRaw).toBe(false);
+	expect(stdin.pause).toHaveBeenCalled();
+	expect(stdin.listenerCount('data')).toBe(0);
+	expect(await pending).toBeUndefined();
+	expect(vi.getTimerCount()).toBe(0);
+});
+
+test('Ctrl-C in the grace window restores stdin and raises SIGINT', async () => {
+	vi.useFakeTimers();
+	const {stdin, input, stderr} = fakeStreams();
+	const interrupt = vi.fn();
+	const pending = queryBackground(input, stderr, 100, interrupt);
+	await vi.advanceTimersByTimeAsync(100);
+	expect(await pending).toBeUndefined();
+	await vi.advanceTimersByTimeAsync(50);
+	expect(interrupt).not.toHaveBeenCalled();
+	stdin.emit('data', Buffer.from('x\u0003'));
+	expect(interrupt).toHaveBeenCalledTimes(1);
+	expect(stdin.isRaw).toBe(false);
+	expect(stdin.listenerCount('data')).toBe(0);
+	expect(vi.getTimerCount()).toBe(0);
+});

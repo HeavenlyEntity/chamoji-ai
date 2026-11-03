@@ -135,11 +135,17 @@ function replyEnded(received: string): boolean {
  * A late reply must not reach the shell, so after that limit stdin stays raw
  * and swallowed until the reply ends or a grace window passes. Raw mode and
  * the pause are undone only then.
+ *
+ * Raw mode turns Ctrl-C into a byte instead of SIGINT, so a 0x03 seen at any
+ * point puts stdin back at once and calls `interrupt`, which raises SIGINT.
  */
 export function queryBackground(
 	stdin: NodeJS.ReadStream,
 	stderr: NodeJS.WriteStream,
 	timeoutMs = 100,
+	interrupt: () => void = () => {
+		process.kill(process.pid, 'SIGINT');
+	},
 ): Promise<Rgb | undefined> {
 	return new Promise(resolve => {
 		const wasRaw = stdin.isRaw;
@@ -156,7 +162,15 @@ export function queryBackground(
 		};
 
 		const onData = (chunk: Buffer | string) => {
-			received += chunk.toString();
+			const text = chunk.toString();
+			if (text.includes('\u0003')) {
+				resolve(undefined);
+				cleanup();
+				interrupt();
+				return;
+			}
+
+			received += text;
 			if (replyEnded(received)) {
 				resolve(parseOscBackground(received));
 				cleanup();
