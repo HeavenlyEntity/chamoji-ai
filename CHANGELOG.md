@@ -1,5 +1,47 @@
 # Changelog
 
+## [v0.11.0](https://github.com/HeavenlyEntity/chamoji-ai/compare/v0.10.1...v0.11.0) - 2026-11-03
+
+### Highlights
+
+- 🧠 **Project memory**
+  - ✨ Make AI agents write an intent card when they commit ([6617b21](https://github.com/HeavenlyEntity/chamoji-ai/commit/6617b2194c2121cc58050df63d51419b882340b3))
+  - ✨ Serve project memory to AI agents with chamoji mcp ([0e561b5](https://github.com/HeavenlyEntity/chamoji-ai/commit/0e561b5f3ff7ad9d814d3a17f5ac4f6dcf9f930c))
+  - ✨ Search project memory with BM25 and an optional Jev rerank ([90f36b6](https://github.com/HeavenlyEntity/chamoji-ai/commit/90f36b698f9b1611c415e5c26bf834ef75855a31))
+  - ✨ Share project memory between clones ([635063c](https://github.com/HeavenlyEntity/chamoji-ai/commit/635063cf17704a99c18e9f555dd88e010f8d1481))
+  - ✨ Keep workstream summaries in refs/chamoji/memory ([a7ab28b](https://github.com/HeavenlyEntity/chamoji-ai/commit/a7ab28b5a445c3a0f949e6b0c1bed30e20a94c7a))
+  - ✨ Add chamoji why to explain a line ([2fd0da6](https://github.com/HeavenlyEntity/chamoji-ai/commit/2fd0da6a8fb8f7dea6a8366e3cc22b4c1858b660))
+  - ✨ Read intent cards from commit messages ([9915976](https://github.com/HeavenlyEntity/chamoji-ai/commit/991597675b1379edb354f8b8d8277003bc7e6420))
+  - ⏪️ Stop carrying foreign tree entries, and let the pre-push hook run ([2af8565](https://github.com/HeavenlyEntity/chamoji-ai/commit/2af8565326d5b5a088e667a90565259eb1d05c89))
+  - 🐛 Fix the issues found in the final review of project memory ([46fbf39](https://github.com/HeavenlyEntity/chamoji-ai/commit/46fbf39fd63adb812373abd93a71e6869dae08a5))
+  - 🐛 Keep the agent hook from blocking commits and from changing shared files ([800050c](https://github.com/HeavenlyEntity/chamoji-ai/commit/800050c9df3de7c30d94e99e605f3de569209189))
+  - 🐛 Stop a pushed tip or a forged entry from erasing memory ([7f39c18](https://github.com/HeavenlyEntity/chamoji-ai/commit/7f39c18f8cc3e979a4f9a10784785f4b0b1ec5d1))
+  - 🐛 Keep odd commit dates from poisoning a memory entry ([8edea34](https://github.com/HeavenlyEntity/chamoji-ai/commit/8edea345347bb5028063fee1fae5a3911385fd93))
+  - 🐛 Read wrapped intent values and survive odd trailer keys ([a86ea5f](https://github.com/HeavenlyEntity/chamoji-ai/commit/a86ea5fc8d568689def5d76991ae1cd0857ad6fe))
+  - 🔒️ Redact the whole of a long email address ([7ecdfd6](https://github.com/HeavenlyEntity/chamoji-ai/commit/7ecdfd6581aa81279c482175411b159432021c3a))
+  - 🔒️ Bound the why body, lock down temp files, stop inviting the opt-out ([78c225f](https://github.com/HeavenlyEntity/chamoji-ai/commit/78c225f13e0d1e293d05c0a70413ee5d852fab42))
+  - 🔒️ Bound and sanitize what chamoji mcp sends to the model ([1ce0773](https://github.com/HeavenlyEntity/chamoji-ai/commit/1ce0773d50f13fa3a1abe167684ee3475970ee91))
+  - 🔒️ Keep commit text and tracked env files out of the memory rerank ([641c6f0](https://github.com/HeavenlyEntity/chamoji-ai/commit/641c6f098777639eff431fe26a8be767bb2ffd14))
+  - 🔒️ Drop any stored commit that HEAD has but this workstream doesn't name ([7e65c78](https://github.com/HeavenlyEntity/chamoji-ai/commit/7e65c78736027558d36e609909371ca64fb3c3d7))
+  - 🔒️ Frame commit records with NUL so commit text can't forge them ([fde7e01](https://github.com/HeavenlyEntity/chamoji-ai/commit/fde7e019ef7f35d2e188e76e6ae11cac1528f92a))
+  - 📝 Record the merge and the plan for 0.11.0 ([188edfb](https://github.com/HeavenlyEntity/chamoji-ai/commit/188edfbc5632cb1b433e1874aa83fb92d12a60fc))
+  - 📝 Drop the docs for foreign entries and --no-verify ([289e296](https://github.com/HeavenlyEntity/chamoji-ai/commit/289e296f30088b725ff22d4bbbf6c0c84f62b6a7))
+  - 📝 Document the final review fixes for project memory ([843e325](https://github.com/HeavenlyEntity/chamoji-ai/commit/843e32508a39510aa7d8331ed8d4d3300b2689cf))
+  - 📝 Correct the project memory docs after review ([12d3b93](https://github.com/HeavenlyEntity/chamoji-ai/commit/12d3b936784547f7bb94e823bcdeed4721651729))
+  - 📝 Document project memory and record milestone 7 ([d066fad](https://github.com/HeavenlyEntity/chamoji-ai/commit/d066fadcac6314aef053642399bd965d745d0927))
+  - 📝 Plan milestone 7, Project memory ([641cb6c](https://github.com/HeavenlyEntity/chamoji-ai/commit/641cb6c9603668a853e04911e91fb321ac4994c1))
+  - 💚 Make the memory and MCP tests pass on Windows ([d74e169](https://github.com/HeavenlyEntity/chamoji-ai/commit/d74e1694c1f649fae83644e548dbe40adafff713))
+  - 💚 Keep the huge-body test within argument limits ([323626e](https://github.com/HeavenlyEntity/chamoji-ai/commit/323626effabcc02b506af522a44fe6fdf9ece854))
+
+### Changed
+
+- 🔧 Mark the project memory workstream shipped ([caa2c91](https://github.com/HeavenlyEntity/chamoji-ai/commit/caa2c914fa233cf210114dbc30e07078554a8145))
+- Update funding sources in FUNDING.yml ([b12ec3a](https://github.com/HeavenlyEntity/chamoji-ai/commit/b12ec3aee3b48f488b62dcbedff82db47d5d6b5f))
+
+### Documentation
+
+- 📝 Mark workstreams shipped in 0.10.0, with dogfooding left ([3d26938](https://github.com/HeavenlyEntity/chamoji-ai/commit/3d269388c22f362b00bbed2512d0dc813ee37331))
+
 ## [v0.10.1](https://github.com/HeavenlyEntity/chamoji-ai/compare/v0.10.0...v0.10.1) - 2026-11-01
 
 ### Fixed

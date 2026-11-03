@@ -1,6 +1,6 @@
 {
 	"name": "@chamoji/cli",
-	"version": "0.10.1",
+	"version": "0.11.0",
 	"description": "Changelogs from gitmoji and Conventional Commits",
 	"license": "MIT",
 	"author": "AMWARE Technologies LLC",
