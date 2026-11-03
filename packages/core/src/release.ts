@@ -2,7 +2,13 @@ import {readFile, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import semver from 'semver';
 import {buildChangelog} from './changelog.js';
-import {assertGitRepo, assertRevision, listReleaseTags, runGit} from './git.js';
+import {
+	assertGitRepo,
+	assertRevision,
+	isAuthFailure,
+	listReleaseTags,
+	runGit,
+} from './git.js';
 import {renderMarkdown} from './render/markdown.js';
 import type {
 	ChamojiConfig,
@@ -55,6 +61,11 @@ export type ReleaseOptions = {
 	onStep?: (step: 'fetch-tags') => void;
 	/** Added to the environment of the tag fetches, nothing else. */
 	env?: Record<string, string>;
+	/**
+	 * Called when a tag fetch run with `env` failed for lack of credentials,
+	 * just before it is tried once more without `env`, where git may ask.
+	 */
+	onCredentials?: () => void;
 };
 
 export type FileChange = {file: string; text: string; how: string};
@@ -97,9 +108,16 @@ export async function planRelease(
 	const tryGit = async (...args: string[]) => git(...args).catch(() => null);
 	const fetchTags = async (...args: string[]) => {
 		options.onStep?.('fetch-tags');
-		return (
-			await runGit(['fetch', '--quiet', ...args], root, options.env)
-		).trim();
+		const fetch = async (env?: Record<string, string>) =>
+			(await runGit(['fetch', '--quiet', ...args], root, env)).trim();
+		try {
+			return await fetch(options.env);
+		} catch (error) {
+			if (!options.env || !isAuthFailure(error)) throw error;
+			// Nothing was fetched, so trying again is safe.
+			options.onCredentials?.();
+			return fetch();
+		}
 	};
 	const warnings: string[] = [];
 

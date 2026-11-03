@@ -746,8 +746,8 @@ export async function run(argv: string[], given: Io): Promise<number> {
 	): Promise<number> {
 		const config = await loadConfig(io.cwd, flags.config);
 		// Under a face the tag fetch must not ask for a password, or the face
-		// would draw over the prompt. planRelease keeps a failed fetch as a
-		// warning, so there is no second try here: the warning says so.
+		// would draw over the prompt. When it needs one, the step ends first and
+		// planRelease fetches again where git can ask.
 		const env = face === NO_FACE ? undefined : await quietGitEnv(io.cwd);
 		const plan = await runStep(
 			face,
@@ -766,6 +766,11 @@ export async function run(argv: string[], given: Io): Promise<number> {
 						classify,
 						onStep() {
 							step.update('Fetching tags from origin');
+						},
+						onCredentials() {
+							// Jev, if it runs after this, starts a step of its own.
+							jevHost = undefined;
+							step.end('warn', 'git needs your credentials');
 						},
 						...(env ? {env} : {}),
 					});

@@ -305,6 +305,7 @@ test('jev progress counts only commits sent', async () => {
 		progress: (done, total) => calls.push([done, total]),
 	})(input);
 	expect(calls).toEqual([
+		[0, 30],
 		[25, 30],
 		[30, 30],
 	]);
@@ -329,6 +330,7 @@ test('jevFace gives Jev a step of its own and counts the batches on it', async (
 	await classify(commits(30));
 	expect(calls).toEqual([
 		['step', 'Jev is sorting commits'],
+		['update', 'Jev is sorting 0 of 30 commits'],
 		['update', 'Jev is sorting 25 of 30 commits'],
 		['update', 'Jev is sorting 30 of 30 commits'],
 		['end', 'ok', 'Jev sorted 30 commits'],
@@ -375,7 +377,26 @@ test('jevFace relabels the step a command is already running, and leaves it runn
 	expect(calls).toEqual([
 		['step', 'Planning the release'],
 		['update', 'Jev is sorting commits'],
+		['update', 'Jev is sorting 0 of 30 commits'],
 		['update', 'Jev is sorting 25 of 30 commits'],
 		['update', 'Jev is sorting 30 of 30 commits'],
+	]);
+});
+
+test('jevFace ends warn when every request fails', async () => {
+	const client: JevClient = {
+		async systemOne() {
+			throw new Error('invalid key');
+		},
+	};
+	const {face, calls} = recordingFace();
+	const jev = jevFace(face);
+	await jev.wrap(
+		createJevClassifier(client, {batchSize: 25, progress: jev.progress}),
+	)(commits(30));
+	expect(calls).toEqual([
+		['step', 'Jev is sorting commits'],
+		['update', 'Jev is sorting 0 of 30 commits'],
+		['end', 'warn', 'Jev left 30 of 30 commits unsorted'],
 	]);
 });

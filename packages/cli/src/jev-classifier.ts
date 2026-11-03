@@ -37,8 +37,9 @@ export type JevClassifierOptions = {
 	/** Judgments from earlier runs; commits found here aren't sent again. */
 	cache?: JudgmentCache;
 	/**
-	 * Called after each finished batch with the commits sent so far and the
-	 * number to send, which leaves out the ones the cache already knew.
+	 * Called once with 0 before the first batch, then after each finished
+	 * batch, with the commits sent so far and the number to send, which leaves
+	 * out the ones the cache already knew. Not called when nothing is sent.
 	 */
 	progress?: (done: number, total: number) => void;
 };
@@ -152,6 +153,7 @@ export function createJevClassifier(
 
 		let next = 0;
 		let sent = 0;
+		if (unknown.length > 0) progress?.(0, unknown.length);
 		let failure: Error | undefined;
 		// `--ai` only improves the output, so a failed request stops further
 		// requests but keeps what earlier ones returned.
