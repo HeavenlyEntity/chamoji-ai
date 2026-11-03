@@ -487,7 +487,7 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 **Progress:** built on `feat/terminal-face`, not merged or released. The [plan's Results](superpowers/plans/2026-11-03-terminal-face.md#results) has the detail.
 
 - ✅ **Byte-identity:** `memory sync`, `memory sync --json`, `release --dry-run --json`, `changelog` and `next-version` print the same stdout, stderr and exit code as 0.11.0 when piped, and the same stdout when stderr is a terminal.
-- ⬜ **Real terminals:** Terminal.app, iTerm2, Ghostty and the VS Code terminal, each on a light and a dark profile, are checked by hand; the Results records which answered OSC 11.
+- ⬜ **Real terminals:** checked in the Claude desktop app's Terminal panel on a dark background only. Terminal.app, iTerm2, Ghostty, the VS Code terminal, the light profiles, which terminals answer OSC 11 and Ctrl-C mid-sync are still to check before release.
 - ⬜ **Tagline:** the tagline now in `--help` and under the wordmark is a proposal and waits for approval. `packages/cli/package.json`'s description still has the old one.
 
 ---
