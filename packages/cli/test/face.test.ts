@@ -256,6 +256,29 @@ test('wrap clears the face line, writes the text, and redraws the face after it'
 	expect(writes.at(-1)).toContain('Syncing memory');
 });
 
+test('the first draw starts a new line after text that stopped mid-line', () => {
+	const {face, clock, writes} = setup();
+	const out: string[] = [];
+	const wrapped = face.wrap(text => out.push(text));
+	face.step('Syncing memory');
+	clock.advance(100);
+	wrapped('Checking… ');
+	expect(writes).toEqual([]);
+	clock.advance(100);
+	expect(out).toEqual(['Checking… ']);
+	expect(writes[0]).toBe('\n');
+	expect(writes[1]).toBe(HIDE);
+	expect(writes[2]?.startsWith(REDRAW)).toBe(true);
+
+	// Text that ended its line needs no extra one.
+	const whole = setup();
+	const wrappedWhole = whole.face.wrap(() => {});
+	whole.face.step('Syncing memory');
+	wrappedWhole('Checking…\n');
+	whole.clock.advance(200);
+	expect(whole.writes[0]).toBe(HIDE);
+});
+
 test('wrap passes text through once the step has ended', () => {
 	const {face, clock, writes} = setup();
 	const out: string[] = [];

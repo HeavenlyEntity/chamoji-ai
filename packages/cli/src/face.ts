@@ -128,6 +128,8 @@ export function createFace(options: FaceOptions): Face {
 
 	let live: Live | undefined;
 	let offset = 0;
+	// Whether the last wrapped text left the cursor at the start of a line.
+	let atLineStart = true;
 	const handlers = new Map<string, () => void>();
 
 	const paint = (text: string) =>
@@ -203,6 +205,13 @@ export function createFace(options: FaceOptions): Face {
 			live.drawnAt = now;
 			offset = 0;
 			installSignals();
+			// Text written while the step waited may have stopped mid-line. The
+			// face must not erase it, so it starts a line of its own.
+			if (!atLineStart) {
+				write('\n');
+				atLineStart = true;
+			}
+
 			write(HIDE_CURSOR);
 		}
 
@@ -265,7 +274,13 @@ export function createFace(options: FaceOptions): Face {
 		},
 		wrap(output) {
 			return text => {
-				if (!live || live.drawnAt === undefined || text === '') {
+				if (text === '') {
+					output(text);
+					return;
+				}
+
+				if (!live || live.drawnAt === undefined) {
+					atLineStart = text.endsWith('\n');
 					output(text);
 					return;
 				}
@@ -276,6 +291,8 @@ export function createFace(options: FaceOptions): Face {
 				if (!text.endsWith('\n')) {
 					write('\n');
 				}
+
+				atLineStart = true;
 
 				draw();
 			};
