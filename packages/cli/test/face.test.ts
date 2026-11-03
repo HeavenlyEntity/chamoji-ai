@@ -1,13 +1,16 @@
+import {tmpdir} from 'node:os';
 import {expect, test, vi} from 'vitest';
 import {ASCII_FACES, FACES} from '../src/faces.js';
 import {
 	createFace,
 	formatElapsed,
+	gitStep,
 	NO_FACE,
 	runStep,
 	type FaceOptions,
 	type Step,
 } from '../src/face.js';
+import {recordingFace} from './helpers/recording-face.js';
 
 const CLEAR = '\u001B[2K';
 const HIDE = '\u001B[?25l';
@@ -466,4 +469,124 @@ test('runStep with NO_FACE just runs the work', async () => {
 		value => ({outcome: 'ok', text: value}),
 	);
 	expect(result).toBe('done');
+});
+
+test('runStep ends a thrown step as fail with the label it had when it threw', async () => {
+	const {face, calls} = recordingFace();
+	await expect(
+		runStep(
+			face,
+			'Syncing memory with origin',
+			async step => {
+				step.update('Pushing memory to origin');
+				throw new Error('rejected');
+			},
+			() => ({outcome: 'ok', text: 'unused'}),
+		),
+	).rejects.toThrow('rejected');
+	expect(calls.at(-1)).toEqual(['end', 'fail', 'Pushing memory to origin']);
+});
+
+const authError = () =>
+	Object.assign(new Error('Could not fetch memory from origin'), {
+		stderr: 'fatal: could not read Username for https://example.com',
+	});
+
+test('gitStep runs the work once with the quiet env when it works', async () => {
+	const {face, calls} = recordingFace();
+	const seen: Array<Record<string, string> | undefined> = [];
+	const result = await gitStep(
+		face,
+		tmpdir(),
+		'Pushing memory to origin',
+		async env => {
+			seen.push(env);
+			return 2;
+		},
+		count => ({outcome: 'ok', text: `Pushed ${count}`}),
+	);
+	expect(result).toBe(2);
+	expect(seen).toHaveLength(1);
+	expect(seen[0]).toMatchObject({GIT_TERMINAL_PROMPT: '0'});
+	expect(calls).toEqual([
+		['step', 'Pushing memory to origin'],
+		['end', 'ok', 'Pushed 2'],
+	]);
+});
+
+test('gitStep reruns without the quiet env after an auth failure', async () => {
+	const {face, calls} = recordingFace();
+	const seen: Array<Record<string, string> | undefined> = [];
+	const result = await gitStep(
+		face,
+		tmpdir(),
+		"Fetching origin's memory",
+		async env => {
+			seen.push(env);
+			if (env) throw authError();
+			return 'fetched';
+		},
+		() => ({outcome: 'ok', text: 'unused'}),
+	);
+	expect(result).toBe('fetched');
+	expect(seen).toHaveLength(2);
+	expect(seen[0]).toMatchObject({GIT_TERMINAL_PROMPT: '0'});
+	expect(seen[1]).toBeUndefined();
+	// The rerun has no face, so the prompt it may show is never drawn over.
+	expect(calls).toEqual([
+		['step', "Fetching origin's memory"],
+		['end', 'warn', 'git needs your credentials'],
+	]);
+});
+
+test('gitStep ends any other failure as fail and rethrows, with no rerun', async () => {
+	const {face, calls} = recordingFace();
+	let runs = 0;
+	await expect(
+		gitStep(
+			face,
+			tmpdir(),
+			'Pushing memory to origin',
+			async () => {
+				runs++;
+				throw new Error('remote rejected');
+			},
+			() => ({outcome: 'ok', text: 'unused'}),
+		),
+	).rejects.toThrow('remote rejected');
+	expect(runs).toBe(1);
+	expect(calls).toEqual([
+		['step', 'Pushing memory to origin'],
+		['end', 'fail', 'Pushing memory to origin'],
+	]);
+});
+
+test('gitStep passes the step on, so the work can relabel it', async () => {
+	const {face, calls} = recordingFace();
+	await gitStep(
+		face,
+		tmpdir(),
+		'Syncing memory with origin',
+		async (_env, step) => {
+			step?.update('Merging memory');
+		},
+		() => ({outcome: 'ok', text: 'Synced'}),
+	);
+	expect(calls).toContainEqual(['update', 'Merging memory']);
+});
+
+test('gitStep with NO_FACE runs the work once with no env, as before', async () => {
+	const seen: Array<Record<string, string> | undefined> = [];
+	const result = await gitStep(
+		NO_FACE,
+		tmpdir(),
+		'Pushing memory to origin',
+		async env => {
+			seen.push(env);
+			return 'pushed';
+		},
+		() => ({outcome: 'ok', text: 'unused'}),
+	);
+	expect(result).toBe('pushed');
+	expect(seen).toEqual([undefined]);
 });

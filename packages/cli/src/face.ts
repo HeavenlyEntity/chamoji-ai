@@ -1,3 +1,4 @@
+import {isAuthFailure, quietGitEnv} from '@chamoji/core';
 import {ASCII_FACES, FACES, IDLE_LOOP, type FaceName} from './faces.js';
 import {paintFoil, type Theme} from './foil.js';
 
@@ -301,9 +302,25 @@ export function createFace(options: FaceOptions): Face {
 	};
 }
 
+/** A step that remembers its label, so a failure can name what it was doing. */
+function tracked(face: Face, label: string): Step & {label: string} {
+	const step = face.step(label);
+	const self = {
+		label,
+		update(next: string) {
+			self.label = next;
+			step.update(next);
+		},
+		end(outcome: StepOutcome, text: string) {
+			step.end(outcome, text);
+		},
+	};
+	return self;
+}
+
 /**
  * Runs `work` as a step. `finish` says how it ended; a throw ends it as a
- * failure with the step's own label, and is rethrown.
+ * failure with the step's label at the time, and is rethrown.
  */
 export async function runStep<T>(
 	face: Face,
@@ -311,14 +328,51 @@ export async function runStep<T>(
 	work: (step: Step) => Promise<T>,
 	finish: (result: T) => {outcome: StepOutcome; text: string},
 ): Promise<T> {
-	const step = face.step(label);
+	const step = tracked(face, label);
 	try {
 		const result = await work(step);
 		const {outcome, text} = finish(result);
 		step.end(outcome, text);
 		return result;
 	} catch (error) {
-		step.end('fail', label);
+		step.end('fail', step.label);
 		throw error;
 	}
+}
+
+/**
+ * Runs a git command that talks to a remote as a step. The face redraws
+ * every 100 ms and would wipe out a password prompt, so the work first gets
+ * `quietGitEnv`, which makes git fail instead of asking. When it fails for
+ * lack of credentials, the step ends with a warning and the work runs again
+ * with no env and no face, so git can ask. Nothing was fetched or pushed by
+ * the failed try, so running it again is safe.
+ *
+ * With NO_FACE nothing is drawn, so the work runs once, as it always did.
+ */
+export async function gitStep<T>(
+	face: Face,
+	cwd: string,
+	label: string,
+	work: (env?: Record<string, string>, step?: Step) => Promise<T>,
+	finish: (result: T) => {outcome: StepOutcome; text: string},
+): Promise<T> {
+	if (face === NO_FACE) return work(undefined);
+	const env = await quietGitEnv(cwd);
+	const step = tracked(face, label);
+	try {
+		const result = await work(env, step);
+		const {outcome, text} = finish(result);
+		step.end(outcome, text);
+		return result;
+	} catch (error) {
+		if (!isAuthFailure(error)) {
+			step.end('fail', step.label);
+			throw error;
+		}
+
+		step.end('warn', 'git needs your credentials');
+	}
+
+	return work(undefined);
 }
