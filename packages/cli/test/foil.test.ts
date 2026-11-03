@@ -176,23 +176,74 @@ function fakeStreams() {
 	};
 }
 
-test('queryBackground gives up after the timeout and restores raw mode', async () => {
+test('queryBackground answers undefined at the limit, then restores after the grace window', async () => {
 	vi.useFakeTimers();
 	const {stdin, input, stderr, write} = fakeStreams();
-	const pending = queryBackground(input, stderr);
+	let result: unknown = 'pending';
+	const pending = queryBackground(input, stderr).then(color => {
+		result = color;
+		return color;
+	});
 	expect(write).toHaveBeenCalledWith(`${ESC}]11;?${ESC}\\`);
 	expect(stdin.setRawMode).toHaveBeenLastCalledWith(true);
 	expect(stdin.listenerCount('data')).toBe(1);
 
 	await vi.advanceTimersByTimeAsync(99);
-	expect(stdin.setRawMode).toHaveBeenCalledTimes(1);
+	expect(result).toBe('pending');
 	await vi.advanceTimersByTimeAsync(1);
-
+	expect(result).toBeUndefined();
 	expect(await pending).toBeUndefined();
+
+	// Resolved, but still raw and listening, so a late reply cannot echo.
+	expect(stdin.isRaw).toBe(true);
+	expect(stdin.listenerCount('data')).toBe(1);
+	expect(stdin.pause).not.toHaveBeenCalled();
+
+	await vi.advanceTimersByTimeAsync(199);
+	expect(stdin.isRaw).toBe(true);
+	await vi.advanceTimersByTimeAsync(1);
 	expect(stdin.setRawMode).toHaveBeenLastCalledWith(false);
 	expect(stdin.isRaw).toBe(false);
 	expect(stdin.pause).toHaveBeenCalled();
 	expect(stdin.listenerCount('data')).toBe(0);
+	expect(vi.getTimerCount()).toBe(0);
+});
+
+test('queryBackground swallows a reply that arrives after the limit', async () => {
+	vi.useFakeTimers();
+	const {stdin, input, stderr} = fakeStreams();
+	const pending = queryBackground(input, stderr);
+	await vi.advanceTimersByTimeAsync(100);
+	expect(await pending).toBeUndefined();
+
+	await vi.advanceTimersByTimeAsync(50);
+	expect(stdin.isRaw).toBe(true);
+	stdin.emit('data', Buffer.from(`${ESC}]11;rgb:ffff/ffff/`));
+	expect(stdin.isRaw).toBe(true);
+	expect(stdin.listenerCount('data')).toBe(1);
+	stdin.emit('data', Buffer.from(`ffff${ESC}\\`));
+
+	expect(stdin.setRawMode).toHaveBeenLastCalledWith(false);
+	expect(stdin.isRaw).toBe(false);
+	expect(stdin.pause).toHaveBeenCalled();
+	expect(stdin.listenerCount('data')).toBe(0);
+	expect(vi.getTimerCount()).toBe(0);
+});
+
+test('queryBackground is not ended by a stray BEL before the reply', async () => {
+	vi.useFakeTimers();
+	const {stdin, input, stderr} = fakeStreams();
+	const pending = queryBackground(input, stderr);
+	stdin.emit('data', Buffer.from(BEL));
+	expect(stdin.listenerCount('data')).toBe(1);
+	expect(stdin.isRaw).toBe(true);
+	stdin.emit('data', Buffer.from(`${ESC}\\`));
+	expect(stdin.listenerCount('data')).toBe(1);
+
+	stdin.emit('data', Buffer.from(`${ESC}]11;rgb:ffff/ffff/ffff${BEL}`));
+	expect(await pending).toEqual(white);
+	expect(stdin.listenerCount('data')).toBe(0);
+	expect(stdin.isRaw).toBe(false);
 });
 
 test('queryBackground resolves the colour and removes its listener', async () => {
@@ -217,5 +268,10 @@ test('queryBackground puts raw mode back as it found it', async () => {
 	const pending = queryBackground(input, stderr, 50);
 	await vi.advanceTimersByTimeAsync(50);
 	await pending;
+	await vi.advanceTimersByTimeAsync(200);
+	// Raw was on before, so it is set to true again, not false.
+	expect(stdin.setRawMode).toHaveBeenCalledTimes(2);
 	expect(stdin.setRawMode).toHaveBeenLastCalledWith(true);
+	expect(stdin.pause).toHaveBeenCalled();
+	expect(stdin.listenerCount('data')).toBe(0);
 });

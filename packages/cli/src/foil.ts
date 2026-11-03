@@ -114,9 +114,27 @@ export function isLight({r, g, b}: Rgb): boolean {
 	return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b) > 0.5;
 }
 
+/** How long to keep swallowing input after the answer limit has passed. */
+const GRACE_MS = 200;
+
+/** Whether the reply is complete: a BEL or ST that follows `ESC ] 11 ;`. */
+function replyEnded(received: string): boolean {
+	const start = received.indexOf('\u001B]11;');
+	if (start === -1) {
+		return false;
+	}
+
+	const rest = received.slice(start);
+	return rest.includes('\u0007') || rest.includes('\u001B\\');
+}
+
 /**
  * Asks the terminal for its background with OSC 11. Resolves undefined when it
- * does not answer in time. Raw mode and the pause are undone either way.
+ * has not answered in `timeoutMs`, so callers never wait longer than that.
+ *
+ * A late reply must not reach the shell, so after that limit stdin stays raw
+ * and swallowed until the reply ends or a grace window passes. Raw mode and
+ * the pause are undone only then.
  */
 export function queryBackground(
 	stdin: NodeJS.ReadStream,
@@ -126,28 +144,31 @@ export function queryBackground(
 	return new Promise(resolve => {
 		const wasRaw = stdin.isRaw;
 		let received = '';
-		let timer: NodeJS.Timeout | undefined;
+		let limitTimer: NodeJS.Timeout | undefined;
+		let graceTimer: NodeJS.Timeout | undefined;
 
-		const finish = (color: Rgb | undefined) => {
-			clearTimeout(timer);
+		const cleanup = () => {
+			clearTimeout(limitTimer);
+			clearTimeout(graceTimer);
 			stdin.off('data', onData);
 			stdin.setRawMode(wasRaw);
 			stdin.pause();
-			resolve(color);
 		};
 
 		const onData = (chunk: Buffer | string) => {
 			received += chunk.toString();
-			if (received.includes('\u0007') || received.includes('\u001B\\')) {
-				finish(parseOscBackground(received));
+			if (replyEnded(received)) {
+				resolve(parseOscBackground(received));
+				cleanup();
 			}
 		};
 
 		stdin.setRawMode(true);
 		stdin.resume();
 		stdin.on('data', onData);
-		timer = setTimeout(() => {
-			finish(undefined);
+		limitTimer = setTimeout(() => {
+			resolve(undefined);
+			graceTimer = setTimeout(cleanup, GRACE_MS);
 		}, timeoutMs);
 		stderr.write('\u001B]11;?\u001B\\');
 	});
