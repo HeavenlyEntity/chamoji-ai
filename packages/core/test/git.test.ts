@@ -1,5 +1,15 @@
+import {mkdtemp, rm, writeFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
 import {afterEach, expect, test, vi} from 'vitest';
-import {listReleaseTags, readCommits, toWebUrl} from '../src/git.js';
+import {
+	isAuthFailure,
+	listReleaseTags,
+	quietGitEnv,
+	readCommits,
+	runGit,
+	toWebUrl,
+} from '../src/git.js';
 import {
 	createRepo,
 	gitOutput,
@@ -143,4 +153,73 @@ test('a branch with the same name as a tag does not hide the tag', async () => {
 test('readCommits does not treat the range as an option', async () => {
 	repo = await createRepo([{commit: '✨ Add'}]);
 	await expect(readCommits(repo.dir, '--all')).rejects.toThrow();
+});
+
+test('runGit passes env through', async () => {
+	repo = await createRepo([{commit: '✨ Add'}]);
+	const ident = await runGit(['var', 'GIT_AUTHOR_IDENT'], repo.dir, {
+		GIT_AUTHOR_NAME: 'Face',
+	});
+	expect(ident.startsWith('Face <fixture@example.com>')).toBe(true);
+	const plain = await runGit(['var', 'GIT_AUTHOR_IDENT'], repo.dir);
+	expect(plain.startsWith('Fixture Bot <')).toBe(true);
+});
+
+test('quietGitEnv adds batch ssh only when nothing sets an ssh command', async () => {
+	repo = await createRepo([{commit: '✨ Add'}]);
+	const isolated = await mkdtemp(path.join(tmpdir(), 'chamoji-gitcfg-'));
+	const emptyConfig = path.join(isolated, 'config');
+	await writeFile(emptyConfig, '');
+	// The developer's own git config must not decide what this test sees.
+	vi.stubEnv('GIT_CONFIG_GLOBAL', emptyConfig);
+	vi.stubEnv('GIT_CONFIG_NOSYSTEM', '1');
+	const saved = process.env.GIT_SSH_COMMAND;
+	try {
+		delete process.env.GIT_SSH_COMMAND;
+		expect(await quietGitEnv(repo.dir)).toEqual({
+			GIT_TERMINAL_PROMPT: '0',
+			GIT_SSH_COMMAND: 'ssh -o BatchMode=yes',
+		});
+
+		await gitOutput(repo.dir, ['config', 'core.sshCommand', 'ssh -i key']);
+		expect(await quietGitEnv(repo.dir)).toEqual({GIT_TERMINAL_PROMPT: '0'});
+
+		await gitOutput(repo.dir, ['config', '--unset', 'core.sshCommand']);
+		process.env.GIT_SSH_COMMAND = 'ssh -v';
+		expect(await quietGitEnv(repo.dir)).toEqual({GIT_TERMINAL_PROMPT: '0'});
+	} finally {
+		if (saved === undefined) delete process.env.GIT_SSH_COMMAND;
+		else process.env.GIT_SSH_COMMAND = saved;
+		vi.unstubAllEnvs();
+		await rm(isolated, {recursive: true, force: true});
+	}
+});
+
+test.each([
+	'terminal prompts disabled',
+	'could not read Username for https://example.com',
+	'could not read Password for https://user@example.com',
+	'Authentication failed for https://example.com/repo.git',
+	'Permission denied (publickey).',
+	'Host key verification failed.',
+])('isAuthFailure matches %s, whichever way the error carries it', phrase => {
+	// How core wraps git's stderr into a message...
+	expect(
+		isAuthFailure(
+			new Error(`Could not fetch memory from origin: fatal: ${phrase}`),
+		),
+	).toBe(true);
+	// ...and how an execFile error holds it.
+	expect(
+		isAuthFailure(Object.assign(new Error('git failed'), {stderr: phrase})),
+	).toBe(true);
+});
+
+test("isAuthFailure doesn't match a rejected push or an odd value", () => {
+	const rejected = new Error(
+		'Could not push memory to origin: ! [remote rejected] main -> main (hook declined)',
+	);
+	expect(isAuthFailure(rejected)).toBe(false);
+	expect(isAuthFailure(new Error('fatal: bad object'))).toBe(false);
+	expect(isAuthFailure(undefined)).toBe(false);
 });

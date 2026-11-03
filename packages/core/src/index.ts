@@ -12,7 +12,9 @@ export {CONFIG_FILE, DEFAULT_GROUP_CONFIG, loadConfig} from './config.js';
 export {
 	assertGitRepo,
 	getRemoteWebUrl,
+	isAuthFailure,
 	listReleaseTags,
+	quietGitEnv,
 	readCommits,
 	runGit,
 	runGitWithInput,
@@ -53,7 +55,9 @@ export {
 	pullMemory,
 	syncMemory,
 	type PullResult,
+	type SyncOptions,
 	type SyncResult,
+	type SyncStep,
 } from './memory-sync.js';
 export {reindexMemory, searchMemory, type MemoryHit} from './memory-index.js';
 export {parseCommit} from './parse.js';

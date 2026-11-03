@@ -443,3 +443,81 @@ test('pushRelease pushes HEAD and the tag, and a failed push keeps the release',
 		await rm(remote, {recursive: true, force: true});
 	}
 });
+
+const cleanups: Array<() => Promise<void>> = [];
+afterEach(async () => {
+	await Promise.all(cleanups.splice(0).map(async cleanup => cleanup()));
+});
+
+async function withOrigin(repo: FixtureRepo): Promise<string> {
+	const remote = await mkdtemp(path.join(tmpdir(), 'chamoji-remote-'));
+	cleanups.push(async () => rm(remote, {recursive: true, force: true}));
+	await gitOutput(remote, ['init', '-q', '--bare', '-b', 'main']);
+	await gitOutput(repo.dir, ['remote', 'add', 'origin', remote]);
+	await gitOutput(repo.dir, ['push', '-q', 'origin', 'main', '--tags']);
+	return remote;
+}
+
+test('planRelease reports fetch-tags when origin exists', async () => {
+	const repo = await repoWith(widgets);
+	await withOrigin(repo);
+	const steps: string[] = [];
+	await ready(repo.dir, {fetch: true, onStep: step => steps.push(step)});
+	expect(steps).toEqual(['fetch-tags']);
+});
+
+test('planRelease reports no step without an origin or with fetch off', async () => {
+	const repo = await repoWith(widgets);
+	const steps: string[] = [];
+	const onStep = (step: string) => steps.push(step);
+	await ready(repo.dir, {fetch: true, onStep});
+	await withOrigin(repo);
+	await ready(repo.dir, {fetch: false, onStep});
+	expect(steps).toEqual([]);
+});
+
+test('planRelease reports fetch-tags before unshallowing a shallow clone', async () => {
+	const repo = await repoWith(widgets);
+	const remote = await withOrigin(repo);
+	const parent = await mkdtemp(path.join(tmpdir(), 'chamoji-shallow-'));
+	cleanups.push(async () => rm(parent, {recursive: true, force: true}));
+	const clone = path.join(parent, 'clone');
+	await gitOutput(parent, [
+		'clone',
+		'-q',
+		'--depth',
+		'1',
+		`file://${remote}`,
+		clone,
+	]);
+	const steps: string[] = [];
+	await ready(clone, {onStep: step => steps.push(step)});
+	expect(steps).toEqual(['fetch-tags']);
+});
+
+test('planRelease and pushRelease hand the env to git', async () => {
+	const repo = await repoWith(widgets);
+	const remote = await withOrigin(repo);
+	// Only the env knows that this address means the real remote.
+	const address = 'chamoji-test://nowhere/repo.git';
+	await gitOutput(repo.dir, ['remote', 'set-url', 'origin', address]);
+	const env = {
+		GIT_CONFIG_COUNT: '1',
+		GIT_CONFIG_KEY_0: `url.${remote}.insteadOf`,
+		GIT_CONFIG_VALUE_0: address,
+	};
+
+	const without = await ready(repo.dir, {fetch: true});
+	expect(without.warnings).toEqual([
+		'could not fetch tags from origin; used the local tags',
+	]);
+
+	const result = await ready(repo.dir, {fetch: true, env});
+	expect(result.warnings).toEqual([]);
+	await applyRelease(result);
+	await expect(pushRelease(result)).rejects.toThrow(/push failed/);
+	await pushRelease(result, env);
+	expect(await gitOutput(remote, ['tag', '--list', 'v1.3.0'])).toContain(
+		'v1.3.0',
+	);
+});

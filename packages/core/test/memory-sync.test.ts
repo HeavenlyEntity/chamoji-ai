@@ -16,7 +16,12 @@ import {
 	writeTree,
 	type MemoryEntry,
 } from '../src/memory.js';
-import {mergeTrees, pullMemory, syncMemory} from '../src/memory-sync.js';
+import {
+	mergeTrees,
+	pullMemory,
+	syncMemory,
+	type SyncStep,
+} from '../src/memory-sync.js';
 import {
 	createRepo,
 	gitOutput,
@@ -30,13 +35,22 @@ import {
 const race = vi.hoisted(() => ({
 	before: [] as Array<() => Promise<unknown>>,
 	broken: undefined as string | undefined,
+	/** Every network command that ran, with the env it was given. */
+	network: [] as Array<{
+		command: string;
+		env: Record<string, string> | undefined;
+	}>,
 }));
 
 vi.mock('../src/git.js', async importOriginal => {
 	const real = await importOriginal<typeof import('../src/git.js')>();
 	return {
 		...real,
-		async runGit(args: string[], cwd: string) {
+		async runGit(args: string[], cwd: string, env?: Record<string, string>) {
+			if (args[0] === 'fetch' || args[0] === 'push') {
+				race.network.push({command: args[0], env});
+			}
+
 			if (args[0] === race.broken) {
 				throw Object.assign(new Error('git failed'), {
 					code: 128,
@@ -45,7 +59,7 @@ vi.mock('../src/git.js', async importOriginal => {
 			}
 
 			if (args[0] === 'push') await race.before.shift()?.();
-			return real.runGit(args, cwd);
+			return real.runGit(args, cwd, env);
 		},
 	};
 });
@@ -54,6 +68,7 @@ const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
 	race.before = [];
 	race.broken = undefined;
+	race.network = [];
 	await Promise.all(cleanups.splice(0).map(async cleanup => cleanup()));
 });
 
@@ -1039,3 +1054,59 @@ async function plantStray(dir: string): Promise<string> {
 		await gitOutput(dir, ['commit-tree', tree, '-p', MEMORY_REF, '-m', 'stray'])
 	).trim();
 }
+
+test('syncMemory reports fetch, merge, push in order', async () => {
+	const {a} = await world();
+	await snapshotWorkstream(a, 'auth');
+	const steps: SyncStep[] = [];
+	const result = await syncMemory(a, {onStep: step => steps.push(step)});
+	expect(result.pushed).toBe(true);
+	expect(steps).toEqual(['fetch', 'merge', 'push']);
+});
+
+test('syncMemory fires merge even with nothing to merge or push', async () => {
+	const {b} = await world();
+	const steps: SyncStep[] = [];
+	const result = await syncMemory(b, {onStep: step => steps.push(step)});
+	expect(result.pushed).toBe(false);
+	expect(steps).toEqual(['fetch', 'merge']);
+});
+
+test('syncMemory reports push again when it starts over after a lost race', async () => {
+	const {a, b} = await world();
+	await snapshotWorkstream(a, 'auth');
+	await snapshotWorkstream(b, 'billing');
+	race.before.push(async () => syncMemory(b));
+	const steps: SyncStep[] = [];
+	await syncMemory(a, {onStep: step => steps.push(step)});
+	expect(steps).toEqual(['fetch', 'merge', 'push', 'fetch', 'merge', 'push']);
+});
+
+test('pullMemory reports fetch and merge, never push', async () => {
+	const {b} = await world();
+	const steps: SyncStep[] = [];
+	await pullMemory(b, {onStep: step => steps.push(step)});
+	expect(steps).toEqual(['fetch', 'merge']);
+});
+
+test('the env goes to fetch and push, and to no other git command', async () => {
+	const {a} = await world();
+	await snapshotWorkstream(a, 'auth');
+	const env = {GIT_TERMINAL_PROMPT: '0'};
+	race.network = [];
+	await syncMemory(a, {env});
+	expect(race.network).toEqual([
+		{command: 'fetch', env},
+		{command: 'push', env},
+	]);
+});
+
+test('with no options the env is left alone', async () => {
+	const {a} = await world();
+	await snapshotWorkstream(a, 'auth');
+	await syncMemory(a);
+	expect(race.network).toEqual([
+		{command: 'fetch', env: undefined},
+		{command: 'push', env: undefined},
+	]);
+});
