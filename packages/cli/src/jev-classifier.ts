@@ -196,7 +196,8 @@ const SORTING = 'Jev is sorting commits';
  * Shows Jev's work on the face, counting commits as batches come back. Pass
  * `progress` to createJevClassifier, and `wrap` the classifier it makes.
  * `host` gives a step the command is already running, such as release's;
- * Jev then relabels that one and leaves it running. Without one, Jev gets a
+ * Jev then relabels that one and leaves it running, and the host ends it,
+ * with `unsorted` as its warning when there is one. Without one, Jev gets a
  * step of its own, which ends with a warning when a failed request left
  * commits unsorted.
  */
@@ -206,11 +207,21 @@ export function jevFace(
 ): {
 	progress: (done: number, total: number) => void;
 	wrap: (classify: CommitClassifier) => CommitClassifier;
+	/**
+	 * What the last run left unsorted, as a warning, or undefined when it left
+	 * nothing. A host step ends with it, the way Jev's own step does.
+	 */
+	unsorted: () => string | undefined;
 } {
 	let target: Step | undefined;
 	let done = 0;
 	let total = 0;
+	const unsorted = () =>
+		done < total
+			? `Jev left ${total - done} of ${total} commits unsorted`
+			: undefined;
 	return {
+		unsorted,
 		progress(sent, of) {
 			done = sent;
 			total = of;
@@ -241,19 +252,17 @@ export function jevFace(
 						target = undefined;
 					}
 				},
-				() =>
-					done < total
-						? {
-								outcome: 'warn',
-								text: `Jev left ${total - done} of ${total} commits unsorted`,
-							}
-						: {
-								outcome: 'ok',
-								text:
-									total === 0
-										? 'Jev had nothing new to sort'
-										: `Jev sorted ${total} ${total === 1 ? 'commit' : 'commits'}`,
-							},
+				() => {
+					const left = unsorted();
+					if (left) return {outcome: 'warn', text: left};
+					return {
+						outcome: 'ok',
+						text:
+							total === 0
+								? 'Jev had nothing new to sort'
+								: `Jev sorted ${total} ${total === 1 ? 'commit' : 'commits'}`,
+					};
+				},
 			);
 		},
 	};

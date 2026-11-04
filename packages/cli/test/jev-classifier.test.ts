@@ -400,3 +400,19 @@ test('jevFace ends warn when every request fails', async () => {
 		['end', 'warn', 'Jev left 30 of 30 commits unsorted'],
 	]);
 });
+
+test('jevFace says what a hosted run left unsorted, so the host can warn', async () => {
+	const client: JevClient = {
+		async systemOne() {
+			throw new Error('invalid key');
+		},
+	};
+	const {face} = recordingFace();
+	const host = face.step('Planning the release');
+	const jev = jevFace(face, () => host);
+	expect(jev.unsorted()).toBeUndefined();
+	await jev.wrap(
+		createJevClassifier(client, {batchSize: 25, progress: jev.progress}),
+	)(commits(30));
+	expect(jev.unsorted()).toBe('Jev left 30 of 30 commits unsorted');
+});
