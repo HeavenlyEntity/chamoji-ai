@@ -240,7 +240,7 @@ async function readWorkstreamsFor(
  * Unknown codes are ignored, and so is `boom`: only authors declare breaking
  * changes.
  */
-async function applyClassifier(
+export async function applyClassifier(
 	classify: CommitClassifier,
 	commits: ParsedCommit[],
 ): Promise<void> {

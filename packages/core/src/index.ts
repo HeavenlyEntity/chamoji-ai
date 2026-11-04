@@ -61,6 +61,16 @@ export {
 	type UnitTag,
 } from './units/tags.js';
 export {
+	applyUnitReleases,
+	planUnitReleases,
+	pushUnitReleases,
+	type ReadyUnitPlan,
+	type UnitPending,
+	type UnitPlan,
+	type UnitReleaseOptions,
+	type UnitReleasePlan,
+} from './units/plan.js';
+export {
 	readUpstream,
 	sinceRange,
 	syncFiles,

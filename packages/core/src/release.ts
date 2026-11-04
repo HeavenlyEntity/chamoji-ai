@@ -93,13 +93,13 @@ export type ReleasePlan =
 	{status: 'nothing'; lastTag: string; unreleased: string[]} | ReadyPlan;
 
 /**
- * Works out a release without changing anything: checks the repository,
- * picks the version, renders the notes and computes every file change.
+ * The checks every release makes before it plans anything: a git repo with a
+ * commit, a clean working tree, the default branch, full history, and tags
+ * fetched from origin. Returns the repository root and any warnings.
  */
-export async function planRelease(
+export async function preflight(
 	options: ReleaseOptions,
-): Promise<ReleasePlan> {
-	const {config} = options;
+): Promise<{root: string; warnings: string[]}> {
 	await assertGitRepo(options.cwd);
 	await assertRevision(options.cwd, 'HEAD');
 	const root = (
@@ -158,6 +158,20 @@ export async function planRelease(
 	) {
 		warnings.push('could not fetch tags from origin; used the local tags');
 	}
+
+	return {root, warnings};
+}
+
+/**
+ * Works out a release without changing anything: checks the repository,
+ * picks the version, renders the notes and computes every file change.
+ */
+export async function planRelease(
+	options: ReleaseOptions,
+): Promise<ReleasePlan> {
+	const {config} = options;
+	const {root, warnings} = await preflight(options);
+	const git = async (...args: string[]) => (await runGit(args, root)).trim();
 
 	const tags = await listReleaseTags(root, 'HEAD');
 	const lastTag = tags[0]?.name ?? null;
@@ -350,7 +364,8 @@ export async function pushRelease(
 	}
 }
 
-function gitMessage(error: unknown): string {
+/** What git printed on stderr, else the error's message. */
+export function gitMessage(error: unknown): string {
 	const {stderr, message} = error as Error & {stderr?: string};
 	return stderr?.trim() || message;
 }
