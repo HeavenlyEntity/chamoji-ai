@@ -37,9 +37,11 @@ These apply to every milestone. A plan that breaks one needs a written reason.
 | 3.5 | Repo card                           | 1 Activation & acquisition | Acquisition | M    | ✅ Shipped in 0.9.0 (own readme card left)     | [plan](superpowers/plans/2026-10-31-repo-card.md)                       |
 | 4   | Commit composer and git hook        | 2 Retention                | Retention   | L    | ✅ Shipped in 0.7.0                            | [plan](superpowers/plans/2026-10-28-milestone-4-commit-composer.md)     |
 | 5   | Jev in the composer                 | 2 Retention                | Retention   | M    | ✅ Shipped in 0.8.0                            | [plan](superpowers/plans/2026-10-28-milestone-5-jev-in-the-composer.md) |
-| 5.5 | Terminal face                       | 2 Retention                | Activation  | S    | 🚧 Built, unreleased (`feat/terminal-face`)    | [plan](superpowers/plans/2026-11-03-terminal-face.md)                   |
+| 5.5 | Terminal face                       | 2 Retention                | Activation  | S    | ✅ Shipped in 0.12.0 (real terminals left)     | [plan](superpowers/plans/2026-11-03-terminal-face.md)                   |
 | 6   | Workstreams                         | 3 Differentiation          | Retention   | L    | ✅ Shipped in 0.10.0 (dogfooding left)         | [plan](superpowers/plans/2026-10-31-milestone-6-workstreams.md)         |
-| 7   | Project memory                      | 3 Differentiation          | Retention   | L    | 🚧 Merged, 0.11.0 due 2026-11-03               | [plan](superpowers/plans/2026-11-01-milestone-7-project-memory.md)      |
+| 7   | Project memory                      | 3 Differentiation          | Retention   | L    | ✅ Shipped in 0.11.0 (dogfooding left)         | [plan](superpowers/plans/2026-11-01-milestone-7-project-memory.md)      |
+| 7.5 | Monorepo releases                   | 3 Differentiation          | Activation  | L    | ⏭ Next                                         | —                                                                       |
+| 7.6 | Publishing to npm                   | 3 Differentiation          | Activation  | M    | Planned                                        | —                                                                       |
 | 8   | Review packets                      | 3 Differentiation          | Expansion   | L    | Planned                                        | —                                                                       |
 | 9   | Retroactive grouping                | 3 Differentiation          | Activation  | M    | Planned                                        | —                                                                       |
 | 10  | Editor extension                    | 4 Surfaces                 | Acquisition | L    | Planned                                        | —                                                                       |
@@ -465,7 +467,7 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 - **Tuning so far:** the official 📦️ description, "Add or update compiled files or packages", drew most file-list-only commits to 📦️ (top-1 7%). A narrower description, plus guidance used only when there's no title, raised that to 80% without hurting the with-title numbers. The 60% cutoff for `--ai` is unchanged: the eval measures the advisor, which asks a different question from the changelog classifier.
 - **Open question:** asking for the title before the gitmoji would give Jev the title, and the 72% top-3 instead of 44%. That changes the order gitmoji-cli users know.
 
-### 5.5. Terminal face — 🚧 built, unreleased
+### 5.5. Terminal face — ✅ shipped in 0.12.0
 
 **Why:** the CLI should feel like chamoji from the first run. A smile in the O of the wordmark, and the same face next to every command that makes you wait, so a slow `memory sync` or `--ai` run never looks stuck.
 
@@ -552,6 +554,76 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 - ⬜ **The sprint of real use is skipped for this release, and dogfooding stays open.** We decided on 2026-11-01 to release 0.11.0 on 2026-11-03 without it. Per the rule above, this milestone isn't done until we've used it on our own repos for a sprint, so anything that turns up goes into a later release. `chamoji ws ship` and `chamoji memory sync` for the `project-memory` workstream run just before the release.
 
 **Dependencies:** milestone 6.
+
+### 7.5. Monorepo releases — ⏭ next
+
+**Why:** most of our own workspaces are monorepos, and today chamoji treats a repo as one package. `chamoji release` gives every manifest that carries the previous version the same new version and makes one `v*` tag. That's right for chamoji-ai, whose two packages ship together. It's wrong when packages ship on their own: a fix in one package bumps all of them, and every changelog lists every commit. Changesets, release-please and Lerna all handle this, so its absence is the first thing a monorepo user notices.
+
+**Today:** fixed (lockstep) versioning only. `release.ts` bumps every tracked `package.json`, `package-lock.json`, `pyproject.toml` and `Cargo.toml` whose version matches the last tag, writes one root `CHANGELOG.md` and makes one tag.
+
+**Scope, in order of importance:**
+
+_Must have. Without these, independent versions don't work:_
+
+1. **Find the packages.** Read `pnpm-workspace.yaml`, the `workspaces` field (npm, Yarn, Bun) and `[workspace] members` in `Cargo.toml`. List each package's name, path, version and `private` flag. `chamoji packages` (with `--json`) prints the list.
+2. **Choose a mode in config.** `versioning: fixed` (today's behaviour, and the default, so existing repos don't change) or `independent`. Fixed groups (`groups: [[core, cli]]`) let packages that must share a version share one inside an independent repo.
+3. **Map commits to packages.** A commit belongs to every package whose path it changes, from `git log --name-only`. Changes to shared root files (the lockfile, CI, root config) go to no package by default; `rootFiles: all` makes them go to every package. A Conventional scope (`feat(core):`) or a `Package:` trailer can be checked against the files but never overrides them.
+4. **One bump per package.** Each package's bump comes from its own commits since its own last tag, and a package with no commits isn't released. The same bump rules apply: breaking, feature, fix.
+5. **Tags per package.** Use `<name>@<version>` (`@chamoji/core@1.2.0`, the changesets style) by default, with `tagFormat` for release-please's `<name>-v<version>`. The last-tag lookup and `next-version` read the same format. One release commit carries all the tags.
+6. **Bump internal dependencies.** When `core` is released, every package that depends on it gets the new range and a patch release, listed in its Dependencies section. Leave `workspace:*` and `workspace:^` alone, since pnpm rewrites them at publish time. Releases go out in dependency order.
+7. **Changelogs per package.** Each package gets a `CHANGELOG.md` in its own folder with only its own commits. An optional root changelog lists every package released, with links.
+
+_Should have:_
+
+8. **Better plan output.** `release --dry-run` shows a table of package, old version, new version, bump and commit count. `--package <name>` (repeatable) releases a subset, and `--json` gives agents the same table.
+9. **GitHub releases and the Action.** One GitHub release per package tag. The PR comment lists the packages the PR would release and their next versions.
+10. **Workstreams and memory across packages.** A shipped workstream shows as a Highlight in every package it touched.
+
+_Could have, later:_
+
+11. Prerelease channels per package (`--preid beta` for one package).
+12. Other workspace kinds: uv or Poetry for Python, Go modules.
+13. A repo card per package.
+
+**Exit criteria:**
+
+- On a fixture monorepo with 3 packages, where only one has commits since its tag, only that package is released, with its own tag and changelog.
+- A release of `core` patch-bumps a package that depends on it and updates its dependency range. With `workspace:^` the range is left alone.
+- `versioning: fixed` produces byte-for-byte the same release as 0.12.0 on chamoji-ai.
+- Used for a real release on one of our own independent monorepos.
+
+**Dependencies:** milestone 3 (the `release` command and the Action).
+
+### 7.6. Publishing to npm
+
+**Why:** after `chamoji release` you still need your own publish script or workflow. chamoji-ai's `release.yml` holds a lot of hard-won detail: trusted publishing, a tag-to-version check and the `registry-url` trap. Every user has to learn that again. With `release --publish`, one command takes a repo from commits to a package on npm.
+
+**Scope, in order of importance:**
+
+_Must have:_
+
+1. **`chamoji publish`.** It publishes every package whose version isn't on the registry yet, so a run that fails partway is safe to run again. It skips `private` packages and goes in dependency order. With pnpm it uses `pnpm publish` so `workspace:` ranges are rewritten; plain `npm publish` would publish them as written.
+2. **A check before publishing.** The tag must match each manifest's version, the tree must be clean, and the build and `npm pack --dry-run` must pass. If any of these fails, nothing is published.
+3. **Dist-tags.** A prerelease goes to `next` (or `--tag`), so `latest` never gets a beta.
+4. **Trusted publishing in CI.** The Action gets `mode: publish`, with OIDC and provenance and no stored token. The docs cover npm 11.5.1 or newer, leaving `registry-url` out, and the trusted-publisher settings on npmjs.com.
+5. **`release --publish`.** It runs the release and then the publish, and stops with a clear message if the publish fails after the tag was pushed.
+
+_Should have:_
+
+6. **Credentials stay out of sight.** Locally, publishing uses the user's own npm login, and 2FA one-time codes are prompted for, never taken as a flag. Tokens are never printed.
+7. **`--dry-run` and `--json`** list what would be published and where.
+
+_Could have, later:_
+
+8. Other registries: JSR, crates.io and PyPI.
+
+**Exit criteria:**
+
+- chamoji-ai's own `release.yml` is replaced by the Action's `mode: publish`, and a real release reaches npm with provenance.
+- Running it again after a publish that failed partway publishes only what's missing.
+- On a pnpm monorepo, no published `package.json` contains `workspace:`.
+
+**Dependencies:** milestone 7.5 for the list of packages and their order. Single-package publishing doesn't need 7.5 and could ship first.
 
 ### 8. Review packets
 
