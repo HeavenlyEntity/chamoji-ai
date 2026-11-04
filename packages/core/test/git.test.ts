@@ -209,6 +209,9 @@ test.each([
 	'could not read Password for https://user@example.com',
 	'Authentication failed for https://example.com/repo.git',
 	'Permission denied (publickey).',
+	'Permission denied (password).',
+	'Permission denied (keyboard-interactive).',
+	'Permission denied (publickey,password).',
 	'Host key verification failed.',
 ])('isAuthFailure matches %s, whichever way the error carries it', phrase => {
 	// How core wraps git's stderr into a message...
@@ -229,5 +232,11 @@ test("isAuthFailure doesn't match a rejected push or an odd value", () => {
 	);
 	expect(isAuthFailure(rejected)).toBe(false);
 	expect(isAuthFailure(new Error('fatal: bad object'))).toBe(false);
+	// A local file it can't write is not a credential problem.
+	expect(
+		isAuthFailure(
+			new Error('error: cannot open .git/FETCH_HEAD: Permission denied'),
+		),
+	).toBe(false);
 	expect(isAuthFailure(undefined)).toBe(false);
 });

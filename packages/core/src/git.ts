@@ -59,7 +59,8 @@ const AUTH_FAILURES = [
 	'could not read Username',
 	'could not read Password',
 	'Authentication failed',
-	'Permission denied (publickey',
+	// ssh's refusal, whatever it tried: publickey, password, keyboard-interactive.
+	'Permission denied (',
 	'Host key verification failed',
 ];
 
