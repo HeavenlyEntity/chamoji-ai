@@ -1,0 +1,27 @@
+# Changelog
+
+## Unreleased
+
+### Changed
+
+- 🔧 Update the lint config (a09e16c)
+
+### Breaking changes
+
+- 💥 Rename the widget id (147e020)
+
+### Fixed
+
+- 🐛 Fix the sort order (5d46e5b)
+
+## 1.1.0 - 2026-01-02
+
+### Added
+
+- ✨ Add the widget list (2d467d8)
+
+## 1.0.0 - 2026-01-01
+
+### Added
+
+- 🎉 Start the project (a22b598)

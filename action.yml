@@ -18,7 +18,13 @@ inputs:
     description: '@chamoji/cli version to run with npx.'
     default: latest
   cli:
-    description: Command that runs chamoji instead of npx, such as `node packages/cli/dist/cli.js`.
+    description: >-
+      Command that runs chamoji instead of npx, such as `node
+      packages/cli/dist/cli.js`. In a repo with release units, the PR preview
+      runs it with its working directory at the PR head and never with
+      secrets, so leave it unset or use a built CLI like this one: package
+      runners such as npx are refused, and it must not read files relative to
+      the working directory.
     default: ''
   release-version:
     description: release mode only. The version to release; empty lets chamoji pick it from the commits.

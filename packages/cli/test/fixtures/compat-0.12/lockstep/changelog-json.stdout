@@ -1,0 +1,185 @@
+{
+  "releases": [
+    {
+      "version": "Unreleased",
+      "tag": null,
+      "previousTag": "v0.1.0",
+      "date": null,
+      "bump": "minor",
+      "nextVersion": "0.2.0",
+      "groups": [
+        {
+          "group": "added",
+          "label": "Added",
+          "commits": [
+            {
+              "hash": "10dd5b0bdc920750fcdfd5a1cd66d8eb365d0046",
+              "shortHash": "10dd5b0",
+              "authorName": "Fixture Bot",
+              "authorEmail": "fixture@example.com",
+              "date": "2026-01-04T00:00:00Z",
+              "subject": "✨ Render the changelog",
+              "body": "",
+              "gitmoji": "sparkles",
+              "gitmojiSource": "gitmoji",
+              "type": null,
+              "scope": null,
+              "description": "Render the changelog",
+              "breaking": false,
+              "trailers": []
+            },
+            {
+              "hash": "d10979d4ea269820ac5b0efcb1971a6d339b8dfa",
+              "shortHash": "d10979d",
+              "authorName": "Fixture Bot",
+              "authorEmail": "fixture@example.com",
+              "date": "2026-01-02T00:00:00Z",
+              "subject": "✨ Read commits from git",
+              "body": "Why: everything else builds on the log.\n",
+              "gitmoji": "sparkles",
+              "gitmojiSource": "gitmoji",
+              "type": null,
+              "scope": null,
+              "description": "Read commits from git",
+              "breaking": false,
+              "trailers": [
+                {
+                  "key": "Why",
+                  "value": "everything else builds on the log."
+                }
+              ],
+              "card": {
+                "why": [
+                  "everything else builds on the log."
+                ],
+                "constraint": [],
+                "gotcha": [],
+                "followUp": []
+              }
+            }
+          ]
+        },
+        {
+          "group": "changed",
+          "label": "Changed",
+          "commits": [
+            {
+              "hash": "75d81db2a17f2539f3656e4ae04a794a8062328f",
+              "shortHash": "75d81db",
+              "authorName": "Fixture Bot",
+              "authorEmail": "fixture@example.com",
+              "date": "2026-01-07T00:00:00Z",
+              "subject": "♻️ Split the runner",
+              "body": "",
+              "gitmoji": "recycle",
+              "gitmojiSource": "gitmoji",
+              "type": null,
+              "scope": null,
+              "description": "Split the runner",
+              "breaking": false,
+              "trailers": []
+            }
+          ]
+        },
+        {
+          "group": "fixed",
+          "label": "Fixed",
+          "commits": [
+            {
+              "hash": "7aea4c22f57eb95787052e816632fce11c0e559a",
+              "shortHash": "7aea4c2",
+              "authorName": "Fixture Bot",
+              "authorEmail": "fixture@example.com",
+              "date": "2026-01-03T00:00:00Z",
+              "subject": "🐛 Fix the empty range crash (#4)",
+              "body": "",
+              "gitmoji": "bug",
+              "gitmojiSource": "gitmoji",
+              "type": null,
+              "scope": null,
+              "description": "Fix the empty range crash (#4)",
+              "breaking": false,
+              "trailers": []
+            }
+          ]
+        },
+        {
+          "group": "documentation",
+          "label": "Documentation",
+          "commits": [
+            {
+              "hash": "6feb5f39f10f833e2557e4bdef1c691eb1305ad8",
+              "shortHash": "6feb5f3",
+              "authorName": "Fixture Bot",
+              "authorEmail": "fixture@example.com",
+              "date": "2026-01-06T00:00:00Z",
+              "subject": "📝 Write the usage section",
+              "body": "",
+              "gitmoji": "memo",
+              "gitmojiSource": "gitmoji",
+              "type": null,
+              "scope": null,
+              "description": "Write the usage section",
+              "breaking": false,
+              "trailers": []
+            }
+          ]
+        },
+        {
+          "group": "misc",
+          "label": "Miscellaneous",
+          "commits": [
+            {
+              "hash": "3da99cb2da4f53fa45a6dc54e9f21208a2671cea",
+              "shortHash": "3da99cb",
+              "authorName": "Fixture Bot",
+              "authorEmail": "fixture@example.com",
+              "date": "2026-01-08T00:00:00Z",
+              "subject": "Tidy things up",
+              "body": "",
+              "gitmoji": null,
+              "gitmojiSource": null,
+              "type": null,
+              "scope": null,
+              "description": "Tidy things up",
+              "breaking": false,
+              "trailers": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "version": "v0.1.0",
+      "tag": "v0.1.0",
+      "previousTag": null,
+      "date": "2026-01-01",
+      "bump": null,
+      "nextVersion": null,
+      "groups": [
+        {
+          "group": "added",
+          "label": "Added",
+          "commits": [
+            {
+              "hash": "5acac5d113df5387f2eb31bc286a6fc9a866ebfc",
+              "shortHash": "5acac5d",
+              "authorName": "Fixture Bot",
+              "authorEmail": "fixture@example.com",
+              "date": "2026-01-01T00:00:00Z",
+              "subject": "🎉 Start the project",
+              "body": "",
+              "gitmoji": "tada",
+              "gitmojiSource": "gitmoji",
+              "type": null,
+              "scope": null,
+              "description": "Start the project",
+              "breaking": false,
+              "trailers": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
