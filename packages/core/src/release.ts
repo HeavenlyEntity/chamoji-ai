@@ -355,7 +355,8 @@ function gitMessage(error: unknown): string {
 	return stderr?.trim() || message;
 }
 
-function stripTitle(markdown: string): string {
+/** A rendered changelog without its `# Changelog` title, trimmed. */
+export function stripTitle(markdown: string): string {
 	return markdown.replace(/^# Changelog\s*\n/, '').trim();
 }
 

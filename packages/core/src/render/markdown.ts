@@ -110,5 +110,9 @@ function renderCommit(commit: ParsedCommit, url: string | undefined): string {
 	const hash = url
 		? `[${commit.shortHash}](${commitLink(commit, url)})`
 		: commit.shortHash;
-	return `${emoji ? `${emoji} ` : ''}${scope}${description} (${hash})`;
+	// A package path, as a code span: it can't hold a backtick or a line break.
+	const via = commit.via
+		? ` (via \`${commit.via.replaceAll(/[`\r\n]/g, '')}\`)`
+		: '';
+	return `${emoji ? `${emoji} ` : ''}${scope}${description} (${hash})${via}`;
 }

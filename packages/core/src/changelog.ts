@@ -161,31 +161,58 @@ export async function buildChangelog(
 		(await runGit(['tag', '--points-at', to], cwd)).split('\n'),
 	);
 	for (const {fields, commits, isUnreleased, ref} of pending) {
-		const bump = bumpFor(commits);
-		// The file is read as of the release, so a workstream counts as shipped
-		// only in the release that marked it so. A bad file fails the build only
-		// when it is the one at `to`; older ones are skipped, not fatal.
-		const atTo = ref === to || tagsAtTo.has(ref);
-		const workstreams =
-			atTo || commits.some(commit => commit.workstream !== undefined)
-				? await readWorkstreamsFor(cwd, ref, atTo)
-				: [];
-		const {highlights, loose} = splitHighlights(
-			commits,
-			workstreams,
-			config.groups,
+		releases.push(
+			await buildRelease(
+				cwd,
+				config,
+				fields,
+				commits,
+				ref,
+				isUnreleased,
+				ref === to || tagsAtTo.has(ref),
+			),
 		);
-		releases.push({
-			...fields,
-			bump,
-			nextVersion: isUnreleased ? nextVersion(fields.previousTag, bump) : null,
-			...(highlights.length > 0 ? {highlights} : {}),
-			groups: groupCommits(loose, config.groups),
-		});
 	}
 
 	const repositoryUrl = config.repositoryUrl ?? (await getRemoteWebUrl(cwd));
 	return {...(repositoryUrl ? {repositoryUrl} : {}), releases};
+}
+
+/**
+ * One release from its commits: the bump, the next version when unreleased,
+ * shipped workstreams folded into highlights, and the rest grouped.
+ *
+ * The workstreams file is read as of `ref`, so a workstream counts as shipped
+ * only in the release that marked it so. A bad file fails the build only when
+ * `strict` (the release is at the head of history, which an unreleased one
+ * always is); otherwise it is skipped, not fatal.
+ */
+export async function buildRelease(
+	cwd: string,
+	config: ChamojiConfig,
+	fields: Pick<Release, 'version' | 'tag' | 'previousTag' | 'date'>,
+	commits: ParsedCommit[],
+	ref: string,
+	isUnreleased: boolean,
+	strict: boolean = isUnreleased,
+): Promise<Release> {
+	const bump = bumpFor(commits);
+	const workstreams =
+		strict || commits.some(commit => commit.workstream !== undefined)
+			? await readWorkstreamsFor(cwd, ref, strict)
+			: [];
+	const {highlights, loose} = splitHighlights(
+		commits,
+		workstreams,
+		config.groups,
+	);
+	return {
+		...fields,
+		bump,
+		nextVersion: isUnreleased ? nextVersion(fields.previousTag, bump) : null,
+		...(highlights.length > 0 ? {highlights} : {}),
+		groups: groupCommits(loose, config.groups),
+	};
 }
 
 /**

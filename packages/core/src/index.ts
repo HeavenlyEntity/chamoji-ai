@@ -6,7 +6,11 @@ export {
 	type Bm25Index,
 	type SearchDocument,
 } from './bm25.js';
-export {buildChangelog, type BuildChangelogOptions} from './changelog.js';
+export {
+	buildChangelog,
+	buildRelease,
+	type BuildChangelogOptions,
+} from './changelog.js';
 export {CARD_ENDPOINT, cardUrl, repoStats, type RepoStats} from './card.js';
 export {
 	CONFIG_FILE,
@@ -37,6 +41,12 @@ export {
 	type GitmojiMatch,
 } from './gitmojis.js';
 export {attribute, releaseTargets, type Attributed} from './units/attribute.js';
+export {
+	readStyle,
+	renderUnitSection,
+	writeUnitChangelog,
+	type ChangelogStyle,
+} from './units/notes.js';
 export {
 	parseReleaseSettings,
 	type ReleaseSettings,
