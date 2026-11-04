@@ -40,6 +40,13 @@ export {
 	type Shape,
 	type UnitSettings,
 } from './units/settings.js';
+export {
+	ownerOf,
+	readWorkspace,
+	resolveUnits,
+	type ResolvedUnit,
+	type WorkspacePackage,
+} from './units/workspace.js';
 export {groupCommits} from './group.js';
 export {splitHighlights} from './highlights.js';
 export {readIntent} from './intent.js';
