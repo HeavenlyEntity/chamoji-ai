@@ -136,6 +136,41 @@ test('a newly ticked unit is filled in as recommend fills one', async () => {
 	);
 });
 
+test('a ticked app with tags of its own takes their format', async () => {
+	const detection = await detected(
+		gearzLayout({
+			extraSteps: [
+				{commit: '✅ Add a smoke test', files: {'apps/e2e/smoke.ts': '1\n'}},
+				{tag: 'e2e-v1.0.0'},
+			],
+		}),
+	);
+	// perUnit stays the detected units'; the candidate's formats sit apart.
+	expect(Object.keys(detection.tags.perUnit).sort()).toEqual(['mobile', 'web']);
+	expect(detection.tags.candidates['apps/e2e']?.last).toEqual({
+		tag: 'e2e-v1.0.0',
+		version: '1.0.0',
+	});
+	const answers = recommend(detection);
+	const ticked = applyAnswer(detection, answers, 'units', [
+		...answers.units.map(unit => unit.path),
+		'apps/e2e',
+	]);
+	expect(ticked.units.find(unit => unit.name === 'e2e')).toMatchObject({
+		tag: 'e2e-v{version}',
+		read: [],
+	});
+	// Its tag was a stray while e2e wasn't a unit; it isn't ignored any more.
+	expect(answers.ignore.some(pattern => /e2e/.test(pattern))).toBe(true);
+	expect(valid(releaseSection(ticked)).tags.ignore).toEqual(
+		answers.ignore.filter(pattern => !/e2e/.test(pattern)),
+	);
+	expect(
+		questions(detection, ticked).find(question => question.id === 'tag:e2e')
+			?.found,
+	).toBe("e2e's last tag is e2e-v1.0.0");
+});
+
 test('changing the shape re-runs the recommendation and keeps chosen answers', async () => {
 	const detection = await detected(gearzLayout({template: true}));
 	let answers = recommend(detection);

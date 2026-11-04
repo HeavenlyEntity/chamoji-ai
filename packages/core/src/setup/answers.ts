@@ -1,17 +1,18 @@
 import semver from 'semver';
 import {CONFIG_FILE} from '../config.js';
 import {parseReleaseSettings} from '../units/settings.js';
+import {matchesTagPattern} from '../units/tags.js';
 import {detectLayout, type LayoutDetection, type UnitFacts} from './detect.js';
 import {
 	current,
 	defaultTag,
+	baseName,
 	factsOf,
 	isObject,
 	lastSegment,
 	questions,
 	recommendedShape,
 	SHARED_TAG,
-	suggestedBase,
 	unique,
 } from './questions.js';
 import {releaseSection, unasked} from './section.js';
@@ -149,7 +150,7 @@ function recommendFor(detection: Detection, shape: Shape): SetupAnswers {
 			? {
 					upstream: {
 						...(upstream.remote ? {remote: upstream.remote} : {}),
-						name: suggestedBase(detection),
+						name: baseName(detection).name,
 						...(upstream.since ? {since: upstream.since} : {}),
 					},
 				}
@@ -287,6 +288,14 @@ export function applyAnswer(
 					each => each.path === path,
 				);
 				const name = lastSegment(path);
+				// A pattern that would hide the new unit's own tags goes.
+				const last = facts && factsOf(detection, facts).formats?.last;
+				if (last) {
+					next.ignore = next.ignore.filter(
+						pattern => !matchesTagPattern(last.tag, pattern),
+					);
+				}
+
 				stay.push(
 					facts
 						? unitFor(detection, facts, next.shape)
