@@ -7,6 +7,7 @@ import type {ParsedCommit, Release} from '../../src/types.js';
 import {
 	readStyle,
 	renderUnitSection,
+	sectionFor,
 	writeUnitChangelog,
 } from '../../src/units/notes.js';
 import {WORKSTREAMS_FILE} from '../../src/workstreams.js';
@@ -360,5 +361,44 @@ test('a workstream reaching a unit is a Highlight there', async () => {
 			'',
 			'- 🐛 Fix footer (bbbbbbb)',
 		].join('\n'),
+	);
+});
+
+test('sectionFor cuts one version out of a changelog, in any style chamoji writes', () => {
+	const changelog = [
+		'# Changelog',
+		'',
+		'## Unreleased',
+		'',
+		'- Next',
+		'',
+		'## [v1.10.0](https://github.com/acme/mono/compare/v1.9.0...v1.10.0) (3 November 2026)',
+		'',
+		'### Features',
+		'',
+		'- Ten',
+		'',
+		'## 1.1.0 - 2026-10-01',
+		'',
+		'- Eleven',
+		'',
+		'## [1.0.0] - 2026-09-01',
+		'',
+		'- One',
+		'',
+	].join('\n');
+	expect(sectionFor(changelog, '1.10.0')).toBe(
+		'## [v1.10.0](https://github.com/acme/mono/compare/v1.9.0...v1.10.0) (3 November 2026)\n\n### Features\n\n- Ten',
+	);
+	expect(sectionFor(changelog, '1.1.0')).toBe(
+		'## 1.1.0 - 2026-10-01\n\n- Eleven',
+	);
+	expect(sectionFor(changelog, '1.0.0')).toBe(
+		'## [1.0.0] - 2026-09-01\n\n- One',
+	);
+	expect(sectionFor(changelog, '1.1')).toBeNull();
+	expect(sectionFor(changelog, '2.0.0')).toBeNull();
+	expect(sectionFor('## 1.0.0\r\n\r\n- One\r\n', '1.0.0')).toBe(
+		'## 1.0.0\n\n- One',
 	);
 });

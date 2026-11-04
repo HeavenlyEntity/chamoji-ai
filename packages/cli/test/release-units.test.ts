@@ -651,73 +651,6 @@ test('the help lists --unit and --for-tag', async () => {
 	expect(stdout).toContain('  --for-tag');
 });
 
-test('a first release notes a version file that disagrees with the manifest', async () => {
-	const dir = await appRepo(
-		[
-			{
-				commit: '🔧 Add the app config',
-				files: {'apps/web/app.json': '{"expo": {"version": "0.3.0"}}\n'},
-			},
-			WEB_FEATURE,
-		],
-		{
-			...RELEASE,
-			units: {
-				web: {
-					path: 'apps/web',
-					tag: 'web/v{version}',
-					versionFiles: ['apps/web/package.json', 'apps/web/app.json'],
-				},
-			},
-		},
-	);
-	const {code, stdout} = await chamoji(['release', '--dry-run'], dir);
-	expect(code).toBe(0);
-	expect(stdout).toContain(
-		'note: apps/web/app.json had a version other than 0.1.0 (its package.json version); it now says 0.1.0\n',
-	);
-});
-
-test('a missing upstream remote is a warning in text and JSON', async () => {
-	const dir = await appRepo([...TAGGED, WEB_FEATURE], {
-		...RELEASE,
-		upstream: {remote: 'upstream', name: 'Makerkit'},
-	});
-	const warning =
-		'upstream remote "upstream" has no fetched branches here, so template history is recognised only by ignored version tags; run git remote add upstream <url> && git fetch upstream before chamoji';
-	const text = await chamoji(['release', '--dry-run'], dir);
-	expect(text.stdout).toContain(`warning: ${warning}\n`);
-	const asJson = await chamoji(['release', '--dry-run', '--json'], dir);
-	expect(JSON.parse(asJson.stdout)).toMatchObject({warnings: [warning]});
-});
-
-test('a first release notes a version file that disagrees with the manifest', async () => {
-	const dir = await appRepo(
-		[
-			{
-				commit: '🔧 Add the app config',
-				files: {'apps/web/app.json': '{"expo": {"version": "0.3.0"}}\n'},
-			},
-			WEB_FEATURE,
-		],
-		{
-			...RELEASE,
-			units: {
-				web: {
-					path: 'apps/web',
-					tag: 'web/v{version}',
-					versionFiles: ['apps/web/package.json', 'apps/web/app.json'],
-				},
-			},
-		},
-	);
-	const {code, stdout} = await chamoji(['release', '--dry-run'], dir);
-	expect(code).toBe(0);
-	expect(stdout).toContain(
-		'note: apps/web/app.json had a version other than 0.1.0 (its package.json version); it now says 0.1.0\n',
-	);
-});
-
 /** A libraries repo; `files` are added to the start commit. */
 async function libraryRepo(
 	release: unknown,
@@ -806,6 +739,82 @@ test('a fixed group on one v-tag releases once: one tag, one GitHub release with
 		`## v1.0.1 (core)\n\n${core!.notes}\n\n## v1.0.1 (types)\n\n${types!.notes}\n`,
 	);
 	expect(types!.notes).toContain("Released with core at the group's version");
+
+	// The Action's notes mode rewrites that release from --for-tag.
+	const forTag = await chamoji(['changelog', '--for-tag', 'v1.0.1'], dir);
+	expect(forTag.code).toBe(0);
+	expect(forTag.stdout).toBe(notes[0]);
+});
+
+test('changelog --for-tag prints the notes the release committed', async () => {
+	const dir = await libraryRepo(
+		{
+			schema: 1,
+			shape: 'libraries',
+			units: {
+				core: {path: 'packages/core'},
+				types: {path: 'packages/types'},
+				cli: {path: 'packages/cli'},
+			},
+			fixed: [['core', 'types']],
+			rootFiles: 'note',
+		},
+		{
+			core: {name: '@kit/core', version: '1.0.0'},
+			types: {name: '@kit/types', version: '1.0.0'},
+			cli: {
+				name: '@kit/cli',
+				version: '2.0.0',
+				dependencies: {'@kit/core': '^1.0.0'},
+			},
+		},
+		[
+			{tag: '@kit/core@1.0.0', annotated: true},
+			{tag: '@kit/types@1.0.0', annotated: true},
+			{tag: '@kit/cli@2.0.0', annotated: true},
+			{
+				commit: '👷 Cache the build',
+				files: {'.github/workflows/ci.yml': 'ci\n'},
+			},
+			{
+				commit: '🐛 Fix the parser',
+				files: {'packages/core/src/parse.ts': 'parse\n'},
+			},
+		],
+	);
+	const released = await chamoji(['release', '--json'], dir);
+	expect(released.code).toBe(0);
+	const {units} = JSON.parse(released.stdout) as {
+		units: Array<{unit: string; tag: string; notes: string}>;
+	};
+	expect(units.map(unit => unit.tag)).toEqual([
+		'@kit/core@1.0.1',
+		'@kit/types@1.0.1',
+		'@kit/cli@2.0.1',
+	]);
+	// Own, fixed-partner and dependency releases, each with the root-files line.
+	expect(units[1]!.notes).toContain('Released with core');
+	expect(units[2]!.notes).toContain('### Dependencies');
+	for (const unit of units) {
+		expect(unit.notes).toContain('- Tooling and CI: 1 change');
+		const {code, stdout} = await chamoji(
+			['changelog', '--for-tag', unit.tag],
+			dir,
+		);
+		expect(code).toBe(0);
+		expect(stdout).toBe(`${unit.notes}\n`);
+	}
+});
+
+test('changelog --for-tag rebuilds the section when the tag has no changelog', async () => {
+	const dir = await appRepo([...TAGGED, WEB_FEATURE, {tag: 'web/v0.2.0'}]);
+	const {code, stdout} = await chamoji(
+		['changelog', '--for-tag', 'web/v0.2.0'],
+		dir,
+	);
+	expect(code).toBe(0);
+	expect(stdout).toMatch(/^## 0\.2\.0 - /);
+	expect(stdout).toContain('Add the dashboard');
 });
 
 test('a missing upstream remote is a warning in text and JSON', async () => {

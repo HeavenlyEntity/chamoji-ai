@@ -6,6 +6,7 @@ import type {
 	CommitClassifier,
 	Release,
 } from '../types.js';
+import {sectionFor} from './notes.js';
 import {inWindowOrder, sortWindow, unitSettings, windowReader} from './plan.js';
 import {unitTagHistory} from './tags.js';
 import {readUpstream, sinceRange} from './upstream.js';
@@ -119,4 +120,26 @@ export async function unitChangelog(
 
 	const repositoryUrl = config.repositoryUrl ?? (await getRemoteWebUrl(root));
 	return {...(repositoryUrl ? {repositoryUrl} : {}), releases};
+}
+
+/**
+ * The section for `version` in the changelog at `file` as the release commit
+ * at `tag` left it, so lines the release added (dependency ranges, a fixed
+ * group's "Released with", root-file notes) are kept. Null when the file or
+ * its heading isn't there at that tag.
+ */
+export async function committedSection(
+	cwd: string,
+	tag: string,
+	file: string,
+	version: string,
+): Promise<string | null> {
+	let text: string;
+	try {
+		text = await runGit(['show', `refs/tags/${tag}:${file}`], cwd);
+	} catch {
+		return null;
+	}
+
+	return sectionFor(text, version);
 }

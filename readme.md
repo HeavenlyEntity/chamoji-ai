@@ -433,7 +433,7 @@ chamoji release --unit web            # only web
 chamoji release 2.0.0 --unit mobile   # a version you choose, for one unit
 chamoji next-version --json           # what each unit would release, and what is waiting
 chamoji changelog --unit web          # web's releases (bare `changelog` needs --unit or --for-tag here)
-chamoji changelog --for-tag web/v1.4.0
+chamoji changelog --for-tag web/v1.4.0 # the notes as that release committed them
 ```
 
 ### Using the Action
