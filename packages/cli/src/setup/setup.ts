@@ -88,8 +88,16 @@ const WOULD: Record<Exclude<StepName, 'releases'>, string> = {
 };
 const WOULD_OFFER =
 	'Setup would also offer the commit composer hook for this clone.';
-/** Results that mean a step would change nothing (ruling R15); skipped is a step not offered. */
-const SETTLED = new Set<StepResult>(['unchanged', 'nothing-to-do', 'skipped']);
+/**
+ * Results that mean a step would change nothing (ruling R15). Skipped is a
+ * step not offered; offered is the hook, which is never assumed (R17).
+ */
+const SETTLED = new Set<StepResult>([
+	'unchanged',
+	'nothing-to-do',
+	'skipped',
+	'offered',
+]);
 
 /** `owner/name` from an origin on github.com, or undefined for anywhere else. */
 export async function githubRepo(cwd: string): Promise<string | undefined> {

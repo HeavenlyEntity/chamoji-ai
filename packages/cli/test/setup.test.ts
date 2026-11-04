@@ -395,15 +395,26 @@ test("a re-run with nothing new is already up to date and shows each step's stat
 	});
 	expect((JSON.parse(json.stdout) as Report).wrote).toEqual([]);
 
-	// Without --yes, the hook would still be offered, so both modes exit 2
-	// (ruling R15).
+	// Without --yes, releases, memory and agents are done and the hook is
+	// only offered, never assumed, so nothing would change: both exit 0
+	// (rulings R15 and R17).
 	const offered = await chamoji(['setup'], dir);
-	expect(offered.code).toBe(2);
+	expect(offered.stderr).toBe('');
+	expect(offered.code).toBe(0);
 	expect(offered.stdout).toBe(
 		`${states(noHook)}Setup would also offer the commit composer hook for this clone.\n`,
 	);
-	expect(offered.stderr).toBe(`${NO_TERMINAL}\n`);
-	expect((await chamoji(['setup', '--json'], dir)).code).toBe(2);
+	const offeredJson = await chamoji(['setup', '--json'], dir);
+	expect(offeredJson.code).toBe(0);
+	expect(results(JSON.parse(offeredJson.stdout) as Report).hook).toBe(
+		'offered',
+	);
+	expect((JSON.parse(offeredJson.stdout) as Report).wrote).toEqual([]);
+	expect(await readHookState(dir)).toBe('missing');
+
+	// Naming the hook asks for it, so without --yes that still exits 2.
+	expect((await chamoji(['setup', 'hook'], dir)).code).toBe(2);
+	expect((await chamoji(['setup', 'hook', '--json'], dir)).code).toBe(2);
 
 	// Once every step is done, nothing would change: both exit 0.
 	expect((await chamoji(['setup', 'hook', '--yes'], dir)).code).toBe(0);
