@@ -25,9 +25,11 @@ import {writeAtomically} from '../init.js';
 import type {GhRunner, Io} from '../run.js';
 import {stripControlLines} from '../text.js';
 import {
+	asksReleases,
 	plannedResult,
 	runStep,
 	STEP_NAMES,
+	stepPrompts,
 	stepStates,
 	type StepName,
 	type StepResult,
@@ -49,9 +51,12 @@ export type ScreenResult =
  * through `stripControlLines` before drawing it. Setup hands them over as
  * detected, since the same values are matched against tags and paths.
  *
- * The releases state (`states[0]`) is done when the config's section is up to
- * date or a single package needs none; then releases has nothing to ask and
- * the screen offers only the per-clone steps that aren't done (ruling R16).
+ * `states` holds only the steps in scope. The releases state is done when the
+ * config already has a section or a single package needs none; then releases
+ * has nothing to ask and the screen offers only the per-clone steps that
+ * aren't done (ruling R16). `chamoji setup releases` asks it again, so there
+ * the releases state comes as not done. With nothing to ask at all, setup
+ * doesn't open the screen.
  */
 export type SetupScreenProps = {
 	detection: Detection;
@@ -237,20 +242,32 @@ export async function runSetup(
 		if (!releases) {
 			picked = [args.step!];
 		} else {
-			const result = await io.setupScreen!({
-				detection: detection!,
-				initial: answers!,
-				states,
-				...previews(root, io),
-				columns: process.stderr.columns ?? 80,
-			});
-			if (!result.saved) {
-				io.stderr(`${CANCELLED}\n`);
-				return 1;
-			}
+			// Naming releases asks it again, whatever its state (ruling R16).
+			const asked = states
+				.filter(state => scope.includes(state.step))
+				.map(state =>
+					state.step === 'releases' && args.step === 'releases'
+						? {...state, done: false}
+						: state,
+				);
+			if (!asksReleases(detection!, asked) && stepPrompts(asked).length === 0) {
+				picked = [];
+			} else {
+				const result = await io.setupScreen!({
+					detection: detection!,
+					initial: answers!,
+					states: asked,
+					...previews(root, io),
+					columns: process.stderr.columns ?? 80,
+				});
+				if (!result.saved) {
+					io.stderr(`${CANCELLED}\n`);
+					return 1;
+				}
 
-			answers = result.answers;
-			picked = result.steps.filter(step => scope.includes(step));
+				answers = result.answers;
+				picked = result.steps.filter(step => scope.includes(step));
+			}
 		}
 	} else {
 		return report(await squashing);

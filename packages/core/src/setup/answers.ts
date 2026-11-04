@@ -471,6 +471,28 @@ function answerOf(
 	}
 }
 
+/** The current answer to question `id`, in the form applyAnswer takes. */
+export function currentAnswer(
+	answers: SetupAnswers,
+	id: string,
+): string | string[] {
+	const colon = id.indexOf(':');
+	const kind = colon === -1 ? id : id.slice(0, colon);
+	const target = colon === -1 ? '' : id.slice(colon + 1);
+	if (kind === 'shape') return answers.shape;
+	if (kind === 'alias') {
+		const {tags} = answers.kept;
+		const alias =
+			isObject(tags) && isObject(tags.aliases) ? tags.aliases[target] : null;
+		return isObject(alias) && typeof alias.version === 'string'
+			? alias.version
+			: '';
+	}
+
+	const unit = answers.units.find(each => each.name === target);
+	return answerOf(answers, kind, unit) ?? '';
+}
+
 /**
  * `to` with the chosen and kept answers of `from` that still apply: units
  * first (when every one can be a unit under the new shape), then names,
