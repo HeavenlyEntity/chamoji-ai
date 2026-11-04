@@ -108,8 +108,12 @@ function renderCommit(commit: ParsedCommit, url: string | undefined): string {
 				: escapeHtml(part.text),
 		)
 		.join('');
-	const hash = `<code>${escapeHtml(commit.shortHash)}</code>`;
-	return `${emoji ? `${escapeHtml(emoji)} ` : ''}${scope}${description} (${
-		url ? anchor(commitLink(commit, url), hash) : hash
-	})${commit.via ? ` (via <code>${escapeHtml(commit.via)}</code>)` : ''}`;
+	const code = `<code>${escapeHtml(commit.shortHash)}</code>`;
+	// A line chamoji writes itself, such as a Dependencies line, has no commit.
+	const hash = commit.shortHash
+		? ` (${url ? anchor(commitLink(commit, url), code) : code})`
+		: '';
+	return `${emoji ? `${escapeHtml(emoji)} ` : ''}${scope}${description}${hash}${
+		commit.via ? ` (via <code>${escapeHtml(commit.via)}</code>)` : ''
+	}`;
 }

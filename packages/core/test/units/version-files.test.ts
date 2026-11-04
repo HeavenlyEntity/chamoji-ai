@@ -8,6 +8,7 @@ import {
 	detectVersionFiles,
 	editVersionFiles,
 	readEasRemote,
+	setJsonString,
 } from '../../src/units/version-files.js';
 
 let dir: string | undefined;
@@ -417,4 +418,17 @@ test('a listed package.json with no version stops the release', async () => {
 			options,
 		),
 	).rejects.toThrow('apps/x/package.json');
+});
+
+test('setJsonString sets a nested string and keeps the formatting', () => {
+	const text =
+		'{\n  "name": "@acme/cli",\n  "scripts": {"dependencies": "echo"},\n  "dependencies": {\n    "@acme/core":   "^1.0.0",\n    "left-pad": "1.0.0"\n  }\n}\n';
+	expect(setJsonString(text, ['dependencies', '@acme/core'], '^1.0.1')).toBe(
+		text.replace('"^1.0.0"', '"^1.0.1"'),
+	);
+	expect(setJsonString(text, ['dependencies', 'nope'], '1')).toBeUndefined();
+	expect(
+		setJsonString(text, ['scripts', 'dependencies', 'x'], '1'),
+	).toBeUndefined();
+	expect(setJsonString(text, ['dependencies'], '1')).toBeUndefined();
 });

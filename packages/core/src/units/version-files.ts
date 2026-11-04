@@ -438,10 +438,37 @@ function setExpo(text: string, json: boolean, settings: Settings) {
 	return {text: next, from: literal.value};
 }
 
+/** The JSON property at `keys`, from the top-level object down, or undefined. */
+function jsonProp(text: string, keys: string[]): Prop | undefined {
+	let open = text.indexOf('{');
+	let found: Prop | undefined;
+	for (const key of keys) {
+		if (open === -1) return undefined;
+		found = props(text, open).find(prop => prop.key === key);
+		if (!found) return undefined;
+		open = text[found.start] === '{' ? found.start : -1;
+	}
+
+	return found;
+}
+
+/**
+ * JSON `text` with the plain string at `keyPath` set to `value`, edited as
+ * text so formatting survives; undefined when the path doesn't lead to one.
+ */
+export function setJsonString(
+	text: string,
+	keyPath: string[],
+	value: string,
+): string | undefined {
+	const prop = jsonProp(text, keyPath);
+	const literal = prop && stringLiteral(text, prop);
+	if (!prop || literal?.quote !== '"') return undefined;
+	return replace(text, prop.start, prop.end, JSON.stringify(value));
+}
+
 function setPackageJson(text: string, settings: Settings) {
-	const top = text.indexOf('{');
-	const prop =
-		top === -1 ? undefined : props(text, top).find(p => p.key === 'version');
+	const prop = jsonProp(text, ['version']);
 	const literal = prop && stringLiteral(text, prop);
 	if (!prop || !literal) return undefined;
 	return {

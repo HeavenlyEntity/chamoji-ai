@@ -499,3 +499,43 @@ test('json carries highlights as they are', () => {
 	});
 	expect(json.releases[0].highlights[0].groups).toHaveLength(2);
 });
+
+test('a line with no commit of its own has no hash or empty link', () => {
+	const line = {
+		...commit('⬆️ Bump @acme/core to 1.0.1'),
+		hash: '',
+		shortHash: '',
+	};
+	const real = withHash(commit('🐛 Fix a crash'), 'bbbbbbb');
+	const changelog = (repositoryUrl?: string): Changelog => ({
+		...(repositoryUrl ? {repositoryUrl} : {}),
+		releases: [
+			{
+				version: 'v1.0.1',
+				tag: 'v1.0.1',
+				previousTag: null,
+				date: '2026-11-04',
+				bump: 'patch',
+				nextVersion: null,
+				groups: [
+					{group: 'fixed', label: 'Fixed', commits: [real]},
+					{group: 'dependencies', label: 'Dependencies', commits: [line]},
+				],
+			},
+		],
+	});
+	for (const url of [undefined, 'https://github.com/acme/tools']) {
+		const markdown = renderMarkdown(changelog(url));
+		expect(markdown).toContain('- ⬆️ Bump @acme/core to 1.0.1\n');
+		expect(markdown).not.toContain('()');
+		expect(markdown).not.toContain('[]');
+		const html = renderHtml(changelog(url));
+		expect(html).toContain('Bump @acme/core to 1.0.1</li>');
+		expect(html).not.toContain('<code></code>');
+	}
+
+	expect(renderMarkdown(changelog())).toContain('- 🐛 Fix a crash (bbbbbbb)\n');
+	expect(renderMarkdown(changelog('https://github.com/acme/tools'))).toContain(
+		'- 🐛 Fix a crash ([bbbbbbb](https://github.com/acme/tools/commit/bbbbbbb000000000000000000000000000000000))\n',
+	);
+});
