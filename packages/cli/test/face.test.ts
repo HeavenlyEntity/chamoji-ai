@@ -74,8 +74,11 @@ function fakeSignals() {
 		},
 		kill: vi.fn<(signal: string) => void>(),
 		listeners,
+		// Like process.once, a listener is gone by the time it runs.
 		emit(event: string) {
-			listeners.get(event)?.();
+			const run = listeners.get(event);
+			listeners.delete(event);
+			run?.();
 		},
 	};
 }
@@ -95,6 +98,13 @@ function setup(options: Partial<FaceOptions> = {}) {
 		...options,
 	});
 	return {face, clock, signals, writes, out: () => writes.join('')};
+}
+
+/** Lets settled promises run their callbacks. */
+async function flush() {
+	await new Promise(resolve => {
+		setImmediate(resolve);
+	});
 }
 
 /** The text of the last line drawn, with the redraw escape removed. */
@@ -364,9 +374,131 @@ test('signal handlers are installed only while drawn', () => {
 	const step = face.step('Syncing memory');
 	expect(signals.listeners.size).toBe(0);
 	clock.advance(200);
-	expect([...signals.listeners.keys()].sort()).toEqual(['SIGINT', 'SIGTERM']);
+	expect([...signals.listeners.keys()].sort()).toEqual([
+		'SIGINT',
+		'SIGTERM',
+		'SIGTSTP',
+	]);
 	step.end('ok', 'Synced memory');
 	expect(signals.listeners.size).toBe(0);
+});
+
+test('Windows has no Ctrl-Z to watch', () => {
+	const {face, clock, signals} = setup({platform: 'win32'});
+	face.step('Syncing memory');
+	clock.advance(200);
+	expect([...signals.listeners.keys()].sort()).toEqual(['SIGINT', 'SIGTERM']);
+});
+
+test('Ctrl-Z clears the line and shows the cursor, then stops; fg draws again', () => {
+	const {face, clock, writes, signals} = setup();
+	const step = face.step('Syncing memory');
+	clock.advance(300);
+	writes.length = 0;
+	signals.emit('SIGTSTP');
+	expect(writes.join('')).toBe(`${REDRAW}${SHOW}`);
+	// Its own handler is gone, so the re-raised SIGTSTP stops the process.
+	expect(signals.kill).toHaveBeenCalledExactlyOnceWith('SIGTSTP');
+	expect([...signals.listeners.keys()].sort()).toEqual([
+		'SIGCONT',
+		'SIGINT',
+		'SIGTERM',
+	]);
+
+	writes.length = 0;
+	signals.emit('SIGCONT');
+	expect(writes[0]).toBe(HIDE);
+	expect(lastFrame(writes)).toBe('( •‿• ) Syncing memory… 0s');
+	expect([...signals.listeners.keys()].sort()).toEqual([
+		'SIGINT',
+		'SIGTERM',
+		'SIGTSTP',
+	]);
+
+	// A second Ctrl-Z works the same way.
+	signals.emit('SIGTSTP');
+	expect(signals.kill).toHaveBeenCalledTimes(2);
+	step.end('ok', 'Synced memory');
+	expect(signals.listeners.size).toBe(0);
+});
+
+test('a step that ends while stopped leaves no SIGCONT handler', () => {
+	const {face, clock, signals} = setup();
+	const step = face.step('Syncing memory');
+	clock.advance(300);
+	signals.emit('SIGTSTP');
+	step.end('ok', 'Synced memory');
+	expect(signals.listeners.size).toBe(0);
+});
+
+test('a theme resolver is never called for a step under 200 ms', () => {
+	const resolver = vi.fn(async () => 'dark' as const);
+	const {face, clock, writes} = setup({level: 3, theme: resolver});
+	const step = face.step('Syncing memory');
+	clock.advance(199);
+	step.end('ok', 'Synced memory');
+	face.stop();
+	expect(resolver).not.toHaveBeenCalled();
+	expect(writes).toEqual([]);
+});
+
+test('a drawn step calls the resolver once and draws uncoloured until it answers', async () => {
+	let answer: (theme: 'dark' | 'light') => void = () => {};
+	const resolver = vi.fn(
+		async (_signal: AbortSignal) =>
+			new Promise<'dark' | 'light'>(resolve => {
+				answer = resolve;
+			}),
+	);
+	const {face, clock, writes} = setup({level: 3, theme: resolver});
+	face.step('Syncing memory');
+	clock.advance(200);
+	expect(resolver).toHaveBeenCalledTimes(1);
+	clock.advance(300);
+	expect(writes.join('')).not.toMatch(SGR);
+
+	answer('dark');
+	await flush();
+	clock.advance(100);
+	expect(lastFrame(writes)).toMatch(SGR);
+
+	// A later step does not ask again.
+	face.step('Pushing memory');
+	clock.advance(300);
+	expect(resolver).toHaveBeenCalledTimes(1);
+});
+
+test('a resolver that says light keeps the face uncoloured', async () => {
+	const {face, clock, out} = setup({level: 3, theme: async () => 'light'});
+	const step = face.step('Syncing memory');
+	clock.advance(200);
+	await flush();
+	clock.advance(300);
+	step.end('ok', 'Synced memory');
+	expect(out()).not.toMatch(SGR);
+});
+
+test('stop aborts the theme question and ignores a late answer', async () => {
+	let given: AbortSignal | undefined;
+	let answer: (theme: 'dark') => void = () => {};
+	const {face, clock, out} = setup({
+		level: 3,
+		theme: async signal =>
+			new Promise(resolve => {
+				given = signal;
+				answer = resolve;
+			}),
+	});
+	face.step('Syncing memory');
+	clock.advance(200);
+	expect(given?.aborted).toBe(false);
+	face.stop();
+	expect(given?.aborted).toBe(true);
+	answer('dark');
+	await flush();
+	face.step('Pushing memory');
+	clock.advance(500);
+	expect(out()).not.toMatch(SGR);
 });
 
 test('SIGINT while drawn clears the line, shows the cursor, removes its listener and re-raises SIGINT', () => {
@@ -536,6 +668,8 @@ test('gitStep reruns without the quiet env after an auth failure', async () => {
 	expect(calls).toEqual([
 		['step', "Fetching origin's memory"],
 		['end', 'warn', 'git needs your credentials'],
+		// It also ends a theme question that would read what is typed at git's.
+		['stop'],
 	]);
 });
 

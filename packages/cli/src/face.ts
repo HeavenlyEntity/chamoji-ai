@@ -19,7 +19,13 @@ export type FaceOptions = {
 	/** Writes to stderr. */
 	write: (text: string) => void;
 	level: 0 | 1 | 2 | 3;
-	theme: Theme;
+	/**
+	 * The theme, or a way to find it out. A resolver is called once, when a
+	 * step first draws, so a fast command never asks the terminal. Until it
+	 * answers, the face draws with no colour, so foil never flashes on a light
+	 * terminal. Its signal aborts when the face stops.
+	 */
+	theme: Theme | ((signal: AbortSignal) => Promise<Theme>);
 	ascii: boolean;
 	columns: () => number;
 	clock?: {
@@ -28,11 +34,15 @@ export type FaceOptions = {
 		clearInterval: typeof clearInterval;
 	};
 	signals?: {
-		once(event: 'SIGINT' | 'SIGTERM', fn: () => void): void;
+		once(event: FaceSignal, fn: () => void): void;
 		removeListener(event: string, fn: () => void): void;
 		kill(signal: string): void;
 	};
+	/** Decides whether Ctrl-Z is watched: Windows has no job control. */
+	platform?: NodeJS.Platform;
 };
+
+type FaceSignal = 'SIGINT' | 'SIGTERM' | 'SIGTSTP' | 'SIGCONT';
 
 /** A step has to run this long before its face appears. */
 const DELAY_MS = 200;
@@ -49,8 +59,6 @@ const HIDE_CURSOR = '\u001B[?25l';
 const SHOW_CURSOR = '\u001B[?25h';
 const DIM = '\u001B[2m';
 const UNDIM = '\u001B[22m';
-
-const SIGNALS = ['SIGINT', 'SIGTERM'] as const;
 
 /** `3s`, `1m 4s` or `1h 2m 3s`. */
 export function formatElapsed(ms: number): string {
@@ -107,15 +115,21 @@ export const NO_FACE: Face = {
 
 export function createFace(options: FaceOptions): Face {
 	const {write, ascii, columns} = options;
-	// On the light theme the faces use the default text colour.
-	const level = options.theme === 'light' ? 0 : options.level;
+	const resolver =
+		typeof options.theme === 'function' ? options.theme : undefined;
+	let theme = typeof options.theme === 'function' ? undefined : options.theme;
+	const stopped = new AbortController();
+	// No colour until the theme is known. On the light theme the faces use the
+	// default text colour.
+	const level = () =>
+		theme === undefined || theme === 'light' ? 0 : options.level;
 	const clock = options.clock ?? {
 		now: () => Date.now(),
 		setInterval,
 		clearInterval,
 	};
 	const signals = options.signals ?? {
-		once: (event: 'SIGINT' | 'SIGTERM', fn: () => void) => {
+		once: (event: FaceSignal, fn: () => void) => {
 			process.once(event, fn);
 		},
 		removeListener: (event: string, fn: () => void) => {
@@ -126,25 +140,80 @@ export function createFace(options: FaceOptions): Face {
 		},
 	};
 	const set = ascii ? ASCII_FACES : FACES;
+	const exits =
+		(options.platform ?? process.platform) === 'win32'
+			? (['SIGINT', 'SIGTERM'] as const)
+			: (['SIGINT', 'SIGTERM', 'SIGTSTP'] as const);
 
 	let live: Live | undefined;
 	let offset = 0;
+	let resolverCalled = false;
 	// Whether the last wrapped text left the cursor at the start of a line.
 	let atLineStart = true;
 	const handlers = new Map<string, () => void>();
 
 	const paint = (text: string) =>
-		paintFoil(text, {offset, spread: FOIL_SPREAD, level});
+		paintFoil(text, {offset, spread: FOIL_SPREAD, level: level()});
+
+	/** Asks for the theme, once, and only if the face has not stopped. */
+	const resolveTheme = () => {
+		if (!resolver || resolverCalled || stopped.signal.aborted) {
+			return;
+		}
+
+		resolverCalled = true;
+		const asking = resolver(stopped.signal);
+		asking.then(
+			found => {
+				// After a stop the answer may be a guess, so it is not used.
+				if (!stopped.signal.aborted) {
+					theme = found;
+				}
+			},
+			() => {
+				// No answer leaves the face uncoloured.
+			},
+		);
+	};
+
+	const listen = (signal: FaceSignal, handler: () => void) => {
+		handlers.set(signal, handler);
+		signals.once(signal, handler);
+	};
+
+	/**
+	 * Ctrl-Z stops the process with the face mid-line and the cursor hidden.
+	 * So the line is cleared and the cursor shown first, then the process
+	 * stops for real: the handler is gone, so SIGTSTP does what it always
+	 * does. When it carries on, the face hides the cursor and draws again.
+	 */
+	const suspend = () => {
+		handlers.delete('SIGTSTP');
+		write(`${REDRAW}${SHOW_CURSOR}`);
+		listen('SIGCONT', () => {
+			handlers.delete('SIGCONT');
+			if (!live || live.drawnAt === undefined) {
+				return;
+			}
+
+			listen('SIGTSTP', suspend);
+			write(HIDE_CURSOR);
+			draw();
+		});
+		signals.kill('SIGTSTP');
+	};
 
 	const installSignals = () => {
-		for (const signal of SIGNALS) {
-			const handler = () => {
-				teardown();
-				signals.kill(signal);
-			};
+		for (const signal of exits) {
+			if (signal === 'SIGTSTP') {
+				listen(signal, suspend);
+				continue;
+			}
 
-			handlers.set(signal, handler);
-			signals.once(signal, handler);
+			listen(signal, () => {
+				stop();
+				signals.kill(signal);
+			});
 		}
 	};
 
@@ -187,7 +256,7 @@ export function createFace(options: FaceOptions): Face {
 		const split = [...head].length;
 		const body = paint(line.slice(0, split).join(''));
 		const rest = line.slice(split).join('');
-		const tail = rest && level > 0 ? `${DIM}${rest}${UNDIM}` : rest;
+		const tail = rest && level() > 0 ? `${DIM}${rest}${UNDIM}` : rest;
 		offset += FOIL_STEP;
 		write(`${REDRAW}${body}${tail}`);
 	};
@@ -205,6 +274,8 @@ export function createFace(options: FaceOptions): Face {
 
 			live.drawnAt = now;
 			offset = 0;
+			resolveTheme();
+
 			installSignals();
 			// Text written while the step waited may have stopped mid-line. The
 			// face must not erase it, so it starts a line of its own.
@@ -298,8 +369,14 @@ export function createFace(options: FaceOptions): Face {
 				draw();
 			};
 		},
-		stop: teardown,
+		stop,
 	};
+
+	/** Ends the face for good: the drawn line, and the theme question too. */
+	function stop() {
+		teardown();
+		stopped.abort();
+	}
 }
 
 /** A step that remembers its label, so a failure can name what it was doing. */
@@ -345,8 +422,14 @@ export async function runStep<T>(
  * every 100 ms and would wipe out a password prompt, so the work first gets
  * `quietGitEnv`, which makes git fail instead of asking. When it fails for
  * lack of credentials, the step ends with a warning and the work runs again
- * with no env and no face, so git can ask. Nothing was fetched or pushed by
- * the failed try, so running it again is safe.
+ * with no env and no face, so git can ask.
+ *
+ * The failed try may have done part of its work: a sync can fetch and merge
+ * before its push is refused. Running it again is still safe, because each
+ * of those steps is idempotent: the second fetch and merge find nothing new.
+ *
+ * Before the rerun the face stops, which also ends a theme question still
+ * holding the terminal raw, so it can't read what is typed at git's prompt.
  *
  * With NO_FACE nothing is drawn, so the work runs once, as it always did.
  */
@@ -372,6 +455,7 @@ export async function gitStep<T>(
 		}
 
 		step.end('warn', 'git needs your credentials');
+		face.stop();
 	}
 
 	return work(undefined);

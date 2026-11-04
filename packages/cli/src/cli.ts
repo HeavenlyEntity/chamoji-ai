@@ -5,7 +5,7 @@ import {supportsColor, supportsColorStderr} from 'chalk';
 import {createFace} from './face.js';
 import {shouldAnimate} from './face-settings.js';
 import {useAscii} from './faces.js';
-import {detectTheme, queryBackground} from './foil.js';
+import {detectTheme, queryBackground, themeFromEnv} from './foil.js';
 import {run, showsLogo, wantsFace, type WelcomeSettings} from './run.js';
 import {createUpdateCheck} from './update-check.js';
 
@@ -23,8 +23,11 @@ const stderr = (text: string) => {
 };
 
 // A face only for a command that can wait, and only where it may animate.
-// The terminal is asked for its background only then, since the question
-// takes over stdin for a moment.
+// CHAMOJI_THEME settles the theme at once. Otherwise the terminal is asked
+// only when a step first draws, past its 200 ms delay, since the question
+// takes over stdin for a moment. A fast command never touches stdin, and
+// nothing waits on the answer: the face draws uncoloured until it comes.
+const named = themeFromEnv({CHAMOJI_THEME: process.env['CHAMOJI_THEME']});
 const face =
 	shouldAnimate({
 		env: process.env,
@@ -34,11 +37,20 @@ const face =
 		? createFace({
 				write: stderr,
 				level: supportsColorStderr ? supportsColorStderr.level : 0,
-				theme: await detectTheme(process.env, async () =>
-					process.stdin.isTTY
-						? queryBackground(process.stdin, process.stderr)
-						: undefined,
-				),
+				theme:
+					named ??
+					(async signal =>
+						detectTheme(process.env, async () =>
+							process.stdin.isTTY
+								? queryBackground(
+										process.stdin,
+										process.stderr,
+										undefined,
+										undefined,
+										{signal},
+									)
+								: undefined,
+						)),
 				ascii: useAscii(process.env, process.platform),
 				columns: () => process.stderr.columns || 80,
 			})
@@ -48,23 +60,39 @@ const face =
 // from stdout, and the intro plays only when stdout is a terminal and none of
 // the "nothing animates" conditions hold (shouldAnimate wants a stream flag,
 // and here that is stdout's). A bare `chamoji` is the only command that plays
-// it. The terminal is asked for its background only then.
+// it, and the terminal is asked for its background only then, up front, as
+// the intro starts at once. With nothing to play, as for the `--help` header,
+// nothing asks, so the foil shows only where the environment says the
+// background is dark.
 const stdoutIsTTY = Boolean(process.stdout.isTTY);
 const welcome: WelcomeSettings | undefined = showsLogo(argv)
 	? await (async () => {
 			const animate =
 				argv.length === 0 &&
 				shouldAnimate({env: process.env, stderrIsTTY: stdoutIsTTY, argv});
-			return {
+			const level = supportsColor ? supportsColor.level : 0;
+			const settings = {
 				animate,
-				level: supportsColor ? supportsColor.level : 0,
+				ascii: useAscii(process.env, process.platform),
+				columns: process.stdout.columns || 80,
+			};
+			if (!animate) {
+				const known = themeFromEnv(process.env);
+				return {
+					...settings,
+					level: known === 'dark' ? level : 0,
+					theme: known ?? 'dark',
+				};
+			}
+
+			return {
+				...settings,
+				level,
 				theme: await detectTheme(process.env, async () =>
-					animate && process.stdin.isTTY
+					process.stdin.isTTY
 						? queryBackground(process.stdin, process.stdout)
 						: undefined,
 				),
-				ascii: useAscii(process.env, process.platform),
-				columns: process.stdout.columns || 80,
 			};
 		})()
 	: undefined;

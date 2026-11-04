@@ -447,10 +447,11 @@ test.skipIf(process.platform === 'win32')(
 		expect(code).toBe(0);
 		expect(stdout).toContain('from v1.0.5');
 		expect(stdout).not.toContain('could not fetch tags');
-		expect(calls.slice(0, 3)).toEqual([
+		expect(calls.slice(0, 4)).toEqual([
 			['step', 'Planning the release'],
 			['update', 'Fetching tags from origin'],
 			['end', 'warn', 'git needs your credentials'],
+			['stop'],
 		]);
 	},
 );
