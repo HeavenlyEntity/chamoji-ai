@@ -403,7 +403,8 @@ test('apply then push sends HEAD and every tag', async () => {
 	]);
 });
 
-test('libraries: fixed groups and ranges', async () => {
+/** acme: core and types in a fixed group, cli and plugin depending on core, and an internal utils package that core uses. */
+async function libraryRepo(steps: RepoStep[]) {
 	const files = {
 		'package.json': json({name: 'acme', private: true}),
 		'pnpm-workspace.yaml': 'packages:\n  - packages/*\n',
@@ -425,7 +426,11 @@ test('libraries: fixed groups and ranges', async () => {
 			version: '1.0.0',
 			dependencies: {'@acme/core': '^1.0.0', '@acme/types': 'workspace:^'},
 		}),
-		'packages/core/package.json': json({name: '@acme/core', version: '1.0.0'}),
+		'packages/core/package.json': json({
+			name: '@acme/core',
+			version: '1.0.0',
+			dependencies: {'@acme/utils': 'workspace:*'},
+		}),
 		'packages/plugin/package.json': json({
 			name: '@acme/plugin',
 			version: '2.0.0',
@@ -435,6 +440,11 @@ test('libraries: fixed groups and ranges', async () => {
 			name: '@acme/types',
 			version: '1.0.0',
 		}),
+		'packages/utils/package.json': json({
+			name: '@acme/utils',
+			version: '0.0.0',
+			private: true,
+		}),
 	};
 	const repo = await createRepo([
 		{commit: '🎉 Start acme', files},
@@ -442,21 +452,34 @@ test('libraries: fixed groups and ranges', async () => {
 		{tag: '@acme/types@1.0.0', annotated: true},
 		{tag: '@acme/cli@1.0.0', annotated: true},
 		{tag: '@acme/plugin@2.0.0', annotated: true},
+		...steps,
+	]);
+	cleanups.push(repo.cleanup);
+	return repo.dir;
+}
+
+const ACME_RELEASES = [
+	['core', '@acme/core@1.0.1', '1.0.1', 'patch'],
+	['types', '@acme/types@1.0.1', '1.0.1', 'fixed'],
+	['cli', '@acme/cli@1.0.1', '1.0.1', 'patch'],
+	['plugin', '@acme/plugin@2.0.1', '2.0.1', 'patch'],
+];
+
+test('libraries: fixed groups and ranges', async () => {
+	const dir = await libraryRepo([
 		{
 			commit: '🐛 Fix the parser',
 			files: {'packages/core/src/parse.ts': 'parse\n'},
 		},
 	]);
-	cleanups.push(repo.cleanup);
-	const result = ready(await plan(repo.dir));
+	const result = ready(await plan(dir));
 	expect(
 		result.units.map(unit => [unit.unit, unit.tag, unit.version, unit.bump]),
-	).toEqual([
-		['core', '@acme/core@1.0.1', '1.0.1', 'patch'],
-		['types', '@acme/types@1.0.1', '1.0.1', 'fixed'],
-		['cli', '@acme/cli@1.0.1', '1.0.1', 'patch'],
-		['plugin', '@acme/plugin@2.0.1', '2.0.1', 'patch'],
-	]);
+	).toEqual(ACME_RELEASES);
+	// A fixed-group member with no commits says what it released with.
+	expect(unitOf(result, 'types').notes).toBe(
+		"## 1.0.1 - 2026-11-04\n\n### Changed\n\n- Released with core at the group's version",
+	);
 	const cli = unitOf(result, 'cli');
 	expect(cli.notes).toContain('### Dependencies');
 	expect(cli.notes).toContain('@acme/core');
@@ -479,14 +502,50 @@ test('libraries: fixed groups and ranges', async () => {
 	);
 });
 
+test('release-dependents: shared commits release a unit only when they imply a bump', async () => {
+	const docs: RepoStep = {
+		commit: '📝 Document the date helpers',
+		files: {'packages/utils/README.md': 'dates\n'},
+	};
+	expect(await plan(await libraryRepo([docs]))).toEqual({
+		status: 'nothing',
+		pending: [{unit: 'core', own: 0, shared: 1}],
+	});
+
+	const dir = await libraryRepo([
+		docs,
+		{
+			commit: '🐛 Fix the date helper',
+			files: {'packages/utils/date.ts': 'date\n'},
+		},
+	]);
+	const result = ready(await plan(dir));
+	expect(
+		result.units.map(unit => [unit.unit, unit.tag, unit.version, unit.bump]),
+	).toEqual(ACME_RELEASES);
+	expect(unitOf(result, 'core')).toMatchObject({
+		own: 0,
+		shared: 2,
+		forced: false,
+	});
+	expect(unitOf(result, 'core').notes).toContain('Fix the date helper (');
+	expect(unitOf(result, 'core').notes).toContain('(via `packages/utils`)');
+});
+
 test("upstream: a fork's first release leaves the template out", async () => {
 	const template: RepoStep[] = [
 		{
 			commit: '🎉 Start the template',
 			files: {
 				'package.json': json({name: 'template', private: true}),
-				'pnpm-workspace.yaml': 'packages:\n  - apps/*\n',
+				'pnpm-workspace.yaml': 'packages:\n  - apps/*\n  - packages/*\n',
 				'apps/web/package.json': json({name: '@kit/web', version: '0.1.0'}),
+				'apps/admin/package.json': json({
+					name: '@kit/admin',
+					version: '0.1.0',
+					dependencies: {'@kit/ui': 'workspace:*'},
+				}),
+				'packages/ui/package.json': json({name: '@kit/ui', version: '0.0.0'}),
 				'apps/web/x.ts': 'x\n',
 			},
 		},
@@ -521,7 +580,7 @@ test("upstream: a fork's first release leaves the template out", async () => {
 			release: {
 				schema: 1,
 				shape: 'apps',
-				units: {web: {path: 'apps/web'}},
+				units: {web: {path: 'apps/web'}, admin: {path: 'apps/admin'}},
 				upstream: {remote: 'upstream', name: 'Makerkit'},
 				tags: {ignore: ['^\\d+\\.\\d+\\.\\d+$']},
 			},
@@ -529,6 +588,7 @@ test("upstream: a fork's first release leaves the template out", async () => {
 	});
 	await commitFiles(dir, '✨ Add the dashboard', {'apps/web/a.ts': 'a\n'});
 	await commitFiles(dir, '🐛 Fix the dashboard', {'apps/web/b.ts': 'b\n'});
+	await commitFiles(dir, '🐛 Fix the button', {'packages/ui/button.ts': 'b\n'});
 
 	await commitFiles(upstream.dir, '✨ Upstream change 31', {
 		'src/u31.ts': '31\n',
@@ -551,6 +611,9 @@ test("upstream: a fork's first release leaves the template out", async () => {
 	]);
 
 	const result = ready(await plan(dir));
+	// The sync doesn't touch admin, so it is no own commit of admin's.
+	expect(result.units.map(unit => unit.unit)).toEqual(['web']);
+	expect(result.pending).toEqual([{unit: 'admin', own: 0, shared: 1}]);
 	const web = unitOf(result, 'web');
 	expect(web).toMatchObject({
 		version: '0.1.0',
@@ -622,4 +685,25 @@ test('rootFiles note adds a Tooling and CI line, and a root changelog lists the 
 		text: '# Changelog\n\n## 2026-11-04\n\n- web [0.1.1](apps/web/CHANGELOG.md)\n',
 		how: 'created with this release',
 	});
+});
+
+test('planning a dirty tree with allowDirty changes nothing', async () => {
+	const dir = await appRepo([WEB_FEATURE]);
+	await writeFile(path.join(dir, 'apps', 'web', 'package.json'), '{"x": 1}\n');
+	await writeFile(path.join(dir, 'staged.ts'), 'staged\n');
+	await git(dir, ['add', '--', 'staged.ts']);
+	await writeFile(path.join(dir, 'untracked.ts'), 'untracked\n');
+	const state = async () =>
+		Promise.all([
+			git(dir, ['status', '--porcelain', '--untracked-files=all']),
+			git(dir, ['diff']),
+			git(dir, ['diff', '--cached']),
+			git(dir, ['rev-parse', 'HEAD']),
+			git(dir, ['for-each-ref']),
+		]);
+	const before = await state();
+
+	await expect(plan(dir)).rejects.toThrow(/uncommitted changes/);
+	expect(ready(await plan(dir, {allowDirty: true})).units).toHaveLength(1);
+	expect(await state()).toEqual(before);
 });

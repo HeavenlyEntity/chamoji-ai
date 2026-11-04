@@ -21,6 +21,7 @@ import {
 } from '../release.js';
 import type {
 	ChamojiConfig,
+	Group,
 	ParsedCommit,
 	Release,
 	SemverBump,
@@ -28,6 +29,12 @@ import type {
 import {bumpFor} from '../version.js';
 import {attribute, releaseTargets} from './attribute.js';
 import {readStyle, renderUnitSection, writeUnitChangelog} from './notes.js';
+import {
+	dependencyLine,
+	dependencyUnits,
+	rangeUpdates,
+	setRanges,
+} from './ranges.js';
 import type {ReleaseSettings} from './settings.js';
 import {renderTag, unitTagHistory, type UnitTag} from './tags.js';
 import {
@@ -246,6 +253,7 @@ export async function planUnitReleases(
 	}
 
 	const start = await git('rev-parse', 'HEAD');
+	const repositoryUrl = config.repositoryUrl ?? (await getRemoteWebUrl(root));
 	const changes: FileChange[] = [];
 	const changedBy = new Map<string, string>();
 	const add = (owner: string, change: FileChange) => {
@@ -262,21 +270,15 @@ export async function planUnitReleases(
 
 	const plans: UnitPlan[] = [];
 	for (const window of releasing) {
+		const {name} = window.unit;
 		const {plan, changes: unitChanges} = await planUnit(
 			window,
-			tagOf.get(window.unit.name)!,
-			reasons.get(window.unit.name) === 'forced',
 			{
-				root,
-				config,
-				settings,
-				units,
-				versions,
-				current,
-				today,
-				start,
-				repositoryUrl: config.repositoryUrl ?? (await getRemoteWebUrl(root)),
+				tag: tagOf.get(name)!,
+				forced: reasons.get(name) === 'forced',
+				releasedWith: releasedWith(window, reasons, settings),
 			},
+			{root, config, settings, units, versions, current, today, repositoryUrl},
 		);
 		for (const change of unitChanges) add(window.unit.name, change);
 		plans.push(plan);
@@ -409,7 +411,7 @@ function dependencyOrder(units: ResolvedUnit[]): ResolvedUnit[] {
 	const visit = (unit: ResolvedUnit) => {
 		if (done.has(unit.name) || visiting.has(unit.name)) return;
 		visiting.add(unit.name);
-		for (const dep of dependencies(unit, units)) visit(dep);
+		for (const dep of dependencyUnits(unit, units)) visit(dep);
 		visiting.delete(unit.name);
 		done.add(unit.name);
 		ordered.push(unit);
@@ -417,17 +419,6 @@ function dependencyOrder(units: ResolvedUnit[]): ResolvedUnit[] {
 
 	for (const unit of units) visit(unit);
 	return ordered;
-}
-
-/** The units whose packages `unit`'s package has as runtime dependencies. */
-function dependencies(
-	unit: ResolvedUnit,
-	units: ResolvedUnit[],
-): ResolvedUnit[] {
-	const deps = new Set(unit.pkg?.runtimeDeps ?? []);
-	return units.filter(
-		other => other !== unit && other.pkg && deps.has(other.pkg.name),
-	);
 }
 
 function ownsFile(
@@ -553,7 +544,7 @@ function decide(
 		if (!dependents) continue;
 		for (const unit of units) {
 			if (reasons.has(unit.name) || (only && !only.has(unit.name))) continue;
-			if (dependencies(unit, units).some(dep => reasons.has(dep.name))) {
+			if (dependencyUnits(unit, units).some(dep => reasons.has(dep.name))) {
 				reasons.set(unit.name, 'dependency');
 				changed = true;
 			}
@@ -599,7 +590,7 @@ function workOutVersions(
 		const floor =
 			reason === 'forced' ||
 			reason === 'dependency' ||
-			dependencies(unit, units).some(dep => reasons.has(dep.name));
+			dependencyUnits(unit, units).some(dep => reasons.has(dep.name));
 		const month = `${Number(today.slice(0, 4))}.${Number(today.slice(5, 7))}.`;
 		const version = nextUnitVersion({
 			unit,
@@ -665,6 +656,54 @@ function bumpBetween(
 	return (semver.diff(last.version, version) as SemverBump | null) ?? 'patch';
 }
 
+/**
+ * The members of the window's fixed group that release with changes of their
+ * own, when the window's unit releases only because it is in that group.
+ */
+function releasedWith(
+	window: Window,
+	reasons: Map<string, Reason>,
+	settings: ReleaseSettings,
+): string[] | null {
+	const {name} = window.unit;
+	if (
+		reasons.get(name) !== 'fixed' ||
+		window.own.length + window.shared.length > 0
+	) {
+		return null;
+	}
+
+	const group = settings.fixed.find(members => members.includes(name)) ?? [];
+	return group.filter(member => {
+		const reason = reasons.get(member);
+		return reason !== undefined && reason !== 'fixed';
+	});
+}
+
+/** A Changed section saying which members of the fixed group set the version. */
+function releasedWithGroup(names: string[], config: ChamojiConfig): Group {
+	const line: ParsedCommit = {
+		...parseCommit({
+			hash: '',
+			shortHash: '',
+			authorName: '',
+			authorEmail: '',
+			date: '',
+			subject: `Released with ${names.join(', ')} at the group's version`,
+			body: '',
+			trailers: '',
+		}),
+		gitmoji: null,
+		gitmojiSource: null,
+	};
+	return {
+		group: 'changed',
+		label:
+			config.groups.find(item => item.group === 'changed')?.label ?? 'Changed',
+		commits: [line],
+	};
+}
+
 type UnitContext = {
 	root: string;
 	config: ChamojiConfig;
@@ -673,9 +712,14 @@ type UnitContext = {
 	versions: Map<string, Exclude<NextVersion, null>>;
 	current: Map<string, string | null>;
 	today: string;
-	/** HEAD, which the release commit goes on top of. */
-	start: string;
 	repositoryUrl: string | undefined;
+};
+
+type UnitRelease = {
+	tag: string;
+	forced: boolean;
+	/** For a fixed-group member with no commits: the members it releases with. */
+	releasedWith: string[] | null;
 };
 
 /**
@@ -684,8 +728,7 @@ type UnitContext = {
  */
 async function planUnit(
 	window: Window,
-	tag: string,
-	forced: boolean,
+	{tag, forced, releasedWith}: UnitRelease,
 	context: UnitContext,
 ): Promise<{plan: UnitPlan; changes: FileChange[]}> {
 	const {root, config, settings, versions, current, today} = context;
@@ -696,28 +739,31 @@ async function planUnit(
 	const updates = rangeUpdates(
 		unit,
 		context.units,
-		declaredDependencies(manifestText),
+		manifestText,
 		versions,
 		current,
 	);
 
-	const noted = [...window.own, ...window.shared].sort(
-		(a, b) => window.position.get(a.hash)! - window.position.get(b.hash)!,
+	const noted = [
+		...[...window.own, ...window.shared].sort(
+			(a, b) => window.position.get(a.hash)! - window.position.get(b.hash)!,
+		),
+		...updates.map(update => dependencyLine(update)),
+	];
+	const built = await buildRelease(
+		root,
+		config,
+		{version, tag, previousTag: last?.tag ?? null, date: today},
+		noted,
+		'HEAD',
+		true,
 	);
-	for (const update of updates) {
-		noted.push(dependencyCommit(update.name, update.version, context.start));
-	}
-
 	const release: Release = {
-		...(await buildRelease(
-			root,
-			config,
-			{version, tag, previousTag: last?.tag ?? null, date: today},
-			noted,
-			'HEAD',
-			true,
-		)),
+		...built,
 		nextVersion: null,
+		groups: releasedWith
+			? [releasedWithGroup(releasedWith, config), ...built.groups]
+			: built.groups,
 	};
 	const existing = await readText(root, unit.changelog);
 	const notes = renderUnitSection(
@@ -742,13 +788,7 @@ async function planUnit(
 		easRemote: await readEasRemote(root, unit.path),
 	});
 	const ranged = updates.filter(update => update.range !== null);
-	const withRanges = (text: string) =>
-		ranged.reduce(
-			(next, update) =>
-				setDependencyRange(next, update.name, update.range!) ??
-				missingRange(manifest, update.name),
-			text,
-		);
+	const withRanges = (text: string) => setRanges(text, manifest, ranged);
 	const rangeNote = ranged
 		.map(update => `${update.name} ${update.range}`)
 		.join(', ');
@@ -789,139 +829,6 @@ async function planUnit(
 		},
 		changes,
 	};
-}
-
-type RangeUpdate = {
-	/** The dependency's package name. */
-	name: string;
-	/** Its version in this release, for the Dependencies line. */
-	version: string;
-	/** The new range for `dependencies`, or null to leave it as written. */
-	range: string | null;
-};
-
-/**
- * What a releasing unit's notes and manifest say about the units it depends
- * on: every dependency releasing now gets a Dependencies line and, when it
- * is in `dependencies`, a `^<version>` range, unless its range is a
- * `workspace:` one, which pnpm rewrites when it publishes. Peer ranges are
- * left as written. A dependency that isn't releasing changes the range only
- * when the range no longer accepts its current version.
- */
-function rangeUpdates(
-	unit: ResolvedUnit,
-	units: ResolvedUnit[],
-	declared: Record<string, string>,
-	versions: Map<string, Exclude<NextVersion, null>>,
-	current: Map<string, string | null>,
-): RangeUpdate[] {
-	const updates: RangeUpdate[] = [];
-	for (const dep of dependencies(unit, units)) {
-		const name = dep.pkg!.name;
-		const written = declared[name];
-		const releasing = versions.get(dep.name)?.version;
-		const version = releasing ?? current.get(dep.name) ?? null;
-		if (version === null) continue;
-		const range =
-			written === undefined || written.startsWith('workspace:')
-				? null
-				: `^${version}`;
-		if (releasing !== undefined) {
-			updates.push({name, version, range: range === written ? null : range});
-		} else if (
-			range !== null &&
-			semver.validRange(written) !== null &&
-			!semver.satisfies(version, written!)
-		) {
-			updates.push({name, version, range});
-		}
-	}
-
-	return updates;
-}
-
-/** The `dependencies` of a package.json's text, or none. */
-function declaredDependencies(text: string | null): Record<string, string> {
-	const deps =
-		text === null
-			? undefined
-			: (JSON.parse(text) as {dependencies?: unknown}).dependencies;
-	if (!deps || typeof deps !== 'object') return {};
-	return Object.fromEntries(
-		Object.entries(deps).filter(
-			(entry): entry is [string, string] => typeof entry[1] === 'string',
-		),
-	);
-}
-
-/** The Dependencies line for a dependency's new version. `at` is the commit the release is made on. */
-function dependencyCommit(
-	name: string,
-	version: string,
-	at: string,
-): ParsedCommit {
-	return parseCommit({
-		hash: at,
-		shortHash: at.slice(0, 7),
-		authorName: '',
-		authorEmail: '',
-		date: '',
-		subject: `⬆️ Bump ${name} to ${version}`,
-		body: '',
-		trailers: '',
-	});
-}
-
-function missingRange(file: string, name: string): never {
-	throw new ReleaseError(
-		'invalid-version',
-		`can't set the range of ${name} in ${file}: it isn't in "dependencies"`,
-	);
-}
-
-/**
- * `text` with the top-level `dependencies[name]` set to `range`, edited as
- * text so formatting survives; null when the package.json doesn't list it.
- */
-export function setDependencyRange(
-	text: string,
-	name: string,
-	range: string,
-): string | null {
-	const colon = /\s*:/y;
-	let depth = 0;
-	let inDependencies = false;
-	let key: string | null = null;
-	for (let i = 0; i < text.length; i++) {
-		const ch = text[i];
-		if (ch === '"') {
-			let end = i + 1;
-			while (end < text.length && text[end] !== '"') {
-				end += text[end] === '\\' ? 2 : 1;
-			}
-
-			end++;
-			colon.lastIndex = end;
-			if (colon.test(text)) {
-				key = JSON.parse(text.slice(i, end)) as string;
-				i = colon.lastIndex - 1;
-			} else if (inDependencies && depth === 2 && key === name) {
-				return `${text.slice(0, i)}${JSON.stringify(range)}${text.slice(end)}`;
-			} else {
-				i = end - 1;
-			}
-		} else if (ch === '{' || ch === '[') {
-			depth++;
-			if (ch === '{' && depth === 2 && key === 'dependencies') {
-				inDependencies = true;
-			}
-		} else if (ch === '}' || ch === ']') {
-			if (depth === 2) inDependencies = false;
-			depth--;
-		}
-	}
-
-	return null;
 }
 
 /**

@@ -107,12 +107,14 @@ function renderCommit(commit: ParsedCommit, url: string | undefined): string {
 						.join(''),
 		)
 		.join('');
-	const hash = url
+	const link = url
 		? `[${commit.shortHash}](${commitLink(commit, url)})`
 		: commit.shortHash;
+	// A line chamoji writes itself, such as a Dependencies line, has no commit.
+	const hash = commit.shortHash ? ` (${link})` : '';
 	// A package path, as a code span: it can't hold a backtick or a line break.
 	const via = commit.via
 		? ` (via \`${commit.via.replaceAll(/[`\r\n]/g, '')}\`)`
 		: '';
-	return `${emoji ? `${emoji} ` : ''}${scope}${description} (${hash})${via}`;
+	return `${emoji ? `${emoji} ` : ''}${scope}${description}${hash}${via}`;
 }
