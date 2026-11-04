@@ -53,6 +53,7 @@ import {
 	jevFace,
 	JUDGMENT_VERSION,
 	type JevClassifierOptions,
+	type JevClient,
 } from './jev-classifier.js';
 import {runInit} from './init.js';
 import {runMcp} from './mcp.js';
@@ -87,6 +88,8 @@ export type Io = {
 	terminal?: () => ComposerTerminal | null;
 	/** Environment for the hook's CI check; defaults to process.env. */
 	env?: Record<string, string | undefined>;
+	/** Jev's commit sorting for --ai; tests pass a fake. Defaults to the TypeSafe API. */
+	jev?: JevClient;
 	/** Jev's commit advice; tests pass a fake. Defaults to the TypeSafe API. */
 	advise?: ReturnType<typeof createCommitAdvisor>;
 	/** Jev's `memory search --ai` reorder; tests pass a fake. Defaults to the TypeSafe API. */
@@ -336,6 +339,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 	const io: Io = {...given, face};
 	/** A step a command is running that Jev's progress shows on, if any. */
 	let jevHost: Step | undefined;
+	const jev = jevFace(face, () => jevHost);
 	try {
 		if (flags.help) {
 			io.stdout(`${oneLineLogo(io.welcome ?? PLAIN_WELCOME)}\n${cli.help}\n`);
@@ -374,7 +378,6 @@ export async function run(argv: string[], given: Io): Promise<number> {
 			// card ignores --ai: it counts what the rules sort and sends nothing out.
 			// memory search and mcp have their own use for it, and ask for their key
 			// themselves. agent-hook has none, and stdout is its decision.
-			const jev = jevFace(face, () => jevHost);
 			const classify =
 				flags.ai &&
 				command !== 'card' &&
@@ -416,16 +419,29 @@ export async function run(argv: string[], given: Io): Promise<number> {
 				}
 
 				case 'next-version': {
-					const {releases} = await buildChangelog({
-						cwd: io.cwd,
-						config: await loadConfig(io.cwd, flags.config),
-						to: flags.to,
-						classify,
-						classifyReleases: 'unreleased',
-					});
-					const next = releases.find(
-						release => release.tag === null,
-					)?.nextVersion;
+					const config = await loadConfig(io.cwd, flags.config);
+					// Only --ai has a face here, and Jev's progress shows on this step.
+					const next = await runStep(
+						face,
+						'Working out the next version',
+						async step => {
+							jevHost = step;
+							try {
+								const {releases} = await buildChangelog({
+									cwd: io.cwd,
+									config,
+									to: flags.to,
+									classify,
+									classifyReleases: 'unreleased',
+								});
+								return releases.find(release => release.tag === null)
+									?.nextVersion;
+							} finally {
+								jevHost = undefined;
+							}
+						},
+						found => planned(found ? `Next version is ${found}` : undefined),
+					);
 					if (!next) {
 						// Non-zero and silent on stdout, so `$(chamoji next-version)` in a
 						// release script stops instead of producing a release called "none".
@@ -800,6 +816,20 @@ export async function run(argv: string[], given: Io): Promise<number> {
 		}
 	}
 
+	/**
+	 * How a planning step ends: warn when Jev left commits unsorted, as Jev's
+	 * own step would, else ok with `text`, or `Nothing to release` without it.
+	 */
+	function planned(text: string | undefined): {
+		outcome: 'ok' | 'warn';
+		text: string;
+	} {
+		const left = jev.unsorted();
+		return left
+			? {outcome: 'warn', text: left}
+			: {outcome: 'ok', text: text ?? 'Nothing to release'};
+	}
+
 	async function release(
 		version: string | undefined,
 		classify: CommitClassifier | undefined,
@@ -841,13 +871,12 @@ export async function run(argv: string[], given: Io): Promise<number> {
 					jevHost = undefined;
 				}
 			},
-			result => ({
-				outcome: 'ok',
-				text:
+			result =>
+				planned(
 					result.status === 'nothing'
-						? 'Nothing to release'
+						? undefined
 						: `Ready to release ${result.tag}`,
-			}),
+				),
 		);
 		const print = (lines: string[], json: Record<string, unknown>) => {
 			io.stdout(
@@ -1176,7 +1205,7 @@ async function jevClassifier(
 	io: Io,
 	progress: JevClassifierOptions['progress'],
 ): Promise<CommitClassifier> {
-	const client = await typesafeClient(io);
+	const client = io.jev ?? (await typesafeClient(io));
 	if (!client) throw new Error(MISSING_KEY);
 	// Outside a repository there's nowhere to keep judgments, so none are cached.
 	const cache = await openJudgmentCache(io.cwd, JUDGMENT_VERSION).catch(

@@ -10,6 +10,7 @@ import {
 	type RepoStep,
 } from '../../core/test/helpers/fixture-repo.js';
 import {fakeSsh} from '../../core/test/helpers/fake-ssh.js';
+import type {JevClient} from '../src/jev-classifier.js';
 import {run, type GhRunner} from '../src/run.js';
 import {recordingFace} from './helpers/recording-face.js';
 
@@ -250,7 +251,7 @@ test('release without --push leaves memory alone', async () => {
 async function withFace(
 	argv: string[],
 	cwd: string,
-	options: {gh?: GhRunner; fetchTags?: boolean} = {},
+	options: {gh?: GhRunner; fetchTags?: boolean; jev?: JevClient} = {},
 ) {
 	const {face, calls} = recordingFace();
 	let stdout = '';
@@ -262,6 +263,7 @@ async function withFace(
 		today: '2026-10-28',
 		fetchTags: options.fetchTags ?? false,
 		gh: options.gh,
+		jev: options.jev,
 		face,
 	});
 	return {code, stdout, stderr, calls};
@@ -366,6 +368,82 @@ test('release with nothing to release ends ok Nothing to release, exit 3', async
 	expect(calls).toEqual([
 		['step', 'Planning the release'],
 		['end', 'ok', 'Nothing to release'],
+		['stop'],
+	]);
+});
+
+/** A Jev whose every request fails. */
+const failingJev: JevClient = {
+	async systemOne() {
+		throw new Error('invalid key');
+	},
+};
+
+test('release --ai ends the planning step warn when Jev left commits unsorted', async () => {
+	const {dir} = await repoFrom([
+		{commit: '🎉 Init'},
+		{tag: 'v1.0.0'},
+		{commit: 'Tidelift tasks'},
+		{commit: '✨ Add search'},
+	]);
+	const {code, calls} = await withFace(['release', '--dry-run', '--ai'], dir, {
+		jev: failingJev,
+	});
+	expect(code).toBe(0);
+	// Jev runs on the planning step, which ends warn, not ok.
+	expect(calls[0]).toEqual(['step', 'Planning the release']);
+	expect(calls).toContainEqual(['update', 'Jev is sorting 0 of 1 commits']);
+	expect(calls.filter(call => call[0] === 'step')).toHaveLength(1);
+	expect(calls.slice(-2)).toEqual([
+		['end', 'warn', 'Jev left 1 of 1 commits unsorted'],
+		['stop'],
+	]);
+});
+
+test('next-version --ai with nothing to release ends ok Nothing to release, exit 3', async () => {
+	const steps: RepoStep[] = [
+		{commit: '🎉 Init'},
+		{tag: 'v1.0.0'},
+		{commit: '📝 Fix a typo'},
+	];
+	let plainOut = '';
+	let plainErr = '';
+	const plainCode = await run(['next-version', '--ai'], {
+		cwd: (await repoFrom(steps)).dir,
+		stdout: text => (plainOut += text),
+		stderr: text => (plainErr += text),
+		jev: failingJev,
+	});
+	const {code, stdout, stderr, calls} = await withFace(
+		['next-version', '--ai'],
+		(await repoFrom(steps)).dir,
+		{jev: failingJev},
+	);
+	expect(plainCode).toBe(3);
+	expect(code).toBe(3);
+	expect(stdout).toBe(plainOut);
+	expect(stdout).toBe('');
+	expect(stderr).toBe(plainErr);
+	expect(calls[0]).toEqual(['step', 'Working out the next version']);
+	expect(calls.slice(-2)).toEqual([
+		['end', 'ok', 'Nothing to release'],
+		['stop'],
+	]);
+});
+
+test('next-version --ai ends ok with the version it prints', async () => {
+	const {dir} = await repoFrom([
+		{commit: '🎉 Init'},
+		{tag: 'v1.0.0'},
+		{commit: '✨ Add search'},
+	]);
+	const {code, stdout, calls} = await withFace(['next-version', '--ai'], dir, {
+		jev: failingJev,
+	});
+	expect(code).toBe(0);
+	expect(stdout).toBe('1.1.0\n');
+	expect(calls.slice(-2)).toEqual([
+		['end', 'ok', 'Next version is 1.1.0'],
 		['stop'],
 	]);
 });
