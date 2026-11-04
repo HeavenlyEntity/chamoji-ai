@@ -19,6 +19,14 @@ const root = fileURLToPath(new URL('../../..', import.meta.url));
 const script = path.join(root, 'action', 'run.sh');
 const cli = `${process.execPath} ${path.join(root, 'packages/cli/dist/cli.js')}`;
 
+// The real CLI, except that --version answers FAKE_CLI_VERSION (default
+// 0.13.0): the build in this checkout still says 0.12.0, which the Action
+// refuses for repos with release settings.
+const FAKE_CLI = `#!/usr/bin/env bash
+if [ "$1" = --version ]; then echo "\${FAKE_CLI_VERSION:-0.13.0}"; exit 0; fi
+exec "${process.execPath}" "${path.join(root, 'packages/cli/dist/cli.js')}" "$@"
+`;
+
 const FAKE_GH = `#!/usr/bin/env bash
 printf '%s\\n' "$*" >> "$FAKE_GH_DIR/calls"
 previous=
@@ -91,6 +99,8 @@ async function setup(steps: RepoStep[]) {
 	);
 	await writeFile(path.join(fake, 'gh'), FAKE_GH);
 	await chmod(path.join(fake, 'gh'), 0o755);
+	await writeFile(path.join(fake, 'chamoji-cli'), FAKE_CLI);
+	await chmod(path.join(fake, 'chamoji-cli'), 0o755);
 	await writeFile(path.join(fake, 'curl'), FAKE_CURL);
 	await chmod(path.join(fake, 'curl'), 0o755);
 	await writeFile(path.join(fake, 'card.png'), PNG);
@@ -105,6 +115,8 @@ async function setup(steps: RepoStep[]) {
 		cwd: repo.dir,
 	});
 
+	// Runs the Action with a CLI whose version the repo's release settings accept.
+	const unitCli = path.join(fake, 'chamoji-cli');
 	const action = async (env: Record<string, string>) => {
 		try {
 			const {stdout, stderr} = await execFileAsync('bash', [script], {
@@ -159,6 +171,7 @@ async function setup(steps: RepoStep[]) {
 		originGit,
 		originBlob,
 		answer,
+		unitCli,
 		dir: repo.dir,
 		origin,
 		fake,
@@ -177,6 +190,48 @@ const pr: RepoStep[] = [
 	{tag: 'v1.0.0', annotated: true},
 	{commit: '✨ Add search'},
 	{commit: '🐛 Fix search on empty input'},
+];
+
+const json = (value: unknown) => `${JSON.stringify(value, null, '\t')}\n`;
+const uses = {'@gearz/supabase': 'workspace:*'};
+
+// An app monorepo: web and mobile on a shared supabase package.
+const unitFiles: Record<string, string> = {
+	'package.json': json({name: 'gearz', private: true}),
+	'pnpm-workspace.yaml': 'packages:\n  - apps/*\n  - packages/*\n',
+	'chamoji.config.json': json({
+		release: {
+			schema: 1,
+			shape: 'apps',
+			units: {
+				web: {path: 'apps/web', tag: 'web/v{version}'},
+				mobile: {path: 'apps/mobile', tag: 'mobile/v{version}'},
+			},
+		},
+	}),
+	'apps/web/package.json': json({
+		name: '@gearz/web',
+		version: '0.1.0',
+		private: true,
+		dependencies: uses,
+	}),
+	'apps/mobile/package.json': json({
+		name: '@gearz/mobile',
+		version: '1.0.0',
+		private: true,
+		dependencies: uses,
+	}),
+	'packages/supabase/package.json': json({
+		name: '@gearz/supabase',
+		version: '0.0.0',
+		private: true,
+	}),
+};
+
+const unitStart: RepoStep[] = [
+	{commit: '🎉 Start the gearz monorepo', files: unitFiles},
+	{tag: 'web/v0.1.0', annotated: true},
+	{tag: 'mobile/v1.0.0', annotated: true},
 ];
 
 describe.skipIf(process.platform === 'win32')('the GitHub Action', () => {
@@ -528,5 +583,116 @@ exec "${realGit}" "$@"
 				true,
 			);
 		});
+	});
+	test('refuses an old CLI when release settings exist', async () => {
+		const {action, unitCli, read} = await setup(unitStart);
+		const result = await action({
+			CHAMOJI_CLI: unitCli,
+			FAKE_CLI_VERSION: '0.12.1',
+			GITHUB_EVENT_NAME: 'push',
+			GITHUB_REF: 'refs/tags/web/v0.1.0',
+		});
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain(
+			"this repo's release settings need chamoji 0.13.0 or newer; set chamoji-version",
+		);
+		expect(await read('calls')).toBe('');
+	});
+
+	test('unit tags get their unit’s notes', async () => {
+		const {action, unitCli, read} = await setup([
+			...unitStart,
+			{
+				commit: '✨ Add the dashboard',
+				files: {'apps/web/src/dashboard.ts': 'dashboard\n'},
+			},
+			{
+				commit: '🐛 Fix the camera crash',
+				files: {'apps/mobile/src/camera.ts': 'camera\n'},
+			},
+			{tag: 'web/v0.2.0', annotated: true},
+		]);
+		const result = await action({
+			CHAMOJI_CLI: unitCli,
+			GITHUB_EVENT_NAME: 'push',
+			GITHUB_REF: 'refs/tags/web/v0.2.0',
+			FAKE_RELEASE_EXISTS: '1',
+		});
+		expect(result.code).toBe(0);
+		expect(await read('calls')).toContain(
+			'release edit web/v0.2.0 --notes-file',
+		);
+		const notes = await read('notes');
+		expect(notes).toContain('Add the dashboard');
+		expect(notes).not.toContain('camera');
+		expect(notes).not.toContain('# Changelog');
+		expect(await read('output')).toContain('version=web/v0.2.0');
+	});
+
+	test('without release settings, a non-version tag is left alone', async () => {
+		const {action, read} = await setup([...tagged, {tag: 'wip/x'}]);
+		const result = await action({
+			GITHUB_EVENT_NAME: 'push',
+			GITHUB_REF: 'refs/tags/wip/x',
+		});
+		expect(result.code).toBe(0);
+		expect(result.stdout).toContain(
+			"chamoji: wip/x isn't a whole-repo version tag; leaving its release alone",
+		);
+		expect(await read('calls')).toBe('');
+	});
+
+	test('the PR comment lists units', async () => {
+		const {action, unitCli, read, rev} = await setup([
+			...unitStart,
+			{
+				commit: '✨ Add the dashboard',
+				files: {'apps/web/src/dashboard.ts': 'dashboard\n'},
+			},
+			{
+				commit: '🐛 Fix the session refresh',
+				files: {'packages/supabase/src/session.ts': 'refresh\n'},
+			},
+		]);
+		const result = await action({
+			CHAMOJI_CLI: unitCli,
+			GITHUB_EVENT_NAME: 'pull_request',
+			CHAMOJI_PR: '7',
+			CHAMOJI_BASE_SHA: await rev('HEAD~2'),
+			CHAMOJI_HEAD_SHA: await rev('HEAD'),
+		});
+		expect(result.code).toBe(0);
+		expect(await read('calls')).toContain(
+			'api -X POST repos/acme/widgets/issues/7/comments',
+		);
+		const body = await read('body');
+		expect(body).toContain('<!-- chamoji-changelog -->');
+		expect(body).toContain('web → 0.2.0');
+		expect(body).toContain('mobile: rides along');
+		expect(body).toContain('Add the dashboard');
+	});
+
+	test('release mode passes the unit input to chamoji', async () => {
+		const {action, unitCli, git} = await setup([
+			...unitStart,
+			{
+				commit: '✨ Add the dashboard',
+				files: {'apps/web/src/dashboard.ts': 'dashboard\n'},
+			},
+			{
+				commit: '✨ Add the camera roll',
+				files: {'apps/mobile/src/roll.ts': 'roll\n'},
+			},
+		]);
+		await git('config', 'user.name', 'Dev');
+		await git('config', 'user.email', 'dev@example.com');
+		const result = await action({
+			CHAMOJI_CLI: unitCli,
+			CHAMOJI_MODE: 'release',
+			CHAMOJI_UNIT: 'web',
+		});
+		expect(result.code).toBe(0);
+		expect(await git('tag', '--list', 'web/v0.2.0')).toBe('web/v0.2.0');
+		expect(await git('tag', '--list', 'mobile/v1.1.0')).toBe('');
 	});
 });

@@ -23,6 +23,11 @@ inputs:
   release-version:
     description: release mode only. The version to release; empty lets chamoji pick it from the commits.
     default: ''
+  unit:
+    description: >-
+      release mode only. In a repo with release units, release just this unit;
+      empty releases every unit that has changes of its own.
+    default: ''
   ai:
     description: Sort vague commits with Jev (needs typesafe-api-key).
     default: 'false'
@@ -52,7 +57,7 @@ inputs:
 
 outputs:
   version:
-    description: The tag that was released or given notes.
+    description: The tag that was released or given notes (every released tag, comma-separated, in a repo with release units).
     value: ${{ steps.run.outputs.version }}
   notes-file:
     description: notes mode only. Path to the release notes.
@@ -75,6 +80,7 @@ runs:
         CHAMOJI_VERSION: ${{ inputs.chamoji-version }}
         CHAMOJI_CLI: ${{ inputs.cli }}
         CHAMOJI_RELEASE_VERSION: ${{ inputs.release-version }}
+        CHAMOJI_UNIT: ${{ inputs.unit }}
         CHAMOJI_COMMENT_AUTHOR: ${{ inputs.comment-author }}
         CHAMOJI_CARD_URL: ${{ inputs.card-endpoint }}
         CHAMOJI_CARD_BRANCH: ${{ inputs.card-branch }}

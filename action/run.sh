@@ -7,6 +7,7 @@
 #   CHAMOJI_VERSION   chamoji version for npx; default: latest
 #   CHAMOJI_AI        true to pass --ai (needs TYPESAFE_API_KEY)
 #   CHAMOJI_RELEASE_VERSION  release mode: the version to release; default: from the commits
+#   CHAMOJI_UNIT      release mode: only release this unit (a repo with release units)
 #   CHAMOJI_COMMENT_AUTHOR   comment mode: login that owns the preview comment; default: github-actions[bot]
 #   CHAMOJI_CARD_URL     card mode: the renderer; default: https://chamoji.dev/api/card
 #   CHAMOJI_CARD_BRANCH  card mode: the branch that holds only card.png; default: chamoji-card
@@ -65,6 +66,37 @@ if [ "$(git rev-parse --is-shallow-repository)" = true ]; then
 	fail 'this is a shallow clone; check out with actions/checkout and fetch-depth: 0 so chamoji sees every commit and tag'
 fi
 
+# What chamoji.config.json says about releases: "none" (no release section, or
+# a file that can't be read; the CLI reports a broken file itself), "single"
+# (shape single) or "units" (any other shape).
+release_config() {
+	node -e '
+		try {
+			const release = JSON.parse(require("fs").readFileSync("chamoji.config.json", "utf8")).release;
+			if (release === undefined || release === null) process.stdout.write("none");
+			else process.stdout.write(release.shape === "single" ? "single" : "units");
+		} catch {
+			process.stdout.write("none");
+		}
+	'
+}
+config_release=$(release_config)
+units=false
+[ "$config_release" = units ] && units=true
+
+# Release settings came with chamoji 0.13.0; an older CLI would ignore them.
+if [ "$config_release" != none ]; then
+	cli_version=$("${cli[@]}" --version --no-update-check 2>/dev/null | head -n 1 || true)
+	if ! node -e '
+		const parse = text => (/^v?(\d+)\.(\d+)\.(\d+)/.exec(text) ?? []).slice(1).map(Number);
+		const [have, need] = [parse(process.argv[1]), [0, 13, 0]];
+		if (have.length !== 3) process.exit(1);
+		for (let i = 0; i < 3; i++) if (have[i] !== need[i]) process.exit(have[i] > need[i] ? 0 : 1);
+	' "$cli_version"; then
+		fail "this repo's release settings need chamoji 0.13.0 or newer; set chamoji-version"
+	fi
+fi
+
 if [ "$mode" = auto ]; then
 	case "${GITHUB_EVENT_NAME:-}:${GITHUB_REF:-}" in
 		push:refs/tags/*) mode=notes ;;
@@ -76,16 +108,27 @@ fi
 case "$mode" in
 notes)
 	tag=${CHAMOJI_TAG:-${GITHUB_REF#refs/tags/}}
-	previous=$(newest_tag "$tag^")
 	notes="$work/chamoji-notes.md"
-	if [ -n "$previous" ]; then
-		chamoji changelog --to "$tag" --from "$previous" | strip_title >"$notes"
-	else
-		chamoji changelog --to "$tag" | strip_title >"$notes"
-	fi
-
 	prerelease=
-	case "$tag" in *-*) prerelease=--prerelease ;; esac
+	if [ "$units" = true ]; then
+		# The unit that owns the tag writes its own section. The version is what
+		# follows the last / or @, so a name like my-lib isn't taken for a prerelease.
+		chamoji changelog --for-tag "$tag" | strip_title >"$notes"
+		tag_version=${tag##*[@/]}
+		case "$tag_version" in *-*) prerelease=--prerelease ;; esac
+	else
+		if ! printf '%s' "$tag" | grep -Eq "$semver"; then
+			echo "chamoji: $tag isn't a whole-repo version tag; leaving its release alone"
+			exit 0
+		fi
+		previous=$(newest_tag "$tag^")
+		if [ -n "$previous" ]; then
+			chamoji changelog --to "$tag" --from "$previous" | strip_title >"$notes"
+		else
+			chamoji changelog --to "$tag" | strip_title >"$notes"
+		fi
+		case "$tag" in *-*) prerelease=--prerelease ;; esac
+	fi
 	if gh release view "$tag" >/dev/null 2>&1; then
 		gh release edit "$tag" --notes-file "$notes"
 	else
@@ -106,6 +149,57 @@ comment)
 	repo=${GH_REPO:-${GITHUB_REPOSITORY:-}}
 	[ -n "$pr" ] && [ -n "$base" ] && [ -n "$head" ] || fail 'comment mode needs a pull_request event'
 
+	body="$work/chamoji-comment.md"
+	if [ "$units" = true ]; then
+		# A repo with release units previews each unit: its next version (or why it
+		# has none), then the notes it would release with. Both read the checkout,
+		# which is the PR's head (or its merge with the base), so --since and --to
+		# don't come into it. next-version exits 3 when no unit releases, still
+		# printing every unit.
+		set +e
+		versions=$(chamoji next-version --json)
+		status=$?
+		set -e
+		{ [ "$status" -eq 0 ] || [ "$status" -eq 3 ]; } || fail "next-version failed with exit code $status"
+		set +e
+		planned=$(chamoji release --dry-run --any-branch --json)
+		status=$?
+		set -e
+		{ [ "$status" -eq 0 ] || [ "$status" -eq 3 ]; } || fail "release --dry-run failed with exit code $status"
+		CHAMOJI_VERSIONS=$versions CHAMOJI_PLANNED=$planned CHAMOJI_MARKER=$marker node -e '
+			const {units} = JSON.parse(process.env.CHAMOJI_VERSIONS);
+			const plan = JSON.parse(process.env.CHAMOJI_PLANNED);
+			const releasing = plan.units ?? [];
+			const line = unit => {
+				if (unit.version !== null) return `- ${unit.unit} → ${unit.version}`;
+				if (unit.own === 0 && unit.shared > 0) return `- ${unit.unit}: rides along`;
+				if (unit.own > 0) return `- ${unit.unit}: no release yet`;
+				return `- ${unit.unit}: nothing to release`;
+			};
+			const out = [
+				process.env.CHAMOJI_MARKER,
+				"### Changelog preview",
+				"",
+				releasing.length > 0
+					? "Merging this releases:"
+					: "Nothing here needs a release on its own: only docs, tests, refactors or similar.",
+				"",
+				...units.map(line),
+			];
+			for (const unit of releasing) {
+				// Headings drop below the unit title, which sits under the comment title.
+				const notes = unit.notes
+					.split("\n")
+					.filter(text => !/^## /.test(text))
+					.map(text => text.replace(/^### /, "##### "))
+					.join("\n")
+					.trim();
+				out.push("", `#### ${unit.unit} ${unit.version}`, "", notes || "_No changelog lines._");
+			}
+			out.push("", "<sub>From [chamoji](https://github.com/HeavenlyEntity/chamoji-ai), updated on every push.</sub>");
+			process.stdout.write(out.join("\n") + "\n");
+		' >"$body"
+	else
 	# Section headings drop a level so they sit under the comment's title.
 	lines=$(chamoji changelog --since "$base" --to "$head" | strip_title | sed '1{/^## /d;}' | awk 'NF { started = 1 } started' | sed 's/^### /#### /')
 	last=$(newest_tag "$head")
@@ -125,7 +219,6 @@ comment)
 		fail "next-version failed with exit code $status"
 	fi
 
-	body="$work/chamoji-comment.md"
 	{
 		echo "$marker"
 		echo '### Changelog preview'
@@ -136,6 +229,7 @@ comment)
 		echo
 		echo '<sub>From [chamoji](https://github.com/HeavenlyEntity/chamoji-ai), updated on every push.</sub>'
 	} >"$body"
+	fi
 	cat "$body" >>"$summary"
 
 	# Find our earlier comment: the marker, written by the account this token
@@ -159,11 +253,13 @@ comment)
 release)
 	git config user.name 'github-actions[bot]'
 	git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+	unit_args=()
+	[ -z "${CHAMOJI_UNIT:-}" ] || unit_args=(--unit "$CHAMOJI_UNIT")
 	set +e
 	if [ -n "${CHAMOJI_RELEASE_VERSION:-}" ]; then
-		result=$(chamoji release "$CHAMOJI_RELEASE_VERSION" --push --json)
+		result=$(chamoji release "$CHAMOJI_RELEASE_VERSION" ${unit_args[@]+"${unit_args[@]}"} --push --json)
 	else
-		result=$(chamoji release --push --json)
+		result=$(chamoji release ${unit_args[@]+"${unit_args[@]}"} --push --json)
 	fi
 	status=$?
 	set -e
@@ -173,8 +269,8 @@ release)
 	fi
 
 	[ "$status" -eq 0 ] || fail "chamoji release failed with exit code $status"
-	version=$(printf '%s' "$result" | node -e 'let s = ""; process.stdin.on("data", d => (s += d)).on("end", () => process.stdout.write(JSON.parse(s).tag))')
-	printf '%s' "$result" | node -e 'let s = ""; process.stdin.on("data", d => (s += d)).on("end", () => process.stdout.write(JSON.parse(s).notes + "\n"))' >>"$summary"
+	version=$(printf '%s' "$result" | node -e 'let s = ""; process.stdin.on("data", d => (s += d)).on("end", () => { const j = JSON.parse(s); process.stdout.write(j.units ? j.units.map(u => u.tag).join(", ") : j.tag) })')
+	printf '%s' "$result" | node -e 'let s = ""; process.stdin.on("data", d => (s += d)).on("end", () => { const j = JSON.parse(s); process.stdout.write((j.units ? j.units.map(u => `## ${u.tag}\n\n${u.notes}`).join("\n\n") : j.notes) + "\n") })' >>"$summary"
 	echo "version=$version" >>"$output"
 	;;
 
