@@ -156,7 +156,11 @@ test('setup --yes finds web and mobile, excludes e2e, dev-tool and tooling, igno
 	expect(plan.warnings).toEqual([]);
 });
 
-/** Just enough of a terminal for Ink: keys go in on stdin, frames come out on stderr. */
+/**
+ * Just enough of a terminal for Ink: keys go in on stdin, frames come out on
+ * stderr. Like a real stream, a key written before anyone listens waits, and
+ * is announced when a reader comes.
+ */
 class FakeStdin extends EventEmitter {
 	isTTY = true;
 	private data: string | null = null;
@@ -164,6 +168,18 @@ class FakeStdin extends EventEmitter {
 		this.data = data;
 		this.emit('readable');
 		this.emit('data', data);
+	}
+
+	override addListener(
+		event: string | symbol,
+		listener: (...args: unknown[]) => void,
+	): this {
+		super.addListener(event, listener);
+		if (event === 'readable' && this.data !== null) {
+			setImmediate(() => this.emit('readable'));
+		}
+
+		return this;
 	}
 
 	read = () => {
@@ -219,6 +235,8 @@ async function interactive(
 	dir: string,
 	argv: string[],
 	steps: Array<{when: string; key: string}>,
+	/** Typed as the screen opens, before it first draws. */
+	early?: string,
 ) {
 	const tty = Object.getOwnPropertyDescriptor(process.stderr, 'isTTY');
 	Object.defineProperty(process.stderr, 'isTTY', {
@@ -232,6 +250,7 @@ async function interactive(
 		const running = chamoji(argv, dir, {
 			async setupScreen(props) {
 				opened++;
+				if (early !== undefined) stdin.write(early);
 				return runSetupScreen(props, {
 					stdin: stdin as unknown as NodeJS.ReadStream,
 					stdout: screen as unknown as NodeJS.WriteStream,
@@ -243,7 +262,14 @@ async function interactive(
 			stdin.write(key);
 		}
 
-		return {...(await running), opened, screen};
+		// A key the screen missed would leave it open: close it after a while,
+		// so the test fails on what was (not) saved instead of hanging.
+		const closer = setTimeout(() => stdin.write('\u0003'), 5000);
+		try {
+			return {...(await running), opened, screen};
+		} finally {
+			clearTimeout(closer);
+		}
 	} finally {
 		if (tty) Object.defineProperty(process.stderr, 'isTTY', tty);
 		else delete (process.stderr as {isTTY?: boolean}).isTTY;
@@ -272,6 +298,17 @@ test('interactive setup reaches a saved config with one Enter', async () => {
 	expect((JSON.parse(again.stdout) as {steps: unknown}).steps).toEqual([
 		{step: 'releases', result: 'unchanged'},
 	]);
+});
+
+test('an Enter pressed before the screen first draws, read as a newline, still saves', async () => {
+	const dir = await gearz();
+	const recommended = releaseSection(recommend(await detect(dir)));
+	// Before raw mode the terminal turns Enter into a newline.
+	const result = await interactive(dir, ['setup', 'releases'], [], '\n');
+	expect(result.stderr).toBe('');
+	expect(result.code).toBe(0);
+	expect(result.stdout).toContain('Wrote chamoji.config.json.');
+	expect(await readRelease(dir)).toEqual(recommended);
 });
 
 test('in a fresh clone, plain setup asks about the hook after the Enter, and Enter there declines it', async () => {
