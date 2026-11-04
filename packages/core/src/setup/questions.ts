@@ -50,16 +50,21 @@ export const recommendedShape = (
 	layout: LayoutDetection,
 ): SetupAnswers['shape'] => (layout.kind === 'mixed' ? 'apps' : layout.kind);
 
-/** The base a repo started from, as copy says it. */
-export const baseName = (detection: Detection, answers?: SetupAnswers) =>
-	answers?.upstream?.name ?? detection.upstream.name ?? 'the template';
+const FALLBACK_BASE = 'template';
 
 /**
- * The name setup suggests for `upstream.name`: the same fallback without its
- * article, since the engine writes "Updated the <name> base".
+ * The base a repo started from: `name` as `upstream.name` holds it (the
+ * engine writes "Updated the <name> base"), and `prose` as copy says it,
+ * "the template" for the fallback.
  */
-export const suggestedBase = (detection: Detection): string =>
-	baseName(detection).replace(/^the /, '');
+export function baseName(
+	detection: Detection,
+	answers?: SetupAnswers,
+): {name: string; prose: string} {
+	const name =
+		answers?.upstream?.name ?? detection.upstream.name ?? FALLBACK_BASE;
+	return {name, prose: name === FALLBACK_BASE ? `the ${name}` : name};
+}
 
 /** A unit's facts and tag formats, by path, so a renamed unit still finds them. */
 export function factsOf(
@@ -68,11 +73,14 @@ export function factsOf(
 ): {facts?: UnitFacts; formats?: UnitTagFormats} {
 	const {candidates, units} = detection.layout;
 	const facts = candidates.find(each => each.path === unit.path);
-	// Tag formats were worked out for detected units only.
+	if (!facts) return {};
+	// A detected unit's formats, else the candidate's.
 	const detected = units.some(each => each.path === unit.path);
 	return {
 		facts,
-		formats: facts && detected ? detection.tags.perUnit[facts.name] : undefined,
+		formats: detected
+			? detection.tags.perUnit[facts.name]
+			: detection.tags.candidates[facts.path],
 	};
 }
 
@@ -248,6 +256,24 @@ function unitQuestions(
 	return asked;
 }
 
+/** Where the repo's own history starts, from the remote, inherited tags or config. */
+function upstreamFound(detection: Detection, answers: SetupAnswers): string {
+	const {upstream, tags} = detection;
+	const {prose} = baseName(detection, answers);
+	if (upstream.remote) {
+		return `${count(upstream.upstreamCommits, 'commit', 'commits')} came from the ${upstream.remote} remote before your own history starts`;
+	}
+
+	if (tags.inherited.examples.length > 0) {
+		return `Your own history starts after ${prose}'s tags, such as ${list(tags.inherited.examples)}`;
+	}
+
+	const since = answers.upstream?.since ?? upstream.since;
+	return since
+		? `Your own history starts at commit ${since.slice(0, 7)}`
+		: `No upstream remote or ${prose} tags were found`;
+}
+
 /** Every question setup can ask, in screen order, given the current answers. */
 export function questions(
 	detection: Detection,
@@ -309,7 +335,7 @@ export function questions(
 		const named = [...tags.inherited.tags, ...tags.stray.tags];
 		const parts = [
 			tags.inherited.tags.length > 0 &&
-				`${count(tags.inherited.tags.length, 'tag looks like it', 'tags look like they')} came from ${baseName(detection, answers)}, such as ${list(tags.inherited.examples)}`,
+				`${count(tags.inherited.tags.length, 'tag looks like it', 'tags look like they')} came from ${baseName(detection, answers).prose}, such as ${list(tags.inherited.examples)}`,
 			tags.stray.tags.length > 0 &&
 				`${count(tags.stray.tags.length, 'looks', 'look')} stray, such as ${list(tags.stray.tags.slice(0, 3))}`,
 		].filter(Boolean);
@@ -350,14 +376,12 @@ export function questions(
 	}
 
 	if (upstream.remote || answers.upstream) {
-		const suggested = suggestedBase(detection);
+		const suggested = baseName(detection).name;
 		add(
 			{
 				id: 'upstream.name',
 				title: 'What should sync lines call the base you started from?',
-				found: upstream.remote
-					? `${count(upstream.upstreamCommits, 'commit', 'commits')} came from the ${upstream.remote} remote before your own history starts`
-					: `Your own history starts after tags such as ${tags.inherited.examples[0] ?? 'the template'}`,
+				found: upstreamFound(detection, answers),
 				kind: 'text',
 				options: [{value: suggested, label: suggested, recommended: true}],
 			},
@@ -515,7 +539,7 @@ export function summary(detection: Detection, answers: SetupAnswers): string {
 		).length;
 		if (ignored > 0) {
 			sentences.push(
-				`${count(ignored, 'tag looks like it', 'tags look like they')} came from ${base} and will be ignored.`,
+				`${count(ignored, 'tag looks like it', 'tags look like they')} came from ${base.prose} and will be ignored.`,
 			);
 		}
 
@@ -538,7 +562,7 @@ export function summary(detection: Detection, answers: SetupAnswers): string {
 	const squashed = upstream.squashedSyncs.length;
 	if (squashed > 0) {
 		// "Makerkit syncs", or "template syncs" for the fallback.
-		const kind = answers.upstream?.name ?? suggestedBase(detection);
+		const kind = base.name;
 		sentences.push(
 			squashed === 1
 				? `1 commit looks like a squash-merged ${kind} sync; it counts as an ordinary commit.`

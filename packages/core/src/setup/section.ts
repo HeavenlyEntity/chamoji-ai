@@ -189,7 +189,7 @@ export function writeReleaseSection(
 	original: string | null,
 	section: Record<string, unknown>,
 ): {text: string; changed: boolean} {
-	const body = (original ?? '').replace(/^﻿/, '');
+	const body = (original ?? '').replace(/^\uFEFF/, '');
 	let data: Obj = {};
 	if (body.trim() !== '') {
 		let parsed: unknown;

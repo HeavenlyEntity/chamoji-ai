@@ -27,6 +27,12 @@ export type TagDetection = {
 	/** e.g. wip/* -> '^wip/'. */
 	stray: {tags: string[]; patterns: string[]};
 	perUnit: Record<string, UnitTagFormats>;
+	/**
+	 * Formats for the candidates that aren't detected units (unticked apps),
+	 * keyed by path, read as if every candidate were a unit. For ticking one
+	 * later; they don't change `stray` or the ignore patterns.
+	 */
+	candidates: Record<string, UnitTagFormats>;
 };
 
 const RECENT_COMMITS = 50;
@@ -410,33 +416,68 @@ export async function detectTags(
 	const fallback =
 		layout.kind === 'libraries' ? '{name}@{version}' : '{unit}/v{version}';
 
-	const perUnit: Record<string, UnitTagFormats> = {};
-	for (const unit of units) {
-		const mine = read.filter(each => each.unit === unit);
-		const releases: Release[] = mine.flatMap(each =>
-			each.template && each.version
-				? [{tag: each.tag.name, version: each.version, template: each.template}]
-				: [],
-		);
-		if (shared) {
-			for (const each of plain) {
-				const version = versionFromTag(each.tag.name, 'v{version}', {
-					unit: unit.name,
-					name: '',
-				});
-				if (version) {
-					releases.push({tag: each.tag.name, version, template: 'v{version}'});
+	const formatsOf = (forUnits: UnitFacts[], readTags: ReadTag[]) =>
+		new Map(
+			forUnits.map(unit => {
+				const mine = readTags.filter(each => each.unit === unit);
+				const releases: Release[] = mine.flatMap(each =>
+					each.template && each.version
+						? [
+								{
+									tag: each.tag.name,
+									version: each.version,
+									template: each.template,
+								},
+							]
+						: [],
+				);
+				if (shared) {
+					for (const each of plain) {
+						const version = versionFromTag(each.tag.name, 'v{version}', {
+							unit: unit.name,
+							name: '',
+						});
+						if (version) {
+							releases.push({
+								tag: each.tag.name,
+								version,
+								template: 'v{version}',
+							});
+						}
+					}
 				}
-			}
-		}
 
-		perUnit[unit.name] = formatsFor(
-			unit,
-			releases,
-			mine.filter(each => !each.version).map(each => each.tag.name),
-			shared ? 'v{version}' : undefined,
-			fallback,
+				return [
+					unit,
+					formatsFor(
+						unit,
+						releases,
+						mine.filter(each => !each.version).map(each => each.tag.name),
+						shared ? 'v{version}' : undefined,
+						fallback,
+					),
+				];
+			}),
 		);
+
+	const perUnit: Record<string, UnitTagFormats> = {};
+	for (const [unit, formats] of formatsOf(units, read)) {
+		perUnit[unit.name] = formats;
+	}
+
+	// The same reading with every candidate named, for the ones not ticked.
+	const everyName = layout.candidates.flatMap(unit =>
+		unitNames(layout, unit).map(name => ({unit, name})),
+	);
+	const others = layout.candidates.filter(
+		candidate => !units.some(unit => unit.path === candidate.path),
+	);
+	const candidates: Record<string, UnitTagFormats> = {};
+	for (const [unit, formats] of formatsOf(
+		others,
+		own.map(tag => readTag(layout, tag, everyName)),
+	)) {
+		candidates[unit.path] = formats;
 	}
 
 	// Tags and next releases that no ignore pattern may hide.
@@ -464,5 +505,6 @@ export async function detectTags(
 			]),
 		},
 		perUnit,
+		candidates,
 	};
 }

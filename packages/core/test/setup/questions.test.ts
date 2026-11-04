@@ -1,5 +1,12 @@
 import {expect, test} from 'vitest';
-import {questions, recommend, summary} from '../../src/index.js';
+import {
+	applyAnswer,
+	questions,
+	recommend,
+	summary,
+	type Detection,
+	type SetupAnswers,
+} from '../../src/index.js';
 import type {RepoStep} from '../helpers/fixture-repo.js';
 import {useDetection} from '../helpers/setup-detection.js';
 import {gearzLayout} from '../helpers/setup-fixtures.js';
@@ -38,18 +45,59 @@ test('a base with no name is "the template" in the copy and "template" as a name
 	};
 	const answers = recommend(detection);
 	expect(answers.upstream?.name).toBe('template');
-	const unnamed = {...answers, upstream: undefined};
-	expect(summary(detection, unnamed)).toContain(
-		'3 tags look like they came from the template and will be ignored. ',
+	const text = summary(detection, answers);
+	expect(text).toContain(
+		' 3 tags look like they came from the template and will be ignored. ',
 	);
-	expect(summary(detection, unnamed)).toMatch(
+	expect(text).toMatch(
 		/ 1 commit looks like a squash-merged template sync; it counts as an ordinary commit\.$/,
 	);
+	const asked = questions(detection, answers);
+	expect(asked.find(question => question.id === 'ignore')?.found).toMatch(
+		/^3 tags look like they came from the template, such as /,
+	);
 	expect(
+		asked.find(question => question.id === 'upstream.name')?.options,
+	).toEqual([{value: 'template', label: 'template', recommended: true}]);
+});
+
+test("the base question says where the repo's own history starts", async () => {
+	const upstreamFound = (detection: Detection, answers: SetupAnswers) =>
 		questions(detection, answers).find(
 			question => question.id === 'upstream.name',
-		)?.options,
-	).toEqual([{value: 'template', label: 'template', recommended: true}]);
+		)?.found;
+
+	const forked = await detected(gearzLayout({template: true}));
+	expect(upstreamFound(forked, recommend(forked))).toBe(
+		'30 commits came from the upstream remote before your own history starts',
+	);
+
+	// No remote: the template's tags mark the start.
+	const noRemote = {
+		...forked,
+		upstream: {...forked.upstream, remote: null, name: null},
+	};
+	expect(upstreamFound(noRemote, recommend(noRemote))).toBe(
+		"Your own history starts after the template's tags, such as v4.0.2-1, 4.0.2 and 4.0.1",
+	);
+
+	// No remote and no inherited tags: only the config says anything.
+	const plain = await detected(gearzLayout());
+	const named = applyAnswer(
+		plain,
+		recommend(plain),
+		'upstream.name',
+		'Makerkit',
+	);
+	expect(upstreamFound(plain, named)).toBe(
+		'No upstream remote or Makerkit tags were found',
+	);
+	expect(
+		upstreamFound(plain, {
+			...named,
+			upstream: {name: 'Makerkit', since: 'abcdef1234567890'},
+		}),
+	).toBe('Your own history starts at commit abcdef1');
 });
 
 test('only undetectable questions need an answer', async () => {
