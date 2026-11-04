@@ -563,6 +563,8 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 
 ### 7.5. Monorepo releases — ⏭ next
 
+**Progress (2026-11-04):** the release engine is built on `feat/monorepo-releases`: the `apps` and `libraries` shapes, tags and upstream history, version files, per-unit changelogs and GitHub releases, and the Action. It is proven to give 0.12.0's output byte for byte for a repo with no `release` section. `chamoji setup` is the next plan, and 0.13.0 ships the engine.
+
 **Design (2026-11-03):** [`docs/superpowers/specs/2026-11-03-monorepo-releases-and-setup-design.md`](superpowers/specs/2026-11-03-monorepo-releases-and-setup-design.md), waiting for approval. It adds `chamoji setup` and replaces the scope below where they differ: releases per app with shared changes riding along, upstream template history left out, and any existing tag format kept.
 
 **Why:** most of our own workspaces are monorepos, and today chamoji treats a repo as one package. `chamoji release` gives every manifest that carries the previous version the same new version and makes one `v*` tag. That's right for chamoji-ai, whose two packages ship together. It's wrong when packages ship on their own: a fix in one package bumps all of them, and every changelog lists every commit. Changesets, release-please and Lerna all handle this, so its absence is the first thing a monorepo user notices.

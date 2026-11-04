@@ -1,0 +1,30 @@
+# Changelog
+
+## Unreleased
+
+### Added
+
+- ✨ Render the changelog (10dd5b0)
+- ✨ Read commits from git (d10979d)
+
+### Changed
+
+- ♻️ Split the runner (75d81db)
+
+### Fixed
+
+- 🐛 Fix the empty range crash (#4) (7aea4c2)
+
+### Documentation
+
+- 📝 Write the usage section (6feb5f3)
+
+### Miscellaneous
+
+- Tidy things up (3da99cb)
+
+## v0.1.0 - 2026-01-01
+
+### Added
+
+- 🎉 Start the project (5acac5d)

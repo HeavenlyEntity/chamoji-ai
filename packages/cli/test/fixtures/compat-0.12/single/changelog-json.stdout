@@ -1,0 +1,144 @@
+{
+  "releases": [
+    {
+      "version": "Unreleased",
+      "tag": null,
+      "previousTag": "1.1.0",
+      "date": null,
+      "bump": "major",
+      "nextVersion": "2.0.0",
+      "groups": [
+        {
+          "group": "changed",
+          "label": "Changed",
+          "commits": [
+            {
+              "hash": "a09e16c080353957d1515a19df7ebbab7d65dd8a",
+              "shortHash": "a09e16c",
+              "authorName": "Fixture Bot",
+              "authorEmail": "fixture@example.com",
+              "date": "2026-01-05T00:00:00Z",
+              "subject": "🔧 Update the lint config",
+              "body": "",
+              "gitmoji": "wrench",
+              "gitmojiSource": "gitmoji",
+              "type": null,
+              "scope": null,
+              "description": "Update the lint config",
+              "breaking": false,
+              "trailers": []
+            }
+          ]
+        },
+        {
+          "group": "breaking_changes",
+          "label": "Breaking changes",
+          "commits": [
+            {
+              "hash": "147e020ea95dc7bc8e4033145c5b04a7a54c960f",
+              "shortHash": "147e020",
+              "authorName": "Fixture Bot",
+              "authorEmail": "fixture@example.com",
+              "date": "2026-01-03T00:00:00Z",
+              "subject": "💥 Rename the widget id",
+              "body": "BREAKING CHANGE: ids are strings now.\n",
+              "gitmoji": "boom",
+              "gitmojiSource": "gitmoji",
+              "type": null,
+              "scope": null,
+              "description": "Rename the widget id",
+              "breaking": true,
+              "trailers": []
+            }
+          ]
+        },
+        {
+          "group": "fixed",
+          "label": "Fixed",
+          "commits": [
+            {
+              "hash": "5d46e5be50ed3eff29d633bb401173aca50255a4",
+              "shortHash": "5d46e5b",
+              "authorName": "Fixture Bot",
+              "authorEmail": "fixture@example.com",
+              "date": "2026-01-04T00:00:00Z",
+              "subject": "🐛 Fix the sort order",
+              "body": "",
+              "gitmoji": "bug",
+              "gitmojiSource": "gitmoji",
+              "type": null,
+              "scope": null,
+              "description": "Fix the sort order",
+              "breaking": false,
+              "trailers": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "tag": "1.1.0",
+      "previousTag": "1.0.0",
+      "date": "2026-01-02",
+      "bump": "minor",
+      "nextVersion": null,
+      "groups": [
+        {
+          "group": "added",
+          "label": "Added",
+          "commits": [
+            {
+              "hash": "2d467d8d5b57f4a2262c98d19a18aa6fd29e0fe2",
+              "shortHash": "2d467d8",
+              "authorName": "Fixture Bot",
+              "authorEmail": "fixture@example.com",
+              "date": "2026-01-02T00:00:00Z",
+              "subject": "✨ Add the widget list",
+              "body": "",
+              "gitmoji": "sparkles",
+              "gitmojiSource": "gitmoji",
+              "type": null,
+              "scope": null,
+              "description": "Add the widget list",
+              "breaking": false,
+              "trailers": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "tag": "1.0.0",
+      "previousTag": null,
+      "date": "2026-01-01",
+      "bump": null,
+      "nextVersion": null,
+      "groups": [
+        {
+          "group": "added",
+          "label": "Added",
+          "commits": [
+            {
+              "hash": "a22b598fd9ef7a4c9c85340b4914ef1af7374f34",
+              "shortHash": "a22b598",
+              "authorName": "Fixture Bot",
+              "authorEmail": "fixture@example.com",
+              "date": "2026-01-01T00:00:00Z",
+              "subject": "🎉 Start the project",
+              "body": "",
+              "gitmoji": "tada",
+              "gitmojiSource": "gitmoji",
+              "type": null,
+              "scope": null,
+              "description": "Start the project",
+              "breaking": false,
+              "trailers": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
