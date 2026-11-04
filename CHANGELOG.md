@@ -1,5 +1,62 @@
 # Changelog
 
+## [v0.13.0](https://github.com/HeavenlyEntity/chamoji-ai/compare/v0.12.1...v0.13.0) - 2026-11-04
+
+### Added
+
+- 🔊 Warn when the upstream remote has nothing fetched ([79ce84c](https://github.com/HeavenlyEntity/chamoji-ai/commit/79ce84ce012a050ddb661253781056e32bb6dddf))
+- ✨ Release, notes and previews per unit in the Action ([bf489c0](https://github.com/HeavenlyEntity/chamoji-ai/commit/bf489c0615e2dc66ede3f35bf600e066205cb2aa))
+- ✨ Release each unit from the CLI ([69579a9](https://github.com/HeavenlyEntity/chamoji-ai/commit/69579a981ebfc0db82ef6360a384f131b59e3d7f))
+- ✨ Plan, apply and push releases per unit ([10ab7d8](https://github.com/HeavenlyEntity/chamoji-ai/commit/10ab7d8c9f68bdd5ada2b42d88f750a2f4d631b0))
+- ✨ Write each unit's notes in its changelog's own style ([f3efad1](https://github.com/HeavenlyEntity/chamoji-ai/commit/f3efad1cd281c997f09cdda458c23baa4348bb05))
+- ✨ Set a unit's version in every file that carries it ([e8f7401](https://github.com/HeavenlyEntity/chamoji-ai/commit/e8f7401786967a61bd7f0efdf154df65ad51adfc))
+- ✨ Work out each unit's next version ([3c1f80a](https://github.com/HeavenlyEntity/chamoji-ai/commit/3c1f80afc93291c08bf8fee4c43ef957c8d999f4))
+- ✨ Leave template history out and show each sync as one line ([459a2bc](https://github.com/HeavenlyEntity/chamoji-ai/commit/459a2bccbec4336d25b00fbd60bc095fe4af2494))
+- ✨ Work out which commits belong to which unit ([e935251](https://github.com/HeavenlyEntity/chamoji-ai/commit/e93525168ca76d6619c12518571a249bb36daedd))
+- ✨ Read every unit's tags in any format ([80b336a](https://github.com/HeavenlyEntity/chamoji-ai/commit/80b336ab8294819aae984ef7a589630da26a408f))
+- ✨ Find workspace packages and what each unit uses ([78af248](https://github.com/HeavenlyEntity/chamoji-ai/commit/78af2484558def8ed8332537577f85d27b2df1ed))
+- ✨ Read release settings from chamoji.config.json ([0226b5d](https://github.com/HeavenlyEntity/chamoji-ai/commit/0226b5dc1baf55bda029b182e827b1c284c309c8))
+
+### Changed
+
+- ♻️ Share the release steps between single and unit releases, and count every waiting unit ([f0e63e2](https://github.com/HeavenlyEntity/chamoji-ai/commit/f0e63e29eac1dacfa28e1df12a1bca1b09d68d06))
+- ♻️ Edit dependency ranges with the version-file scanner and explain fixed releases ([a65d8d2](https://github.com/HeavenlyEntity/chamoji-ai/commit/a65d8d2b8260c96e1be3b4f8b9e6f27cefab3015))
+- 🔧 Start the monorepo-releases workstream ([11bd958](https://github.com/HeavenlyEntity/chamoji-ai/commit/11bd9589383a5321058bdafe16ab7e2b8d7edc10))
+
+### Fixed
+
+- 🐛 Print the notes a release committed for changelog --for-tag ([76e963e](https://github.com/HeavenlyEntity/chamoji-ai/commit/76e963ea2d69159d7082a7ac942e07a1880990cc))
+- 🐛 Release a fixed group's shared tag once, and push tags by full ref ([afa3a16](https://github.com/HeavenlyEntity/chamoji-ai/commit/afa3a1646855ef997845f7158485f2cb0c292e4c))
+- 🐛 Scope the unit PR preview to the PR and fix prerelease detection ([434d1f4](https://github.com/HeavenlyEntity/chamoji-ai/commit/434d1f4847fa6bd74ce35d6936aed445f47b0511))
+- 🐛 Say when --unit left a unit out instead of saying it needs no release ([4027991](https://github.com/HeavenlyEntity/chamoji-ai/commit/40279917508bd1b4b9d76836dab2e2252a6c763a))
+- 🐛 Find the exported config object without being fooled by comments or arrows ([7a1e630](https://github.com/HeavenlyEntity/chamoji-ai/commit/7a1e630f421b0792762609ceab4b882632713b96))
+- 🐛 Keep calver versions valid semver ([21ba16c](https://github.com/HeavenlyEntity/chamoji-ai/commit/21ba16c17741ed096ca702861b77d60c124d65fa))
+- 🐛 Keep upstream merges and option-like config out of syncs ([03dfd8e](https://github.com/HeavenlyEntity/chamoji-ai/commit/03dfd8e18e7ffdd4ba13e848b854cc230985e078))
+- 🐛 See the same workspace packages the package manager sees ([4947388](https://github.com/HeavenlyEntity/chamoji-ai/commit/4947388848d2ad607e528cff69246dab0107450d))
+- 🐛 Fail loudly on unreadable manifests and skip folders no glob reaches ([47e7fc8](https://github.com/HeavenlyEntity/chamoji-ai/commit/47e7fc8c80377d3cf10b90271ba2aed6478c2a9e))
+
+### Security
+
+- 🔒️ Refuse to write a unit release through a symlink ([40c5769](https://github.com/HeavenlyEntity/chamoji-ai/commit/40c57693d42910eb0440747d131a8a21fb298d81))
+- 🔒️ Refuse Expo configs and version files chamoji could misread ([b9088ea](https://github.com/HeavenlyEntity/chamoji-ai/commit/b9088ea0b71a692fdabd016bf1449f82ac4a1a8a))
+- 🔒️ Check release settings for unit-only keys, shared tag templates and paths outside the repo ([09eb3ee](https://github.com/HeavenlyEntity/chamoji-ai/commit/09eb3eec12a71fedd1a2e12c7038d4fcc7d8815f))
+- 🔒️ Let unit PR previews run only node or chamoji ([366cb17](https://github.com/HeavenlyEntity/chamoji-ai/commit/366cb1785912e0ddffb4f8a614427451e7bef17b))
+- 🔒️ Make the unit PR preview fail closed on anything the PR could control ([df967c3](https://github.com/HeavenlyEntity/chamoji-ai/commit/df967c3ea20137af73935930793e955d762fda56))
+- 🔒️ Run the unit PR preview with a trusted CLI and no secrets ([2424545](https://github.com/HeavenlyEntity/chamoji-ai/commit/2424545fe5e6df46861fc4461aa9eb8be03b8501))
+
+### Documentation
+
+- 📝 Correct the monorepo readme and the MARKETING_VERSION message ([0353ac0](https://github.com/HeavenlyEntity/chamoji-ai/commit/0353ac0438de363fc779d84476a734a9a7c2ee52))
+- 📝 Document monorepo releases and prove 0.12 compatibility ([9e14980](https://github.com/HeavenlyEntity/chamoji-ai/commit/9e14980a744962f90aa0990f6474858777d187c3))
+- 📝 Plan the monorepo release engine for milestone 7.5 ([4e5a200](https://github.com/HeavenlyEntity/chamoji-ai/commit/4e5a2006ca253e730b0c0bdd58bca75dd03f5193))
+- 📝 Design monorepo releases and chamoji setup ([090e49c](https://github.com/HeavenlyEntity/chamoji-ai/commit/090e49c58ba2c11794826218bd360256ac230533))
+
+### Maintenance
+
+- 💚 Give Windows tests a minute before they time out ([9b734d3](https://github.com/HeavenlyEntity/chamoji-ai/commit/9b734d372984d8fcf769db1854dba5a0414c8fa5))
+- 💚 Build the CLI in every Windows test shard ([4ea2c7b](https://github.com/HeavenlyEntity/chamoji-ai/commit/4ea2c7be7e4bade062564ea89fbfcb27e4f194b0))
+- 👷 Split the Windows tests across three jobs ([3eb13ea](https://github.com/HeavenlyEntity/chamoji-ai/commit/3eb13eadce13348bc04484ca286034dd7fec087b))
+
 ## [v0.12.1](https://github.com/HeavenlyEntity/chamoji-ai/compare/v0.12.0...v0.12.1) - 2026-11-04
 
 ### Fixed
