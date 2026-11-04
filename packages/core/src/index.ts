@@ -51,6 +51,12 @@ export {
 	type UnitTag,
 } from './units/tags.js';
 export {
+	readUpstream,
+	sinceRange,
+	syncFiles,
+	type Upstream,
+} from './units/upstream.js';
+export {
 	ownerOf,
 	readWorkspace,
 	resolveUnits,

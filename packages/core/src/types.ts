@@ -53,6 +53,8 @@ export type ParsedCommit = Omit<RawCommit, 'trailers'> & {
 	card?: IntentCard;
 	/** For a commit shared with a unit: the internal package path it changed. */
 	via?: string;
+	/** Set on the one line a merge from the upstream remote becomes. */
+	sync?: {base: string; to: string};
 };
 
 export type GroupConfigItem = {
