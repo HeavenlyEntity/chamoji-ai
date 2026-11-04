@@ -7,8 +7,7 @@ import {shouldAnimate} from './face-settings.js';
 import {useAscii} from './faces.js';
 import {detectTheme, queryBackground, themeFromEnv} from './foil.js';
 import {run, showsLogo, wantsFace, type WelcomeSettings} from './run.js';
-import {runSetupScreen} from './setup/screen.js';
-import type {SetupScreen} from './setup/setup.js';
+import {terminalSetupScreen} from './setup/screen.js';
 import {openTerminal} from './tty.js';
 import {createUpdateCheck} from './update-check.js';
 
@@ -103,39 +102,6 @@ const welcome: WelcomeSettings | undefined = showsLogo(argv)
 		})()
 	: undefined;
 
-// The setup screen draws on stderr and reads the terminal, as the composer
-// does. It moves and wears the foil only where a face could, and, as for the
-// --help header, the terminal is never asked its background: Ink is reading
-// it. So the foil shows only where the environment says the background is dark.
-const setupScreen: SetupScreen = async props => {
-	const terminal = openTerminal();
-	if (!terminal) {
-		throw new Error(
-			'setup needs a terminal to ask on; run chamoji setup --yes to take every recommended answer',
-		);
-	}
-
-	const animate = shouldAnimate({
-		env: process.env,
-		stderrIsTTY: Boolean(process.stderr.isTTY),
-		argv,
-	});
-	const level = supportsColorStderr ? supportsColorStderr.level : 0;
-	try {
-		return await runSetupScreen(
-			props,
-			{stdin: terminal.stdin, stdout: process.stderr},
-			{
-				animate,
-				level: themeFromEnv(process.env) === 'dark' ? level : 0,
-				ascii: useAscii(process.env, process.platform),
-			},
-		);
-	} finally {
-		terminal.close();
-	}
-};
-
 process.exitCode = await run(argv, {
 	cwd: process.cwd(),
 	// The face owns the line it draws, so every write goes through it.
@@ -149,5 +115,12 @@ process.exitCode = await run(argv, {
 		stderrIsTTY: Boolean(process.stderr.isTTY),
 		scriptPath: process.argv[1] ?? '',
 	}),
-	setupScreen,
+	setupScreen: terminalSetupScreen({
+		env: process.env,
+		argv,
+		stderr: process.stderr,
+		level: supportsColorStderr ? supportsColorStderr.level : 0,
+		platform: process.platform,
+		openTerminal,
+	}),
 });

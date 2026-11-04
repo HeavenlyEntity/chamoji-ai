@@ -12,6 +12,8 @@ export type PreviewUnit =
 	| {
 			unit: string;
 			status: 'releases';
+			/** The version before this release: the last tag's, else the manifest's. */
+			from: string | null;
 			version: string;
 			tag: string;
 			bump: string;
@@ -70,6 +72,7 @@ export async function previewReleases(
 				units.push({
 					unit: item.unit,
 					status: 'releases',
+					from: item.from,
 					version: item.version,
 					tag: item.tag,
 					bump: item.bump,

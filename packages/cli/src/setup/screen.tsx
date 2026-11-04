@@ -8,9 +8,11 @@ import {
 import {Box, render, Text, useInput} from 'ink';
 import {useEffect, useRef, useState} from 'react';
 import type {ComposeStreams} from '../composer.js';
-import {ASCII_FACES, FACES, IDLE_LOOP} from '../faces.js';
-import {paintFoil} from '../foil.js';
+import {shouldAnimate} from '../face-settings.js';
+import {ASCII_FACES, FACES, IDLE_LOOP, useAscii} from '../faces.js';
+import {detectTheme, paintFoil, queryBackground, type Rgb} from '../foil.js';
 import {stripControlLines} from '../text.js';
+import type {Terminal} from '../tty.js';
 import {PreviewPane, type Loaded} from './preview-pane.js';
 import {
 	Answer,
@@ -19,7 +21,11 @@ import {
 	viewFor,
 	type AnswerView,
 } from './question-views.js';
-import type {ScreenResult, SetupScreenProps} from './setup.js';
+import type {
+	ScreenResult,
+	SetupScreen as Screen,
+	SetupScreenProps,
+} from './setup.js';
 import {asksReleases, stepPrompts, type StepName} from './steps.js';
 
 export type {ScreenResult} from './setup.js';
@@ -262,16 +268,18 @@ export function SetupScreen({
 			if (value === undefined) return;
 			setView({
 				...current,
+				error: null,
 				ticked: current.ticked.includes(value)
 					? current.ticked.filter(each => each !== value)
 					: [...current.ticked, value],
 			});
 		} else if (question.kind === 'text') {
-			const typedRow = question.options.length;
+			// An edit answers the error, so the message goes with it.
+			const edited = {...current, row: question.options.length, error: null};
 			if (key.backspace || key.delete) {
-				setView({...current, row: typedRow, typed: current.typed.slice(0, -1)});
+				setView({...edited, typed: current.typed.slice(0, -1)});
 			} else if (input && !key.ctrl && !key.meta && !key.tab) {
-				setView({...current, row: typedRow, typed: current.typed + input});
+				setView({...edited, typed: current.typed + input});
 			}
 		}
 	}
@@ -393,7 +401,95 @@ export async function runSetupScreen(
 				stdout: streams.stdout,
 				exitOnCtrlC: false,
 				patchConsole: false,
+				// Setup opens the screen only on a terminal, so it draws as one,
+				// frame by frame, wherever Ink would guess otherwise.
+				interactive: streams.stdout.isTTY === true,
 			},
 		);
 	});
+}
+
+export type TerminalScreenOptions = {
+	env: Record<string, string | undefined>;
+	argv: readonly string[];
+	/** Where the screen draws. */
+	stderr: NodeJS.WriteStream;
+	/** stderr's chalk level. */
+	level: 0 | 1 | 2 | 3;
+	platform: NodeJS.Platform;
+	openTerminal: () => Terminal | null;
+	/** Asks the terminal for its background; tests pass a fake. */
+	ask?: (
+		stdin: NodeJS.ReadStream,
+		stderr: NodeJS.WriteStream,
+	) => Promise<Rgb | undefined>;
+};
+
+/**
+ * The OSC 11 query, resolved only once stdin is back as it was (the reply
+ * came, or its grace window passed), so a late reply never reaches Ink.
+ */
+async function askSettled(
+	stdin: NodeJS.ReadStream,
+	stderr: NodeJS.WriteStream,
+): Promise<Rgb | undefined> {
+	let settled = () => {};
+	const back = new Promise<void>(resolve => {
+		settled = resolve;
+	});
+	const answer = await queryBackground(stdin, stderr, undefined, undefined, {
+		onSettled: settled,
+	});
+	await back;
+	return answer;
+}
+
+/**
+ * The screen on the real terminal: it reads the terminal (a git hook's stdin
+ * isn't it) and draws on stderr. It moves and wears the foil only where a
+ * face could. The theme follows BRAND.md: CHAMOJI_THEME, then the terminal's
+ * own answer, asked before Ink reads the terminal as the intro asks before
+ * it plays, then COLORFGBG, then dark. Light means no foil.
+ */
+export function terminalSetupScreen({
+	env,
+	argv,
+	stderr,
+	level,
+	platform,
+	openTerminal,
+	ask = askSettled,
+}: TerminalScreenOptions): Screen {
+	return async props => {
+		const terminal = openTerminal();
+		if (!terminal) {
+			throw new Error(
+				'setup needs a terminal to ask on; run chamoji setup --yes to take every recommended answer',
+			);
+		}
+
+		try {
+			const animate = shouldAnimate({
+				env,
+				stderrIsTTY: Boolean(stderr.isTTY),
+				argv,
+			});
+			const theme = animate
+				? await detectTheme(env, async () =>
+						terminal.stdin.isTTY ? ask(terminal.stdin, stderr) : undefined,
+					)
+				: 'light';
+			return await runSetupScreen(
+				props,
+				{stdin: terminal.stdin, stdout: stderr},
+				{
+					animate,
+					level: theme === 'dark' ? level : 0,
+					ascii: useAscii(env, platform),
+				},
+			);
+		} finally {
+			terminal.close();
+		}
+	};
 }

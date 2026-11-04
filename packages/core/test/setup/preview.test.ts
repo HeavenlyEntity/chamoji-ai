@@ -62,6 +62,8 @@ test('gearz: web releases 0.1.0 first, mobile waits on shared changes, e2e never
 	const byUnit = Object.fromEntries(preview.units.map(u => [u.unit, u]));
 	expect(byUnit['web']).toMatchObject({
 		status: 'releases',
+		// No tag yet, so the version before is the manifest's.
+		from: '0.1.0',
 		version: '0.1.0',
 		tag: 'web/v0.1.0',
 	});
@@ -99,7 +101,7 @@ test('changing sharedChanges to release-dependents makes mobile release in the p
 			applyAnswer(detection, answers, 'sharedChanges', 'release-dependents'),
 	);
 	const mobile = preview.units.find(u => u.unit === 'mobile');
-	expect(mobile?.status).toBe('releases');
+	expect(mobile).toMatchObject({status: 'releases', from: '1.0.0'});
 });
 
 const section = (version: string, date: string, lines: string[]) =>

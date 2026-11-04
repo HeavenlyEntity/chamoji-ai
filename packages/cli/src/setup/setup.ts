@@ -222,8 +222,24 @@ export async function runSetup(
 		? () => {}
 		: (text: string) => io.stdout(stripControlLines(text));
 	const terminal = Boolean(io.setupScreen) && process.stderr.isTTY === true;
+	// What the screen is given: the steps in scope, with a named releases step
+	// asked again whatever its state (ruling R16).
+	const asked = states
+		.filter(state => scope.includes(state.step))
+		.map(state =>
+			state.step === 'releases' && args.step === 'releases'
+				? {...state, done: false}
+				: state,
+		);
+	// The screen opens only with something to ask; it shows the states itself.
+	const screening =
+		!args.yes &&
+		!args.json &&
+		terminal &&
+		releases &&
+		(asksReleases(detection!, asked) || stepPrompts(asked).length > 0);
 
-	if (!args.step) {
+	if (!args.step && !screening) {
 		out(`${states.map(state => state.line).join('\n')}\n\n`);
 	}
 
@@ -241,33 +257,23 @@ export async function runSetup(
 	} else if (!args.json && terminal) {
 		if (!releases) {
 			picked = [args.step!];
+		} else if (!screening) {
+			picked = [];
 		} else {
-			// Naming releases asks it again, whatever its state (ruling R16).
-			const asked = states
-				.filter(state => scope.includes(state.step))
-				.map(state =>
-					state.step === 'releases' && args.step === 'releases'
-						? {...state, done: false}
-						: state,
-				);
-			if (!asksReleases(detection!, asked) && stepPrompts(asked).length === 0) {
-				picked = [];
-			} else {
-				const result = await io.setupScreen!({
-					detection: detection!,
-					initial: answers!,
-					states: asked,
-					...previews(root, io),
-					columns: process.stderr.columns ?? 80,
-				});
-				if (!result.saved) {
-					io.stderr(`${CANCELLED}\n`);
-					return 1;
-				}
-
-				answers = result.answers;
-				picked = result.steps.filter(step => scope.includes(step));
+			const result = await io.setupScreen!({
+				detection: detection!,
+				initial: answers!,
+				states: asked,
+				...previews(root, io),
+				columns: process.stderr.columns ?? 80,
+			});
+			if (!result.saved) {
+				io.stderr(`${CANCELLED}\n`);
+				return 1;
 			}
+
+			answers = result.answers;
+			picked = result.steps.filter(step => scope.includes(step));
 		}
 	} else {
 		return report(await squashing);
