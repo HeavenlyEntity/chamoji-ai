@@ -63,9 +63,10 @@ export type ReleaseOptions = {
 	env?: Record<string, string>;
 	/**
 	 * Called when a tag fetch run with `env` failed for lack of credentials,
-	 * just before it is tried once more without `env`, where git may ask.
+	 * just before it is tried once more without `env`, where git may ask. The
+	 * retry waits for it.
 	 */
-	onCredentials?: () => void;
+	onCredentials?: () => void | Promise<void>;
 };
 
 export type FileChange = {file: string; text: string; how: string};
@@ -115,7 +116,7 @@ export async function planRelease(
 		} catch (error) {
 			if (!options.env || !isAuthFailure(error)) throw error;
 			// Nothing was fetched, so trying again is safe.
-			options.onCredentials?.();
+			await options.onCredentials?.();
 			return fetch();
 		}
 	};

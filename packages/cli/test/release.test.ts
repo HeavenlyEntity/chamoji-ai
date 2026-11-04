@@ -536,7 +536,7 @@ test.skipIf(process.platform === 'win32')(
 			['step', 'Planning the release'],
 			['update', 'Fetching tags from origin'],
 			['end', 'warn', 'git needs your credentials'],
-			['stop'],
+			['release'],
 		]);
 	},
 );

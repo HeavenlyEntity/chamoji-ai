@@ -39,18 +39,21 @@ const face =
 				level: supportsColorStderr ? supportsColorStderr.level : 0,
 				theme:
 					named ??
-					(async signal =>
-						detectTheme(process.env, async () =>
-							process.stdin.isTTY
-								? queryBackground(
-										process.stdin,
-										process.stderr,
-										undefined,
-										undefined,
-										{signal},
-									)
-								: undefined,
-						)),
+					(async (signal, settled) =>
+						detectTheme(process.env, async () => {
+							if (!process.stdin.isTTY) {
+								settled();
+								return undefined;
+							}
+
+							return queryBackground(
+								process.stdin,
+								process.stderr,
+								undefined,
+								undefined,
+								{signal, onSettled: settled},
+							);
+						})),
 				ascii: useAscii(process.env, process.platform),
 				columns: () => process.stderr.columns || 80,
 			})

@@ -13,6 +13,12 @@ export type Face = {
 	step(label: string): Step;
 	wrap(write: (text: string) => void): (text: string) => void;
 	stop(): void;
+	/**
+	 * Stops, like `stop`, and resolves once a theme question still open has
+	 * finished with the terminal, so a program that reads the terminal next,
+	 * such as git asking for a password, never gets the late reply.
+	 */
+	release(): Promise<void>;
 };
 
 export type FaceOptions = {
@@ -23,9 +29,10 @@ export type FaceOptions = {
 	 * The theme, or a way to find it out. A resolver is called once, when a
 	 * step first draws, so a fast command never asks the terminal. Until it
 	 * answers, the face draws with no colour, so foil never flashes on a light
-	 * terminal. Its signal aborts when the face stops.
+	 * terminal. Its signal aborts when the face stops. It calls `settled` once
+	 * the terminal is back as it was, which `release` waits for.
 	 */
-	theme: Theme | ((signal: AbortSignal) => Promise<Theme>);
+	theme: Theme | ((signal: AbortSignal, settled: () => void) => Promise<Theme>);
 	ascii: boolean;
 	columns: () => number;
 	clock?: {
@@ -53,6 +60,11 @@ const EXPRESSION_MS = 700;
 /** The foil moves this far along its length on each redraw. */
 const FOIL_STEP = 1 / 60;
 const FOIL_SPREAD = 30;
+/**
+ * `release` waits at most this long for the theme question: its 100 ms limit
+ * and 200 ms grace window, with room to spare.
+ */
+const RELEASE_MS = 500;
 
 const REDRAW = '\r\u001B[2K';
 const HIDE_CURSOR = '\u001B[?25l';
@@ -111,6 +123,7 @@ export const NO_FACE: Face = {
 	step: () => NO_STEP,
 	wrap: write => write,
 	stop() {},
+	async release() {},
 };
 
 export function createFace(options: FaceOptions): Face {
@@ -148,6 +161,8 @@ export function createFace(options: FaceOptions): Face {
 	let live: Live | undefined;
 	let offset = 0;
 	let resolverCalled = false;
+	// Resolves when the theme question is done with the terminal.
+	let questionSettled: Promise<void> = Promise.resolve();
 	// Whether the last wrapped text left the cursor at the start of a line.
 	let atLineStart = true;
 	const handlers = new Map<string, () => void>();
@@ -162,7 +177,13 @@ export function createFace(options: FaceOptions): Face {
 		}
 
 		resolverCalled = true;
-		const asking = resolver(stopped.signal);
+		let settle = () => {};
+		questionSettled = new Promise(resolve => {
+			settle = resolve;
+		});
+		const asking = resolver(stopped.signal, settle);
+		// A resolver that fails has nothing left to finish.
+		asking.catch(settle);
 		asking.then(
 			found => {
 				// After a stop the answer may be a guess, so it is not used.
@@ -370,6 +391,18 @@ export function createFace(options: FaceOptions): Face {
 			};
 		},
 		stop,
+		async release() {
+			teardown();
+			let timer: NodeJS.Timeout | undefined;
+			await Promise.race([
+				questionSettled,
+				new Promise<void>(resolve => {
+					timer = setTimeout(resolve, RELEASE_MS);
+				}),
+			]);
+			clearTimeout(timer);
+			stop();
+		},
 	};
 
 	/** Ends the face for good: the drawn line, and the theme question too. */
@@ -428,8 +461,9 @@ export async function runStep<T>(
  * before its push is refused. Running it again is still safe, because each
  * of those steps is idempotent: the second fetch and merge find nothing new.
  *
- * Before the rerun the face stops, which also ends a theme question still
- * holding the terminal raw, so it can't read what is typed at git's prompt.
+ * Before the rerun the face is released: it stops, and waits for a theme
+ * question still holding the terminal raw to finish, so the question can't
+ * read what is typed at git's prompt and a late reply can't land in it.
  *
  * With NO_FACE nothing is drawn, so the work runs once, as it always did.
  */
@@ -455,7 +489,7 @@ export async function gitStep<T>(
 		}
 
 		step.end('warn', 'git needs your credentials');
-		face.stop();
+		await face.release();
 	}
 
 	return work(undefined);

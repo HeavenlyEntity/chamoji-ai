@@ -138,6 +138,82 @@ test('playWelcome shows the cursor and passes the signal on when interrupted', a
 	expect(handlers.size).toBe(0);
 });
 
+test('Ctrl-Z during the intro shows the cursor, stops, and draws afresh after fg', async () => {
+	let out = '';
+	const handlers = new Map<string, () => void>();
+	const killed: string[] = [];
+	const emit = (event: string) => {
+		const handler = handlers.get(event);
+		handlers.delete(event);
+		handler?.();
+	};
+
+	let sleeps = 0;
+	let atStop = '';
+	let afterResume = '';
+	await playWelcome({
+		write: text => (out += text),
+		animate: true,
+		level: 0,
+		theme: 'dark',
+		ascii: false,
+		columns: 100,
+		platform: 'linux',
+		async sleep() {
+			sleeps++;
+			if (sleeps === 2) {
+				emit('SIGTSTP');
+				atStop = out;
+				emit('SIGCONT');
+				afterResume = out.slice(atStop.length);
+			}
+		},
+		signals: {
+			once: (event, fn) => {
+				handlers.set(event, fn);
+			},
+			removeListener: (event: string) => {
+				handlers.delete(event);
+			},
+			kill: signal => {
+				killed.push(signal);
+			},
+		},
+	});
+	expect(killed).toEqual(['SIGTSTP']);
+	expect(atStop.endsWith(SHOW)).toBe(true);
+	expect(afterResume).toBe(HIDE);
+	// The frame after fg starts on a fresh line instead of drawing over the
+	// shell's "suspended" message.
+	const rest = out.slice(atStop.length + HIDE.length);
+	expect(rest.startsWith(UP)).toBe(false);
+	expect(rest.startsWith(plain(INTRO[2]!.face))).toBe(true);
+	expect(out.endsWith(SHOW)).toBe(true);
+	expect(handlers.size).toBe(0);
+});
+
+test('playWelcome does not watch Ctrl-Z on Windows', async () => {
+	const events: string[] = [];
+	await playWelcome({
+		write() {},
+		animate: true,
+		level: 0,
+		theme: 'dark',
+		ascii: false,
+		columns: 100,
+		platform: 'win32',
+		async sleep() {},
+		signals: {
+			once(event) {
+				events.push(event);
+			},
+			removeListener() {},
+			kill() {},
+		},
+	});
+	expect(events).toEqual(['SIGINT', 'SIGTERM']);
+});
+
 test('playWelcome below 70 columns writes the one-line logo', async () => {
 	const {out, sleeps} = await play({columns: 69});
 	expect(out).toBe(`${FACES.done} chamoji\n`);
