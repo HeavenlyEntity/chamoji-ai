@@ -13,7 +13,6 @@ import {
 	ConfigVersionError,
 	fetchesMemory,
 	getActive,
-	getRemoteWebUrl,
 	hasMessageContent,
 	isAuthFailure,
 	listMemory,
@@ -63,7 +62,7 @@ import {MISSING_KEY, readTypesafeKey} from './env.js';
 import {gitStep, NO_FACE, runStep, type Face, type Step} from './face.js';
 import {hasFace} from './face-settings.js';
 import type {Theme} from './foil.js';
-import {HookError, installHook, uninstallHook} from './hook.js';
+import {uninstallHook} from './hook.js';
 import {
 	createJevClassifier,
 	jevFace,
@@ -72,6 +71,8 @@ import {
 	type JevClient,
 } from './jev-classifier.js';
 import {runInit} from './init.js';
+import {githubRepo, runSetup, type SetupScreen} from './setup/setup.js';
+import {isStepName, setUpHook} from './setup/steps.js';
 import {runMcp} from './mcp.js';
 import {
 	relabel,
@@ -122,6 +123,12 @@ export type Io = {
 	 * codes: the shades frame, or the one-line logo on a narrow screen.
 	 */
 	welcome?: WelcomeSettings;
+	/**
+	 * The interactive `chamoji setup` screen, on stderr. Setup calls it only
+	 * when stderr is a terminal and there's no --yes or --json; without it,
+	 * setup says what it would do and exits 2. cli.ts passes the real one.
+	 */
+	setupScreen?: SetupScreen;
 };
 
 export type WelcomeSettings = {
@@ -215,6 +222,11 @@ const HELP = `
 	                                   \`git commit\` (uninstall to remove)
 
 	Setup
+	  $ chamoji setup [step]           Set up releases, memory sharing, Claude
+	                                   Code and the commit composer; again to
+	                                   change settings. A step (releases,
+	                                   memory, agents or hook) runs just that
+	                                   one. It never commits.
 	  $ chamoji init                   Set this clone up to share memory, and
 	                                   take in what origin has
 	  $ chamoji init --agents          The same, and set up Claude Code here:
@@ -257,11 +269,15 @@ const HELP = `
 	             releases
 	  --for-tag  changelog: only the release with this tag, from the unit
 	             whose tag format it fits
+	  --yes      setup: take every recommended answer without asking; the
+	             hook is still only offered
+	  --explain  setup: print each value it writes and where it came from
 	  --json     release: print the result as JSON; card: print the numbers;
 	             ws list: print the workstreams as an array;
 	             why: print the blame result; memory list and show: print
 	             the entries; memory search: print the matches;
-	             memory sync: print the result
+	             memory sync: print the result; setup: print what it
+	             found and did (with no --yes, what it would do; exits 2)
 	  --none     ws switch: clear the active workstream
 	  --archived memory list: include archived entries
 	  --purge    memory archive: delete the entry and its history instead;
@@ -335,6 +351,8 @@ function parse(argv: string[]) {
 			purge: {type: 'boolean'},
 			archived: {type: 'boolean'},
 			agents: {type: 'boolean'},
+			yes: {type: 'boolean'},
+			explain: {type: 'boolean'},
 			repo: {type: 'string'},
 			endpoint: {type: 'string'},
 			all: {type: 'boolean', shortFlag: 'a'},
@@ -548,6 +566,26 @@ export async function run(argv: string[], given: Io): Promise<number> {
 
 				case 'init': {
 					return await runInit({agents: flags.agents}, io);
+				}
+
+				case 'setup': {
+					const step = cli.input[1];
+					if (step !== undefined && !isStepName(step)) {
+						io.stderr(
+							`chamoji: setup takes releases, memory, agents or hook, not "${step}"\n`,
+						);
+						return 1;
+					}
+
+					return await runSetup(
+						{
+							step,
+							yes: flags.yes ?? false,
+							json: flags.json ?? false,
+							explain: flags.explain ?? false,
+						},
+						{...io, gh: io.gh ?? runGh},
+					);
 				}
 
 				case undefined: {
@@ -811,33 +849,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 	async function hook(action: string | undefined): Promise<number> {
 		switch (action) {
 			case 'install': {
-				try {
-					const result = await installHook(io.cwd);
-					if (result.status === 'snippet') {
-						io.stdout(
-							`core.hooksPath is ${result.hooksPath}, so chamoji didn't write a hook there. ${result.snippet}\n`,
-						);
-					} else {
-						const what =
-							result.replaced === 'gitmoji'
-								? "Replaced gitmoji-cli's hook"
-								: result.replaced === 'chamoji'
-									? 'Updated the hook'
-									: 'Installed the hook';
-						io.stdout(
-							`${what}: ${result.path}\nA plain \`git commit\` now opens the composer; -m, merges, amends and rebases are left alone.\n`,
-						);
-					}
-
-					return 0;
-				} catch (error) {
-					if (error instanceof HookError) {
-						io.stderr(`chamoji: ${error.message}\n`);
-						return PREFLIGHT_FAILED;
-					}
-
-					throw error;
-				}
+				return setUpHook(io);
 			}
 
 			case 'run': {
@@ -1723,12 +1735,6 @@ function githubReleases(
 			prerelease: members.some(unit => unit.bump === 'prerelease'),
 		};
 	});
-}
-
-/** `owner/name` from an origin on github.com, or undefined for anywhere else. */
-async function githubRepo(cwd: string): Promise<string | undefined> {
-	const url = await getRemoteWebUrl(cwd);
-	return /^https:\/\/github\.com\/([^/]+\/[^/]+)$/.exec(url ?? '')?.[1];
 }
 
 export type AiSettings = {composer: boolean; sendDiffs: boolean};
