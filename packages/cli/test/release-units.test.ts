@@ -611,9 +611,9 @@ test('changelog in a repo with units needs --unit or --for-tag', async () => {
 });
 
 const HINT =
-	'chamoji: this looks like a monorepo with several apps; chamoji setup can version each one (coming in 0.14), or add a release section by hand: see the readme\n';
+	'chamoji: this looks like a monorepo with several apps; run chamoji setup to version each one\n';
 
-test('the monorepo hint prints once, never under --json or CI', async () => {
+test('the monorepo hint names chamoji setup, prints once, never under --json or CI', async () => {
 	const dir = await appRepo([WEB_FEATURE], null);
 	const ci = await chamoji(['next-version'], dir, {env: {CI: 'true'}});
 	expect(ci.stdout).toBe('0.1.0\n');

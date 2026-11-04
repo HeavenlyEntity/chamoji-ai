@@ -48,7 +48,8 @@ async function chamoji(
 		cwd,
 		stdout: text => (stdout += text),
 		stderr: text => (stderr += text),
-		...(env ? {env} : {}),
+		// The setup hint stays out of CI; the tests that look for it set CI to ''.
+		env: {CI: 'true', ...(env ?? process.env)},
 	});
 	return {code, stdout, stderr};
 }
@@ -956,4 +957,37 @@ test('init with no origin starts no step', async () => {
 	const {dir} = await repoFrom([{commit: '🎉 Init'}]);
 	const {calls} = await withFace(['init'], dir);
 	expect(calls).toEqual([['stop']]);
+});
+
+const SETUP_HINT =
+	'chamoji setup also sets up releases, AI agents and the commit composer.\n';
+const NOT_CI = {...process.env, CI: ''};
+
+test('init prints the setup hint once per clone on stderr, and its stdout is unchanged', async () => {
+	const {dir} = await repoFrom([{commit: '🎉 Init'}]);
+	const quiet = await chamoji(['init'], dir);
+	expect(quiet.stderr).toBe('');
+
+	const first = await chamoji(['init'], dir, NOT_CI);
+	expect(first.code).toBe(0);
+	expect(first.stdout).toBe(quiet.stdout);
+	expect(first.stderr).toBe(SETUP_HINT);
+	const gitDir = (
+		await gitOutput(dir, ['rev-parse', '--absolute-git-dir'])
+	).trim();
+	expect(
+		(await stat(path.join(gitDir, 'chamoji', 'setup-hint'))).isFile(),
+	).toBe(true);
+
+	const again = await chamoji(['init'], dir, NOT_CI);
+	expect(again.stdout).toBe(first.stdout);
+	expect(again.stderr).toBe('');
+});
+
+test('the setup hint is not shown in CI', async () => {
+	const {dir} = await repoFrom([{commit: '🎉 Init'}]);
+	const ci = await chamoji(['init'], dir, {...process.env, CI: 'true'});
+	expect(ci.stderr).toBe('');
+	const later = await chamoji(['init'], dir, NOT_CI);
+	expect(later.stderr).toBe(SETUP_HINT);
 });

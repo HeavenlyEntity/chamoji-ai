@@ -9,9 +9,17 @@ import {
 import {Box, render, Text, useInput} from 'ink';
 import {useEffect, useRef, useState} from 'react';
 import {HINT_THRESHOLD, PRESELECT_THRESHOLD, type Advice} from './advisor.js';
+import {stripControl} from './text.js';
 
 type Step =
-	'gitmoji' | 'scope' | 'title' | 'body' | 'why' | 'breaking' | 'breakingText';
+	| 'gitmoji'
+	| 'scope'
+	| 'title'
+	| 'body'
+	| 'why'
+	| 'breaking'
+	| 'breakingText'
+	| 'release';
 
 const PROMPTS: Record<Step, string> = {
 	gitmoji: 'Gitmoji',
@@ -21,7 +29,13 @@ const PROMPTS: Record<Step, string> = {
 	why: 'Why? (optional, kept as a Why: trailer)',
 	breaking: 'Breaking change? (y/N)',
 	breakingText: 'What breaks?',
+	release: 'Release',
 };
+
+/** Which units the staged change releases, and which only ride along. */
+export type Impact = {own: string[]; rides: string[]};
+
+const names = (units: string[]) => units.map(unit => stripControl(unit));
 
 const LIST_SIZE = 7;
 
@@ -35,6 +49,8 @@ export type ComposerProps = {
 	/** Jev's advice, when AI is on. The composer never waits for it. */
 	advice?: Promise<Advice | null>;
 	adviceTimeoutMs?: number;
+	/** The units the staged change touches, with a release section. */
+	impact?: Impact;
 };
 
 /**
@@ -47,7 +63,11 @@ export function Composer({
 	onCancel,
 	advice: pendingAdvice,
 	adviceTimeoutMs = ADVICE_TIMEOUT_MS,
+	impact,
 }: ComposerProps) {
+	// A change that releases no unit of its own but rides along to some can
+	// release them now, with a Release: trailer each.
+	const offered = impact && impact.own.length === 0 ? names(impact.rides) : [];
 	const steps: Step[] = [
 		'gitmoji',
 		...(config.scopePrompt ? (['scope'] as const) : []),
@@ -55,6 +75,7 @@ export function Composer({
 		...(config.messagePrompt ? (['body'] as const) : []),
 		'why',
 		'breaking',
+		...(offered.length > 0 ? (['release'] as const) : []),
 	];
 	const [step, setStep] = useState<Step>('gitmoji');
 	const [text, setText] = useState<Record<Step, string>>({
@@ -65,7 +86,9 @@ export function Composer({
 		why: '',
 		breaking: '',
 		breakingText: '',
+		release: '',
 	});
+	const [breakingValue, setBreakingValue] = useState<string | boolean>();
 	const [selected, setSelected] = useState(0);
 	const [gitmoji, setGitmoji] = useState<string | null>(null);
 	const [advice, setAdvice] = useState<Advice | null>(null);
@@ -109,16 +132,20 @@ export function Composer({
 	].slice(0, 20);
 	const hint = (value: number | undefined) =>
 		value !== undefined && value >= HINT_THRESHOLD;
-	const draft = (breaking?: string | boolean): CommitDraft => ({
+	const draft = (
+		breaking?: string | boolean,
+		release = false,
+	): CommitDraft => ({
 		gitmoji: gitmoji ?? 'sparkles',
 		scope: text.scope,
 		title: text.title,
 		body: text.body,
 		why: text.why,
 		breaking,
+		trailers: release ? offered.map(unit => `Release: ${unit}`) : [],
 	});
-	const format = (breaking?: string | boolean) =>
-		formatCommitMessage(draft(breaking), {
+	const format = (breaking?: string | boolean, release = false) =>
+		formatCommitMessage(draft(breaking, release), {
 			emojiFormat: config.emojiFormat,
 			capitalizeTitle: config.capitalizeTitle,
 		});
@@ -167,11 +194,31 @@ export function Composer({
 			}
 		}
 
+		// Past the breaking question: ask about releasing, or submit.
+		const finish = (breaking?: string | boolean) => {
+			if (offered.length > 0) {
+				setBreakingValue(breaking);
+				setStep('release');
+			} else {
+				onSubmit(format(breaking));
+			}
+		};
+
+		if (step === 'release') {
+			if (input.toLowerCase() === 'y') {
+				onSubmit(format(breakingValue, true));
+			} else if (key.return || input.toLowerCase() === 'n') {
+				onSubmit(format(breakingValue));
+			}
+
+			return;
+		}
+
 		if (step === 'breaking') {
 			if (input.toLowerCase() === 'y') {
 				setStep('breakingText');
 			} else if (key.return || input.toLowerCase() === 'n') {
-				onSubmit(format());
+				finish();
 			}
 
 			return;
@@ -179,7 +226,7 @@ export function Composer({
 
 		if (key.return) {
 			if (step === 'breakingText') {
-				onSubmit(format(text.breakingText.trim() || true));
+				finish(text.breakingText.trim() || true);
 			} else if (step !== 'title' || text.title.trim()) {
 				move(1);
 			}
@@ -207,10 +254,29 @@ export function Composer({
 				<Text bold>chamoji commit</Text>
 				<Text dimColor>Enter next · Esc back · Ctrl-C cancel</Text>
 			</Box>
+			{impact && (impact.own.length > 0 || impact.rides.length > 0) && (
+				<Text dimColor>
+					{[
+						impact.own.length > 0
+							? `releases with: ${names(impact.own).join(', ')}`
+							: '',
+						impact.rides.length > 0
+							? `rides along to: ${names(impact.rides).join(', ')}`
+							: '',
+					]
+						.filter(Boolean)
+						.join(' · ')}
+				</Text>
+			)}
 			{gitmoji && <Text color="cyan">{format().split('\n')[0] || ' '}</Text>}
 			<Box marginTop={1}>
-				<Text bold>{PROMPTS[step]} › </Text>
-				{step !== 'breaking' && (
+				<Text bold>
+					{step === 'release'
+						? `Release ${offered.join(', ')} now? (y/N)`
+						: PROMPTS[step]}{' '}
+					›{' '}
+				</Text>
+				{step !== 'breaking' && step !== 'release' && (
 					<Text>
 						{text[step]}
 						<Text inverse> </Text>
@@ -269,6 +335,7 @@ export async function compose(
 	config: ComposeConfig,
 	streams: ComposeStreams,
 	advice?: Promise<Advice | null>,
+	impact?: Impact,
 ): Promise<string | null> {
 	return new Promise(resolve => {
 		let done = false;
@@ -285,6 +352,7 @@ export async function compose(
 				onSubmit={message => finish(message)}
 				onCancel={() => finish(null)}
 				advice={advice}
+				impact={impact}
 			/>,
 			{
 				stdin: streams.stdin,

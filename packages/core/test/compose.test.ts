@@ -225,3 +225,14 @@ describe('shouldPrompt', () => {
 		expect(shouldPrompt({...base, source: 'template'})).toEqual({prompt: true});
 	});
 });
+
+test('extra trailers come after Why', () => {
+	expect(
+		formatCommitMessage({
+			gitmoji: 'bug',
+			title: 'Fix the session',
+			why: 'It expired early',
+			trailers: ['Release: web', 'Release: mobile'],
+		}),
+	).toMatch(/Why: It expired early\nRelease: web\nRelease: mobile$/);
+});

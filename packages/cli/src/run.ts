@@ -57,7 +57,7 @@ import {
 	type Advice,
 	type AdvisorClient,
 } from './advisor.js';
-import {compose} from './composer.js';
+import {compose, type Impact} from './composer.js';
 import {MISSING_KEY, readTypesafeKey} from './env.js';
 import {gitStep, NO_FACE, runStep, type Face, type Step} from './face.js';
 import {hasFace} from './face-settings.js';
@@ -72,7 +72,7 @@ import {
 } from './jev-classifier.js';
 import {runInit} from './init.js';
 import {githubRepo, runSetup, type SetupScreen} from './setup/setup.js';
-import {isStepName, setUpHook} from './setup/steps.js';
+import {isStepName, nothingSetUp, setUpHook} from './setup/steps.js';
 import {runMcp} from './mcp.js';
 import {
 	relabel,
@@ -85,6 +85,7 @@ import {jevReranker, type MemoryReranker, type RerankClient} from './rerank.js';
 import {stripControlLines} from './text.js';
 import {openTerminal} from './tty.js';
 import type {UpdateCheck} from './update-check.js';
+import {composeImpact} from './impact.js';
 import {oneLineLogo, playWelcome, SHORT_HELP, TAGLINE} from './welcome.js';
 import {runWhy} from './why.js';
 import {runWorkstream} from './ws.js';
@@ -151,6 +152,7 @@ export type ComposerTerminal = {
 	compose(
 		config: ComposeConfig,
 		advice?: Promise<Advice | null>,
+		impact?: Impact,
 	): Promise<string | null>;
 	close(): void;
 };
@@ -159,7 +161,8 @@ const realTerminal = (): ComposerTerminal | null => {
 	const terminal = openTerminal();
 	return terminal
 		? {
-				compose: async (config, advice) => compose(config, terminal, advice),
+				compose: async (config, advice, impact) =>
+					compose(config, terminal, advice, impact),
 				close: () => terminal.close(),
 			}
 		: null;
@@ -601,6 +604,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 						write: io.stdout,
 					});
 					io.stdout(`\n${TAGLINE}\n\n${SHORT_HELP}\n`);
+					if (await nothingSetUp(io)) io.stdout(`\n${GET_STARTED}\n`);
 					return 0;
 				}
 
@@ -664,7 +668,11 @@ export async function run(argv: string[], given: Io): Promise<number> {
 		const advice = adviceFor(root, await readAiSettings(root), '');
 		let message: string | null;
 		try {
-			message = await terminal.compose(config, advice);
+			message = await terminal.compose(
+				config,
+				advice,
+				await composeImpact(root),
+			);
 		} finally {
 			terminal.close();
 		}
@@ -773,6 +781,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 		const message = await terminal.compose(
 			await loadComposeConfig(root),
 			advice,
+			await composeImpact(root),
 		);
 		if (message === null) return false;
 
@@ -1652,7 +1661,9 @@ function facts(plan: ReadyPlan, files: string[]) {
 }
 
 const MONOREPO_HINT =
-	'chamoji: this looks like a monorepo with several apps; chamoji setup can version each one (coming in 0.14), or add a release section by hand: see the readme';
+	'chamoji: this looks like a monorepo with several apps; run chamoji setup to version each one';
+
+const GET_STARTED = 'Get started: run chamoji setup';
 
 /** Whether `release`, `next-version` and `changelog` work per unit: a release section whose shape isn't single. */
 function releasesUnits(config: ChamojiConfig): boolean {
