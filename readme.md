@@ -438,7 +438,7 @@ chamoji changelog --for-tag web/v1.4.0
 
 Set the `unit` input in release mode to release a single unit. On a pushed tag, the Action finds the unit the tag belongs to and writes that tag's notes to its GitHub release. On a pull request, the preview comment lists only the units the PR touches, with the releases merging it would make.
 
-In a repo with release units, the preview runs the CLI with its working directory at the PR head, and never with your secrets. So the `cli` input must be unset or a built CLI such as `node packages/cli/dist/cli.js`. A package runner such as `npx` is refused, and the command must not read files relative to the working directory.
+In a repo with release units, the preview runs the CLI with its working directory at the PR head, and never with your secrets. So the `cli` input must be unset, `node` with a built CLI file from the workspace, such as `node packages/cli/dist/cli.js`, or `chamoji` itself. Anything else, such as `npx`, a shell wrapper or `tsx`, is refused, and so are option words.
 
 ### Older versions of the CLI
 

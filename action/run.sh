@@ -161,17 +161,19 @@ comment)
 		# The PR's files are untrusted (under pull_request_target this job holds
 		# secrets and a write token), so the barrier is that no PR-controlled code
 		# runs: the CLI is resolved to absolute paths from the trusted workspace
-		# before the PR's worktree exists, and it can't go through a package manager
-		# or take option words, since those would read the PR's .npmrc, scripts,
-		# node_modules or --require/--import files. The environment allowlist below
-		# is defense in depth, not the barrier.
+		# before the PR's worktree exists, and it may only be node running a built
+		# CLI file or chamoji itself, with no option words. A package manager, a
+		# shell wrapper or a loader such as tsx could read the PR's .npmrc,
+		# scripts, node_modules or other files relative to the working directory.
+		# The environment allowlist below is defense in depth, not the barrier.
 		unit_cli_help='unset cli or point it at a built CLI (for example node packages/cli/dist/cli.js)'
+		unit_cli_rule='unit-mode PR previews run only node with a built CLI file, or chamoji itself; unset cli or use node packages/cli/dist/cli.js'
 		trusted=()
 		if [ -n "${CHAMOJI_CLI:-}" ]; then
 			case "${cli[0]##*/}" in
-				npx | npm | pnpm | pnpx | yarn | bunx | bun)
-					fail "unit-mode PR previews can't run the cli through a package manager, which would read the PR's files; $unit_cli_help"
-					;;
+				chamoji) ;;
+				node) [ "${#cli[@]}" -gt 1 ] || fail "$unit_cli_rule" ;;
+				*) fail "$unit_cli_rule" ;;
 			esac
 			resolved=$(command -v -- "${cli[0]}") || fail "unit-mode PR previews need the cli's command to exist: ${cli[0]}"
 			case "$resolved" in /*) ;; *) fail "unit-mode PR previews need an absolute command, but ${cli[0]} resolves to $resolved" ;; esac

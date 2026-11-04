@@ -102,8 +102,8 @@ async function setup(steps: RepoStep[]) {
 	);
 	await writeFile(path.join(fake, 'gh'), FAKE_GH);
 	await chmod(path.join(fake, 'gh'), 0o755);
-	await writeFile(path.join(fake, 'chamoji-cli'), FAKE_CLI);
-	await chmod(path.join(fake, 'chamoji-cli'), 0o755);
+	await writeFile(path.join(fake, 'chamoji'), FAKE_CLI);
+	await chmod(path.join(fake, 'chamoji'), 0o755);
 	// A package runner that would answer --version; the unit preview refuses it.
 	await writeFile(
 		path.join(fake, 'npx'),
@@ -125,7 +125,7 @@ async function setup(steps: RepoStep[]) {
 	});
 
 	// Runs the Action with a CLI whose version the repo's release settings accept.
-	const unitCli = path.join(fake, 'chamoji-cli');
+	const unitCli = path.join(fake, 'chamoji');
 	const action = async (env: Record<string, string>) => {
 		try {
 			const {stdout, stderr} = await execFileAsync('bash', [script], {
@@ -966,14 +966,33 @@ process.exit(spawnSync(process.execPath, [${JSON.stringify(real)}, ...process.ar
 		expect(existsSync(plantedMarker)).toBe(false);
 	});
 
-	test('a package manager cli fails closed in the unit preview', async () => {
-		const {action, read, event} = await targetRepo('cli.js');
-		const result = await action({CHAMOJI_CLI: 'npx chamoji', ...event});
+	test.each([
+		['a package manager', 'npx chamoji'],
+		['a bash wrapper', 'bash wrapper.sh'],
+		['tsx', 'tsx cli.js'],
+	])('%s as cli fails closed in the unit preview', async (_name, command) => {
+		const {action, read, event, plantedMarker, fake, dir} =
+			await targetRepo('cli.js');
+		// Both answer the version probe, so only the rule can refuse them.
+		const answers = '#!/usr/bin/env bash\necho 0.13.0\n';
+		await writeFile(path.join(fake, 'tsx'), answers);
+		await chmod(path.join(fake, 'tsx'), 0o755);
+		await writeFile(path.join(dir, 'wrapper.sh'), answers);
+		const result = await action({CHAMOJI_CLI: command, ...event});
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain(
-			"chamoji: unit-mode PR previews can't run the cli through a package manager, which would read the PR's files; unset cli or point it at a built CLI (for example node packages/cli/dist/cli.js)",
+			'::error::chamoji: unit-mode PR previews run only node with a built CLI file, or chamoji itself; unset cli or use node packages/cli/dist/cli.js',
 		);
 		expect(await read('body')).toBe('');
+		expect(existsSync(plantedMarker)).toBe(false);
+	});
+
+	test('node with no CLI file fails closed in the unit preview', async () => {
+		const {action, read, event, plantedMarker} = await targetRepo('cli.js');
+		const result = await action({CHAMOJI_CLI: 'node', ...event});
+		expect(result.code).toBe(1);
+		expect(await read('body')).toBe('');
+		expect(existsSync(plantedMarker)).toBe(false);
 	});
 
 	test('the CLI in the worktree sees only allowlisted environment', async () => {
