@@ -11,6 +11,10 @@ export default defineConfig({
 	},
 	test: {
 		include: ['packages/*/test/**/*.test.{ts,tsx}'],
-		testTimeout: 20_000,
+		// The tests start many git processes, which Windows runners start several
+		// times slower and slower still under load; tests that take 4 s there can
+		// pass 20 s on a busy runner. A real hang still fails within a minute.
+		testTimeout: process.platform === 'win32' ? 60_000 : 20_000,
+		hookTimeout: process.platform === 'win32' ? 60_000 : 10_000,
 	},
 });
