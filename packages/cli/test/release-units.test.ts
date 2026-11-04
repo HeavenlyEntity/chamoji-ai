@@ -717,3 +717,133 @@ test('a first release notes a version file that disagrees with the manifest', as
 		'note: apps/web/app.json had a version other than 0.1.0 (its package.json version); it now says 0.1.0\n',
 	);
 });
+
+/** A libraries repo; `files` are added to the start commit. */
+async function libraryRepo(
+	release: unknown,
+	packages: Record<string, unknown>,
+	steps: RepoStep[],
+): Promise<string> {
+	const files: Record<string, string> = {
+		'package.json': json({name: 'kit', private: true}),
+		'pnpm-workspace.yaml': 'packages:\n  - packages/*\n',
+		'chamoji.config.json': json({release}),
+	};
+	for (const [folder, manifest] of Object.entries(packages)) {
+		files[`packages/${folder}/package.json`] = json(manifest);
+	}
+
+	const repo = await createRepo([
+		{commit: '🎉 Start the kit', files},
+		...steps,
+	]);
+	cleanups.push(repo.cleanup);
+	await gitOutput(repo.dir, ['config', 'user.name', 'Dev']);
+	await gitOutput(repo.dir, ['config', 'user.email', 'dev@example.com']);
+	return repo.dir;
+}
+
+const recordingGh = () => {
+	const calls: string[][] = [];
+	const notes: string[] = [];
+	const gh: GhRunner = async args => {
+		calls.push(args);
+		const {readFile} = await import('node:fs/promises');
+		notes.push(await readFile(args[args.indexOf('--notes-file') + 1]!, 'utf8'));
+		return {ok: true, message: ''};
+	};
+
+	return {gh, calls, notes};
+};
+
+test('a fixed group on one v-tag releases once: one tag, one GitHub release with each section', async () => {
+	const dir = await libraryRepo(
+		{
+			schema: 1,
+			shape: 'libraries',
+			units: {
+				core: {path: 'packages/core', tag: 'v{version}'},
+				types: {path: 'packages/types', tag: 'v{version}'},
+			},
+			fixed: [['core', 'types']],
+		},
+		{
+			core: {name: '@payload/core', version: '1.0.0'},
+			types: {name: '@payload/types', version: '1.0.0'},
+		},
+		[
+			{tag: 'v1.0.0', annotated: true},
+			{
+				commit: '🐛 Fix the parser',
+				files: {'packages/core/src/parse.ts': 'parse\n'},
+			},
+		],
+	);
+	const dry = await chamoji(['release', '--dry-run'], dir);
+	expect(dry.code).toBe(0);
+	expect(dry.stdout.match(/^## v1\.0\.1.*$/gm)).toEqual([
+		'## v1.0.1 (core)',
+		'## v1.0.1 (types)',
+	]);
+
+	await withRemote(dir);
+	const {gh, calls, notes} = recordingGh();
+	const released = await chamoji(['release', '--push', '--json'], dir, {gh});
+	expect(released.code).toBe(0);
+	const result = JSON.parse(released.stdout) as {
+		units: Array<{unit: string; tag: string; notes: string}>;
+	};
+	expect(result.units.map(unit => [unit.unit, unit.tag])).toEqual([
+		['core', 'v1.0.1'],
+		['types', 'v1.0.1'],
+	]);
+	expect(await gitOutput(dir, ['tag', '--points-at', 'HEAD'])).toBe('v1.0.1\n');
+	expect(calls.map(args => args.slice(0, 5))).toEqual([
+		['release', 'create', 'v1.0.1', '--title', 'v1.0.1'],
+	]);
+	const [core, types] = result.units;
+	expect(notes[0]).toBe(
+		`## v1.0.1 (core)\n\n${core!.notes}\n\n## v1.0.1 (types)\n\n${types!.notes}\n`,
+	);
+	expect(types!.notes).toContain("Released with core at the group's version");
+});
+
+test('a missing upstream remote is a warning in text and JSON', async () => {
+	const dir = await appRepo([...TAGGED, WEB_FEATURE], {
+		...RELEASE,
+		upstream: {remote: 'upstream', name: 'Makerkit'},
+	});
+	const warning =
+		'upstream remote "upstream" has no fetched branches here, so template history is recognised only by ignored version tags; run git remote add upstream <url> && git fetch upstream before chamoji';
+	const text = await chamoji(['release', '--dry-run'], dir);
+	expect(text.stdout).toContain(`warning: ${warning}\n`);
+	const asJson = await chamoji(['release', '--dry-run', '--json'], dir);
+	expect(JSON.parse(asJson.stdout)).toMatchObject({warnings: [warning]});
+});
+
+test('a first release notes a version file that disagrees with the manifest', async () => {
+	const dir = await appRepo(
+		[
+			{
+				commit: '🔧 Add the app config',
+				files: {'apps/web/app.json': '{"expo": {"version": "0.3.0"}}\n'},
+			},
+			WEB_FEATURE,
+		],
+		{
+			...RELEASE,
+			units: {
+				web: {
+					path: 'apps/web',
+					tag: 'web/v{version}',
+					versionFiles: ['apps/web/package.json', 'apps/web/app.json'],
+				},
+			},
+		},
+	);
+	const {code, stdout} = await chamoji(['release', '--dry-run'], dir);
+	expect(code).toBe(0);
+	expect(stdout).toContain(
+		'note: apps/web/app.json had a version other than 0.1.0 (its package.json version); it now says 0.1.0\n',
+	);
+});

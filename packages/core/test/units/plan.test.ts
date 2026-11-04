@@ -759,9 +759,123 @@ test('a first release lists a version file that disagrees with the manifest', as
 	});
 });
 
+test('push names each tag by its full ref, so a branch of the same name is no clash', async () => {
+	const dir = await appRepo([WEB_FEATURE], {tags: false});
+	const remote = await mkdtemp(path.join(tmpdir(), 'chamoji-origin-'));
+	cleanups.push(async () => rm(remote, {recursive: true, force: true}));
+	await git(remote, ['init', '-q', '--bare']);
+	await git(dir, ['remote', 'add', 'origin', remote]);
+	await git(dir, ['branch', 'web/v0.1.0']);
+
+	const result = ready(await plan(dir, {fetch: false}));
+	expect(result.units.map(unit => unit.tag)).toEqual(['web/v0.1.0']);
+	await applyUnitReleases(result);
+	await pushUnitReleases(result);
+	expect(await git(remote, ['tag', '--list'])).toBe('web/v0.1.0');
+	expect(await git(remote, ['branch', '--list'])).not.toContain('web/v0.1.0');
+});
+
 test('without the upstream remote fetched, the plan warns that only ignored tags mark the template', async () => {
 	const dir = await appRepo([WEB_FEATURE]);
 	expect(ready(await plan(dir)).warnings).toEqual([
 		'upstream remote "upstream" has no fetched branches here, so template history is recognised only by ignored version tags; run git remote add upstream <url> && git fetch upstream before chamoji',
 	]);
+});
+
+/** payload-kit: core and types in one fixed group on one shared v-tag. */
+async function sharedTagRepo(steps: RepoStep[]) {
+	const repo = await createRepo([
+		{
+			commit: '🎉 Start payload-kit',
+			files: {
+				'package.json': json({name: 'payload-kit', private: true}),
+				'pnpm-workspace.yaml': 'packages:\n  - packages/*\n',
+				'chamoji.config.json': json({
+					release: {
+						schema: 1,
+						shape: 'libraries',
+						units: {
+							core: {path: 'packages/core', tag: 'v{version}'},
+							types: {path: 'packages/types', tag: 'v{version}'},
+						},
+						fixed: [['core', 'types']],
+					},
+				}),
+				'packages/core/package.json': json({
+					name: '@payload/core',
+					version: '1.0.0',
+				}),
+				'packages/types/package.json': json({
+					name: '@payload/types',
+					version: '1.0.0',
+				}),
+			},
+		},
+		{tag: 'v1.0.0', annotated: true},
+		...steps,
+	]);
+	cleanups.push(repo.cleanup);
+	return repo.dir;
+}
+
+test('a fixed group on one tag template releases once, with one tag', async () => {
+	const dir = await sharedTagRepo([
+		{
+			commit: '🐛 Fix the parser',
+			files: {'packages/core/src/parse.ts': 'parse\n'},
+		},
+	]);
+	const remote = await mkdtemp(path.join(tmpdir(), 'chamoji-origin-'));
+	cleanups.push(async () => rm(remote, {recursive: true, force: true}));
+	await git(remote, ['init', '-q', '--bare']);
+	await git(dir, ['remote', 'add', 'origin', remote]);
+
+	const result = ready(await plan(dir, {fetch: false}));
+	expect(result.units.map(unit => [unit.unit, unit.tag, unit.bump])).toEqual([
+		['core', 'v1.0.1', 'patch'],
+		['types', 'v1.0.1', 'fixed'],
+	]);
+	expect(result.subject).toBe('🔖 Release v1.0.1');
+	await applyUnitReleases(result);
+	expect(await git(dir, ['tag', '--points-at', 'HEAD'])).toBe('v1.0.1');
+	await pushUnitReleases(result);
+	expect(await git(remote, ['tag', '--list'])).toBe('v1.0.1');
+});
+
+test('two units outside a fixed group that would get the same tag are refused', async () => {
+	const repo = await createRepo([
+		{
+			commit: '🎉 Start',
+			files: {
+				'package.json': json({name: 'kit', private: true}),
+				'pnpm-workspace.yaml': 'packages:\n  - packages/*\n',
+				'chamoji.config.json': json({
+					release: {
+						schema: 1,
+						shape: 'libraries',
+						units: {
+							core: {path: 'packages/core', tag: 'release-{version}'},
+							extra: {path: 'packages/extra', tag: '{name}-{version}'},
+						},
+					},
+				}),
+				'packages/core/package.json': json({name: 'core', version: '1.0.0'}),
+				'packages/extra/package.json': json({
+					name: 'release',
+					version: '1.0.0',
+				}),
+			},
+		},
+		{
+			commit: '🐛 Fix both',
+			files: {
+				'packages/core/a.ts': 'a\n',
+				'packages/extra/b.ts': 'b\n',
+			},
+		},
+	]);
+	cleanups.push(repo.cleanup);
+	await expect(plan(repo.dir)).rejects.toThrow(
+		'core and extra would both be tagged release-1.0.0; give them tag templates that differ, or put them in one fixed group',
+	);
 });

@@ -35,6 +35,7 @@ import {
 	shouldStamp,
 	stampWorkstream,
 	syncMemory,
+	uniqueTags,
 	unitChangelog,
 	unitTagHistory,
 	type ChamojiConfig,
@@ -1168,7 +1169,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 			return NO_RELEASE_NEEDED;
 		}
 
-		const tags = plan.units.map(unit => unit.tag);
+		const tags = uniqueTags(plan.units);
 		const files = plan.changes.map(change => change.file);
 		const units = plan.units.map(unit => unitLine(unit));
 		const notices = [
@@ -1183,7 +1184,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 		];
 		const notes = plan.units.flatMap(unit => [
 			'',
-			`## ${unit.tag}`,
+			`## ${unitHeading(plan.units, unit)}`,
 			'',
 			unit.notes,
 		]);
@@ -1608,10 +1609,31 @@ function leftOutLine({unit, own, shared}: UnitPending): string {
 }
 
 function tagList(plan: ReadyUnitPlan): string {
-	return plan.units.map(unit => unit.tag).join(', ');
+	return uniqueTags(plan.units).join(', ');
 }
 
-/** One GitHub release per unit tag, or one for the whole release commit under `combined`. */
+/** A unit's notes heading: its tag, with the unit's name when fixed-group members share the tag. */
+function unitHeading(
+	units: Array<{unit: string; tag: string}>,
+	unit: {unit: string; tag: string},
+): string {
+	return units.filter(other => other.tag === unit.tag).length > 1
+		? `${unit.tag} (${unit.unit})`
+		: unit.tag;
+}
+
+/** The release notes for one tag: its unit's notes, or a section per unit that shares it. */
+function tagNotes(
+	units: Array<{unit: string; tag: string; notes: string}>,
+): string {
+	return units.length === 1
+		? units[0]!.notes
+		: units
+				.map(unit => `## ${unitHeading(units, unit)}\n\n${unit.notes}`)
+				.join('\n\n');
+}
+
+/** One GitHub release per tag (fixed-group members can share one), or one for the whole release commit under `combined`. */
 function githubReleases(
 	plan: ReadyUnitPlan,
 	config: ChamojiConfig,
@@ -1622,19 +1644,22 @@ function githubReleases(
 				tag: plan.units[0]!.tag,
 				title: tagList(plan),
 				notes: plan.units
-					.map(unit => `## ${unit.tag}\n\n${unit.notes}`)
+					.map(unit => `## ${unitHeading(plan.units, unit)}\n\n${unit.notes}`)
 					.join('\n\n'),
 				prerelease: plan.units.some(unit => unit.bump === 'prerelease'),
 			},
 		];
 	}
 
-	return plan.units.map(unit => ({
-		tag: unit.tag,
-		title: unit.tag,
-		notes: unit.notes,
-		prerelease: unit.bump === 'prerelease',
-	}));
+	return uniqueTags(plan.units).map(tag => {
+		const members = plan.units.filter(unit => unit.tag === tag);
+		return {
+			tag,
+			title: tag,
+			notes: tagNotes(members),
+			prerelease: members.some(unit => unit.bump === 'prerelease'),
+		};
+	});
 }
 
 /** `owner/name` from an origin on github.com, or undefined for anywhere else. */

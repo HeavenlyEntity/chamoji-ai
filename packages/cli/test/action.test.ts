@@ -706,6 +706,57 @@ exec "${realGit}" "$@"
 		expect(await git('tag', '--list', 'web/v0.2.0')).toBe('web/v0.2.0');
 		expect(await git('tag', '--list', 'mobile/v1.1.0')).toBe('');
 	});
+	test('release mode names a tag shared by a fixed group once', async () => {
+		const json = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;
+		const {action, unitCli, git, read} = await setup([
+			{
+				commit: '🎉 Start payload-kit',
+				files: {
+					'package.json': json({name: 'payload-kit', private: true}),
+					'pnpm-workspace.yaml': 'packages:\n  - packages/*\n',
+					'chamoji.config.json': json({
+						release: {
+							schema: 1,
+							shape: 'libraries',
+							units: {
+								core: {path: 'packages/core', tag: 'v{version}'},
+								types: {path: 'packages/types', tag: 'v{version}'},
+							},
+							fixed: [['core', 'types']],
+						},
+					}),
+					'packages/core/package.json': json({
+						name: '@payload/core',
+						version: '1.0.0',
+					}),
+					'packages/types/package.json': json({
+						name: '@payload/types',
+						version: '1.0.0',
+					}),
+				},
+			},
+			{tag: 'v1.0.0', annotated: true},
+			{
+				commit: '🐛 Fix the parser',
+				files: {'packages/core/src/parse.ts': 'parse\n'},
+			},
+		]);
+		await git('config', 'user.name', 'Dev');
+		await git('config', 'user.email', 'dev@example.com');
+		const result = await action({
+			CHAMOJI_CLI: unitCli,
+			CHAMOJI_MODE: 'release',
+		});
+		expect(result.code).toBe(0);
+		expect(await read('output')).toBe('version=v1.0.1\n');
+		const summary = await read('summary');
+		expect(summary.match(/^## v1\.0\.1.*$/gm)).toEqual([
+			'## v1.0.1 (core)',
+			'## v1.0.1 (types)',
+		]);
+		expect(await read('calls')).toMatch(/^release create v1\.0\.1 /);
+	});
+
 	test('a hyphenated tag template is not a prerelease, a real suffix is', async () => {
 		const files = {...unitFiles, ...unitConfig(unitRelease('web-v{version}'))};
 		const hyphen = await setup([
