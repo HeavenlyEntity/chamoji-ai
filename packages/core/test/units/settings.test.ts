@@ -224,3 +224,95 @@ test('upstream.since and upstream.remote reject option-like values', () => {
 		);
 	}
 });
+
+test.each([
+	['exclude', ['apps/e2e']],
+	['sharedChanges', 'ride-along'],
+	['rootFiles', 'none'],
+	['zeroMajor', 'minor'],
+	['fixed', []],
+	['upstream', {name: 'Makerkit'}],
+	['tags', {ignore: ['^\\d+\\.\\d+\\.\\d+$']}],
+	['rootChangelog', false],
+	['githubReleases', 'per-unit'],
+])('shape "single" refuses the unit-only setting %s', (key, value) => {
+	expect(() =>
+		parseReleaseSettings({schema: 1, shape: 'single', [key]: value}, FILE),
+	).toThrow(
+		`Invalid config ${FILE}: release.${key} is only used with apps or libraries`,
+	);
+});
+
+test('two units outside one fixed group may not share a tag template', () => {
+	const units = {
+		core: {path: 'packages/core', tag: 'v{version}'},
+		types: {path: 'packages/types', tag: 'v{version}'},
+	};
+	expect(() =>
+		parseReleaseSettings({schema: 1, shape: 'libraries', units}, FILE),
+	).toThrow(
+		`Invalid config ${FILE}: release.units.types.tag "v{version}" is the same as units.core's; units share a tag template only in one fixed group`,
+	);
+	const fixed = parseReleaseSettings(
+		{schema: 1, shape: 'libraries', units, fixed: [['core', 'types']]},
+		FILE,
+	);
+	expect(fixed.units.map(unit => unit.tag)).toEqual([
+		'v{version}',
+		'v{version}',
+	]);
+	// A template that names the unit or package renders apart.
+	const named = parseReleaseSettings(
+		withUnits({web: {path: 'apps/web'}, mobile: {path: 'apps/mobile'}}),
+		FILE,
+	);
+	expect(named.units.map(unit => unit.tag)).toEqual([
+		'{unit}/v{version}',
+		'{unit}/v{version}',
+	]);
+});
+
+test('versionFiles are normalised and must stay inside the repo', () => {
+	const settings = parseReleaseSettings(
+		withUnits({
+			mobile: {
+				path: 'apps/mobile',
+				versionFiles: [
+					'./apps/mobile/app.json',
+					'apps\\mobile\\app.json',
+					'apps/mobile//ios/Info.plist',
+				],
+			},
+		}),
+		FILE,
+	);
+	expect(settings.units[0]?.versionFiles).toEqual([
+		'apps/mobile/app.json',
+		'apps/mobile/ios/Info.plist',
+	]);
+	for (const bad of ['../../etc/hosts', '/etc/hosts', 'C:\\x', '.', '']) {
+		expect(() =>
+			parseReleaseSettings(
+				withUnits({mobile: {path: 'apps/mobile', versionFiles: [bad]}}),
+				FILE,
+			),
+		).toThrow(
+			`Invalid config ${FILE}: release.units.mobile.versionFiles ${JSON.stringify(bad)} must be a file inside the repo`,
+		);
+	}
+});
+
+test('exclude patterns are normalised and must stay inside the repo', () => {
+	const settings = parseReleaseSettings(
+		withUnits({}, {exclude: ['./apps/e2e/', 'apps\\e2e', 'tooling/*']}),
+		FILE,
+	);
+	expect(settings.exclude).toEqual(['apps/e2e', 'tooling/*']);
+	for (const bad of ['../outside', '/abs', '.']) {
+		expect(() =>
+			parseReleaseSettings(withUnits({}, {exclude: [bad]}), FILE),
+		).toThrow(
+			`Invalid config ${FILE}: release.exclude ${JSON.stringify(bad)} must be a path inside the repo`,
+		);
+	}
+});
