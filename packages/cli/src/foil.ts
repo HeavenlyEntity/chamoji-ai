@@ -1,3 +1,4 @@
+import {execFile} from 'node:child_process';
 import {Chalk} from 'chalk';
 
 export type Rgb = {r: number; g: number; b: number};
@@ -129,35 +130,107 @@ function replyEnded(received: string): boolean {
 }
 
 /**
+ * Whether this process is in the terminal's foreground process group. A
+ * background job (`chamoji why f:1 &`) that changes the terminal's mode is
+ * stopped by SIGTTOU, so it must never ask. `ps` marks the foreground with a
+ * `+` in the STAT column. Windows has no job control, so there it is always
+ * true. Anything that goes wrong counts as not in the foreground.
+ */
+export async function inForeground(
+	pid = process.pid,
+	platform: NodeJS.Platform = process.platform,
+): Promise<boolean> {
+	if (platform === 'win32') {
+		return true;
+	}
+
+	return new Promise(resolve => {
+		try {
+			execFile(
+				'ps',
+				['-o', 'stat=', '-p', String(pid)],
+				{timeout: 1000},
+				(error, stdout) => {
+					resolve(!error && stdout.includes('+'));
+				},
+			);
+		} catch {
+			resolve(false);
+		}
+	});
+}
+
+export type QueryOptions = {
+	/** Whether the process may touch the terminal's mode. */
+	isForeground?: () => Promise<boolean>;
+	/** Aborting ends the query at once, grace window and all. */
+	signal?: AbortSignal;
+};
+
+/**
  * Asks the terminal for its background with OSC 11. Resolves undefined when it
  * has not answered in `timeoutMs`, so callers never wait longer than that.
+ * It never asks from a background job, and any error resolves undefined.
  *
  * A late reply must not reach the shell, so after that limit stdin stays raw
  * and swallowed until the reply ends or a grace window passes. Raw mode and
- * the pause are undone only then.
+ * the pause are undone only then, or when `signal` aborts. The grace timer
+ * does not keep the process alive.
  *
  * Raw mode turns Ctrl-C into a byte instead of SIGINT, so a 0x03 seen at any
  * point puts stdin back at once and calls `interrupt`, which raises SIGINT.
  */
-export function queryBackground(
+export async function queryBackground(
 	stdin: NodeJS.ReadStream,
 	stderr: NodeJS.WriteStream,
 	timeoutMs = 100,
 	interrupt: () => void = () => {
 		process.kill(process.pid, 'SIGINT');
 	},
+	options: QueryOptions = {},
+): Promise<Rgb | undefined> {
+	const {isForeground = async () => inForeground(), signal} = options;
+	try {
+		if (signal?.aborted || !(await isForeground()) || signal?.aborted) {
+			return undefined;
+		}
+
+		return await ask(stdin, stderr, timeoutMs, interrupt, signal);
+	} catch {
+		return undefined;
+	}
+}
+
+async function ask(
+	stdin: NodeJS.ReadStream,
+	stderr: NodeJS.WriteStream,
+	timeoutMs: number,
+	interrupt: () => void,
+	signal: AbortSignal | undefined,
 ): Promise<Rgb | undefined> {
 	return new Promise(resolve => {
 		const wasRaw = stdin.isRaw;
 		let received = '';
 		let limitTimer: NodeJS.Timeout | undefined;
 		let graceTimer: NodeJS.Timeout | undefined;
+		let done = false;
 
 		const cleanup = () => {
+			if (done) {
+				return;
+			}
+
+			done = true;
 			clearTimeout(limitTimer);
 			clearTimeout(graceTimer);
 			stdin.off('data', onData);
-			stdin.setRawMode(wasRaw);
+			signal?.removeEventListener('abort', onAbort);
+			try {
+				stdin.setRawMode(wasRaw);
+			} catch {
+				// The terminal went away. There is no mode left to put back.
+			}
+
 			stdin.pause();
 		};
 
@@ -177,12 +250,20 @@ export function queryBackground(
 			}
 		};
 
+		const onAbort = () => {
+			resolve(undefined);
+			cleanup();
+		};
+
+		// Throws, before anything changed, when stdin is not a terminal.
 		stdin.setRawMode(true);
 		stdin.resume();
 		stdin.on('data', onData);
+		signal?.addEventListener('abort', onAbort);
 		limitTimer = setTimeout(() => {
 			resolve(undefined);
 			graceTimer = setTimeout(cleanup, GRACE_MS);
+			graceTimer.unref?.();
 		}, timeoutMs);
 		stderr.write('\u001B]11;?\u001B\\');
 	});

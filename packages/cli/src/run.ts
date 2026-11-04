@@ -831,6 +831,9 @@ export async function run(argv: string[], given: Io): Promise<number> {
 							// Jev, if it runs after this, starts a step of its own.
 							jevHost = undefined;
 							step.end('warn', 'git needs your credentials');
+							// A theme question still open would read what is typed at
+							// git's prompt, so the face stops before git asks.
+							face.stop();
 						},
 						...(env ? {env} : {}),
 					});
