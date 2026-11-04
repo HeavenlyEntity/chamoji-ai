@@ -44,8 +44,13 @@ export type LayoutDetection = {
 	excluded: string[];
 	/** The ticked apps, or the libraries. */
 	units: UnitFacts[];
-	/** Since the newest tag, max 200 commits. */
-	rootOnly: {count: number; examples: string[]};
+	/** Facts for every app and library, ticked or not, path-sorted; `units` is a subset. */
+	candidates: UnitFacts[];
+	/**
+	 * Since the newest tag, max 200 commits. `since` is that tag, or null when
+	 * there's none and the count covers the last 200 commits.
+	 */
+	rootOnly: {count: number; examples: string[]; since: string | null};
 };
 
 export const TOOL_NAMES: readonly string[] = [
@@ -59,7 +64,7 @@ export const TOOL_NAMES: readonly string[] = [
 	'dev-tool',
 ];
 
-const MAX_COMMITS = 200;
+export const MAX_COMMITS = 200;
 const MAX_LISTED_FILES = 500;
 const MAX_FILE_BYTES = 256 * 1024;
 const MAX_EXAMPLES = 3;
@@ -149,7 +154,7 @@ async function readRootOnly(
 	root: string,
 	packages: WorkspacePackage[],
 ): Promise<LayoutDetection['rootOnly']> {
-	const none = {count: 0, examples: []};
+	const none = {count: 0, examples: [], since: null};
 	try {
 		await runGit(['rev-parse', '--verify', '-q', 'HEAD'], root);
 	} catch {
@@ -180,7 +185,11 @@ async function readRootOnly(
 		for (const file of files) examples.add(file);
 	}
 
-	return {count, examples: [...examples].sort().slice(0, MAX_EXAMPLES)};
+	return {
+		count,
+		examples: [...examples].sort().slice(0, MAX_EXAMPLES),
+		since: newest?.name ?? null,
+	};
 }
 
 /** Works out a repo's apps, packages and version files from git and disk. */
@@ -225,8 +234,14 @@ export async function detectLayout(root: string): Promise<LayoutDetection> {
 		kind === 'libraries'
 			? libraries
 			: apps.filter(app => app.ticked).map(app => app.pkg);
-	const units: UnitFacts[] = [];
-	for (const pkg of unitPackages) units.push(await factsFor(root, pkg));
+	const candidates: UnitFacts[] = [];
+	const everyCandidate = [...apps.map(app => app.pkg), ...libraries].sort(
+		(a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0),
+	);
+	for (const pkg of everyCandidate) candidates.push(await factsFor(root, pkg));
+	const units = candidates.filter(facts =>
+		unitPackages.some(pkg => pkg.path === facts.path),
+	);
 
 	return {
 		root,
@@ -236,6 +251,7 @@ export async function detectLayout(root: string): Promise<LayoutDetection> {
 		libraries,
 		excluded,
 		units,
+		candidates,
 		rootOnly: await readRootOnly(root, packages),
 	};
 }

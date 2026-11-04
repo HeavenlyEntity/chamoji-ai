@@ -19,8 +19,8 @@ test('renderJson keeps the final newline, line endings and BOM as they were', ()
 	expect(renderJsonText(data, '')).toBe(
 		`${JSON.stringify(data, null, '  ')}\n`,
 	);
-	expect(renderJsonText(data, '﻿{\r\n\t"a": 1\r\n}\r\n')).toBe(
-		`﻿${plain.replaceAll('\n', '\r\n')}\r\n`,
+	expect(renderJsonText(data, '\uFEFF{\r\n\t"a": 1\r\n}\r\n')).toBe(
+		`\uFEFF${plain.replaceAll('\n', '\r\n')}\r\n`,
 	);
 });
 

@@ -45,7 +45,7 @@ type Obj = Record<string, unknown>;
 const SUPPORTED_SHAPES = ['single', 'apps', 'libraries'];
 const UNSUPPORTED_SHAPES = ['train', 'mixed'];
 /** Settings that only mean something with units. */
-const UNIT_ONLY = [
+export const UNIT_ONLY: readonly string[] = [
 	'exclude',
 	'sharedChanges',
 	'rootFiles',
