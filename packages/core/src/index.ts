@@ -156,3 +156,9 @@ export {
 	type Workstream,
 	type WorkstreamStatus,
 } from './workstreams.js';
+export {
+	detectVersionFiles,
+	editVersionFiles,
+	readEasRemote,
+	type VersionFileEdit,
+} from './units/version-files.js';
