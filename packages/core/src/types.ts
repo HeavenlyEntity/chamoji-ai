@@ -1,4 +1,5 @@
 import type {Workstream} from './workstreams.js';
+import type {ReleaseSettings} from './units/settings.js';
 
 export type SemverBump = 'major' | 'minor' | 'patch';
 
@@ -68,6 +69,7 @@ export type GroupConfig = GroupConfigItem[];
 export type ChamojiConfig = {
 	groups: GroupConfig;
 	repositoryUrl?: string;
+	release?: ReleaseSettings;
 };
 
 export type Group = {
