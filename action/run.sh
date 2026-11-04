@@ -167,9 +167,43 @@ comment)
 		cleanup_worktree
 		git worktree add --detach --quiet "$wt" "$head" || fail "couldn't check out $head to preview the PR"
 
+		# The worktree holds the PR's files, which under pull_request_target are
+		# untrusted while this job has secrets and a write token. So the CLI that
+		# runs there is resolved first, from the trusted workspace, to absolute
+		# paths (a relative cli input would also not exist in the worktree); the
+		# default npx path is installed once outside the worktree, without lifecycle
+		# scripts and with an empty npm user config, so no .npmrc from the PR
+		# applies. Every call in the worktree then runs without secrets and never
+		# with --ai.
+		empty_npmrc="$work/chamoji-empty.npmrc"
+		: >"$empty_npmrc"
+		trusted=()
+		if [ -n "${CHAMOJI_CLI:-}" ]; then
+			for word in "${cli[@]}"; do
+				case "$word" in
+					/* | -*) trusted+=("$word") ;;
+					*/*) if [ -e "$PWD/$word" ]; then trusted+=("$PWD/$word"); else trusted+=("$word"); fi ;;
+					*) trusted+=("$word") ;;
+				esac
+			done
+		else
+			prefix_dir="$work/chamoji-cli"
+			NPM_CONFIG_USERCONFIG=$empty_npmrc npm install --prefix "$prefix_dir" --no-save --ignore-scripts --no-audit --no-fund "@chamoji/cli@${CHAMOJI_VERSION:-latest}" >&2 || fail "couldn't install @chamoji/cli@${CHAMOJI_VERSION:-latest} to preview the PR"
+			trusted=("$prefix_dir/node_modules/.bin/chamoji")
+		fi
+		scrub=()
+		while IFS= read -r name; do
+			case "$name" in
+				INPUT_* | *TOKEN* | *SECRET* | *KEY*) scrub+=(-u "$name") ;;
+			esac
+		done < <(compgen -e)
+		in_worktree() {
+			(cd "$wt" && NPM_CONFIG_USERCONFIG=$empty_npmrc env ${scrub[@]+"${scrub[@]}"} "${trusted[@]}" "$@" --no-update-check)
+		}
+
 		# next-version exits 3 when no unit releases, still printing every unit.
 		set +e
-		versions=$(cd "$wt" && chamoji next-version --json)
+		versions=$(in_worktree next-version --json)
 		status=$?
 		set -e
 		{ [ "$status" -eq 0 ] || [ "$status" -eq 3 ]; } || fail "next-version failed with exit code $status"
@@ -179,14 +213,15 @@ comment)
 		index=0
 		while IFS= read -r name; do
 			set +e
-			(cd "$wt" && chamoji changelog --unit "$name") >"$work/chamoji-unit-$index.md"
+			in_worktree changelog --unit "$name" >"$work/chamoji-unit-$index.md"
 			status=$?
 			set -e
 			[ "$status" -eq 0 ] || fail "changelog --unit $name failed with exit code $status"
 			index=$((index + 1))
 		done < <(printf '%s' "$versions" | node -e 'let s = ""; process.stdin.on("data", d => (s += d)).on("end", () => process.stdout.write(JSON.parse(s).units.map(u => u.unit).join("\n") + "\n"))')
 
-		CHAMOJI_VERSIONS=$versions CHAMOJI_WORK=$work CHAMOJI_MARKER=$marker CHAMOJI_PR_COMMITS=$(git rev-list --no-merges "$base..$head") node -e '
+		commits=$(git rev-list --no-merges "$base..$head")
+		CHAMOJI_VERSIONS=$versions CHAMOJI_WORK=$work CHAMOJI_MARKER=$marker CHAMOJI_PR_COMMITS=$commits node -e '
 			const fs = require("fs");
 			const {units} = JSON.parse(process.env.CHAMOJI_VERSIONS);
 			const commits = process.env.CHAMOJI_PR_COMMITS.split("\n").filter(Boolean);

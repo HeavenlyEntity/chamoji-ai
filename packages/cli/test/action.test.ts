@@ -1,4 +1,5 @@
 import {execFile} from 'node:child_process';
+import {existsSync} from 'node:fs';
 import {chmod, mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
@@ -24,6 +25,7 @@ const cli = `${process.execPath} ${path.join(root, 'packages/cli/dist/cli.js')}`
 // refuses for repos with release settings.
 const FAKE_CLI = `#!/usr/bin/env bash
 if [ "$1" = --version ]; then echo "\${FAKE_CLI_VERSION:-0.13.0}"; exit 0; fi
+case "$(pwd)" in *chamoji-head) { pwd; env; } >> "$FAKE_GH_DIR/worktree-env" ;; esac
 exec "${process.execPath}" "${path.join(root, 'packages/cli/dist/cli.js')}" "$@"
 `;
 
@@ -867,5 +869,65 @@ exec "${realGit}" "$@"
 		expect(whole.code).toBe(0);
 		expect(await fresh.read('calls')).toContain('release create v1.1.0');
 		expect(await fresh.read('notes')).toContain('Add search');
+	});
+	test('the unit preview runs the trusted CLI, without secrets, whatever the PR plants', async () => {
+		const {action, unitCli, read, rev, dir, fake} = await setup([
+			...unitStart,
+			{
+				commit: '🐛 Fix the camera crash',
+				files: {
+					'apps/mobile/src/camera.ts': 'camera\n',
+					'.npmrc': 'registry=http://127.0.0.1:1/\nscript-shell=/bin/false\n',
+					'packages/cli/dist/cli.js':
+						"require('node:fs').writeFileSync(process.env.FAKE_GH_DIR + '/planted', 'x');\n",
+				},
+			},
+		]);
+		// A relative cli that exists in the trusted workspace only, not in the PR.
+		await mkdir(path.join(dir, 'tools'));
+		await writeFile(
+			path.join(dir, 'tools', 'chamoji.sh'),
+			await readFile(unitCli, 'utf8'),
+		);
+		const result = await action({
+			CHAMOJI_CLI: 'bash tools/chamoji.sh',
+			GITHUB_EVENT_NAME: 'pull_request',
+			CHAMOJI_PR: '7',
+			CHAMOJI_BASE_SHA: await rev('HEAD~1'),
+			CHAMOJI_HEAD_SHA: await rev('HEAD'),
+			GH_TOKEN: 'ghs_leak',
+			TYPESAFE_API_KEY: 'tsk_leak',
+			INPUT_SOMETHING: 'input_leak',
+			MY_SECRET_VALUE: 'secret_leak',
+			CHAMOJI_AI: 'true',
+		});
+		expect(result.code).toBe(0);
+		expect(await read('body')).toContain('- mobile → 1.0.1');
+		expect(existsSync(path.join(fake, 'planted'))).toBe(false);
+		const seen = await read('worktree-env');
+		expect(seen).toContain('chamoji-head');
+		for (const leak of ['ghs_leak', 'tsk_leak', 'input_leak', 'secret_leak']) {
+			expect(seen).not.toContain(leak);
+		}
+	});
+
+	test('the unit PR comment fails loudly when the base is missing', async () => {
+		const {action, unitCli, read, rev} = await setup([
+			...unitStart,
+			{
+				commit: '🐛 Fix the camera crash',
+				files: {'apps/mobile/src/camera.ts': 'camera\n'},
+			},
+		]);
+		const result = await action({
+			CHAMOJI_CLI: unitCli,
+			GITHUB_EVENT_NAME: 'pull_request',
+			CHAMOJI_PR: '7',
+			CHAMOJI_BASE_SHA: '0123456789abcdef0123456789abcdef01234567',
+			CHAMOJI_HEAD_SHA: await rev('HEAD'),
+		});
+		expect(result.code).not.toBe(0);
+		expect(await read('body')).toBe('');
+		expect(await read('calls')).toBe('');
 	});
 });
