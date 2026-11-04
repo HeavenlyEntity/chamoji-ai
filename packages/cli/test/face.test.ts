@@ -95,6 +95,8 @@ function setup(options: Partial<FaceOptions> = {}) {
 		columns: () => 80,
 		clock,
 		signals,
+		// Ctrl-Z handling is off on Windows; tests pick their platform.
+		platform: 'linux',
 		...options,
 	});
 	return {face, clock, signals, writes, out: () => writes.join('')};
