@@ -269,9 +269,16 @@ async function withFace(
 	return {code, stdout, stderr, calls};
 }
 
-/** The summary lines that don't name the release commit, which differs per repo. */
+/**
+ * The summary lines that don't name the release commit, which differs per
+ * repo. On Windows the notes link to the temporary remote's path, so its
+ * random suffix is masked too.
+ */
 const summary = (stdout: string) =>
-	stdout.split('\n').filter(line => !line.startsWith('commit: '));
+	stdout
+		.split('\n')
+		.filter(line => !line.startsWith('commit: '))
+		.map(line => line.replaceAll(/chamoji-remote-[^/\\]+/g, 'chamoji-remote'));
 
 test('release --push reports each sub-step in order', async () => {
 	const {dir} = await sharedOnOrigin();
