@@ -1,5 +1,45 @@
 # Changelog
 
+## [v0.14.0](https://github.com/HeavenlyEntity/chamoji-ai/compare/v0.13.0...v0.14.0) - 2026-11-04
+
+### Added
+
+- ✨ Point init, the welcome and the composer at chamoji setup ([d437eb2](https://github.com/HeavenlyEntity/chamoji-ai/commit/d437eb2e4c6c76d1e60a8368fd66cdd8f5f0549f))
+- ✨ Give chamoji setup its screen, with a live preview ([a1cbce0](https://github.com/HeavenlyEntity/chamoji-ai/commit/a1cbce0cdf9f5ff89de6afd0eb1e122b8bb560bb))
+- ✨ Add chamoji setup with --yes, --json, --explain and its four steps ([44f6625](https://github.com/HeavenlyEntity/chamoji-ai/commit/44f6625329cb2989c59bb7245e8fe509b28318e1))
+- ✨ Preview the next release and replay past ones under setup's answers ([4744bc3](https://github.com/HeavenlyEntity/chamoji-ai/commit/4744bc3b02c2db203a0e60b0a2139ce8d339ed57))
+- ✨ Turn what setup found into answers, questions and a release section ([c9f3780](https://github.com/HeavenlyEntity/chamoji-ai/commit/c9f378059ea54762f47889f5fbfab319c6f248e7))
+- ✨ Find the template remote, the starting point and squashed syncs ([2f750eb](https://github.com/HeavenlyEntity/chamoji-ai/commit/2f750ebacb328e26c6b77e38456ce9846572e0f5))
+- ✨ Tell inherited, stray and learned tags apart for setup ([ef00641](https://github.com/HeavenlyEntity/chamoji-ai/commit/ef00641c7ccd0511523eab6af57625b11a576807))
+- ✨ Work out a repo's apps, packages and version files for setup ([f369346](https://github.com/HeavenlyEntity/chamoji-ai/commit/f369346a13f6677759d3b7d79e71d24f9074ca39))
+
+### Changed
+
+- 💬 Say a mixed repo's published packages stay internal, and ask 1.0.0 apps once ([d88cab0](https://github.com/HeavenlyEntity/chamoji-ai/commit/d88cab02f8be2998bcf03ca2686957a0fbdf24bd))
+
+### Fixed
+
+- 🐛 Wait for the preview and replay before the setup screen hands back ([86e72ec](https://github.com/HeavenlyEntity/chamoji-ai/commit/86e72ece0cc50a94eeff3c53f09271cf80dd117c))
+- 🐛 Name no template authors in a fork-workflow clone ([4a26ed4](https://github.com/HeavenlyEntity/chamoji-ai/commit/4a26ed4ede11ed8cb00ee31e3c4584bf7972f559))
+- 🐛 Advise on squash merges that keep a blank or PR-description body ([f80ac6e](https://github.com/HeavenlyEntity/chamoji-ai/commit/f80ac6ee57e8042add17ab76369d6a2e874c3bd0))
+- 🐛 Count release-dependents as own in the composer, and replay versions as read ([c9f91f8](https://github.com/HeavenlyEntity/chamoji-ai/commit/c9f91f8c403081dabe85222a59e27e613784d868))
+- 🐛 Take a newline as Enter on the setup screen ([886c340](https://github.com/HeavenlyEntity/chamoji-ai/commit/886c340e626171368cf2e57ca5e387a708fdaa68))
+- 🐛 Spare own tags with a lookahead instead of listing every template tag ([878f9d4](https://github.com/HeavenlyEntity/chamoji-ai/commit/878f9d4e98adf4ab4466e7fdca5ab056d0f0c161))
+- 🐛 Keep template commits out of first notes, recognised by author too ([d8cd119](https://github.com/HeavenlyEntity/chamoji-ai/commit/d8cd119b8631e5c4371117afb6bb57a8c7aadc04))
+- 🐛 Fix Task 8 review findings: welcome copy, raw trailers, renames, per-clone hint ([fb966fe](https://github.com/HeavenlyEntity/chamoji-ai/commit/fb966fe6dff06660d1e854b51e475d94d584667f))
+- 🐛 Show the version before in setup's preview, ask the terminal's theme and print step states once ([226f900](https://github.com/HeavenlyEntity/chamoji-ai/commit/226f9000d43227d69c7ade4c27949b0f490fe9b9))
+- 🐛 Let an offered hook count as settled, so setup exits 0 when nothing else is left ([9e34f20](https://github.com/HeavenlyEntity/chamoji-ai/commit/9e34f208513e4e57a15b492fe9cc55645bd81bc2))
+- 🐛 Read setup's config through core, refuse links, strip output and exit 0 when settled ([cdf9785](https://github.com/HeavenlyEntity/chamoji-ai/commit/cdf978503fb929a85d601b9fbe0f4117061a4322))
+- 🐛 Read tags for every candidate unit and keep the article in base-name copy ([e2c36f2](https://github.com/HeavenlyEntity/chamoji-ai/commit/e2c36f272bc5f0a89252eacd4abb43e51d59aa93))
+- 🐛 Leave a section that means the same alone, and fill setup answers from detection ([6e53196](https://github.com/HeavenlyEntity/chamoji-ai/commit/6e5319616f428ca43a1477530de543cb52ffa011))
+- 🐛 Keep a unit's own tags out of setup's ignore patterns ([8539cab](https://github.com/HeavenlyEntity/chamoji-ai/commit/8539cabd691e6dbb1159d1e4b8e9b5b18a15df58))
+
+### Documentation
+
+- 📝 Document upstream.authors and mark 7.5 as built, not done ([763ebf1](https://github.com/HeavenlyEntity/chamoji-ai/commit/763ebf1b999181d79191badcb3ef4ccd11ba9d09))
+- 📝 Document chamoji setup and close milestone 7.5 ([f8cdd55](https://github.com/HeavenlyEntity/chamoji-ai/commit/f8cdd55c02d2b586160aee564dface7dc8ece4d8))
+- 📝 Plan chamoji setup and mark the engine shipped in 0.13.0 ([c26c06a](https://github.com/HeavenlyEntity/chamoji-ai/commit/c26c06a0f5d3fe99a1a4a451edfa5d3a49d509b2))
+
 ## [v0.13.0](https://github.com/HeavenlyEntity/chamoji-ai/compare/v0.12.1...v0.13.0) - 2026-11-04
 
 ### Added
