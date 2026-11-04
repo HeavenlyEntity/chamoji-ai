@@ -212,20 +212,35 @@ export async function planUnitReleases(
 	);
 
 	const tagOf = new Map<string, string>();
+	const taggedBy = new Map<string, string>();
+	const groupOf = (name: string) =>
+		settings.fixed.findIndex(group => group.includes(name));
 	for (const {unit} of releasing) {
 		const tag = renderTag(unit.tag, {
 			unit: unit.name,
 			name: unit.pkg?.name ?? '',
 			version: versions.get(unit.name)!.version,
 		});
+		tagOf.set(unit.name, tag);
+		// Members of one fixed group on one template share one tag.
+		const other = taggedBy.get(tag);
+		if (other !== undefined) {
+			if (groupOf(other) !== -1 && groupOf(other) === groupOf(unit.name)) {
+				continue;
+			}
+
+			throw new Error(
+				`${other} and ${unit.name} would both be tagged ${tag}; give them tag templates that differ, or put them in one fixed group`,
+			);
+		}
+
+		taggedBy.set(tag, unit.name);
 		if (await git('tag', '--list', tag)) {
 			throw new ReleaseError(
 				'tag-exists',
 				`tag ${tag} already exists, though not on this branch; pick another version`,
 			);
 		}
-
-		tagOf.set(unit.name, tag);
 	}
 
 	const start = await git('rev-parse', 'HEAD');
@@ -294,7 +309,7 @@ export async function planUnitReleases(
 		changes,
 		subject: releaseSubject(
 			(await git('log', '-30', '--no-merges', '--format=%s')).split('\n'),
-			plans.map(plan => plan.tag).join(', '),
+			uniqueTags(plans).join(', '),
 		),
 		start,
 		warnings,
@@ -335,7 +350,7 @@ export async function applyUnitReleases(
 			plan.subject,
 			...(options.trailers ?? []).flatMap(trailer => ['--trailer', trailer]),
 		);
-		for (const {tag} of plan.units) {
+		for (const tag of uniqueTags(plan.units)) {
 			await git('tag', '-a', tag, '-m', tag);
 			made.push(tag);
 		}
@@ -357,15 +372,21 @@ export async function applyUnitReleases(
 	return {commit: await git('rev-parse', '--short', 'HEAD')};
 }
 
-/** Pushes HEAD and every unit tag, by name, to origin in one push. A failure keeps the local release. */
+/** Pushes HEAD and every unit tag, as refs/tags/<tag>, to origin in one push. A failure keeps the local release. */
 export async function pushUnitReleases(
 	plan: ReadyUnitPlan,
 	env?: Record<string, string>,
 ): Promise<void> {
-	const tags = plan.units.map(unit => unit.tag);
+	const tags = uniqueTags(plan.units);
 	try {
 		await runGit(
-			['push', '--quiet', 'origin', 'HEAD', ...tags],
+			[
+				'push',
+				'--quiet',
+				'origin',
+				'HEAD',
+				...tags.map(tag => `refs/tags/${tag}`),
+			],
 			plan.root,
 			env,
 		);
@@ -374,6 +395,11 @@ export async function pushUnitReleases(
 			`released ${tags.join(', ')} locally, but the push failed; the release commit and tags are kept:\n${gitMessage(error)}`,
 		);
 	}
+}
+
+/** Each tag once, in plan order: fixed-group members can share one. */
+export function uniqueTags(units: Array<{tag: string}>): string[] {
+	return [...new Set(units.map(unit => unit.tag))];
 }
 
 const SECTION_ADDED =

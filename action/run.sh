@@ -355,8 +355,10 @@ release)
 	fi
 
 	[ "$status" -eq 0 ] || fail "chamoji release failed with exit code $status"
-	version=$(printf '%s' "$result" | node -e 'let s = ""; process.stdin.on("data", d => (s += d)).on("end", () => { const j = JSON.parse(s); process.stdout.write(j.units ? j.units.map(u => u.tag).join(", ") : j.tag) })')
-	printf '%s' "$result" | node -e 'let s = ""; process.stdin.on("data", d => (s += d)).on("end", () => { const j = JSON.parse(s); process.stdout.write((j.units ? j.units.map(u => `## ${u.tag}\n\n${u.notes.replace(/^## .*\n+/, "")}`).join("\n\n") : j.notes) + "\n") })' >>"$summary"
+	# Members of a fixed group can share one tag: it is named once, and each
+	# member's section says whose it is.
+	version=$(printf '%s' "$result" | node -e 'let s = ""; process.stdin.on("data", d => (s += d)).on("end", () => { const j = JSON.parse(s); process.stdout.write(j.units ? [...new Set(j.units.map(u => u.tag))].join(", ") : j.tag) })')
+	printf '%s' "$result" | node -e 'let s = ""; process.stdin.on("data", d => (s += d)).on("end", () => { const j = JSON.parse(s); const head = u => (j.units.filter(o => o.tag === u.tag).length > 1 ? `${u.tag} (${u.unit})` : u.tag); process.stdout.write((j.units ? j.units.map(u => `## ${head(u)}\n\n${u.notes.replace(/^## .*\n+/, "")}`).join("\n\n") : j.notes) + "\n") })' >>"$summary"
 	echo "version=$version" >>"$output"
 	;;
 

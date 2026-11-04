@@ -411,6 +411,8 @@ For a tag that doesn't parse but is a real release, give it a version in `tags.a
 }
 ```
 
+Two units can share a template without `{unit}` or `{name}`, such as `v{version}`, only when they are in one `fixed` group. They then share one tag and one GitHub release, with a section for each.
+
 These are regular expressions, not globs: `^wip/` matches tags that start with `wip/`, and `wip/*` doesn't mean that. Tags that don't match stay in git, untouched. Chamoji never moves, deletes or renames a tag.
 
 ### Versions and version files

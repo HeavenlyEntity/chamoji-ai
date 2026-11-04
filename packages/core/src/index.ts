@@ -65,6 +65,7 @@ export {
 	applyUnitReleases,
 	planUnitReleases,
 	pushUnitReleases,
+	uniqueTags,
 	type ReadyUnitPlan,
 	type UnitPending,
 	type UnitPlan,
