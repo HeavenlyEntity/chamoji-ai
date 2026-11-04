@@ -225,3 +225,56 @@ test("the template's authors are a detected question under Change something", as
 			?.options.map(option => option.value),
 	).toEqual(['bot@makerkit.dev', 'ci@makerkit.dev']);
 });
+
+test('a mixed repo says its published packages stay internal for now', async () => {
+	const detection = await detected(
+		gearzLayout({
+			extraSteps: [
+				{
+					commit: '✨ Publish the SDK',
+					files: {
+						'packages/sdk/package.json':
+							'{"name": "@gearz/sdk", "version": "0.3.0"}\n',
+					},
+				},
+			],
+		}),
+	);
+	expect(detection.layout.kind).toBe('mixed');
+	const answers = recommend(detection);
+	const note =
+		'@gearz/sdk is published but stays internal for now, as a mixed setup that versions it is still to come';
+	expect(summary(detection, answers)).toContain(
+		`internal packages. ${note}. mobile and web get their own versions;`,
+	);
+	expect(
+		questions(detection, answers).find(question => question.id === 'shape')
+			?.found,
+	).toBe(
+		`Found 4 apps (mobile, web, dev-tool, e2e) and 3 internal packages; ${note}`,
+	);
+
+	// Not in an apps-only repo.
+	const apps = await detected(gearzLayout());
+	expect(summary(apps, recommend(apps))).not.toContain('mixed setup');
+});
+
+test('the first-version title offers 1.0.0 only when the manifest is something else', async () => {
+	const detection = await detected(gearzLayout());
+	const asked = questions(detection, recommend(detection));
+	const first = (unit: string) =>
+		asked.find(question => question.id === `firstVersion:${unit}`);
+	expect(first('mobile')?.title).toBe(
+		'mobile is 1.0.0 in package.json; start there?',
+	);
+	expect(first('mobile')?.options).toEqual([
+		{value: '', label: 'Start at 1.0.0', recommended: true},
+	]);
+	expect(first('web')?.title).toBe(
+		'web is 0.1.0 in package.json; start there or at 1.0.0?',
+	);
+	expect(first('web')?.options.map(option => option.label)).toEqual([
+		'Start at 0.1.0',
+		'Start at 1.0.0',
+	]);
+});

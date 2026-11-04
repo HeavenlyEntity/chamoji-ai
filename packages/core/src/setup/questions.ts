@@ -177,9 +177,11 @@ function unitQuestions(
 		add(
 			{
 				id: `firstVersion:${name}`,
-				title: manifest
-					? `${name} is ${manifest} in package.json; start there or at 1.0.0?`
-					: `What version should ${name} start at?`,
+				title: !manifest
+					? `What version should ${name} start at?`
+					: manifest === '1.0.0'
+						? `${name} is ${manifest} in package.json; start there?`
+						: `${name} is ${manifest} in package.json; start there or at 1.0.0?`,
 				found: manifest
 					? `${name} has no tags yet, and ${unit.path}/package.json says ${manifest}`
 					: `${name} has no tags yet and no version in ${unit.path}/package.json`,
@@ -284,7 +286,12 @@ export function questions(
 		{
 			id: 'shape',
 			title: 'What does this repo release?',
-			found: foundSentence(detection, answers).replace(/\.$/, ''),
+			found: [
+				foundSentence(detection, answers).replace(/\.$/, ''),
+				mixedNote(layout),
+			]
+				.filter(Boolean)
+				.join('; '),
 			kind: 'choice',
 			options: choice(
 				[
@@ -539,11 +546,21 @@ function foundSentence({layout}: Detection, answers: SetupAnswers): string {
 	}.`;
 }
 
+/** For a mixed repo, the published packages that stay internal until mixed comes; else ''. */
+function mixedNote(layout: LayoutDetection): string {
+	if (layout.kind !== 'mixed') return '';
+	const names = layout.libraries.map(pkg => pkg.name);
+	const one = names.length === 1;
+	return `${list(names)} ${one ? 'is' : 'are'} published but ${one ? 'stays' : 'stay'} internal for now, as a mixed setup that versions ${one ? 'it' : 'them'} is still to come`;
+}
+
 /** The first-screen paragraph: what setup found and what it will do. */
 export function summary(detection: Detection, answers: SetupAnswers): string {
 	const {tags, upstream} = detection;
 	const base = baseName(detection, answers);
 	const sentences = [foundSentence(detection, answers)];
+	const mixed = mixedNote(detection.layout);
+	if (mixed) sentences.push(`${mixed}.`);
 	if (answers.shape !== 'single') {
 		const word = answers.shape === 'libraries' ? 'package' : 'app';
 		const grouped = answers.fixed.flat();
