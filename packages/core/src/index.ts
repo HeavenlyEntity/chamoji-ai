@@ -214,7 +214,11 @@ export {
 	type Source,
 } from './setup/answers.js';
 export {questions, summary, type Question} from './setup/questions.js';
-export {releaseSection, writeReleaseSection} from './setup/section.js';
+export {
+	readReleaseSection,
+	releaseSection,
+	writeReleaseSection,
+} from './setup/section.js';
 // The changelog's renderJson is exported above; this one keeps a file's style.
 export {inexactNumber, renderJson as renderJsonText} from './json-text.js';
 export {

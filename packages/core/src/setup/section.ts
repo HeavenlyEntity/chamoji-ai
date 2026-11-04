@@ -181,6 +181,37 @@ function sameMeaning(next: Obj, previous: unknown): boolean {
 }
 
 /**
+ * chamoji.config.json's text parsed, as setup reads and writes it: `data` is
+ * the whole object (empty for a missing or blank file), `release` its
+ * section, undefined when there's none. Throws for invalid JSON and for
+ * anything but an object.
+ */
+export function readReleaseSection(original: string | null): {
+	data: Obj;
+	release: unknown;
+} {
+	const body = (original ?? '').replace(/^\uFEFF/, '');
+	if (body.trim() === '') return {data: {}, release: undefined};
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(body);
+	} catch (error) {
+		throw new Error(
+			`${CONFIG_FILE} isn't valid JSON: ${(error as Error).message}`,
+		);
+	}
+
+	if (!isObject(parsed)) {
+		throw new Error(`${CONFIG_FILE} isn't a JSON object`);
+	}
+
+	return {
+		data: parsed,
+		release: Object.hasOwn(parsed, 'release') ? parsed.release : undefined,
+	};
+}
+
+/**
  * chamoji.config.json's text with `release` set and every other key kept, in
  * the file's own indent, number spelling and final newline. A file whose
  * section already means the same is left exactly as it is.
@@ -189,25 +220,7 @@ export function writeReleaseSection(
 	original: string | null,
 	section: Record<string, unknown>,
 ): {text: string; changed: boolean} {
-	const body = (original ?? '').replace(/^\uFEFF/, '');
-	let data: Obj = {};
-	if (body.trim() !== '') {
-		let parsed: unknown;
-		try {
-			parsed = JSON.parse(body);
-		} catch (error) {
-			throw new Error(
-				`${CONFIG_FILE} isn't valid JSON: ${(error as Error).message}`,
-			);
-		}
-
-		if (!isObject(parsed)) {
-			throw new Error(`${CONFIG_FILE} isn't a JSON object`);
-		}
-
-		data = parsed;
-	}
-
+	const {data} = readReleaseSection(original);
 	if (
 		original !== null &&
 		Object.hasOwn(data, 'release') &&

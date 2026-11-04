@@ -1,5 +1,13 @@
 import {existsSync} from 'node:fs';
-import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
+import {
+	chmod,
+	mkdir,
+	mkdtemp,
+	readFile,
+	rm,
+	symlink,
+	writeFile,
+} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {
@@ -8,6 +16,7 @@ import {
 	recommend,
 	releaseSection,
 	summary,
+	writeReleaseSection,
 } from '@chamoji/core';
 import {afterEach, expect, test, vi} from 'vitest';
 import {
@@ -19,9 +28,12 @@ import {
 	gearzLayout,
 	singlePackage,
 } from '../../core/test/helpers/setup-fixtures.js';
-import {readHookState} from '../src/hook.js';
+import {hookPath, readHookState} from '../src/hook.js';
 import {run, type GhRunner, type Io} from '../src/run.js';
 import {checkSquashMerge} from '../src/setup/setup.js';
+
+/** Native Windows has no unprivileged symlinks. */
+const WINDOWS = process.platform === 'win32';
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -67,6 +79,35 @@ async function chamoji(argv: string[], cwd: string, extra: Partial<Io> = {}) {
 		...extra,
 	});
 	return {code, stdout, stderr};
+}
+
+/** Makes stderr a terminal until the test ends. */
+function asTerminal(): void {
+	const tty = Object.getOwnPropertyDescriptor(process.stderr, 'isTTY');
+	Object.defineProperty(process.stderr, 'isTTY', {
+		value: true,
+		configurable: true,
+	});
+	cleanups.push(async () => {
+		if (tty) Object.defineProperty(process.stderr, 'isTTY', tty);
+		else delete (process.stderr as {isTTY?: boolean}).isTTY;
+	});
+}
+
+/** A gh that answers `message`, recording each call's args and options. */
+function answering(
+	message: string,
+): GhRunner & {calls: string[][]; options: unknown[]} {
+	const calls: string[][] = [];
+	const options: unknown[] = [];
+	return Object.assign(
+		async (args: string[], given?: unknown) => {
+			calls.push(args);
+			options.push(given);
+			return {ok: true, message};
+		},
+		{calls, options},
+	);
 }
 
 async function made(fixture: Promise<FixtureRepo>): Promise<string> {
@@ -306,9 +347,10 @@ test('a single package: nothing to set up for releases; memory still runs', asyn
 	expect(await fetchesMemory(dir)).toBe(true);
 
 	const json = await chamoji(['setup', 'releases', '--yes', '--json'], dir);
-	expect((JSON.parse(json.stdout) as Report).steps).toEqual([
-		{step: 'releases', result: 'nothing-to-do'},
-	]);
+	const report = JSON.parse(json.stdout) as Report;
+	expect(report.steps).toEqual([{step: 'releases', result: 'nothing-to-do'}]);
+	// Nothing was written, so there's no section to report.
+	expect(report.answers).toBeNull();
 });
 
 test("a re-run with nothing new is already up to date and shows each step's state", async () => {
@@ -325,22 +367,22 @@ test("a re-run with nothing new is already up to date and shows each step's stat
 	]);
 	const config = await readFile(path.join(dir, 'chamoji.config.json'), 'utf8');
 
-	const states = [
-		'✓ releases are set up in chamoji.config.json',
-		'✓ memory sharing is on in this clone',
-		'✓ Claude Code is connected here',
-		"○ the commit composer hook isn't installed in this clone; chamoji setup hook installs it",
-		'',
-		'chamoji.config.json is already up to date.',
-		'',
-	].join('\n');
-	for (const argv of [['setup', '--yes'], ['setup']]) {
-		const again = await chamoji(argv, dir);
-		expect(again.stderr).toBe('');
-		expect(again.code).toBe(0);
-		expect(again.stdout).toBe(states);
-	}
-
+	const states = (hook: string) =>
+		[
+			'✓ releases are set up in chamoji.config.json',
+			'✓ memory sharing is on in this clone',
+			'✓ Claude Code is connected here',
+			hook,
+			'',
+			'chamoji.config.json is already up to date.',
+			'',
+		].join('\n');
+	const noHook =
+		"○ the commit composer hook isn't installed in this clone; chamoji setup hook --yes installs it";
+	const again = await chamoji(['setup', '--yes'], dir);
+	expect(again.stderr).toBe('');
+	expect(again.code).toBe(0);
+	expect(again.stdout).toBe(states(noHook));
 	expect(await readFile(path.join(dir, 'chamoji.config.json'), 'utf8')).toBe(
 		config,
 	);
@@ -352,6 +394,33 @@ test("a re-run with nothing new is already up to date and shows each step's stat
 		hook: 'offered',
 	});
 	expect((JSON.parse(json.stdout) as Report).wrote).toEqual([]);
+
+	// Without --yes, the hook would still be offered, so both modes exit 2
+	// (ruling R15).
+	const offered = await chamoji(['setup'], dir);
+	expect(offered.code).toBe(2);
+	expect(offered.stdout).toBe(
+		`${states(noHook)}Setup would also offer the commit composer hook for this clone.\n`,
+	);
+	expect(offered.stderr).toBe(`${NO_TERMINAL}\n`);
+	expect((await chamoji(['setup', '--json'], dir)).code).toBe(2);
+
+	// Once every step is done, nothing would change: both exit 0.
+	expect((await chamoji(['setup', 'hook', '--yes'], dir)).code).toBe(0);
+	const settled = await chamoji(['setup'], dir);
+	expect(settled.stderr).toBe('');
+	expect(settled.code).toBe(0);
+	expect(settled.stdout).toBe(
+		states('✓ the commit composer hook is installed in this clone'),
+	);
+	const settledJson = await chamoji(['setup', '--json'], dir);
+	expect(settledJson.code).toBe(0);
+	expect(results(JSON.parse(settledJson.stdout) as Report)).toEqual({
+		releases: 'unchanged',
+		memory: 'unchanged',
+		agents: 'unchanged',
+		hook: 'unchanged',
+	});
 });
 
 test("setup hook installs the hook; setup memory equals init's memory output", async () => {
@@ -368,6 +437,17 @@ test("setup hook installs the hook; setup memory equals init's memory output", a
 	const json = await chamoji(['setup', 'hook', '--yes', '--json'], dir);
 	expect((JSON.parse(json.stdout) as Report).steps).toEqual([
 		{step: 'hook', result: 'unchanged'},
+	]);
+	// An outdated chamoji hook counts as installed, and is rewritten.
+	await writeFile(
+		await hookPath(dir),
+		'#!/bin/sh\n# chamoji: an older hook\nchamoji hook run "$@"\n',
+	);
+	await chmod(await hookPath(dir), 0o755);
+	expect(await readHookState(dir)).toBe('installed');
+	const rewritten = await chamoji(['setup', 'hook', '--yes', '--json'], dir);
+	expect((JSON.parse(rewritten.stdout) as Report).steps).toEqual([
+		{step: 'hook', result: 'written'},
 	]);
 
 	// The same repo twice, one set up by init and one by setup memory.
@@ -413,20 +493,13 @@ test('the squash-merge check advises only for PR_TITLE squashes, and is silent w
 		'origin',
 		'https://github.com/acme/gearz.git',
 	]);
-	const answering = (message: string): GhRunner & {calls: string[][]} => {
-		const calls: string[][] = [];
-		return Object.assign(
-			async (args: string[]) => {
-				calls.push(args);
-				return {ok: true, message};
-			},
-			{calls},
-		);
-	};
-
 	const prTitle = answering('true\tPR_TITLE');
 	expect(await checkSquashMerge(prTitle, dir)).toBe(SQUASH_ADVICE);
 	expect(prTitle.calls).toEqual([['api', 'repos/acme/gearz', ...SQUASH_QUERY]]);
+	// gh is killed after 5 s, and an answer that never comes gives null.
+	expect(prTitle.options).toEqual([{timeoutMs: 5000}]);
+	const hanging: GhRunner = async () => new Promise(() => {});
+	expect(await checkSquashMerge(hanging, dir, 50)).toBeNull();
 	expect(
 		await checkSquashMerge(answering('true\tCOMMIT_MESSAGES'), dir),
 	).toBeNull();
@@ -458,16 +531,7 @@ test('the squash-merge check advises only for PR_TITLE squashes, and is silent w
 
 test('with a terminal, the screen gets the answers and its saved result is written', async () => {
 	const dir = await gearz();
-	// Stderr is a terminal for this test.
-	const tty = Object.getOwnPropertyDescriptor(process.stderr, 'isTTY');
-	Object.defineProperty(process.stderr, 'isTTY', {
-		value: true,
-		configurable: true,
-	});
-	cleanups.push(async () => {
-		if (tty) Object.defineProperty(process.stderr, 'isTTY', tty);
-		else delete (process.stderr as {isTTY?: boolean}).isTTY;
-	});
+	asTerminal();
 	const detection = await detect(dir);
 	const seen: Array<Parameters<NonNullable<Io['setupScreen']>>[0]> = [];
 	const saved = await chamoji(['setup'], dir, {
@@ -504,4 +568,132 @@ test('with a terminal, the screen gets the answers and its saved result is writt
 	expect(cancelled.code).toBe(1);
 	expect(cancelled.stderr).toBe('Setup cancelled; nothing was saved.\n');
 	expect(existsSync(path.join(dir, 'chamoji.config.json'))).toBe(false);
+});
+
+test("a config that isn't an object gets core's error", async () => {
+	const dir = await made(gearzLayout());
+	await writeFile(path.join(dir, 'chamoji.config.json'), '[]\n');
+	let error = '';
+	try {
+		writeReleaseSection('[]\n', {});
+	} catch (thrown) {
+		error = (thrown as Error).message;
+	}
+
+	expect(error).toBe("chamoji.config.json isn't a JSON object");
+	for (const argv of [
+		['setup', '--yes'],
+		['setup', '--json'],
+	]) {
+		const {code, stdout, stderr} = await chamoji(argv, dir);
+		expect(code).toBe(1);
+		expect(stdout).toBe('');
+		expect(stderr).toBe(`chamoji: ${error}\n`);
+	}
+
+	expect(await readFile(path.join(dir, 'chamoji.config.json'), 'utf8')).toBe(
+		'[]\n',
+	);
+});
+
+test.skipIf(WINDOWS)(
+	'a symlinked chamoji.config.json is refused and its target left alone',
+	async () => {
+		const dir = await made(gearzLayout());
+		const elsewhere = await mkdtemp(path.join(tmpdir(), 'chamoji-elsewhere-'));
+		cleanups.push(async () => rm(elsewhere, {recursive: true, force: true}));
+		const target = path.join(elsewhere, 'config.json');
+		await writeFile(target, '{}\n');
+		await symlink(target, path.join(dir, 'chamoji.config.json'));
+		const {code, stdout, stderr} = await chamoji(['setup', '--yes'], dir);
+		expect(code).toBe(1);
+		expect(stdout).toBe('');
+		expect(stderr).toBe(
+			"chamoji: chamoji.config.json is a symlink; chamoji won't write through links\n",
+		);
+		expect(await readFile(target, 'utf8')).toBe('{}\n');
+	},
+);
+
+test('the file is written in place of the old one, keeping its permissions', async () => {
+	const dir = await made(gearzLayout());
+	const file = path.join(dir, 'chamoji.config.json');
+	await writeFile(file, '{"groups": []}\n');
+	if (!WINDOWS) await chmod(file, 0o640);
+	expect((await chamoji(['setup', 'releases', '--yes'], dir)).code).toBe(0);
+	expect(JSON.parse(await readFile(file, 'utf8'))).toMatchObject({
+		groups: [],
+		release: {shape: 'apps'},
+	});
+	if (!WINDOWS) {
+		const {stat} = await import('node:fs/promises');
+		expect((await stat(file)).mode & 0o777).toBe(0o640);
+	}
+});
+
+test('names and versions from the repo reach the terminal without control characters', async () => {
+	// Git refuses control characters in tag and remote names, so the escape
+	// rides in a manifest version, which the summary quotes.
+	const escape = '\u001B[2J';
+	const dir = await made(
+		gearzLayout({
+			extraSteps: [
+				{
+					commit: '🔖 Release web 0.2.0',
+					files: {
+						'apps/web/package.json': `${JSON.stringify({name: 'web', private: true, version: `0.1.0${escape}`}, null, 2)}\n`,
+					},
+				},
+				{tag: 'web/v0.2.0'},
+			],
+		}),
+	);
+	for (const argv of [['setup'], ['setup', '--yes', '--explain']]) {
+		const {stdout, stderr} = await chamoji(argv, dir);
+		expect(stdout).toContain('apps/web/package.json says 0.1.0[2J');
+		expect(`${stdout}${stderr}`).not.toContain('\u001B');
+	}
+});
+
+test('setup --yes exits 2 for a release section from a newer chamoji', async () => {
+	const dir = await withOrigin(await made(gearzLayout()));
+	await writeFile(
+		path.join(dir, 'chamoji.config.json'),
+		`${JSON.stringify({release: {schema: 99, shape: 'apps'}})}\n`,
+	);
+	const {code, stderr} = await chamoji(['setup', '--yes'], dir);
+	expect(code).toBe(2);
+	expect(stderr).toContain(
+		"this repo's release settings need chamoji 0.13.0 or newer",
+	);
+	expect(await fetchesMemory(dir)).toBe(false);
+});
+
+test("in a terminal, the squash check doesn't hold up the screen", async () => {
+	const dir = await made(gearzLayout({template: true}));
+	await gitOutput(dir, [
+		'remote',
+		'add',
+		'origin',
+		'https://github.com/acme/gearz.git',
+	]);
+	asTerminal();
+	let answer: () => void = () => {};
+	// gh answers only once the screen is open.
+	const gh: GhRunner = async () => {
+		await new Promise<void>(resolve => {
+			answer = resolve;
+		});
+		return {ok: true, message: 'true\tPR_TITLE'};
+	};
+
+	const {code, stdout} = await chamoji(['setup', 'releases'], dir, {
+		gh,
+		async setupScreen(props) {
+			answer();
+			return {saved: true, answers: props.initial, steps: []};
+		},
+	});
+	expect(code).toBe(0);
+	expect(stdout).toContain(`${SQUASH_ADVICE}\n`);
 });

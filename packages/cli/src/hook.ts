@@ -158,7 +158,7 @@ async function lefthookRunsChamoji(cwd: string): Promise<boolean> {
 	return false;
 }
 
-async function hookPath(cwd: string): Promise<string> {
+export async function hookPath(cwd: string): Promise<string> {
 	const hooks = (
 		await runGit(['rev-parse', '--git-path', 'hooks'], cwd)
 	).trim();

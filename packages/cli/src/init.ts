@@ -238,7 +238,7 @@ export async function setUpAgents(io: Io): Promise<number> {
  * owner-only, since a settings file can hold secrets, and gets its final
  * permissions just before the rename. Setuid and the like are not carried over.
  */
-async function writeAtomically(
+export async function writeAtomically(
 	target: string,
 	text: string,
 	mode: number | undefined,
