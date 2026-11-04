@@ -7,3 +7,6 @@ workstreams:
     title: Terminal face
     emoji: 😎
     status: shipped
+  monorepo-releases:
+    title: Monorepo releases
+    status: active
