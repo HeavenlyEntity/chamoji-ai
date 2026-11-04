@@ -249,9 +249,9 @@ The CLI wears the same palette, where the terminal can show it. The face is the 
 
 **The wordmark.** A bare `chamoji` draws `chamoji` in Marow Block, 68 columns by 8 rows, in quadrant characters only (space and `▗▖▄▝▐▞▟▘▚▌▙▀▜▛█`).
 
-- **The O is a hole,** and the face sits inside it. It looks left, then right, blinks and winks, and then the sunglasses slide down. Each of those is one frame.
+- **The O is a hole,** and the face sits inside it. It looks left, then right, blinks and winks, one frame each. Then the sunglasses slide down over three drop frames and settle on `shades`.
 - **Where it plays:** only a bare `chamoji` on a terminal. Anywhere else the wordmark is written once, with the sunglasses on, and the short help follows it.
-- **Narrow terminals:** below 70 columns, or with the ASCII set, it becomes the one-line logo `( ■‿■ ) chamoji`.
+- **Narrow terminals:** below 70 columns it becomes the one-line logo `( ■‿■ ) chamoji`. With the ASCII set it's `( ^_^ ) chamoji`.
 - **Where it comes from:** `pnpm logo:generate` runs `scripts/terminal-logo.mjs`, which reads Marow Block from `docs/brand/fonts/` and writes `packages/cli/src/logo-frames.ts`. The font stays local, as everywhere else (see [`fonts/README.md`](fonts/README.md)). Only the generated strings are committed. Never commit the `.ttf` or `.otf`.
 
 **The one-line faces.** Every frame is 7 columns wide, so the line never jumps.
@@ -266,7 +266,7 @@ The CLI wears the same palette, where the terminal can show it. The face is the 
 | Fail       | `( ;_; )`           | A step failed. Ends with `✗` and the step's name                  |
 
 - **It writes to stderr only,** so stdout, `--json` and pipes stay byte for byte what they were.
-- **Timing:** a face appears only after a step has run 200 ms, redraws every 100 ms and changes expression every 600 to 900 ms. A step that finishes sooner leaves no line.
+- **Timing:** a face appears only after a step has run 200 ms, redraws every 100 ms and changes expression about every 700 ms. A step that finishes sooner leaves no line.
 - **Elapsed time** reads `3s`, `1m 4s` or `1h 2m 3s`.
 - **The ASCII set** replaces the faces with `( o_o )`, `( -_- )`, `( o_- )`, `( ^_^ )` and `( o_O )` (the fail face is already ASCII). It's the default on the old Windows console, which is any win32 terminal without `WT_SESSION`.
 
@@ -275,9 +275,11 @@ The CLI wears the same palette, where the terminal can show it. The face is the 
 **Theme detection,** first match wins:
 
 1. `CHAMOJI_THEME=light` or `dark`.
-2. The terminal's own answer to an OSC 11 background query. It's asked only when stdin and stderr are terminals and something will animate, and it gets 100 ms to reply.
+2. The terminal's own answer to an OSC 11 background query, which gets 100 ms to reply. It's asked only when stdin is a terminal, something will animate, and chamoji runs in the foreground, never from a background job. A loading face asks on stderr, and only when a step first draws, so a fast command never asks; until the answer comes, the face has no colour. The intro asks on stdout, before it plays.
 3. `COLORFGBG`, where a background of `7` or `15` means light.
 4. Dark.
+
+The `--help` header asks nothing, so it gets foil only when `CHAMOJI_THEME` or `COLORFGBG` says dark.
 
 **Colour follows chalk.** `NO_COLOR` removes the colour, but the faces still animate. `FORCE_COLOR` forces it.
 
