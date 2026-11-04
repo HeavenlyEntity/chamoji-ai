@@ -19,6 +19,7 @@ export {
 	getRemoteWebUrl,
 	isAuthFailure,
 	listReleaseTags,
+	listTags,
 	quietGitEnv,
 	readCommits,
 	runGit,
@@ -40,6 +41,13 @@ export {
 	type Shape,
 	type UnitSettings,
 } from './units/settings.js';
+export {
+	isIgnoredTag,
+	renderTag,
+	unitTagHistory,
+	versionFromTag,
+	type UnitTag,
+} from './units/tags.js';
 export {
 	ownerOf,
 	readWorkspace,
