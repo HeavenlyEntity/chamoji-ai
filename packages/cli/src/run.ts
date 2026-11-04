@@ -1152,7 +1152,11 @@ export async function run(argv: string[], given: Io): Promise<number> {
 			result => (result.status === 'nothing' ? undefined : tagList(result)),
 		);
 
-		const waiting = plan.pending.map(line => pendingLine(line));
+		const waiting = plan.pending.map(line =>
+			only.length > 0 && !only.includes(line.unit)
+				? leftOutLine(line)
+				: pendingLine(line),
+		);
 		if (plan.status === 'nothing') {
 			printResult(
 				[
@@ -1577,7 +1581,6 @@ function unitLine(unit: UnitPlan): string {
 	return `${unit.unit}  ${unit.from ?? 'none'} → ${unit.version}  ${unit.bump}  ${unit.own} own, ${unit.shared} shared`;
 }
 
-/** What a unit that isn't releasing has waiting. */
 /**
  * What a unit that isn't releasing has waiting: its own commits that need no
  * release, and the shared ones that ride along with its next one.
@@ -1591,6 +1594,17 @@ function pendingLine({unit, own, shared}: UnitPending): string {
 	const sharedPart =
 		shared === 1 ? '1 shared change rides' : `${shared} shared changes ride`;
 	return `${unit}: ${ownPart}; ${sharedPart} along with its next release`;
+}
+
+/** A unit `--unit` left out, which may well need a release of its own. */
+function leftOutLine({unit, own, shared}: UnitPending): string {
+	const parts = [
+		...(own === 0
+			? []
+			: [own === 1 ? '1 change of its own' : `${own} changes of its own`]),
+		...(shared === 0 ? [] : [`${shared} shared waiting`]),
+	];
+	return `${unit}: left out by --unit (${parts.join(', ')})`;
 }
 
 function tagList(plan: ReadyUnitPlan): string {
