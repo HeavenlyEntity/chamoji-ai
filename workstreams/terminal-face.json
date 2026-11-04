@@ -1,0 +1,271 @@
+{
+  "version": 1,
+  "slug": "terminal-face",
+  "title": "Terminal face",
+  "emoji": "😎",
+  "status": "shipped",
+  "updatedAt": "2026-11-04T02:17:16.716Z",
+  "archived": false,
+  "commits": [
+    {
+      "hash": "c912e4660e92a6ed0faa7e704af84c6901f0de50",
+      "subject": "💚 Make the face and release tests pass on Windows",
+      "date": "2026-11-03T19:09:27-07:00",
+      "card": {
+        "why": [
+          "the face tests used the host's platform, and Ctrl-Z handling is off on Windows by design; the release test compared two scratch repos whose remote paths, with random suffixes, appear in the notes' links on Windows."
+        ],
+        "constraint": [],
+        "gotcha": [],
+        "followUp": []
+      }
+    },
+    {
+      "hash": "92473309449b0f6244a9ec366c20ac35d26326b9",
+      "subject": "📝 Correct the terminal section of the brand guide",
+      "date": "2026-11-03T17:23:33-07:00",
+      "card": {
+        "why": [
+          "BRAND.md described the code before the final review's fixes, and got a few details wrong."
+        ],
+        "constraint": [],
+        "gotcha": [],
+        "followUp": []
+      }
+    },
+    {
+      "hash": "1a4756db60fbfceadf57e039aa77ee62466a16fa",
+      "subject": "🐛 Treat every ssh \"Permission denied (\" as a credentials failure",
+      "date": "2026-11-03T17:23:32-07:00",
+      "card": {
+        "why": [
+          "an ssh server that offers only passwords failed the step instead of letting git ask for one."
+        ],
+        "constraint": [],
+        "gotcha": [],
+        "followUp": []
+      }
+    },
+    {
+      "hash": "d995a2e015739393988626acd1a5510dfefd616f",
+      "subject": "🐛 End a planning step warn when Jev left commits unsorted",
+      "date": "2026-11-03T17:23:31-07:00",
+      "card": {
+        "why": [
+          "a release whose every Jev batch failed still ended ✓, and the spec says exit 3 from next-version ends on \"Nothing to release\" too."
+        ],
+        "constraint": [],
+        "gotcha": [],
+        "followUp": []
+      }
+    },
+    {
+      "hash": "ff03fc9e1ab351176c94e00fbc89342da86fda12",
+      "subject": "🐛 Ask the terminal for its theme only from the foreground, and only once a face draws",
+      "date": "2026-11-03T17:23:10-07:00",
+      "card": {
+        "why": [
+          "`chamoji memory sync &` was stopped by SIGTTOU, and every face command paid up to 300 ms for a question most never needed."
+        ],
+        "constraint": [],
+        "gotcha": [],
+        "followUp": []
+      }
+    },
+    {
+      "hash": "00efe43b3e72c520d6bf213e158b7aa78fbfd386",
+      "subject": "📝 Record the first real terminal check",
+      "date": "2026-11-03T16:53:56-07:00",
+      "card": {
+        "why": [
+          "the intro and the face were seen in one real terminal, and the plan should say plainly which terminals still need a look before the release."
+        ],
+        "constraint": [],
+        "gotcha": [],
+        "followUp": []
+      }
+    },
+    {
+      "hash": "66ce0fcef866d4bc2c873bab0094f3de118a22d1",
+      "subject": "📝 Record the terminal face: brand, roadmap, readme and results",
+      "date": "2026-11-03T16:53:05-07:00",
+      "card": {
+        "why": [
+          "the face, the foil rule and the three environment variables need one place to be read from, and the byte-identity check against 0.11.0 is the evidence that stdout is untouched."
+        ],
+        "constraint": [],
+        "gotcha": [],
+        "followUp": []
+      }
+    },
+    {
+      "hash": "96eb05bb6d980a8fd49c449f7fc6d7093b857750",
+      "subject": "✨ Add the animated welcome and regroup the help",
+      "date": "2026-11-03T16:45:00-07:00",
+      "card": {
+        "why": [
+          "a bare `chamoji` printed the whole reference to stderr and exited 2, which read as an error and gave no sense of what the tool is for. The new tagline is a draft and needs Alec's approval."
+        ],
+        "constraint": [],
+        "gotcha": [],
+        "followUp": []
+      }
+    },
+    {
+      "hash": "4aea81074440d3171e0dd6c05149b38cf1ce670b",
+      "subject": "🐛 Retry a quiet tag fetch, count a failed Jev and let Ctrl-C through",
+      "date": "2026-11-03T16:38:56-07:00",
+      "card": {
+        "why": [
+          "Under a face, a tag fetch that needed a password fell back to local tags without asking, a Jev that failed on its first request ended with a ✓, and Ctrl-C during the background query was swallowed."
+        ],
+        "constraint": [],
+        "gotcha": [],
+        "followUp": []
+      }
+    },
+    {
+      "hash": "f74ba632851281a9f336369b2175161bfef918e3",
+      "subject": "✨ Show faces in the commands that wait",
+      "date": "2026-11-03T16:27:04-07:00",
+      "card": {
+        "why": [
+          "memory sync, release, init and the rest went quiet while they waited on git, GitHub or Jev, so they looked stuck."
+        ],
+        "constraint": [],
+        "gotcha": [],
+        "followUp": []
+      }
+    },
+    {
+      "hash": "e803a46847754c739551106da1ad30d2732ac8b3",
+      "subject": "✨ Add the face settings, gitStep and Jev's progress",
+      "date": "2026-11-03T16:27:03-07:00",
+      "card": {
+        "why": [
+          "The commands need to know when a face may animate, a way to run network git under a face without hiding a password prompt, and a count of Jev's batches to show."
+        ],
+        "constraint": [],
+        "gotcha": [],
+        "followUp": []
+      }
+    },
+    {
+      "hash": "13bcb2220e20ef92f3810f5227dd53edee1ea75c",
+      "subject": "🐛 Leave ssh alone when GIT_SSH is set",
+      "date": "2026-11-03T16:08:55-07:00",
+      "card": {
+        "why": [
+          "GIT_SSH_COMMAND overrides GIT_SSH, so the quiet env would have replaced a user's own ssh program."
+        ],
+        "constraint": [],
+        "gotcha": [],
+        "followUp": []
+      }
+    },
+    {
+      "hash": "8982f3b6abfb723dad6c59c92aee3567ed66476f",
+      "subject": "✨ Report sync steps and keep network git quiet",
+      "date": "2026-11-03T16:06:04-07:00",
+      "card": {
+        "why": [
+          "The loading faces need to say which step a slow command is on, and a redrawing face must not overwrite a git password prompt."
+        ],
+        "constraint": [],
+        "gotcha": [],
+        "followUp": []
+      }
+    },
+    {
+      "hash": "4f99012f3da967534aa17a874ba777808b19c01e",
+      "subject": "🐛 Keep partial text when the face first draws",
+      "date": "2026-11-03T16:00:31-07:00",
+      "card": {
+        "why": [
+          "Text written without a newline while a step waited was erased by the first frame when stdout and stderr share a terminal. The face now starts a new line first."
+        ],
+        "constraint": [],
+        "gotcha": [],
+        "followUp": []
+      }
+    },
+    {
+      "hash": "cffe1e443ac5a400931f07b8e6db1461608a569d",
+      "subject": "✨ Add the face helper",
+      "date": "2026-11-03T15:56:28-07:00",
+      "card": {
+        "why": [
+          "Commands that wait need one place that draws the loading face on stderr and owns that line, so later wiring only has to wrap steps."
+        ],
+        "constraint": [],
+        "gotcha": [],
+        "followUp": []
+      }
+    },
+    {
+      "hash": "3f1b962c82816812beb7b110835573871dce08c1",
+      "subject": "✨ Add the wordmark frames and their generator",
+      "date": "2026-11-03T15:50:50-07:00",
+      "card": {
+        "why": [
+          "The terminal wordmark has to match what was approved, so a script renders the real Marow Block letters and the face as quadrant blocks, evens out the eyes by a pixel where quantising skews them, and only the generated strings are committed."
+        ],
+        "constraint": [],
+        "gotcha": [],
+        "followUp": []
+      }
+    },
+    {
+      "hash": "28e8c67b1323176d4f8123954e4bf1417436a12e",
+      "subject": "✨ Add the one-line faces and the ASCII fallback",
+      "date": "2026-11-03T15:37:35-07:00",
+      "card": {
+        "why": [
+          "the spinner and ending lines need a fixed set of 7-column faces, and Windows consoles outside Windows Terminal cannot draw the Unicode set."
+        ],
+        "constraint": [],
+        "gotcha": [],
+        "followUp": []
+      }
+    },
+    {
+      "hash": "32d4b72e4e6d6f8f8b221ccd515122f1563f4e9c",
+      "subject": "🐛 Keep swallowing a late terminal reply",
+      "date": "2026-11-03T15:34:33-07:00",
+      "card": {
+        "why": [
+          "A background reply that arrived after 100 ms was echoed to the shell prompt, and a stray BEL ended the query before the real reply. The query now stays raw for a 200 ms grace window and only treats a BEL or ST after ESC]11; as the end."
+        ],
+        "constraint": [],
+        "gotcha": [],
+        "followUp": []
+      }
+    },
+    {
+      "hash": "cc348bc98f354480678ebae67f18c760235d6bc1",
+      "subject": "✨ Add the foil colour and theme detection",
+      "date": "2026-11-03T15:30:18-07:00",
+      "card": {
+        "why": [
+          "The terminal faces and the wordmark share one colour layer. It blends the seven foil stops, paints text through chalk at a set level, and finds out whether the terminal background is light or dark."
+        ],
+        "constraint": [],
+        "gotcha": [],
+        "followUp": []
+      }
+    },
+    {
+      "hash": "4c62794fbdb85c179544cc037cba39a24e884cb5",
+      "subject": "🔧 Start the terminal face workstream",
+      "date": "2026-11-03T15:26:48-07:00",
+      "card": {
+        "why": [
+          "building it as a workstream gives the release one Highlights entry and keeps the dogfooding going."
+        ],
+        "constraint": [],
+        "gotcha": [],
+        "followUp": []
+      }
+    }
+  ]
+}
