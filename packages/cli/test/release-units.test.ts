@@ -1,5 +1,5 @@
 import {existsSync} from 'node:fs';
-import {mkdtemp, rm} from 'node:fs/promises';
+import {mkdir, mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {afterEach, expect, test} from 'vitest';
@@ -372,6 +372,29 @@ test('a failed GitHub release is reported per tag and keeps the release', async 
 	);
 });
 
+test('a GitHub release that fails before gh runs keeps the push a success', async () => {
+	const dir = await appRepo([...TAGGED, WEB_FEATURE, MOBILE_FIX]);
+	await withRemote(dir);
+	const gitDir = (
+		await gitOutput(dir, ['rev-parse', '--absolute-git-dir'])
+	).trim();
+	// The notes file can't be written where a folder has its name.
+	await mkdir(path.join(gitDir, 'chamoji-release-notes.md'));
+	const calls: string[][] = [];
+	const gh: GhRunner = async args => {
+		calls.push(args);
+		return {ok: true, message: ''};
+	};
+	const {code, stdout} = await chamoji(['release', '--push', '--json'], dir, {
+		gh,
+	});
+	expect(code).toBe(0);
+	const result = JSON.parse(stdout) as Record<string, unknown>;
+	expect(result).toMatchObject({pushed: true, githubRelease: false});
+	expect(result).not.toHaveProperty('error');
+	expect(calls).toEqual([]);
+});
+
 test('push shows each step on the face, one GitHub release step per tag', async () => {
 	const dir = await appRepo([...TAGGED, WEB_FEATURE, MOBILE_FIX]);
 	await withRemote(dir);
@@ -437,6 +460,80 @@ test('next-version prints per unit, including riders', async () => {
 	const one = await chamoji(['next-version'], idle);
 	expect(one.code).toBe(0);
 	expect(one.stdout).toBe('web: nothing to release\nmobile: 1.0.1\n');
+});
+
+test('next-version counts own commits that need no release', async () => {
+	const webDocs: RepoStep = {
+		commit: '📝 Document the dashboard',
+		files: {'apps/web/README.md': 'dashboard\n'},
+	};
+	const dir = await appRepo([...TAGGED, webDocs, SHARED_FIX]);
+	const text = await chamoji(['next-version'], dir);
+	expect(text.code).toBe(3);
+	expect(text.stdout).toBe(
+		[
+			"web: no release needed (1 change of its own doesn't need one); 1 shared change rides along with its next release",
+			'mobile: no changes of its own; 1 shared change rides along with its next release',
+			'',
+		].join('\n'),
+	);
+	const asJson = await chamoji(['next-version', '--json'], dir);
+	expect(asJson.code).toBe(3);
+	expect(JSON.parse(asJson.stdout)).toEqual({
+		units: [
+			{unit: 'web', version: null, own: 1, shared: 1},
+			{unit: 'mobile', version: null, own: 0, shared: 1},
+		],
+	});
+
+	const docsOnly = await appRepo([
+		...TAGGED,
+		webDocs,
+		{
+			commit: '📝 Document the settings',
+			files: {'apps/web/SETTINGS.md': 'settings\n'},
+		},
+	]);
+	const only = await chamoji(['next-version'], docsOnly);
+	expect(only.code).toBe(3);
+	expect(only.stdout).toBe(
+		"web: no release needed (2 changes of its own don't need one)\nmobile: nothing to release\n",
+	);
+	const release = await chamoji(['release', '--json'], docsOnly);
+	expect(release.code).toBe(3);
+	expect(JSON.parse(release.stdout)).toEqual({
+		status: 'nothing',
+		pending: [{unit: 'web', own: 2, shared: 0}],
+	});
+});
+
+test('next-version --unit forces and shows only that unit', async () => {
+	const dir = await appRepo([...TAGGED, SHARED_FIX]);
+	const {code, stdout} = await chamoji(
+		['next-version', '--unit', 'mobile'],
+		dir,
+	);
+	expect(code).toBe(0);
+	expect(stdout).toBe('mobile: 1.0.1\n');
+});
+
+test('--unit and --for-tag need a release section', async () => {
+	const dir = await appRepo([WEB_FEATURE], null);
+	const refused =
+		'chamoji: --unit and --for-tag need release units; add them under release.units in chamoji.config.json\n';
+	for (const argv of [
+		['changelog', '--unit', 'web'],
+		['changelog', '--for-tag', 'web/v0.1.0'],
+		['release', '--unit', 'web', '--dry-run'],
+		['next-version', '--for-tag', 'web/v0.1.0'],
+	]) {
+		const result = await chamoji(argv, dir, {env: {CI: 'true'}});
+		expect(result, argv.join(' ')).toEqual({
+			code: 1,
+			stdout: '',
+			stderr: refused,
+		});
+	}
 });
 
 test('changelog --unit renders the unit’s releases', async () => {

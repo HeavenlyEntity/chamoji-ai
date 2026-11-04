@@ -83,7 +83,7 @@ export type UnitReleasePlan =
 			root: string;
 			/** In dependency order: a unit others depend on comes first. */
 			units: UnitPlan[];
-			/** Units not releasing that have shared commits waiting. */
+			/** Units not releasing that have commits waiting, their own or shared. */
 			pending: UnitPending[];
 			changes: FileChange[];
 			subject: string;
@@ -183,7 +183,7 @@ export async function planUnitReleases(
 	const reasons = decide(windows, settings, options);
 	const pending = windows
 		.filter(window => !reasons.has(window.unit.name))
-		.filter(window => window.shared.length > 0)
+		.filter(window => window.own.length + window.shared.length > 0)
 		.map(window => ({
 			unit: window.unit.name,
 			own: window.own.length,

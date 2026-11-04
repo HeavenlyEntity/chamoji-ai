@@ -43,6 +43,7 @@ import {
 	type OutputFormat,
 	type ReadyPlan,
 	type ReadyUnitPlan,
+	type ReleaseOptions,
 	type UnitPending,
 	type UnitPlan,
 } from '@chamoji/core';
@@ -873,30 +874,40 @@ export async function run(argv: string[], given: Io): Promise<number> {
 			: {outcome: 'ok', text: text ?? 'Nothing to release'};
 	}
 
-	async function release(
-		version: string | undefined,
-		classify: CommitClassifier | undefined,
-	): Promise<number> {
-		const config = await loadConfig(io.cwd, flags.config);
+	/** Prints a release command's result: the lines, or the JSON under --json. */
+	function printResult(lines: string[], json: Record<string, unknown>): void {
+		io.stdout(
+			flags.json
+				? `${JSON.stringify(json, null, 2)}\n`
+				: `${lines.join('\n')}\n`,
+		);
+	}
+
+	/**
+	 * The planning step of `release`, with or without units. `plan` gets the
+	 * options every release plan shares, the face's credential handling
+	 * included; `ready` names what is ready to release, or undefined when
+	 * nothing is.
+	 */
+	async function planningStep<T>(
+		plan: (options: PlanningOptions) => Promise<T>,
+		ready: (result: T) => string | undefined,
+	): Promise<T> {
 		// Under a face the tag fetch must not ask for a password, or the face
 		// would draw over the prompt. When it needs one, the step ends first and
-		// planRelease fetches again where git can ask.
+		// the planner fetches again where git can ask.
 		const env = face === NO_FACE ? undefined : await quietGitEnv(io.cwd);
-		const plan = await runStep(
+		return runStep(
 			face,
 			'Planning the release',
 			async step => {
 				jevHost = step;
 				try {
-					return await planRelease({
-						cwd: io.cwd,
-						config,
-						...(version === undefined ? {} : {version}),
+					return await plan({
 						anyBranch: flags.anyBranch,
 						fetch: io.fetchTags ?? true,
 						allowDirty: flags.dryRun,
 						today: io.today,
-						classify,
 						onStep() {
 							step.update('Fetching tags from origin');
 						},
@@ -915,23 +926,109 @@ export async function run(argv: string[], given: Io): Promise<number> {
 					jevHost = undefined;
 				}
 			},
-			result =>
-				planned(
-					result.status === 'nothing'
-						? undefined
-						: `Ready to release ${result.tag}`,
-				),
+			result => {
+				const what = ready(result);
+				return planned(
+					what === undefined ? undefined : `Ready to release ${what}`,
+				);
+			},
 		);
-		const print = (lines: string[], json: Record<string, unknown>) => {
-			io.stdout(
-				flags.json
-					? `${JSON.stringify(json, null, 2)}\n`
-					: `${lines.join('\n')}\n`,
-			);
-		};
+	}
+
+	/**
+	 * Pushes HEAD and `tags` as a step. Each step from here on that goes wrong
+	 * is folded into the summary, so its face ends on a warning; the error is
+	 * thrown on as before.
+	 */
+	async function pushStep(
+		root: string,
+		tags: string[],
+		push: (env?: Record<string, string>) => Promise<void>,
+	): Promise<void> {
+		const what = tags.join(', ');
+		unsettle(
+			await gitStep(
+				face,
+				root,
+				`Pushing HEAD and ${what}`,
+				async env => settle(push(env)),
+				result =>
+					result.ok
+						? {outcome: 'ok', text: `Pushed HEAD and ${what}`}
+						: {
+								outcome: 'warn',
+								text: `The push failed; ${what} ${tags.length === 1 ? 'is' : 'are'} kept here`,
+							},
+			),
+		);
+	}
+
+	/**
+	 * Creates one GitHub release as a step, with its notes in a file in the git
+	 * dir. Returns gh's answer, or what failed before gh could answer, as a
+	 * value; the step ends on a warning either way. `forTag` names the tag in
+	 * the step when there are several releases.
+	 */
+	async function githubReleaseStep(release: {
+		root: string;
+		tag: string;
+		title: string;
+		notes: string;
+		prerelease: boolean;
+		forTag?: string;
+	}): Promise<Settled<{ok: boolean; message: string}>> {
+		const named = release.forTag === undefined ? '' : ` for ${release.forTag}`;
+		return runStep(
+			face,
+			`Creating the GitHub release${named}`,
+			async () =>
+				settle(
+					(async () => {
+						const notesFile = path.join(
+							(
+								await runGit(['rev-parse', '--absolute-git-dir'], release.root)
+							).trim(),
+							'chamoji-release-notes.md',
+						);
+						await writeFile(notesFile, `${release.notes}\n`);
+						return (io.gh ?? runGh)([
+							'release',
+							'create',
+							release.tag,
+							'--title',
+							release.title,
+							'--notes-file',
+							notesFile,
+							...(release.prerelease ? ['--prerelease'] : []),
+						]);
+					})(),
+				),
+			created =>
+				created.ok && created.value.ok
+					? {outcome: 'ok', text: `Created the GitHub release${named}`}
+					: {outcome: 'warn', text: `GitHub release${named} not created`},
+		);
+	}
+
+	async function release(
+		version: string | undefined,
+		classify: CommitClassifier | undefined,
+	): Promise<number> {
+		const config = await loadConfig(io.cwd, flags.config);
+		const plan = await planningStep(
+			async options =>
+				planRelease({
+					cwd: io.cwd,
+					config,
+					...(version === undefined ? {} : {version}),
+					classify,
+					...options,
+				}),
+			result => (result.status === 'nothing' ? undefined : result.tag),
+		);
 
 		if (plan.status === 'nothing') {
-			print(
+			printResult(
 				[
 					`Nothing to release: no commit since ${plan.lastTag} implies a version bump.`,
 					...(plan.unreleased.length > 0
@@ -949,7 +1046,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 		const summary = `${plan.tag} (${describeBump(plan)})`;
 		const files = plan.changes.map(change => change.file);
 		if (flags.dryRun) {
-			print(
+			printResult(
 				[
 					`Would release ${summary}.`,
 					`files: ${files.join(', ')}`,
@@ -969,59 +1066,19 @@ export async function run(argv: string[], given: Io): Promise<number> {
 		let memory: string | undefined;
 		if (flags.push) {
 			try {
-				// Each step here that goes wrong is folded into the summary, so its
-				// face ends on a warning; the error is thrown on as before.
-				unsettle(
-					await gitStep(
-						face,
-						plan.root,
-						`Pushing HEAD and ${plan.tag}`,
-						async env => settle(pushRelease(plan, env)),
-						result =>
-							result.ok
-								? {outcome: 'ok', text: `Pushed HEAD and ${plan.tag}`}
-								: {
-										outcome: 'warn',
-										text: `The push failed; ${plan.tag} is kept here`,
-									},
-					),
+				await pushStep(plan.root, [plan.tag], async env =>
+					pushRelease(plan, env),
 				);
 				pushed = `yes (HEAD and ${plan.tag})`;
 				memory = await syncAfterRelease();
 				const result = unsettle(
-					await runStep(
-						face,
-						'Creating the GitHub release',
-						async () =>
-							settle(
-								(async () => {
-									const notesFile = path.join(
-										(
-											await runGit(
-												['rev-parse', '--absolute-git-dir'],
-												plan.root,
-											)
-										).trim(),
-										'chamoji-release-notes.md',
-									);
-									await writeFile(notesFile, `${plan.notes}\n`);
-									return (io.gh ?? runGh)([
-										'release',
-										'create',
-										plan.tag,
-										'--title',
-										plan.tag,
-										'--notes-file',
-										notesFile,
-										...(plan.bump === 'prerelease' ? ['--prerelease'] : []),
-									]);
-								})(),
-							),
-						created =>
-							created.ok && created.value.ok
-								? {outcome: 'ok', text: 'Created the GitHub release'}
-								: {outcome: 'warn', text: 'GitHub release not created'},
-					),
+					await githubReleaseStep({
+						root: plan.root,
+						tag: plan.tag,
+						title: plan.tag,
+						notes: plan.notes,
+						prerelease: plan.bump === 'prerelease',
+					}),
 				);
 				githubRelease = result.ok;
 				pushed += result.ok
@@ -1034,7 +1091,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 		}
 
 		const [changelog, ...manifests] = plan.changes;
-		print(
+		printResult(
 			[
 				`Released ${summary}.`,
 				`changelog: ${changelog!.file}, ${changelog!.how}`,
@@ -1082,56 +1139,22 @@ export async function run(argv: string[], given: Io): Promise<number> {
 			);
 		}
 
-		// As in release(): under a face the tag fetch must not ask for a password.
-		const env = face === NO_FACE ? undefined : await quietGitEnv(io.cwd);
-		const plan = await runStep(
-			face,
-			'Planning the release',
-			async step => {
-				jevHost = step;
-				try {
-					return await planUnitReleases({
-						cwd: io.cwd,
-						config,
-						...(only.length > 0 ? {units: only} : {}),
-						...(version === undefined ? {} : {versions: {[only[0]!]: version}}),
-						anyBranch: flags.anyBranch,
-						fetch: io.fetchTags ?? true,
-						allowDirty: flags.dryRun,
-						today: io.today,
-						classify,
-						onStep() {
-							step.update('Fetching tags from origin');
-						},
-						async onCredentials() {
-							jevHost = undefined;
-							step.end('warn', 'git needs your credentials');
-							await face.release();
-						},
-						...(env ? {env} : {}),
-					});
-				} finally {
-					jevHost = undefined;
-				}
-			},
-			result =>
-				planned(
-					result.status === 'nothing'
-						? undefined
-						: `Ready to release ${tagList(result)}`,
-				),
+		const plan = await planningStep(
+			async options =>
+				planUnitReleases({
+					cwd: io.cwd,
+					config,
+					...(only.length > 0 ? {units: only} : {}),
+					...(version === undefined ? {} : {versions: {[only[0]!]: version}}),
+					classify,
+					...options,
+				}),
+			result => (result.status === 'nothing' ? undefined : tagList(result)),
 		);
-		const print = (lines: string[], json: Record<string, unknown>) => {
-			io.stdout(
-				flags.json
-					? `${JSON.stringify(json, null, 2)}\n`
-					: `${lines.join('\n')}\n`,
-			);
-		};
 
 		const waiting = plan.pending.map(line => pendingLine(line));
 		if (plan.status === 'nothing') {
-			print(
+			printResult(
 				[
 					'Nothing to release: no unit has a commit of its own that implies a version bump.',
 					...waiting,
@@ -1167,7 +1190,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 			pending: plan.pending,
 		};
 		if (flags.dryRun) {
-			print(
+			printResult(
 				[
 					'Would release:',
 					...units,
@@ -1189,60 +1212,25 @@ export async function run(argv: string[], given: Io): Promise<number> {
 		let memory: string | undefined;
 		if (flags.push) {
 			try {
-				unsettle(
-					await gitStep(
-						face,
-						plan.root,
-						`Pushing HEAD and ${listed}`,
-						async env => settle(pushUnitReleases(plan, env)),
-						result =>
-							result.ok
-								? {outcome: 'ok', text: `Pushed HEAD and ${listed}`}
-								: {
-										outcome: 'warn',
-										text: `The push failed; ${listed} ${tags.length === 1 ? 'is' : 'are'} kept here`,
-									},
-					),
+				await pushStep(plan.root, tags, async env =>
+					pushUnitReleases(plan, env),
 				);
 				pushed = `yes (HEAD and ${listed})`;
 				memory = await syncAfterRelease();
-				const notesFile = path.join(
-					(await runGit(['rev-parse', '--absolute-git-dir'], plan.root)).trim(),
-					'chamoji-release-notes.md',
-				);
 				const failed: string[] = [];
 				const releases = githubReleases(plan, config);
 				for (const item of releases) {
 					const named = releases.length === 1 ? '' : ` for ${item.tag}`;
-					const result = unsettle(
-						await runStep(
-							face,
-							`Creating the GitHub release${named}`,
-							async () =>
-								settle(
-									(async () => {
-										await writeFile(notesFile, `${item.notes}\n`);
-										return (io.gh ?? runGh)([
-											'release',
-											'create',
-											item.tag,
-											'--title',
-											item.title,
-											'--notes-file',
-											notesFile,
-											...(item.prerelease ? ['--prerelease'] : []),
-										]);
-									})(),
-								),
-							created =>
-								created.ok && created.value.ok
-									? {outcome: 'ok', text: `Created the GitHub release${named}`}
-									: {
-											outcome: 'warn',
-											text: `GitHub release${named} not created`,
-										},
-						),
-					);
+					const settled = await githubReleaseStep({
+						root: plan.root,
+						...item,
+						...(releases.length === 1 ? {} : {forTag: item.tag}),
+					});
+					// The push is done: a release that fails before gh answers (the
+					// notes file can't be written) is one not created, not a failed push.
+					const result = settled.ok
+						? settled.value
+						: {ok: false, message: (settled.error as Error).message};
 					if (!result.ok) {
 						failed.push(
 							`GitHub release not created${named}: ${stripControlLines(result.message)}`,
@@ -1260,7 +1248,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 			}
 		}
 
-		print(
+		printResult(
 			[
 				`Released ${listed}.`,
 				...units,
@@ -1350,7 +1338,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 				: `${units
 						.map(unit =>
 							unit.version === null
-								? unit.shared > 0
+								? unit.own + unit.shared > 0
 									? pendingLine(unit)
 									: `${unit.unit}: nothing to release`
 								: `${unit.unit}: ${unit.version}`,
@@ -1506,6 +1494,18 @@ export async function run(argv: string[], given: Io): Promise<number> {
 	}
 }
 
+/** The options `planningStep` gives every release plan. */
+type PlanningOptions = Pick<
+	ReleaseOptions,
+	| 'anyBranch'
+	| 'fetch'
+	| 'allowDirty'
+	| 'today'
+	| 'onStep'
+	| 'onCredentials'
+	| 'env'
+>;
+
 type Settled<T> = {ok: true; value: T} | {ok: false; error: unknown};
 
 /**
@@ -1578,10 +1578,19 @@ function unitLine(unit: UnitPlan): string {
 }
 
 /** What a unit that isn't releasing has waiting. */
+/**
+ * What a unit that isn't releasing has waiting: its own commits that need no
+ * release, and the shared ones that ride along with its next one.
+ */
 function pendingLine({unit, own, shared}: UnitPending): string {
-	const changes =
+	const ownPart =
+		own === 0
+			? 'no changes of its own'
+			: `no release needed (${own === 1 ? "1 change of its own doesn't" : `${own} changes of its own don't`} need one)`;
+	if (shared === 0) return `${unit}: ${ownPart}`;
+	const sharedPart =
 		shared === 1 ? '1 shared change rides' : `${shared} shared changes ride`;
-	return `${unit}: ${own === 0 ? 'no changes of its own' : 'nothing of its own that needs a release'}; ${changes} along with its next release`;
+	return `${unit}: ${ownPart}; ${sharedPart} along with its next release`;
 }
 
 function tagList(plan: ReadyUnitPlan): string {
