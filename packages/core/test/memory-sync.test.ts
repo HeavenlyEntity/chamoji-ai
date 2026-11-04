@@ -749,6 +749,8 @@ test('a local purge takes what the remote added, with only itself as parent', as
 	expect(await slugs(remote)).toEqual(['billing', 'new']);
 });
 
+// Three clones, two syncs and a force-push: about 8 s on a Windows runner, and
+// 20 s once, so it gets more than the default limit.
 test('remote purged and local still holds the entry: it goes, and local work stays', async () => {
 	const {remote, a, b} = await synced();
 	await purgeMemory(a, 'auth');
@@ -769,7 +771,7 @@ test('remote purged and local still holds the entry: it goes, and local work sta
 	expect(await historyOf(remote)).not.toContain('the old form leaked');
 	expect(await readMemory(b, 'auth')).toBeUndefined();
 	expect(await slugs(b)).toEqual(['billing', 'new']);
-});
+}, 60_000);
 
 test('a remote purge with nothing new locally is a plain move to its tip', async () => {
 	const {remote, a, b} = await synced();
