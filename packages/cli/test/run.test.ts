@@ -16,7 +16,7 @@ import {recordingFace} from './helpers/recording-face.js';
 
 const execFileAsync = promisify(execFile);
 
-const GET_STARTED = 'Get started: run chamoji setup';
+const GET_STARTED = 'Run `chamoji setup` to get started.';
 
 let repo: FixtureRepo | undefined;
 

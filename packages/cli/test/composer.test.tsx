@@ -292,3 +292,15 @@ test('a shared-only change offers Release trailers, default No', async () => {
 		'🐛 (api): Fix timeout\n\nBREAKING CHANGE: it breaks\nRelease: web\nRelease: mobile',
 	);
 });
+
+test('the Release trailers carry the raw unit names', async () => {
+	const app = open({}, undefined, undefined, {
+		own: [],
+		rides: ['we\u001B[2Jb'],
+	});
+	await app.type('bug', ENTER, 'api', ENTER, 'fix timeout', ENTER);
+	await app.type(ENTER, ENTER, ENTER, 'y');
+	expect(app.onSubmit).toHaveBeenCalledWith(
+		'🐛 (api): Fix timeout\n\nRelease: we\u001B[2Jb',
+	);
+});

@@ -8,9 +8,8 @@ import type {Impact} from './composer.js';
 export async function composeImpact(root: string): Promise<Impact | undefined> {
 	try {
 		const config = await loadConfig(root);
-		if (!config.release || config.release.shape === 'single') return undefined;
 		const staged = await runGit(
-			['diff', '--cached', '--name-only', '-z'],
+			['diff', '--cached', '--name-only', '--no-renames', '-z'],
 			root,
 		);
 		const impact = await stagedImpact(

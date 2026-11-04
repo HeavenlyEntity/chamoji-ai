@@ -871,3 +871,49 @@ test('hook run hands the composer which units the staged change touches', async 
 		await plain.cleanup();
 	}
 });
+
+test('a file moved between units counts for both', async () => {
+	const json = (value: unknown) => `${JSON.stringify(value)}\n`;
+	repo = await createRepo([
+		{
+			commit: '🎉 Start',
+			files: {
+				'package.json': json({name: 'gearz', private: true}),
+				'pnpm-workspace.yaml': 'packages:\n  - apps/*\n',
+				'chamoji.config.json': json({
+					release: {
+						schema: 1,
+						shape: 'apps',
+						units: {
+							web: {path: 'apps/web', tag: 'web/v{version}'},
+							mobile: {path: 'apps/mobile', tag: 'mobile/v{version}'},
+						},
+					},
+				}),
+				'apps/web/package.json': json({name: '@gearz/web'}),
+				'apps/mobile/package.json': json({name: '@gearz/mobile'}),
+				'apps/web/moved.ts': 'export const moved = 1;\n',
+			},
+		},
+	]);
+	await gitOutput(repo.dir, [
+		'mv',
+		'apps/web/moved.ts',
+		'apps/mobile/moved.ts',
+	]);
+	const file = await messageFile(repo.dir);
+	const seen: unknown[] = [];
+	await withTerminal(
+		['hook', 'run', file],
+		repo.dir,
+		() =>
+			({
+				async compose(_config: unknown, _advice: unknown, impact: unknown) {
+					seen.push(impact);
+					return '♻️ Move it';
+				},
+				close() {},
+			}) as never,
+	);
+	expect(seen).toEqual([{own: ['web', 'mobile'], rides: []}]);
+});
