@@ -9,6 +9,7 @@ import {
 	buildChangelog,
 	CARD_ENDPOINT,
 	cardUrl,
+	committedSection,
 	ConfigVersionError,
 	fetchesMemory,
 	getActive,
@@ -35,6 +36,7 @@ import {
 	shouldStamp,
 	stampWorkstream,
 	syncMemory,
+	stripTitle,
 	uniqueTags,
 	unitChangelog,
 	unitTagHistory,
@@ -1385,45 +1387,106 @@ export async function run(argv: string[], given: Io): Promise<number> {
 			);
 		}
 
-		const unit = forTag === undefined ? flags.unit[0]! : await ownerOf(forTag);
-		const changelog = await unitChangelog({
-			cwd: io.cwd,
-			config,
-			unit,
-			...(classify ? {classify} : {}),
-		});
-		let {releases} = changelog;
-		if (forTag !== undefined) {
-			releases = releases.filter(release => release.tag === forTag);
+		const write = async (output: string) => {
+			if (flags.output) {
+				await writeFile(path.resolve(io.cwd, flags.output), output);
+				io.stderr(`Wrote ${flags.output}\n`);
+			} else {
+				io.stdout(output);
+			}
+		};
+
+		const rebuilt = async (unit: string) => {
+			const changelog = await unitChangelog({
+				cwd: io.cwd,
+				config,
+				unit,
+				...(classify ? {classify} : {}),
+			});
+			if (forTag === undefined) return changelog;
+			const releases = changelog.releases.filter(
+				release => release.tag === forTag,
+			);
 			if (releases.length === 0) {
 				throw new Error(
 					`${forTag} isn't one of ${unit}'s releases on this branch`,
 				);
 			}
+
+			return {...changelog, releases};
+		};
+
+		if (forTag === undefined) {
+			await write(render(await rebuilt(flags.unit[0]!), format));
+			return 0;
 		}
 
-		const output = render({...changelog, releases}, format);
-		if (flags.output) {
-			await writeFile(path.resolve(io.cwd, flags.output), output);
-			io.stderr(`Wrote ${flags.output}\n`);
-		} else {
-			io.stdout(output);
+		const owners = await ownersOf(forTag);
+		if (format !== 'markdown') {
+			const parts = [];
+			for (const {unit} of owners) parts.push(await rebuilt(unit));
+			await write(
+				render(
+					{...parts[0]!, releases: parts.flatMap(part => part.releases)},
+					format,
+				),
+			);
+			return 0;
 		}
 
+		// What the release committed, so lines only the release wrote are kept.
+		const sections = [];
+		for (const owner of owners) {
+			const notes =
+				(await committedSection(
+					owner.root,
+					forTag,
+					owner.changelog,
+					owner.version,
+				)) ?? stripTitle(render(await rebuilt(owner.unit), 'markdown'));
+			sections.push({unit: owner.unit, tag: forTag, notes});
+		}
+
+		await write(`${tagNotes(sections)}\n`);
 		return 0;
 
-		/** The unit whose tag format the tag fits, as its tag history reads it. */
-		async function ownerOf(tag: string): Promise<string> {
+		/**
+		 * The units released under the tag, as their tag histories read it: the
+		 * first that reads it, with the other members of its fixed group that
+		 * share it.
+		 */
+		async function ownersOf(tag: string) {
 			const settings = config.release!;
 			const root = (
 				await runGit(['rev-parse', '--show-toplevel'], io.cwd)
 			).trim();
-			const owner = resolveUnits(settings, await readWorkspace(root)).find(
-				item =>
-					unitTagHistory([{name: tag, date: ''}], item, settings).length > 0,
+			const reading = resolveUnits(settings, await readWorkspace(root)).flatMap(
+				item => {
+					const [read] = unitTagHistory(
+						[{name: tag, date: ''}],
+						item,
+						settings,
+					);
+					return read
+						? [
+								{
+									unit: item.name,
+									changelog: item.changelog,
+									version: read.version,
+									root,
+								},
+							]
+						: [];
+				},
 			);
-			if (!owner) throw new Error(`no unit's tag format matches ${tag}`);
-			return owner.name;
+			const first = reading[0];
+			if (!first) throw new Error(`no unit's tag format matches ${tag}`);
+			const group = settings.fixed.find(members =>
+				members.includes(first.unit),
+			);
+			return group
+				? reading.filter(item => group.includes(item.unit))
+				: [first];
 		}
 	}
 

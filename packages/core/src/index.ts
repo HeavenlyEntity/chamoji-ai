@@ -60,7 +60,11 @@ export {
 	versionFromTag,
 	type UnitTag,
 } from './units/tags.js';
-export {unitChangelog, type UnitChangelogOptions} from './units/history.js';
+export {
+	committedSection,
+	unitChangelog,
+	type UnitChangelogOptions,
+} from './units/history.js';
 export {
 	applyUnitReleases,
 	planUnitReleases,
@@ -134,6 +138,7 @@ export {
 	planRelease,
 	pushRelease,
 	releaseSubject,
+	stripTitle,
 	tagPrefix,
 	type FileChange,
 	type ReadyPlan,

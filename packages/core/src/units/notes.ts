@@ -299,6 +299,31 @@ function plainVersion(version: string): string {
 	return new RegExp(`${VERSION}$`).exec(version)?.[0] ?? version;
 }
 
+/**
+ * The section for `version` in a changelog: from its `## ` heading, in any
+ * style `readStyle` reads, to the next `## ` heading, without trailing blank
+ * lines. Null when no heading names that version.
+ */
+export function sectionFor(changelog: string, version: string): string | null {
+	const lines = changelog.split('\n').map(line => line.trimEnd());
+	const start = lines.findIndex(line => {
+		const match = HEADING.exec(line);
+		return match !== null && match[3] === version;
+	});
+	if (start === -1) {
+		return null;
+	}
+
+	let end = lines.findIndex(
+		(line, index) => index > start && line.startsWith('## '),
+	);
+	if (end === -1) {
+		end = lines.length;
+	}
+
+	return lines.slice(start, end).join('\n').trimEnd();
+}
+
 /** The new text of the unit's changelog file: a new file with the title and this section, or `insertSection` into the existing one. */
 export function writeUnitChangelog(
 	existing: string | null,
