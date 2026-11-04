@@ -314,9 +314,9 @@ On PRs from forks the token can't comment, so the preview goes to the job summar
 
 ## Monorepos
 
-By default chamoji treats a repo as one package: one version, one `v*` tag and one `CHANGELOG.md`. That is also right for a monorepo whose packages ship together, like this one. A repo that has no `release` section in `chamoji.config.json` works exactly as it did in 0.12.0.
+By default chamoji treats a repo as one package: one version, one `v*` tag and one `CHANGELOG.md`. That is also right for a monorepo whose packages ship together, like this one. A repo with no `release` section in `chamoji.config.json` gets the same versions, tags, changelog, release commit and `--json` output as in 0.12.0. That is proven byte for byte for `changelog`, `changelog --format json`, `next-version` and `release --dry-run --json` on two fixture repos. The only addition is a one-time note on stderr, in a monorepo with several apps, that you can version them separately (never under `--json` or in CI).
 
-When the packages or apps in a repo ship on their own, add a `release` section. Chamoji then gives every unit (an app or a package) its own version, tag, changelog and GitHub release, and a unit with no changes of its own isn't released. `chamoji setup`, which will write this section for you, is coming next. For now you write it by hand.
+When the packages or apps in a repo ship on their own, add a `release` section. Chamoji then gives every unit (an app or a package) its own version, tag, changelog and GitHub release, and a unit with no changes of its own isn't released, apart from the other units in its `fixed` group and, under `release-dependents`, the units that depend on a package that released. `chamoji setup`, which will write this section for you, is coming next. For now you write it by hand.
 
 ### An app monorepo
 
@@ -357,7 +357,7 @@ Each app gets a `CHANGELOG.md` in its own folder and a tag such as `web/v1.3.0`.
 }
 ```
 
-Each package gets a tag such as `@acme/ui@1.3.0` and a `CHANGELOG.md` in its folder. Units in a `fixed` group always share one version, the largest bump of any of them, and when one of them releases they all do. When a package releases, the packages that depend on it get a patch release and the new dependency range, under Dependencies. `workspace:` ranges are left alone, since pnpm rewrites them when you publish. `shape` can be `apps` or `libraries` for now; `single` is today's behaviour.
+Each package gets a tag such as `@acme/ui@1.3.0` and a `CHANGELOG.md` in its folder. Units in a `fixed` group always share one version, the largest bump of any of them, and when one of them releases they all do. Under `release-dependents`, the default for libraries, a package that releases also releases the packages that depend on it, by at least a patch, with the new range and a Dependencies line. Ranges are rewritten in `dependencies` only; peer ranges stay as written, and so do `workspace:` ranges, since pnpm rewrites them when you publish. `shape` can be `apps` or `libraries` for now; `single` is today's behaviour.
 
 ### Which commits belong to which unit
 
@@ -382,7 +382,7 @@ When a shared fix has to ship now, add a `Release:` trailer to the commit:
 Release: mobile
 ```
 
-`Release: web, mobile` names several units and `Release: all` names every unit. `chamoji release --unit mobile` does the same from the command line. For libraries the default is the other way round (`"sharedChanges": "release-dependents"`): a shared change releases every unit that uses it. Either shape accepts either value.
+`Release: web, mobile` names several units and `Release: all` names every unit. `chamoji release --unit mobile` does the same from the command line. For libraries the default is the other way round (`"sharedChanges": "release-dependents"`): a shared change releases every unit that uses it. Either shape accepts either value. Two more settings: `"githubReleases": "combined"` makes one GitHub release per release commit instead of one per unit, and `"rootChangelog": true` adds a root `CHANGELOG.md` that lists every release with links to the units' changelogs.
 
 ### Template history and forks
 
@@ -392,7 +392,7 @@ If the repo began as a clone of a starter and keeps pulling from it, add the rem
 "upstream": {"remote": "upstream", "name": "Makerkit", "since": "<first commit that is yours>"}
 ```
 
-Commits that come from the upstream remote are left out of every unit's notes and never release anything. Each merge that brings upstream work in becomes one line, such as "Updated the Makerkit base to 4.0.2", and counts as one own commit for the units it changed.
+`since` is a commit hash or ref, and the remote must be fetched. With no remote, tags you list in `tags.ignore` whose names read as versions mark the template's history. Commits that come from the upstream remote are left out of every unit's notes and never release anything. Each merge that brings upstream work in becomes one line, such as "Updated the Makerkit base to 4.0.2", and counts as one own commit for the units it changed.
 
 ### Tags
 
@@ -415,13 +415,13 @@ These are regular expressions, not globs: `^wip/` matches tags that start with `
 
 ### Versions and version files
 
-- A unit with no tag of its own releases the version already in its manifest, or `firstVersion` when you set it.
-- `"versioning": "calver"` gives a unit date versions: the year, the month and a count of that unit's releases in the month, such as `2026.11.0` and `2026.1.0`. There is no zero padding, because the version must stay valid semver.
+- A unit with no tag of its own releases `firstVersion` when you set it. Otherwise it releases the version already in its manifest, or, for a `calver` unit, a date version; its manifest version is ignored.
+- `"versioning": "calver"` gives a unit date versions: the year, the month and a count of that unit's releases in the month, such as `2026.11.0` and `2026.1.0`. There is no zero padding, because the version must stay valid semver. The first release of a calver unit is a date version too, unless `firstVersion` says otherwise.
 - `"zeroMajor": "minor"` makes a breaking change raise the minor version while a unit is at 0.x.
 - Each unit's `package.json` is bumped, with its formatting kept. List any other file that carries the version in `versionFiles`. Chamoji edits Expo's `app.json` and `app.config.ts` or `.js`, an `Info.plist`, an `android/app/build.gradle` and any other text file where it finds the current version. If it can't find the version in a listed file, it stops before changing anything.
-- Expo's `app.config` can be an object, an arrow function, `defineConfig(…)` or `export default config`. For any other shape the release stops and says so instead of guessing.
-- An iOS app whose `Info.plist` uses `$(MARKETING_VERSION)` has no version in that file. List its Xcode project setting instead; chamoji doesn't edit that yet, so the release stops and names the project.
-- Build numbers (`CFBundleVersion`, `versionCode`) are left alone unless the unit sets `"buildNumber": "increment"`.
+- Expo's `app.config` can be an object, an arrow function, `defineConfig(…)` or `export default config`, and its `version` must be a plain string such as `"1.2.0"`. For any other shape, including `version: pkg.version`, the release stops and says so instead of guessing.
+- An iOS app whose `Info.plist` uses `$(MARKETING_VERSION)` isn't supported yet. Chamoji doesn't bump the marketing version in the Xcode project, so bump it in Xcode yourself. If you list that `Info.plist` in `versionFiles`, the release stops and tells you to remove it.
+- Build numbers (`CFBundleVersion`, `versionCode`, Expo's `ios.buildNumber` and `android.versionCode`) are left alone unless the unit sets `"buildNumber": "increment"`, which raises them by one. It does nothing when the app uses EAS remote versioning (`appVersionSource` is `remote`).
 
 ### Commands
 
@@ -430,7 +430,7 @@ chamoji release --dry-run             # every unit that would release, with vers
 chamoji release --unit web            # only web
 chamoji release 2.0.0 --unit mobile   # a version you choose, for one unit
 chamoji next-version --json           # what each unit would release, and what is waiting
-chamoji changelog --unit web          # web's releases
+chamoji changelog --unit web          # web's releases (bare `changelog` needs --unit or --for-tag here)
 chamoji changelog --for-tag web/v1.4.0
 ```
 
@@ -438,7 +438,7 @@ chamoji changelog --for-tag web/v1.4.0
 
 Set the `unit` input in release mode to release a single unit. On a pushed tag, the Action finds the unit the tag belongs to and writes that tag's notes to its GitHub release. On a pull request, the preview comment lists only the units the PR touches, with the releases merging it would make.
 
-The preview runs the CLI with its working directory at the PR head, and never with your secrets. So the `cli` input must be unset or a built CLI such as `node packages/cli/dist/cli.js`. A package runner such as `npx` is refused, and the command must not read files relative to the working directory.
+In a repo with release units, the preview runs the CLI with its working directory at the PR head, and never with your secrets. So the `cli` input must be unset or a built CLI such as `node packages/cli/dist/cli.js`. A package runner such as `npx` is refused, and the command must not read files relative to the working directory.
 
 ### Older versions of the CLI
 

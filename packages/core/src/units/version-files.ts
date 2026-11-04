@@ -489,7 +489,7 @@ function setPlist(text: string, settings: Settings): Edited | string {
 	if (!match) return 'it has no CFBundleShortVersionString to set';
 	const from = match[2]!;
 	if (from.startsWith('$(')) {
-		return `its version is the build variable ${from}, so it lives in the Xcode project's MARKETING_VERSION: list that file instead`;
+		return `its version is the build variable ${from}, which chamoji can't edit yet; remove this file from versionFiles and bump MARKETING_VERSION in Xcode yourself`;
 	}
 
 	let next = text.replace(

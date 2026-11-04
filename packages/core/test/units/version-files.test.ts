@@ -232,7 +232,7 @@ test('an Info.plist that points at MARKETING_VERSION stops the release', async (
 	);
 	await expect(attempt).rejects.toBeInstanceOf(ReleaseError);
 	await expect(attempt).rejects.toThrow(
-		/apps\/rn\/ios\/App\/Info\.plist.*MARKETING_VERSION.*Xcode project/s,
+		/can't set the version in apps\/rn\/ios\/App\/Info\.plist: its version is the build variable \$\(MARKETING_VERSION\), which chamoji can't edit yet; remove this file from versionFiles and bump MARKETING_VERSION in Xcode yourself/,
 	);
 });
 
