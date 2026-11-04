@@ -189,3 +189,10 @@ export {
 	readEasRemote,
 	type VersionFileEdit,
 } from './units/version-files.js';
+export {
+	TOOL_NAMES,
+	detectLayout,
+	type AppCandidate,
+	type LayoutDetection,
+	type UnitFacts,
+} from './setup/detect.js';
