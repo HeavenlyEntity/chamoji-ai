@@ -734,3 +734,26 @@ test('planning a dirty tree with allowDirty changes nothing', async () => {
 	expect(ready(await plan(dir, {allowDirty: true})).units).toHaveLength(1);
 	expect(await state()).toEqual(before);
 });
+
+test('a first release lists a version file that disagrees with the manifest', async () => {
+	const dir = await appRepo(
+		[
+			{
+				commit: '🔧 Set the app version by hand',
+				files: {
+					'apps/mobile/app.config.ts':
+						"export default {\n\tname: 'mobile',\n\tversion: '1.2.0',\n};\n",
+				},
+			},
+			MOBILE_FIX,
+		],
+		{tags: false},
+	);
+	const mobile = unitOf(await plan(dir), 'mobile');
+	expect(mobile).toMatchObject({
+		version: '1.0.0',
+		from: '1.0.0',
+		lastTag: null,
+		disagreed: ['apps/mobile/app.config.ts'],
+	});
+});

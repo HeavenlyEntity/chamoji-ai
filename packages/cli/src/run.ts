@@ -1176,7 +1176,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 			...plan.units.flatMap(unit =>
 				unit.disagreed.map(
 					file =>
-						`note: ${file} had a version other than ${unit.from ?? 'none'} (${unit.lastTag}); it now says ${unit.version}`,
+						`note: ${file} had a version other than ${unit.from} (${unit.lastTag ?? 'its package.json version'}); it now says ${unit.version}`,
 				),
 			),
 			...(plan.excludedNote ? plan.excludedNote.split('\n') : []),

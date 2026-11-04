@@ -67,7 +67,7 @@ export type UnitPlan = {
 	notes: string;
 	/** The files this unit's release changes. */
 	files: string[];
-	/** Version files whose old value differed from the last tag. */
+	/** Version files whose old value differed from `from`. */
 	disagreed: string[];
 	/** Released by `Release:` or `--unit` with only shared commits. */
 	forced: boolean;
@@ -781,6 +781,7 @@ async function planUnit(
 ): Promise<{plan: UnitPlan; changes: FileChange[]}> {
 	const {root, config, settings, versions, current, today} = context;
 	const {unit, last} = window;
+	const from = current.get(unit.name) ?? null;
 	const {version, bump} = versions.get(unit.name)!;
 	const manifest = path.posix.join(unit.path, 'package.json');
 	const manifestText = await readText(root, manifest);
@@ -829,7 +830,7 @@ async function planUnit(
 	];
 
 	const edits = await editVersionFiles(root, unit, version, {
-		current: current.get(unit.name) ?? null,
+		current: from,
 		buildNumber: unit.buildNumber,
 		easRemote: await readEasRemote(root, unit.path),
 	});
@@ -861,17 +862,18 @@ async function planUnit(
 			version,
 			tag,
 			lastTag: last?.tag ?? null,
-			from: current.get(unit.name) ?? null,
+			from,
 			bump,
 			own: window.own.length,
 			shared: window.shared.length,
 			notes,
 			files: changes.map(change => change.file),
-			disagreed: last
-				? edits
-						.filter(edit => edit.from !== null && edit.from !== last.version)
-						.map(edit => edit.file)
-				: [],
+			disagreed:
+				from === null
+					? []
+					: edits
+							.filter(edit => edit.from !== null && edit.from !== from)
+							.map(edit => edit.file),
 			forced,
 		},
 		changes,

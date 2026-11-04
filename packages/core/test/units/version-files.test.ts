@@ -1,4 +1,4 @@
-import {mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises';
+import {mkdir, mkdtemp, rm, symlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {afterEach, expect, test} from 'vitest';
@@ -432,3 +432,75 @@ test('setJsonString sets a nested string and keeps the formatting', () => {
 	).toBeUndefined();
 	expect(setJsonString(text, ['dependencies'], '1')).toBeUndefined();
 });
+
+async function configRefusal(text: string): Promise<unknown> {
+	const root = await repo({'apps/m/app.config.ts': text});
+	return editVersionFiles(
+		root,
+		unit('apps/m', {versionFiles: ['apps/m/app.config.ts']}),
+		'2.0.0',
+		options,
+	).then(
+		() => undefined,
+		(error: unknown) => error,
+	);
+}
+
+const refusals: Array<[string, string, string]> = [
+	[
+		'a call wrapper with more than one argument',
+		"const base = {version: '0.1.0'};\nexport default merge(base, {version: '0.1.0'});\n",
+		"can't set the version in apps/m/app.config.ts: its config is passed to merge(…) with other arguments, so chamoji can't tell which object is exported",
+	],
+	[
+		'a template literal with a placeholder',
+		'const x = 3;\nexport default {version: `0.1.${x}`};\n',
+		"can't set the version in apps/m/app.config.ts: its version is a template literal with ${…}, which chamoji can't set",
+	],
+	[
+		'a duplicate version key',
+		"export default {\n  version: '0.1.0',\n  name: 'x',\n  version: '0.1.0',\n};\n",
+		"can't set the version in apps/m/app.config.ts: its config object has more than one version key",
+	],
+];
+
+test.each(refusals)('app.config refuses %s', async (_name, text, message) => {
+	const error = await configRefusal(text);
+	expect(error).toBeInstanceOf(ReleaseError);
+	expect(error).toMatchObject({code: 'invalid-version', message});
+});
+
+test('a one-argument call wrapper and a template literal without placeholders are still set', async () => {
+	expect(
+		await configEdit("export default defineConfig({version: '0.1.0'},);\n"),
+	).toMatchObject({
+		text: "export default defineConfig({version: '2.0.0'},);\n",
+	});
+	expect(
+		await configEdit('export default {version: `0.1.0`};\n'),
+	).toMatchObject({text: 'export default {version: `2.0.0`};\n'});
+});
+
+test.skipIf(process.platform === 'win32')(
+	'a listed file that is a symlink stops the release',
+	async () => {
+		const root = await repo({
+			'outside/app.json': '{"expo": {"version": "0.1.0"}}',
+		});
+		await mkdir(path.join(root, 'apps/m'), {recursive: true});
+		await symlink(
+			path.join(root, 'outside/app.json'),
+			path.join(root, 'apps/m/app.json'),
+		);
+		const attempt = editVersionFiles(
+			root,
+			unit('apps/m', {versionFiles: ['apps/m/app.json']}),
+			'2.0.0',
+			options,
+		);
+		await expect(attempt).rejects.toBeInstanceOf(ReleaseError);
+		await expect(attempt).rejects.toThrow(
+			'apps/m/app.json is listed in versionFiles but is a symlink; list the file it points to instead',
+		);
+	},
+);
