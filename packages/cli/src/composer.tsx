@@ -67,7 +67,7 @@ export function Composer({
 }: ComposerProps) {
 	// A change that releases no unit of its own but rides along to some can
 	// release them now, with a Release: trailer each.
-	const offered = impact && impact.own.length === 0 ? names(impact.rides) : [];
+	const offered = impact && impact.own.length === 0 ? impact.rides : [];
 	const steps: Step[] = [
 		'gitmoji',
 		...(config.scopePrompt ? (['scope'] as const) : []),
@@ -272,7 +272,7 @@ export function Composer({
 			<Box marginTop={1}>
 				<Text bold>
 					{step === 'release'
-						? `Release ${offered.join(', ')} now? (y/N)`
+						? `Release ${names(offered).join(', ')} now? (y/N)`
 						: PROMPTS[step]}{' '}
 					›{' '}
 				</Text>

@@ -1663,7 +1663,7 @@ function facts(plan: ReadyPlan, files: string[]) {
 const MONOREPO_HINT =
 	'chamoji: this looks like a monorepo with several apps; run chamoji setup to version each one';
 
-const GET_STARTED = 'Get started: run chamoji setup';
+const GET_STARTED = 'Run `chamoji setup` to get started.';
 
 /** Whether `release`, `next-version` and `changelog` work per unit: a release section whose shape isn't single. */
 function releasesUnits(config: ChamojiConfig): boolean {

@@ -63,10 +63,15 @@ const SETUP_HINT =
 async function setupHint(io: Io): Promise<void> {
 	if ((io.env ?? process.env)['CI']) return;
 	try {
-		const gitDir = (
-			await runGit(['rev-parse', '--absolute-git-dir'], io.cwd)
+		// The common dir is shared by a clone's worktrees; the git dir is not.
+		const common = (
+			await runGit(['rev-parse', '--git-common-dir'], io.cwd)
 		).trim();
-		const marker = path.join(gitDir, 'chamoji', 'setup-hint');
+		const marker = path.join(
+			path.resolve(io.cwd, common),
+			'chamoji',
+			'setup-hint',
+		);
 		if (existsSync(marker)) return;
 		await mkdir(path.dirname(marker), {recursive: true});
 		await writeFile(marker, '');

@@ -991,3 +991,13 @@ test('the setup hint is not shown in CI', async () => {
 	const later = await chamoji(['init'], dir, NOT_CI);
 	expect(later.stderr).toBe(SETUP_HINT);
 });
+
+test('the setup hint is once per clone, not once per worktree', async () => {
+	const {dir} = await repoFrom([{commit: '🎉 Init'}]);
+	const tree = path.join(await tempDir(), 'second');
+	await gitOutput(dir, ['worktree', 'add', '-q', '-b', 'other', tree]);
+	const first = await chamoji(['init'], dir, NOT_CI);
+	expect(first.stderr).toBe(SETUP_HINT);
+	const second = await chamoji(['init'], tree, NOT_CI);
+	expect(second.stderr).toBe('');
+});
