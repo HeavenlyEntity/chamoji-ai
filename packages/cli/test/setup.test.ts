@@ -47,10 +47,10 @@ const NO_TERMINAL =
 const SINGLE =
 	"One package, so chamoji release already knows what to do; there's nothing to set up for releases.";
 const SQUASH_ADVICE =
-	'Squash merges here keep only the PR title, which drops Release:, Workstream: and intent-card trailers. In the repo\'s Settings → General → Pull Requests, set "Default commit message" for squash merges to "Pull request title and description".';
+	'Squash merges here keep only the PR title or its description, which drops the commits\' Release:, Workstream: and intent-card lines. In the repo\'s Settings → General → Pull Requests, set "Default commit message" for squash merges to "Default message" or "Pull request title and commit details".';
 const SQUASH_QUERY = [
 	'--jq',
-	'[.allow_squash_merge, .squash_merge_commit_message] | @tsv',
+	'[.allow_squash_merge, .squash_merge_commit_title, .squash_merge_commit_message] | @tsv',
 ];
 
 /** A gh that isn't installed, recording what it was asked. */
@@ -508,7 +508,7 @@ test('an unknown step exits 1', async () => {
 	);
 });
 
-test('the squash-merge check advises only for PR_TITLE squashes, and is silent without gh', async () => {
+test('the squash-merge check advises when squash bodies are blank or the PR description, and is silent without gh', async () => {
 	const dir = await made(gearzLayout({template: true}));
 	await gitOutput(dir, [
 		'remote',
@@ -516,17 +516,30 @@ test('the squash-merge check advises only for PR_TITLE squashes, and is silent w
 		'origin',
 		'https://github.com/acme/gearz.git',
 	]);
-	const prTitle = answering('true\tPR_TITLE');
+	// "Pull request title": the body is blank.
+	const prTitle = answering('true\tPR_TITLE\tBLANK');
 	expect(await checkSquashMerge(prTitle, dir)).toBe(SQUASH_ADVICE);
 	expect(prTitle.calls).toEqual([['api', 'repos/acme/gearz', ...SQUASH_QUERY]]);
 	// gh is killed after 5 s, and an answer that never comes gives null.
 	expect(prTitle.options).toEqual([{timeoutMs: 5000}]);
+	// "Pull request title and description".
+	expect(
+		await checkSquashMerge(answering('true\tPR_TITLE\tPR_BODY'), dir),
+	).toBe(SQUASH_ADVICE);
+	expect(
+		await checkSquashMerge(answering('true\tCOMMIT_OR_PR_TITLE\tBLANK'), dir),
+	).toBe(SQUASH_ADVICE);
 	const hanging: GhRunner = async () => new Promise(() => {});
 	expect(await checkSquashMerge(hanging, dir, 50)).toBeNull();
-	expect(
-		await checkSquashMerge(answering('true\tCOMMIT_MESSAGES'), dir),
-	).toBeNull();
-	expect(await checkSquashMerge(answering('false\tPR_TITLE'), dir)).toBeNull();
+	// "Default message" and "Pull request title and commit details" keep them.
+	for (const kept of [
+		'true\tCOMMIT_OR_PR_TITLE\tCOMMIT_MESSAGES',
+		'true\tPR_TITLE\tCOMMIT_MESSAGES',
+		'false\tPR_TITLE\tBLANK',
+	]) {
+		expect(await checkSquashMerge(answering(kept), dir)).toBeNull();
+	}
+
 	expect(await checkSquashMerge(noGh(), dir)).toBeNull();
 	const throwing: GhRunner = async () => {
 		throw new Error('boom');
@@ -536,18 +549,18 @@ test('the squash-merge check advises only for PR_TITLE squashes, and is silent w
 
 	// Through setup: the report carries it, and the text run prints it.
 	const json = await chamoji(['setup', '--json'], dir, {
-		gh: answering('true\tPR_TITLE'),
+		gh: answering('true\tPR_TITLE\tBLANK'),
 	});
 	expect((JSON.parse(json.stdout) as Report).squashMerge).toBe(SQUASH_ADVICE);
 	// Only the releases step: memory would fetch from github.com.
 	const text = await chamoji(['setup', 'releases', '--yes'], dir, {
-		gh: answering('true\tPR_TITLE'),
+		gh: answering('true\tPR_TITLE\tPR_BODY'),
 	});
 	expect(text.stdout).toContain(`${SQUASH_ADVICE}\n`);
 
 	// No GitHub remote: gh is never asked.
 	const local = await gearz();
-	const gh = answering('true\tPR_TITLE');
+	const gh = answering('true\tPR_TITLE\tBLANK');
 	expect(await checkSquashMerge(gh, local)).toBeNull();
 	expect(gh.calls).toEqual([]);
 });
@@ -707,7 +720,7 @@ test("in a terminal, the squash check doesn't hold up the screen", async () => {
 		await new Promise<void>(resolve => {
 			answer = resolve;
 		});
-		return {ok: true, message: 'true\tPR_TITLE'};
+		return {ok: true, message: 'true\tPR_TITLE\tBLANK'};
 	};
 
 	const {code, stdout} = await chamoji(['setup', 'releases'], dir, {
