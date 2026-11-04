@@ -141,6 +141,7 @@ test('replay lines up the last releases with what was shipped', async () => {
 		'web v1.0.0: you shipped 2 entries; chamoji would write 3, and the extra one is "👷 Cache the pnpm store"',
 	]);
 	expect(lines.map(line => line.unit)).toEqual(['web', 'web']);
+	expect(lines.map(line => line.version)).toEqual(['1.1.0', '1.0.0']);
 });
 
 test('no past releases: no replay', async () => {
@@ -151,7 +152,13 @@ test('no past releases: no replay', async () => {
 });
 
 test('replayText reads the three ways a release can compare', () => {
-	const line = {unit: 'web', tag: 'web/v2.3.0', extra: [], missing: []};
+	const line = {
+		unit: 'web',
+		tag: 'web/v2.3.0',
+		version: '2.3.0',
+		extra: [],
+		missing: [],
+	};
 	expect(
 		replayText({
 			...line,
@@ -162,10 +169,32 @@ test('replayText reads the three ways a release can compare', () => {
 	).toBe(
 		'web v2.3.0: you shipped 14 entries; chamoji would write 15, and the extra one is "👷 Cache the pnpm store"',
 	);
-	expect(replayText({...line, tag: 'web/v2.2.0', shipped: 9, chamoji: 9})).toBe(
-		'web v2.2.0: same 9 entries',
-	);
 	expect(
-		replayText({...line, tag: 'web/v2.1.0', shipped: null, chamoji: 7}),
+		replayText({
+			...line,
+			tag: 'web/v2.2.0',
+			version: '2.2.0',
+			shipped: 9,
+			chamoji: 9,
+		}),
+	).toBe('web v2.2.0: same 9 entries');
+	expect(
+		replayText({
+			...line,
+			tag: 'web/v2.1.0',
+			version: '2.1.0',
+			shipped: null,
+			chamoji: 7,
+		}),
 	).toBe('web v2.1.0: no changelog then; chamoji would write 7 entries');
+	// A two-part version in an old format reads as its version, not the tag.
+	expect(
+		replayText({
+			...line,
+			tag: 'web-v1.2',
+			version: '1.2',
+			shipped: 3,
+			chamoji: 3,
+		}),
+	).toBe('web v1.2: same 3 entries');
 });

@@ -441,6 +441,7 @@ test('every string from the repo is stripped of control characters', async () =>
 		{
 			unit: 'web',
 			tag: `web/v${evil}1.0.0`,
+			version: `${evil}1.0.0`,
 			shipped: 1,
 			chamoji: 2,
 			extra: [`ci${evil}`],

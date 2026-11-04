@@ -3,8 +3,10 @@ import {ownerOf, readWorkspace, resolveUnits} from '../units/workspace.js';
 
 /**
  * Which units a staged change releases (`own`) and which ride along because
- * they use a shared package it touches (`rides`). Excluded and root files
- * count for neither. Both are in unit order and empty without release units.
+ * they use a shared package it touches (`rides`). Under
+ * `sharedChanges: "release-dependents"` the shared change releases those
+ * users itself, so they're `own`. Excluded and root files count for neither.
+ * Both are in unit order and empty without release units.
  */
 export async function stagedImpact(
 	root: string,
@@ -26,12 +28,17 @@ export async function stagedImpact(
 		else if (owner.kind === 'internal') shared.add(owner.path);
 	}
 
+	const users = units
+		.filter(
+			unit => !own.has(unit.name) && unit.uses.some(path => shared.has(path)),
+		)
+		.map(unit => unit.name);
+	if (settings.sharedChanges === 'release-dependents') {
+		for (const name of users) own.add(name);
+	}
+
 	return {
 		own: units.filter(unit => own.has(unit.name)).map(unit => unit.name),
-		rides: units
-			.filter(
-				unit => !own.has(unit.name) && unit.uses.some(path => shared.has(path)),
-			)
-			.map(unit => unit.name),
+		rides: settings.sharedChanges === 'release-dependents' ? [] : users,
 	};
 }

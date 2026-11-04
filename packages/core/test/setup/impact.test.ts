@@ -17,7 +17,9 @@ afterEach(async () => {
 
 const json = (value: unknown) => `${JSON.stringify(value)}\n`;
 
-async function monorepo(): Promise<{root: string; config: ChamojiConfig}> {
+async function monorepo(
+	sharedChanges = 'ride-along',
+): Promise<{root: string; config: ChamojiConfig}> {
 	const root = await mkdtemp(path.join(tmpdir(), 'chamoji-impact-'));
 	dirs.push(root);
 	const files: Record<string, string> = {
@@ -53,6 +55,7 @@ async function monorepo(): Promise<{root: string; config: ChamojiConfig}> {
 				mobile: {path: 'apps/mobile', tag: 'mobile/v{version}'},
 			},
 			exclude: ['apps/dev-tool'],
+			sharedChanges,
 		},
 		'chamoji.config.json',
 	);
@@ -86,4 +89,21 @@ test('stagedImpact: own units, ride-along units, excluded and root files ignored
 			'apps/web/a.ts',
 		]),
 	).toEqual({own: [], rides: []});
+});
+
+test('stagedImpact: under release-dependents, a shared change releases its users', async () => {
+	const {root, config} = await monorepo('release-dependents');
+	expect(
+		await stagedImpact(root, config, ['packages/supabase/src/s.ts']),
+	).toEqual({own: ['web', 'mobile'], rides: []});
+	expect(
+		await stagedImpact(root, config, [
+			'apps/web/src/a.ts',
+			'packages/supabase/src/s.ts',
+		]),
+	).toEqual({own: ['web', 'mobile'], rides: []});
+	expect(await stagedImpact(root, config, ['apps/web/src/a.ts'])).toEqual({
+		own: ['web'],
+		rides: [],
+	});
 });
