@@ -23,10 +23,7 @@ async function upstreamCommits(
 	const remote = settings.upstream?.remote;
 	if (remote) {
 		const fromRemote = lines(
-			await runGit(
-				['rev-list', `--glob=refs/remotes/${remote}/*`, '--end-of-options'],
-				cwd,
-			),
+			await runGit(['rev-list', `--glob=refs/remotes/${remote}/*`], cwd),
 		);
 		if (fromRemote.length > 0) return new Set(fromRemote);
 	}
@@ -65,7 +62,9 @@ async function syncTarget(
 				semver.rcompare(a.version!, b.version!) || a.name.localeCompare(b.name),
 		)[0];
 	if (newest) return newest.name;
-	return (await runGit(['rev-parse', '--short', other], cwd)).trim();
+	return (
+		await runGit(['rev-parse', '--short', '--end-of-options', other], cwd)
+	).trim();
 }
 
 /** Upstream commit hashes (reachable from refs/remotes/<remote>/* or an ignored tag) and one synthetic commit per sync merge in `range`. */
@@ -98,7 +97,8 @@ export async function readUpstream(
 			line.split(FIELD) as [string, string, string, string, string, string];
 		const [first, ...others] = parentList.split(' ');
 		const other = others.find(parent => commits.has(parent));
-		if (!first || other === undefined) continue;
+		// Upstream's own merges (e.g. template PR merges) are not syncs.
+		if (commits.has(hash) || !first || other === undefined) continue;
 
 		const to = await syncTarget(cwd, settings, first, other);
 		const description = `Updated the ${base} base to ${to}`;
@@ -133,7 +133,7 @@ export async function sinceRange(
 	if (!since) return undefined;
 	const [, ...parents] = lines(
 		await runGit(
-			['rev-list', '--parents', '-n', '1', since, '--end-of-options'],
+			['rev-list', '--parents', '-n', '1', '--end-of-options', since],
 			cwd,
 		),
 	)[0]!.split(' ');

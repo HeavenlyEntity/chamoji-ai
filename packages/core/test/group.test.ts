@@ -99,3 +99,24 @@ test('CI and test commits go to Maintenance, not Added', () => {
 		['maintenance', 'Maintenance', 7],
 	]);
 });
+
+test('a sync avoids a collapsed group when there is no changed group', () => {
+	const sync = {
+		...commit('⬆️ Updated the Makerkit base to 4.0.3'),
+		sync: {base: 'Makerkit', to: '4.0.3'},
+	};
+	const groups = groupCommits(
+		[sync, commit('⬆️ Bump react')],
+		[
+			{
+				group: 'deps',
+				label: 'Dependencies',
+				emojis: ['arrow_up'],
+				collapse: true,
+			},
+			{group: 'other', label: 'Other', emojis: ['bug']},
+		],
+	);
+	expect(groups.find(g => g.group === 'other')?.commits).toEqual([sync]);
+	expect(groups.find(g => g.group === 'deps')?.commits).toHaveLength(1);
+});

@@ -247,3 +247,34 @@ test('a sync line is never collapsed', async () => {
 	expect(dependencies?.collapse).toBe(true);
 	expect(dependencies?.commits).toHaveLength(2);
 });
+
+test("upstream's own merges and own branch merges are not syncs", async () => {
+	const dir = (await createRepo([{commit: 'Base'}])).dir;
+	try {
+		// Upstream history with a PR-style merge in it.
+		await git(dir, ['switch', '-q', '-c', 'tpl']);
+		await commitFile(dir, 'tpl/a.txt', 'Template a');
+		await git(dir, ['switch', '-q', '-c', 'tpl-pr', 'main']);
+		await commitFile(dir, 'tpl/b.txt', 'Template b');
+		await git(dir, ['switch', '-q', 'tpl']);
+		await git(dir, ['merge', '--no-ff', '-q', '-m', 'Template PR', 'tpl-pr']);
+		await git(dir, ['update-ref', 'refs/remotes/upstream/main', 'tpl']);
+		// An own feature branch merged into main.
+		await git(dir, ['switch', '-q', 'main']);
+		await git(dir, ['switch', '-q', '-c', 'feature']);
+		await commitFile(dir, 'apps/web/f.ts', 'Own feature');
+		await git(dir, ['switch', '-q', 'main']);
+		await git(dir, ['merge', '--no-ff', '-q', '-m', 'Own merge', 'feature']);
+		// Then the sync, which carries the template's PR merge in.
+		await git(dir, ['merge', '--no-ff', '-q', '-m', 'Sync', 'tpl']);
+		const {syncs, commits} = await readUpstream(dir, 'HEAD', withUpstream, []);
+		expect(syncs).toHaveLength(1);
+		expect(syncs[0]!.hash).toBe(
+			(await gitOutput(dir, ['rev-parse', 'HEAD'])).trim(),
+		);
+		const prMerge = (await gitOutput(dir, ['rev-parse', 'tpl'])).trim();
+		expect(commits.has(prMerge)).toBe(true);
+	} finally {
+		await rm(dir, {recursive: true, force: true});
+	}
+});
