@@ -196,3 +196,9 @@ export {
 	type LayoutDetection,
 	type UnitFacts,
 } from './setup/detect.js';
+export {
+	detectTags,
+	findUpstreamRemote,
+	type TagDetection,
+	type UnitTagFormats,
+} from './setup/tags.js';

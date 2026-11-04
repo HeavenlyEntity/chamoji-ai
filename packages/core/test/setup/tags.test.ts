@@ -1,0 +1,180 @@
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
+import {afterEach, expect, test} from 'vitest';
+import {
+	detectLayout,
+	detectTags,
+	findUpstreamRemote,
+	type TagDetection,
+} from '../../src/index.js';
+import type {FixtureRepo, RepoStep} from '../helpers/fixture-repo.js';
+import {gearzLayout, libraryLayout} from '../helpers/setup-fixtures.js';
+
+const execFileAsync = promisify(execFile);
+
+let repo: FixtureRepo | undefined;
+
+afterEach(async () => {
+	await repo?.cleanup();
+	repo = undefined;
+});
+
+const TEMPLATE_TAGS = ['4.0.1', '4.0.2', 'v4.0.2-1'];
+
+const git = async (dir: string, args: string[]) =>
+	execFileAsync('git', args, {cwd: dir});
+
+async function tagsOf(dir: string): Promise<TagDetection> {
+	const layout = await detectLayout(dir);
+	return detectTags(layout, await findUpstreamRemote(dir));
+}
+
+/** One commit, then a tag on it, for each tag. */
+const tagged = (...tags: string[]): RepoStep[] =>
+	tags.flatMap(tag => [{commit: `🔖 Release ${tag}`}, {tag}]);
+
+const ignoredBy = (tag: string, patterns: string[]): string[] =>
+	patterns.filter(pattern => new RegExp(pattern).test(tag));
+
+test('Makerkit tags reached from the upstream remote are inherited, as two shape patterns', async () => {
+	repo = await gearzLayout({template: true});
+	expect(await findUpstreamRemote(repo.dir)).toBe('upstream');
+	const found = await tagsOf(repo.dir);
+	expect([...found.inherited.tags].sort()).toEqual(TEMPLATE_TAGS);
+	expect(found.inherited.patterns).toEqual([
+		'^\\d+\\.\\d+\\.\\d+$',
+		'^v\\d+\\.\\d+\\.\\d+-\\d+$',
+	]);
+	expect(found.inherited.examples).toEqual(['v4.0.2-1', '4.0.2', '4.0.1']);
+});
+
+test("without a remote, tags only the template's authors can reach are inherited", async () => {
+	repo = await gearzLayout({
+		template: true,
+		extraSteps: [...tagged('1.0.0'), {commit: '✨ Add the CRM'}],
+	});
+	await git(repo.dir, ['remote', 'remove', 'upstream']);
+	expect(await findUpstreamRemote(repo.dir)).toBeNull();
+	const found = await tagsOf(repo.dir);
+	expect([...found.inherited.tags].sort()).toEqual(TEMPLATE_TAGS);
+	expect(found.inherited.tags).not.toContain('1.0.0');
+});
+
+test('without a remote, a fork released at HEAD takes its newest authors as recent', async () => {
+	const work: RepoStep[] = Array.from({length: 50}, (_, n) => ({
+		commit: `✨ Build feature ${n + 1}`,
+	}));
+	repo = await gearzLayout({
+		template: true,
+		extraSteps: [...work, {tag: '1.0.0'}],
+	});
+	await git(repo.dir, ['remote', 'remove', 'upstream']);
+	const found = await tagsOf(repo.dir);
+	expect([...found.inherited.tags].sort()).toEqual(TEMPLATE_TAGS);
+});
+
+test('an app that tags plain versions itself gets exact patterns for the template tags', async () => {
+	repo = await gearzLayout({template: true, extraSteps: tagged('1.0.0')});
+	const found = await tagsOf(repo.dir);
+	expect([...found.inherited.tags].sort()).toEqual(TEMPLATE_TAGS);
+	expect(found.inherited.patterns).toContain('^4\\.0\\.1$');
+	expect(found.inherited.patterns).toContain('^4\\.0\\.2$');
+	expect(ignoredBy('1.0.0', found.inherited.patterns)).toEqual([]);
+	for (const tag of TEMPLATE_TAGS) {
+		expect(ignoredBy(tag, found.inherited.patterns)).not.toEqual([]);
+	}
+});
+
+test('wip/* tags are stray with one prefix pattern', async () => {
+	repo = await gearzLayout({template: true});
+	const found = await tagsOf(repo.dir);
+	expect(found.stray).toEqual({
+		tags: ['wip/crm-pipeline-stages'],
+		patterns: ['^wip/'],
+	});
+});
+
+test("mixed historical web tags are read, and the newest one's format is recommended", async () => {
+	repo = await gearzLayout({
+		extraSteps: tagged('web-v1.2', 'web/v1.3.0', 'final-release'),
+	});
+	const found = await tagsOf(repo.dir);
+	expect(found.perUnit.web).toEqual({
+		write: 'web/v{version}',
+		read: ['web-v{version}'],
+		last: {tag: 'web/v1.3.0', version: '1.3.0'},
+		unparseable: [],
+		manifestDisagrees: true,
+	});
+	expect(found.stray).toEqual({
+		tags: ['final-release'],
+		patterns: ['^final-release$'],
+	});
+	expect(found.inherited.tags).toEqual([]);
+	// A unit with no tags gets the apps default.
+	expect(found.perUnit.mobile).toEqual({
+		write: '{unit}/v{version}',
+		read: [],
+		last: null,
+		unparseable: [],
+		manifestDisagrees: false,
+	});
+});
+
+test('a web tag with no version is unparseable', async () => {
+	repo = await gearzLayout({extraSteps: tagged('web/v0.1.0', 'web-final')});
+	const found = await tagsOf(repo.dir);
+	expect(found.perUnit.web!.unparseable).toEqual(['web-final']);
+	expect(found.perUnit.web!.last).toEqual({
+		tag: 'web/v0.1.0',
+		version: '0.1.0',
+	});
+	expect(found.stray.tags).toEqual([]);
+});
+
+test('a tag that disagrees with the manifest is flagged', async () => {
+	repo = await gearzLayout({
+		extraSteps: tagged('web/v0.2.0', 'mobile/v1.0'),
+	});
+	const found = await tagsOf(repo.dir);
+	// web's manifest says 0.1.0; mobile's 1.0.0 matches its loose 1.0 tag.
+	expect(found.perUnit.web!.manifestDisagrees).toBe(true);
+	expect(found.perUnit.mobile!.manifestDisagrees).toBe(false);
+	expect(found.perUnit.mobile!.last).toEqual({
+		tag: 'mobile/v1.0',
+		version: '1.0.0',
+	});
+});
+
+test('libraries on one v tag share it', async () => {
+	const untagged = await libraryLayout();
+	try {
+		const plain = await tagsOf(untagged.dir);
+		expect(plain.perUnit.core!.write).toBe('{name}@{version}');
+	} finally {
+		await untagged.cleanup();
+	}
+
+	repo = await libraryLayout({extraSteps: [{tag: 'v1.2.0'}]});
+	const found = await tagsOf(repo.dir);
+	expect(Object.keys(found.perUnit).sort()).toEqual(['cli', 'core', 'types']);
+	for (const unit of Object.values(found.perUnit)) {
+		expect(unit).toEqual({
+			write: 'v{version}',
+			read: [],
+			last: {tag: 'v1.2.0', version: '1.2.0'},
+			unparseable: [],
+			manifestDisagrees: false,
+		});
+	}
+
+	expect(found.inherited.tags).toEqual([]);
+});
+
+test('findUpstreamRemote takes a remote that shares history, never origin', async () => {
+	repo = await gearzLayout({template: true});
+	await git(repo.dir, ['remote', 'rename', 'upstream', 'template']);
+	expect(await findUpstreamRemote(repo.dir)).toBe('template');
+	await git(repo.dir, ['remote', 'rename', 'template', 'origin']);
+	expect(await findUpstreamRemote(repo.dir)).toBeNull();
+});
