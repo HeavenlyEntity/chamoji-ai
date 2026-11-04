@@ -1,4 +1,4 @@
-import {mkdir, readFile, rm, writeFile} from 'node:fs/promises';
+import {lstat, mkdir, readFile, rm, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import semver from 'semver';
 import {applyClassifier, buildRelease} from '../changelog.js';
@@ -301,6 +301,10 @@ export async function planUnitReleases(
 		packages,
 		settings,
 	);
+	await refuseLinks(
+		root,
+		changes.map(change => change.file),
+	);
 	return {
 		status: 'ready',
 		root,
@@ -329,6 +333,11 @@ export async function applyUnitReleases(
 ): Promise<{commit: string}> {
 	const git = async (...args: string[]) =>
 		(await runGit(args, plan.root)).trim();
+	// Checked again here: the tree may have changed since the plan was made.
+	await refuseLinks(
+		plan.root,
+		plan.changes.map(change => change.file),
+	);
 	const made: string[] = [];
 	const created: string[] = [];
 	try {
@@ -946,6 +955,51 @@ function excluded(
 			: [];
 	});
 	return lines.length > 0 ? lines.join('\n') : undefined;
+}
+
+/**
+ * Refuses a file the release would write through a symlink (the file itself
+ * or a folder between it and the repo root) or outside the repository. Git
+ * commits a link, not what it points to, so writing through one would change
+ * a file the release commit doesn't hold, possibly outside the repository.
+ */
+async function refuseLinks(root: string, files: string[]): Promise<void> {
+	for (const file of files) {
+		const relative = path.relative(root, path.resolve(root, file));
+		if (
+			relative === '' ||
+			relative === '..' ||
+			relative.startsWith(`..${path.sep}`) ||
+			path.isAbsolute(relative)
+		) {
+			throw new ReleaseError(
+				'invalid-version',
+				`${file} is outside the repository; chamoji only writes files inside it`,
+			);
+		}
+
+		let at = root;
+		for (const part of relative.split(path.sep)) {
+			at = path.join(at, part);
+			let isLink: boolean;
+			try {
+				isLink = (await lstat(at)).isSymbolicLink();
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code === 'ENOENT') break;
+				throw error;
+			}
+
+			if (isLink) {
+				const link = path.relative(root, at).split(path.sep).join('/');
+				throw new ReleaseError(
+					'invalid-version',
+					link === file
+						? `${file} is a symlink; chamoji won't write through links`
+						: `${file} goes through ${link}, which is a symlink; chamoji won't write through links`,
+				);
+			}
+		}
+	}
 }
 
 async function readText(root: string, file: string): Promise<string | null> {
