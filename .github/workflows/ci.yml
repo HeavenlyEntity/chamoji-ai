@@ -39,6 +39,10 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # check builds as well; the other shards still need the build, since
+      # some tests run the built CLI.
       - run: pnpm check
         if: matrix.shard == 1
+      - run: pnpm build
+        if: matrix.shard != 1
       - run: pnpm test --shard=${{ matrix.shard }}/${{ matrix.shards }}
