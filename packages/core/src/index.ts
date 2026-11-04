@@ -204,3 +204,19 @@ export {
 	type UnitTagFormats,
 } from './setup/tags.js';
 export {detectUpstream, type UpstreamDetection} from './setup/upstream.js';
+export {
+	answersFromSection,
+	applyAnswer,
+	detect,
+	questions,
+	recommend,
+	releaseSection,
+	summary,
+	writeReleaseSection,
+	type Detection,
+	type Question,
+	type SetupAnswers,
+	type Source,
+} from './setup/answers.js';
+// The changelog's renderJson is exported above; this one keeps a file's style.
+export {inexactNumber, renderJson as renderJsonText} from './json-text.js';
