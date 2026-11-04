@@ -563,7 +563,7 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 
 ### 7.5. Monorepo releases — ⏭ next
 
-**Progress (2026-11-04):** the release engine is built on `feat/monorepo-releases`: the `apps` and `libraries` shapes, tags and upstream history, version files, per-unit changelogs and GitHub releases, and the Action. It is proven to give 0.12.0's output byte for byte for a repo with no `release` section. `chamoji setup` is the next plan, and 0.13.0 ships the engine.
+**Progress (2026-11-04):** the release engine is built on `feat/monorepo-releases`: the `apps` and `libraries` shapes, tags and upstream history, version files, per-unit changelogs and GitHub releases, and the Action. A repo with no `release` section gets 0.12.0's versions, tags, changelog, release commit and `--json` output, proven byte for byte for `changelog`, `changelog --format json`, `next-version` and `release --dry-run --json` on two fixture repos; the only addition is a one-time stderr hint in monorepos with several apps (never under `--json` or in CI). `chamoji setup` is the next plan, and 0.13.0 ships the engine.
 
 **Design (2026-11-03):** [`docs/superpowers/specs/2026-11-03-monorepo-releases-and-setup-design.md`](superpowers/specs/2026-11-03-monorepo-releases-and-setup-design.md), waiting for approval. It adds `chamoji setup` and replaces the scope below where they differ: releases per app with shared changes riding along, upstream template history left out, and any existing tag format kept.
 

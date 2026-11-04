@@ -81,7 +81,10 @@ export const COMPAT_COMMANDS: Record<string, string[]> = {
  * `<today>` in what is saved and in what is compared.
  */
 export function normalise(text: string): string {
-	return text.replace(/("notes": "## \S+ - )\d{4}-\d{2}-\d{2}/g, '$1<today>');
+	const today = new Date().toISOString().slice(0, 10);
+	return text
+		.replaceAll(`## v0.2.0 - ${today}`, '## v0.2.0 - <today>')
+		.replaceAll(`## 2.0.0 - ${today}`, '## 2.0.0 - <today>');
 }
 
 export type CompatResult = {stdout: string; stderr: string; code: number};
@@ -98,14 +101,11 @@ export async function runCompat(
 	args: string[],
 ): Promise<CompatResult> {
 	const env: NodeJS.ProcessEnv = {...process.env};
-	for (const name of [
-		'CI',
-		'FORCE_COLOR',
-		'NO_COLOR',
-		'COLORFGBG',
-		'CHAMOJI_THEME',
-		'CHAMOJI_ASCII',
-	]) {
+	for (const name of Object.keys(env)) {
+		if (name.startsWith('CHAMOJI_')) delete env[name];
+	}
+
+	for (const name of ['CI', 'FORCE_COLOR', 'NO_COLOR', 'COLORFGBG']) {
 		delete env[name];
 	}
 
