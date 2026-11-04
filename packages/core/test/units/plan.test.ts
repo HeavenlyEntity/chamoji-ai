@@ -1,5 +1,13 @@
 import {execFile} from 'node:child_process';
-import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
+import {
+	mkdir,
+	mkdtemp,
+	readdir,
+	readFile,
+	rm,
+	symlink,
+	writeFile,
+} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {promisify} from 'node:util';
@@ -878,4 +886,46 @@ test('two units outside a fixed group that would get the same tag are refused', 
 	await expect(plan(repo.dir)).rejects.toThrow(
 		'core and extra would both be tagged release-1.0.0; give them tag templates that differ, or put them in one fixed group',
 	);
+});
+
+test('a changelog that is a symlink is refused, and what it points to is left alone', async () => {
+	const dir = await appRepo([WEB_FEATURE]);
+	const outside = await mkdtemp(path.join(tmpdir(), 'chamoji-outside-'));
+	cleanups.push(async () => rm(outside, {recursive: true, force: true}));
+	const target = path.join(outside, 'profile');
+	await writeFile(target, 'keep me\n');
+	await symlink(target, path.join(dir, 'apps/web/CHANGELOG.md'));
+	await git(dir, ['add', '--', 'apps/web/CHANGELOG.md']);
+	await git(dir, ['commit', '-q', '-m', '🔗 Link the web changelog']);
+
+	await expect(plan(dir)).rejects.toThrow(
+		"apps/web/CHANGELOG.md is a symlink; chamoji won't write through links",
+	);
+	expect(await readFile(target, 'utf8')).toBe('keep me\n');
+});
+
+test('a changelog reached through a symlinked folder is refused, at plan and at apply', async () => {
+	const config = structuredClone(GEARZ_CONFIG);
+	(config.release.units.web as Record<string, unknown>).changelog =
+		'apps/web/notes/CHANGELOG.md';
+	const dir = await appRepo([
+		{
+			commit: '🔧 Keep web notes in a folder',
+			files: {'chamoji.config.json': json(config)},
+		},
+		WEB_FEATURE,
+	]);
+	const result = ready(await plan(dir));
+
+	const outside = await mkdtemp(path.join(tmpdir(), 'chamoji-outside-'));
+	cleanups.push(async () => rm(outside, {recursive: true, force: true}));
+	await symlink(outside, path.join(dir, 'apps/web/notes'));
+	await git(dir, ['add', '--', 'apps/web/notes']);
+	await git(dir, ['commit', '-q', '-m', '🔗 Link the web notes']);
+
+	const message =
+		"apps/web/notes/CHANGELOG.md goes through apps/web/notes, which is a symlink; chamoji won't write through links";
+	await expect(plan(dir)).rejects.toThrow(message);
+	await expect(applyUnitReleases(result)).rejects.toThrow(message);
+	expect(await readdir(outside)).toEqual([]);
 });
