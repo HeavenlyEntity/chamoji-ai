@@ -314,7 +314,11 @@ On PRs from forks the token can't comment, so the preview goes to the job summar
 
 ## Repo card
 
-The Action can also keep a card for your project: an image of your latest release and a few stats about it, to paste into your readme. Each card links back to chamoji.
+The Action can also keep a card for your project: an image of your latest release and a few stats about it, to paste into your readme. Each card links back to chamoji. This is chamoji's own, kept up to date by [`card.yml`](.github/workflows/card.yml):
+
+<p align="center">
+  <a href="https://chamoji.dev"><img src="https://raw.githubusercontent.com/HeavenlyEntity/chamoji-ai/chamoji-card/card.png" alt="chamoji's repo card: its latest release, release and commit counts, and the share of commits sorted" width="480"></a>
+</p>
 
 ```yaml
 # .github/workflows/card.yml
