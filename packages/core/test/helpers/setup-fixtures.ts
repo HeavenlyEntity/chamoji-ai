@@ -303,3 +303,114 @@ export async function singlePackage(): Promise<FixtureRepo> {
 		},
 	]);
 }
+
+const TEAM = [
+	{name: 'Alice', email: 'alice@team.example'},
+	{name: 'Bob', email: 'bob@team.example'},
+];
+const CONTRIBUTOR = {name: 'Dave', email: 'dave@contrib.example'};
+
+/** The contributor's own subjects in `forkWorkflow`; each must reach web's notes. */
+export const CONTRIBUTOR_SUBJECTS = [
+	'✨ Add the dashboard',
+	'✨ Add the search',
+];
+
+/**
+ * A GitHub fork-workflow clone: `upstream` is the team's canonical repo, not
+ * a template. Alice and Bob take turns writing 6 commits to web, tagging
+ * v1.0.0 after the 3rd and v1.1.0 after the 6th. With `teamAfterLastTag`
+ * they write 2 more after v1.1.0 (so the canonical-repo guard sees them);
+ * without it, the contributor's commits are the only ones after the last
+ * tag. Dave, the contributor, clones it, renames origin to upstream, and
+ * writes CONTRIBUTOR_SUBJECTS to web.
+ */
+export async function forkWorkflow(options: {
+	teamAfterLastTag: boolean;
+}): Promise<FixtureRepo> {
+	const base = await mkdtemp(path.join(tmpdir(), 'chamoji-canonical-'));
+	const team: RepoStep[] = [
+		{
+			commit: '🎉 Start the shop',
+			files: {
+				'package.json': json({
+					name: 'shop',
+					private: true,
+					workspaces: ['apps/*'],
+				}),
+				'apps/web/package.json': manifest('web', {
+					private: true,
+					version: '1.1.0',
+				}),
+				'apps/mobile/package.json': manifest('mobile', {
+					private: true,
+					version: '1.1.0',
+				}),
+			},
+		},
+	];
+	const canonical = await createRepo(team, {
+		dir: path.join(base, 'team', 'shop'),
+		author: TEAM[0],
+	});
+	let n = 0;
+	const teamCommit = async () => {
+		const who = TEAM[n % TEAM.length]!;
+		n++;
+		const file = `apps/web/feature-${n}.ts`;
+		await writeFile(
+			path.join(canonical.dir, file),
+			`export const feature = ${n};\n`,
+		);
+		const when = new Date(Date.parse('2026-01-01T01:00:00Z') + n * 60_000);
+		const env = {
+			...process.env,
+			GIT_AUTHOR_DATE: when.toISOString(),
+			GIT_COMMITTER_DATE: when.toISOString(),
+		};
+		const git = async (args: string[]) =>
+			execFileAsync(
+				'git',
+				[
+					'-c',
+					`user.name=${who.name}`,
+					'-c',
+					`user.email=${who.email}`,
+					...args,
+				],
+				{cwd: canonical.dir, env},
+			);
+		await git(['add', '--', file]);
+		await git(['commit', '-q', '-m', `✨ Team feature ${n}`]);
+		return git;
+	};
+
+	for (const tag of ['v1.0.0', 'v1.1.0']) {
+		let git: Awaited<ReturnType<typeof teamCommit>> | undefined;
+		for (let step = 0; step < 3; step++) git = await teamCommit();
+		await git!(['tag', tag]);
+	}
+
+	if (options.teamAfterLastTag) {
+		for (let step = 0; step < 2; step++) await teamCommit();
+	}
+
+	const fork = await createRepo(
+		CONTRIBUTOR_SUBJECTS.map((subject, index) => ({
+			commit: subject,
+			files: {[`apps/web/contrib-${index + 1}.ts`]: `export const x = 1;\n`},
+		})),
+		{clone: canonical.dir, author: CONTRIBUTOR},
+	);
+	await execFileAsync('git', ['remote', 'rename', 'origin', 'upstream'], {
+		cwd: fork.dir,
+	});
+	return {
+		dir: fork.dir,
+		async cleanup() {
+			await fork.cleanup();
+			await canonical.cleanup();
+			await rm(base, {recursive: true, force: true});
+		},
+	};
+}

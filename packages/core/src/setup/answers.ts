@@ -30,7 +30,9 @@ export async function detect(root: string): Promise<Detection> {
 	const layout = await detectLayout(root);
 	const remote = await findUpstreamRemote(root);
 	const tags = await detectTags(layout, remote);
-	const upstream = await detectUpstream(root, remote, tags.inherited.tags);
+	const upstream = await detectUpstream(root, remote, tags.inherited.tags, {
+		canonical: tags.canonical,
+	});
 	return {layout, tags, upstream};
 }
 

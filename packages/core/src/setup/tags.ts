@@ -26,6 +26,12 @@ export type TagDetection = {
 	inherited: {tags: string[]; patterns: string[]; examples: string[]};
 	/** e.g. wip/* -> '^wip/'. */
 	stray: {tags: string[]; patterns: string[]};
+	/**
+	 * The upstream remote looks like the team's canonical repo rather than a
+	 * template (see `upstreamIsCanonical`), so nothing is proposed as the
+	 * template's: no inherited tags here, and no template authors.
+	 */
+	canonical: boolean;
 	perUnit: Record<string, UnitTagFormats>;
 	/**
 	 * Formats for the candidates that aren't detected units (unticked apps),
@@ -213,10 +219,29 @@ async function inheritedByAuthors(
 }
 
 /**
+ * The canonical-repo guard (ruling R7). When the remote holds every release
+ * on HEAD (`onHead`, of which `fromRemote` are the ones it reaches) and a
+ * recent own author reaches one of them, the remote is likely the team's
+ * canonical repo, with origin a contributor's fork, and those releases the
+ * team's own. Setup then proposes nothing as the template's.
+ */
+async function upstreamIsCanonical(
+	root: string,
+	onHead: string[],
+	fromRemote: Set<string>,
+	commitOf: Map<string, string>,
+): Promise<boolean> {
+	if (!onHead.every(name => fromRemote.has(name))) return false;
+	const byAuthors = await inheritedByAuthors(root, onHead, onHead, commitOf);
+	return onHead.some(name => !byAuthors.has(name));
+}
+
+/**
  * Version-like tags from the upstream remote or from no recent author, or
  * with no remote fetched, from no recent author alone. `merged` are the
  * candidates HEAD reaches; with a remote, the others can be inherited too,
- * so an unmerged template tag doesn't count as an own tag.
+ * so an unmerged template tag doesn't count as an own tag. `canonical` is
+ * the canonical-repo guard's verdict; when it holds, nothing is inherited.
  */
 async function findInherited(
 	root: string,
@@ -224,9 +249,9 @@ async function findInherited(
 	merged: Set<string>,
 	remote: string | null,
 	commitOf: Map<string, string>,
-): Promise<Set<string>> {
+): Promise<{inherited: Set<string>; canonical: boolean}> {
 	const onHead = candidates.filter(name => merged.has(name));
-	if (onHead.length === 0) return new Set();
+	if (onHead.length === 0) return {inherited: new Set(), canonical: false};
 	if (remote) {
 		const reachable = new Set(
 			lines(
@@ -238,17 +263,8 @@ async function findInherited(
 			const fromRemote = new Set(
 				candidates.filter(name => reachable.has(commitOf.get(name) ?? '')),
 			);
-			// When upstream holds every release, it may be the canonical repo
-			// and these the team's own tags (origin is a contributor's fork).
-			// If recent authors reach any of them, none is proposed.
-			if (onHead.every(name => fromRemote.has(name))) {
-				const byAuthors = await inheritedByAuthors(
-					root,
-					onHead,
-					onHead,
-					commitOf,
-				);
-				if (onHead.some(name => !byAuthors.has(name))) return new Set();
+			if (await upstreamIsCanonical(root, onHead, fromRemote, commitOf)) {
+				return {inherited: new Set(), canonical: true};
 			}
 
 			// A template tag whose branch the remote has since deleted is
@@ -267,15 +283,21 @@ async function findInherited(
 				commitOf,
 				unique(tips),
 			);
-			return new Set(
-				candidates.filter(
-					name => fromRemote.has(name) || byOwnAuthors.has(name),
+			return {
+				inherited: new Set(
+					candidates.filter(
+						name => fromRemote.has(name) || byOwnAuthors.has(name),
+					),
 				),
-			);
+				canonical: false,
+			};
 		}
 	}
 
-	return inheritedByAuthors(root, onHead, onHead, commitOf);
+	return {
+		inherited: await inheritedByAuthors(root, onHead, onHead, commitOf),
+		canonical: false,
+	};
 }
 
 type ReadTag = {
@@ -449,7 +471,7 @@ export async function detectTags(
 	// Every tag, merged or not, so a pattern never hides one on another branch.
 	const commitOf = await tagCommits(root);
 	const allTags = [...commitOf.keys()];
-	const inheritedSet = await findInherited(
+	const {inherited: inheritedSet, canonical} = await findInherited(
 		root,
 		allTags.filter(name => VERSION_LIKE.test(name)),
 		new Set(tags.map(tag => tag.name)),
@@ -565,6 +587,7 @@ export async function detectTags(
 			patterns: shapePatterns(inherited, notInherited, samples),
 			examples: inherited.slice(0, MAX_EXAMPLES),
 		},
+		canonical,
 		stray: {
 			tags: stray,
 			patterns: strayPatterns(stray, [

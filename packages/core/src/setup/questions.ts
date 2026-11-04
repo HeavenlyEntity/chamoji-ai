@@ -554,6 +554,27 @@ function mixedNote(layout: LayoutDetection): string {
 	return `${list(names)} ${one ? 'is' : 'are'} published but ${one ? 'stays' : 'stay'} internal for now, as a mixed setup that versions ${one ? 'it' : 'them'} is still to come`;
 }
 
+/**
+ * 'commits by a count as Makerkit's', naming the answer's template authors,
+ * the most prolific first: two by name, more as 'a and 2 others'. '' when
+ * there are none.
+ */
+function authorsClause(detection: Detection, answers: SetupAnswers): string {
+	const emails = answers.upstream?.authors ?? [];
+	if (emails.length === 0) return '';
+	const commits = (email: string) =>
+		detection.upstream.authors.find(author => author.email === email)
+			?.commits ?? 0;
+	const named = [...emails].sort(
+		(a, b) => commits(b) - commits(a) || (a < b ? -1 : a > b ? 1 : 0),
+	);
+	const who =
+		named.length > 2
+			? `${named[0]} and ${named.length - 1} others`
+			: list(named);
+	return `commits by ${who} count as ${baseName(detection, answers).prose}'s`;
+}
+
 /** The first-screen paragraph: what setup found and what it will do. */
 export function summary(detection: Detection, answers: SetupAnswers): string {
 	const {tags, upstream} = detection;
@@ -579,10 +600,13 @@ export function summary(detection: Detection, answers: SetupAnswers): string {
 		const ignored = tags.inherited.tags.filter(tag =>
 			answers.ignore.some(pattern => matchesTagPattern(tag, pattern)),
 		).length;
+		const authors = authorsClause(detection, answers);
 		if (ignored > 0) {
 			sentences.push(
-				`${count(ignored, 'tag looks like it', 'tags look like they')} came from ${base.prose} and will be ignored.`,
+				`${count(ignored, 'tag looks like it', 'tags look like they')} came from ${base.prose} and will be ignored${authors ? `, and ${authors}` : ''}.`,
 			);
+		} else if (authors) {
+			sentences.push(`${authors.charAt(0).toUpperCase()}${authors.slice(1)}.`);
 		}
 
 		sentences.push(

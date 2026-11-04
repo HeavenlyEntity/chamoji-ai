@@ -403,6 +403,7 @@ export async function runSetup(
 									remote: upstream!.remote,
 									name: upstream!.name,
 									since: upstream!.since,
+									authors: upstream!.authors,
 								},
 							}
 						: null,

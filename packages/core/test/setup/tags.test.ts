@@ -57,6 +57,7 @@ test('Makerkit tags reached from the upstream remote are inherited, as two shape
 		'^v\\d+\\.\\d+\\.\\d+-\\d+$',
 	]);
 	expect(found.inherited.examples).toEqual(['v4.0.2-1', '4.0.2', '4.0.1']);
+	expect(found.canonical).toBe(false);
 });
 
 test("without a remote, tags only the template's authors can reach are inherited", async () => {
@@ -249,6 +250,7 @@ test('an upstream that is the canonical repo with our own tags proposes no inher
 	expect(await findUpstreamRemote(repo.dir)).toBe('upstream');
 	const found = await tagsOf(repo.dir);
 	expect(found.inherited).toEqual({tags: [], patterns: [], examples: []});
+	expect(found.canonical).toBe(true);
 });
 
 test("the libraries' next v{version} tag is never matched by an inherited pattern", async () => {

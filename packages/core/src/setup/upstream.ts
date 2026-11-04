@@ -23,8 +23,9 @@ export type UpstreamDetection = {
 	/** Short hashes of commits that look like squashed syncs. */
 	squashedSyncs: string[];
 	/**
-	 * Authors of the remote's commits and the inherited tags' who aren't
-	 * recent own authors, by email (lower-cased, sorted), for upstream.authors.
+	 * Template authors for upstream.authors, by email (lower-cased, sorted):
+	 * see `templateAuthors`. None when the remote looks like the team's
+	 * canonical repo.
 	 */
 	authors: TemplateAuthor[];
 };
@@ -74,8 +75,16 @@ async function remoteUrl(root: string, remote: string): Promise<string> {
 
 /**
  * Who wrote the upstream set (the remote's commits and those the inherited
- * tags reach) and isn't a recent own author: one of the author rule's recent
- * authors, with what the remote reaches left out of the recent window too.
+ * tags reach), isn't a recent own author (the author rule's window, with what
+ * the remote reaches left out of it too), and, with a remote, wrote a commit
+ * on HEAD that the remote doesn't reach.
+ *
+ * That last part keeps a canonical repo's team out: in a fork workflow the
+ * remote reaches every teammate's commit, while a template's author shows up
+ * outside it only through history the template has since dropped (a pruned
+ * step branch), which is what upstream.authors is for. A template whose
+ * history the remote still holds needs no authors; the remote and the
+ * inherited tags already mark it.
  */
 async function templateAuthors(
 	root: string,
@@ -108,6 +117,21 @@ async function templateAuthors(
 		found.set(key, name);
 	}
 
+	if (remote) {
+		const outside = new Set(
+			lines(
+				await runGitWithInput(
+					['log', '--format=%ae', '--stdin'],
+					root,
+					['HEAD', '--not', ...refs].map(rev => `${rev}\n`).join(''),
+				),
+			).map(email => email.toLowerCase()),
+		);
+		for (const email of found.keys()) {
+			if (!outside.has(email)) found.delete(email);
+		}
+	}
+
 	if (found.size === 0) return [];
 	const counts = new Map<string, number>();
 	for (const email of lines(
@@ -124,10 +148,16 @@ async function templateAuthors(
 
 const exactPattern = (tag: string): string => `^${escapeRegExp(tag)}$`;
 
+/**
+ * The upstream history setup finds. `canonical` is the tag detection's
+ * canonical-repo verdict (`TagDetection.canonical`); when it holds, no
+ * template author is proposed.
+ */
 export async function detectUpstream(
 	root: string,
 	remote: string | null,
 	inheritedTags: string[],
+	{canonical = false}: {canonical?: boolean} = {},
 ): Promise<UpstreamDetection> {
 	if (remote === null && inheritedTags.length === 0) return {...EMPTY};
 
@@ -142,7 +172,9 @@ export async function detectUpstream(
 		: [];
 	if (remote && refs.length === 0) return {...EMPTY, remote, name};
 
-	const authors = await templateAuthors(root, remote, refs, inheritedTags);
+	const authors = canonical
+		? []
+		: await templateAuthors(root, remote, refs, inheritedTags);
 	// The engine's own upstream set and idea of a sync: the remote, the
 	// inherited tags and the template's authors.
 	const settings: ReleaseSettings = {
