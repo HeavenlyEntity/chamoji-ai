@@ -13,7 +13,7 @@ export type Upstream = {
 
 const FIELD = '\u001F';
 // A tag that reads as a version: `v?`, digits and dots, then nothing or a prerelease.
-const VERSION_LIKE = /^v?\d+(\.\d+)*(-[0-9A-Za-z.-]+)?$/;
+export const VERSION_LIKE = /^v?\d+(\.\d+)*(-[0-9A-Za-z.-]+)?$/;
 
 const lines = (text: string): string[] => text.split('\n').filter(Boolean);
 
