@@ -43,12 +43,15 @@ function UnitLines({unit}: {unit: PreviewUnit}) {
 		);
 	}
 
-	// The preview has no old version, so the line starts at the new one.
+	// `web 0.1.0 → 0.2.0 (minor) web/v0.2.0`, with none for a unit that has no
+	// version yet, as release --dry-run says it.
 	return (
 		<Box flexDirection="column" marginTop={1}>
 			<Text>
-				<Text bold>{clean(unit.unit)}</Text> {clean(unit.version)} (
-				{clean(unit.bump)}) {clean(unit.tag)}
+				<Text bold>{clean(unit.unit)}</Text>{' '}
+				{clean(
+					`${unit.from ?? 'none'} → ${unit.version} (${unit.bump}) ${unit.tag}`,
+				)}
 			</Text>
 			{unit.notes.map((note, index) => (
 				<Text key={index} dimColor wrap="truncate-end">

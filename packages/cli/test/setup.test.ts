@@ -719,6 +719,8 @@ test('in a terminal, a set-up repo with no per-clone prompt left never opens the
 	const {code, stdout} = await chamoji(['setup'], dir, {setupScreen: screen});
 	expect(screen).not.toHaveBeenCalled();
 	expect(code).toBe(0);
+	// With no screen, the step states are printed as before.
+	expect(stdout).toContain('✓ releases are set up in chamoji.config.json\n');
 	expect(stdout).toContain('chamoji.config.json is already up to date.\n');
 
 	const solo = await made(singlePackage());
@@ -735,13 +737,15 @@ test('in a terminal, a set-up repo opens the screen for the per-clone steps only
 	expect((await chamoji(['setup', 'releases', '--yes'], dir)).code).toBe(0);
 	asTerminal();
 	const seen: SetupScreenProps[] = [];
-	const {code} = await chamoji(['setup'], dir, {
+	const {code, stdout} = await chamoji(['setup'], dir, {
 		async setupScreen(props) {
 			seen.push(props);
 			return {saved: true, answers: props.initial, steps: ['memory']};
 		},
 	});
 	expect(code).toBe(0);
+	// The screen shows the step states itself, so they aren't printed first.
+	for (const state of seen[0]!.states) expect(stdout).not.toContain(state.line);
 	expect(seen).toHaveLength(1);
 	expect(seen[0]!.states[0]).toMatchObject({step: 'releases', done: true});
 	expect(await fetchesMemory(dir)).toBe(true);
