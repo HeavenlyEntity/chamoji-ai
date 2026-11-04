@@ -203,3 +203,4 @@ export {
 	type TagDetection,
 	type UnitTagFormats,
 } from './setup/tags.js';
+export {detectUpstream, type UpstreamDetection} from './setup/upstream.js';

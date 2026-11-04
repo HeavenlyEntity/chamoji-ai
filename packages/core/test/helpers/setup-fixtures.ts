@@ -1,5 +1,5 @@
 import {execFile} from 'node:child_process';
-import {mkdtemp, rm} from 'node:fs/promises';
+import {mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {promisify} from 'node:util';
@@ -21,6 +21,12 @@ export type GearzOptions = {
 	 * wip/crm-pipeline-stages tag sits on the first of them.
 	 */
 	template?: boolean;
+	/**
+	 * With `template`: after the fork's own commits the template gains 3
+	 * commits and the tag 4.0.3, and the fork fetches upstream and merges it
+	 * with a real merge commit.
+	 */
+	sync?: boolean;
 };
 
 const TEMPLATE_AUTHOR = {name: 'Makerkit Bot', email: 'bot@makerkit.dev'};
@@ -54,6 +60,7 @@ function templateSteps(): RepoStep[] {
 async function forkOfTemplate(
 	steps: RepoStep[],
 	fromTemplate: RepoStep[] = templateSteps(),
+	sync = false,
 ): Promise<FixtureRepo> {
 	const base = await mkdtemp(path.join(tmpdir(), 'chamoji-template-'));
 	const template = await createRepo(fromTemplate, {
@@ -67,6 +74,7 @@ async function forkOfTemplate(
 	await execFileAsync('git', ['remote', 'rename', 'origin', 'upstream'], {
 		cwd: fork.dir,
 	});
+	if (sync) await syncFromTemplate(template.dir, fork.dir);
 	return {
 		dir: fork.dir,
 		async cleanup() {
@@ -75,6 +83,44 @@ async function forkOfTemplate(
 			await rm(base, {recursive: true, force: true});
 		},
 	};
+}
+
+const SYNC_COMMITS = 3;
+
+/** The template gains commits and 4.0.3; the fork fetches and merges them. */
+async function syncFromTemplate(template: string, fork: string): Promise<void> {
+	const when = '2026-06-01T00:00:00Z';
+	const env = {
+		...process.env,
+		GIT_AUTHOR_DATE: when,
+		GIT_COMMITTER_DATE: when,
+	};
+	const run = async (cwd: string, args: string[], who: typeof FORK_AUTHOR) =>
+		execFileAsync(
+			'git',
+			['-c', `user.name=${who.name}`, '-c', `user.email=${who.email}`, ...args],
+			{cwd, env},
+		);
+	for (let n = 1; n <= SYNC_COMMITS; n++) {
+		await writeFile(
+			path.join(template, 'README.md'),
+			`# Next Supabase SaaS Kit Turbo\n\nRevision ${TEMPLATE_COMMITS + n}\n`,
+		);
+		await run(template, ['add', '--', 'README.md'], TEMPLATE_AUTHOR);
+		await run(
+			template,
+			['commit', '-q', '-m', `Update the kit (${TEMPLATE_COMMITS + n})`],
+			TEMPLATE_AUTHOR,
+		);
+	}
+
+	await run(template, ['tag', '4.0.3'], TEMPLATE_AUTHOR);
+	await run(fork, ['fetch', '-q', 'upstream'], FORK_AUTHOR);
+	await run(
+		fork,
+		['merge', '--no-ff', '-q', '-m', 'Merge upstream', 'upstream/main'],
+		FORK_AUTHOR,
+	);
 }
 
 const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
@@ -122,7 +168,9 @@ export async function gearzLayout(
 		...(options.template ? [{tag: 'wip/crm-pipeline-stages'}] : []),
 		...(options.extraSteps ?? []),
 	];
-	return options.template ? forkOfTemplate(steps) : createRepo(steps);
+	return options.template
+		? forkOfTemplate(steps, templateSteps(), options.sync)
+		: createRepo(steps);
 }
 
 /** Three published packages; `cli` depends on `core`. */
