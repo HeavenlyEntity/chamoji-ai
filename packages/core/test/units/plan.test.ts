@@ -201,6 +201,33 @@ test('a shared-only commit releases nothing', async () => {
 	});
 });
 
+test('a unit with commits of its own that need no release is pending', async () => {
+	const dir = await appRepo([
+		{
+			commit: '📝 Document the dashboard',
+			files: {'apps/web/README.md': 'dashboard\n'},
+		},
+		SHARED_FIX,
+	]);
+	expect(await plan(dir)).toEqual({
+		status: 'nothing',
+		pending: [
+			{unit: 'web', own: 1, shared: 1},
+			{unit: 'mobile', own: 0, shared: 1},
+		],
+	});
+	const docsOnly = await appRepo([
+		{
+			commit: '📝 Document the camera',
+			files: {'apps/mobile/README.md': 'camera\n'},
+		},
+	]);
+	expect(await plan(docsOnly)).toEqual({
+		status: 'nothing',
+		pending: [{unit: 'mobile', own: 1, shared: 0}],
+	});
+});
+
 test("web's release carries the shared commit once", async () => {
 	const dir = await appRepo([SHARED_FIX, WEB_FEATURE]);
 	const result = ready(await plan(dir));
