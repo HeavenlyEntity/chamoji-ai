@@ -4,6 +4,11 @@ import type {ChamojiConfig, GroupConfig} from './types.js';
 
 export const CONFIG_FILE = 'chamoji.config.json';
 
+/** The config asks for something this version of chamoji can't follow. */
+export class ConfigVersionError extends Error {
+	override name = 'ConfigVersionError';
+}
+
 /**
  * Keep a Changelog style sections, plus Documentation, Maintenance (CI and
  * tests) and a collapsed Dependencies line. Every official gitmoji appears
@@ -183,6 +188,12 @@ export async function loadConfig(
 	}
 
 	const {groups, repositoryUrl} = data as Record<string, unknown>;
+	if ('release' in data) {
+		throw new ConfigVersionError(
+			"this repo's release settings need chamoji 0.13.0 or newer",
+		);
+	}
+
 	if (repositoryUrl !== undefined && typeof repositoryUrl !== 'string') {
 		throw new Error(`Invalid config ${file}: repositoryUrl must be a string`);
 	}

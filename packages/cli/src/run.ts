@@ -8,6 +8,7 @@ import {
 	buildChangelog,
 	CARD_ENDPOINT,
 	cardUrl,
+	ConfigVersionError,
 	fetchesMemory,
 	getActive,
 	getRemoteWebUrl,
@@ -525,7 +526,10 @@ export async function run(argv: string[], given: Io): Promise<number> {
 		} catch (error) {
 			// Git's errors can carry what a remote or a hook printed.
 			io.stderr(`chamoji: ${stripControlLines((error as Error).message)}\n`);
-			return error instanceof ReleaseError ? PREFLIGHT_FAILED : 1;
+			return error instanceof ReleaseError ||
+				error instanceof ConfigVersionError
+				? PREFLIGHT_FAILED
+				: 1;
 		}
 	}
 

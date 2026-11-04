@@ -2,7 +2,11 @@ import {mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {afterEach, expect, test} from 'vitest';
-import {DEFAULT_GROUP_CONFIG, loadConfig} from '../src/config.js';
+import {
+	ConfigVersionError,
+	DEFAULT_GROUP_CONFIG,
+	loadConfig,
+} from '../src/config.js';
 import {GITMOJIS} from '../src/gitmojis.js';
 
 let dir: string | undefined;
@@ -83,4 +87,17 @@ test('typo fixes are documentation, not bug fixes', () => {
 	const fixed = DEFAULT_GROUP_CONFIG.find(group => group.group === 'fixed');
 	expect(documentation?.emojis).toContain('pencil2');
 	expect(fixed?.emojis).not.toContain('pencil2');
+});
+
+test('a config with a release section is refused by this version', async () => {
+	dir = await mkdtemp(path.join(tmpdir(), 'chamoji-config-'));
+	await writeFile(
+		path.join(dir, 'chamoji.config.json'),
+		JSON.stringify({release: {schema: 1, shape: 'apps', units: {}}}),
+	);
+
+	await expect(loadConfig(dir)).rejects.toThrow(
+		"this repo's release settings need chamoji 0.13.0 or newer",
+	);
+	await expect(loadConfig(dir)).rejects.toBeInstanceOf(ConfigVersionError);
 });
