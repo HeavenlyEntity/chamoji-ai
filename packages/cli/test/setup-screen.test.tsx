@@ -634,3 +634,43 @@ test('the terminal screen asks for the background before it draws, and wears the
 		expect(still.result).toMatchObject({saved: true});
 	}
 });
+
+test('a newline, as an Enter pressed before raw mode reads, is Enter everywhere and never typed', async () => {
+	const LF = '\n';
+	const app = open({
+		columns: 80,
+		states: [state('releases', false), state('memory', false)],
+	});
+	await tick();
+	// Change something: a newline opens name:mobile and then answers it,
+	// without becoming part of the name.
+	await app.type('c', ...toQuestion(app.initial, 'name:mobile'), LF);
+	await app.type(...'phone', LF);
+	await app.type(ESC, LF);
+	// The memory prompt takes its default, Yes.
+	expect(app.frame()).toContain('Share memory through origin? (Y/n)');
+	await app.type(LF);
+	expect(app.onDone).toHaveBeenCalledTimes(1);
+	const saved = app.onDone.mock.calls[0]?.[0] as {
+		saved: boolean;
+		answers: SetupAnswers;
+		steps: StepName[];
+	};
+	expect(saved.saved).toBe(true);
+	expect(saved.steps).toEqual(['memory']);
+	expect(saved.answers.units.map(unit => unit.name).sort()).toEqual([
+		'phone',
+		'web',
+	]);
+});
+
+test('a newline on the summary saves, as Enter does', async () => {
+	const app = open({columns: 80});
+	await tick();
+	await app.type('\n');
+	expect(app.onDone).toHaveBeenCalledWith({
+		saved: true,
+		answers: recommend(detection),
+		steps: [],
+	});
+});

@@ -195,9 +195,13 @@ export function SetupScreen({
 			return;
 		}
 
+		// Ink reads a newline (an Enter pressed before raw mode) as 'enter',
+		// not 'return'.
+		const enter = key.return || input === '\n';
+
 		switch (phase) {
 			case 'summary': {
-				if (key.return) save();
+				if (enter) save();
 				else if (key.escape) finish({saved: false});
 				else if (input === 'c') {
 					setCursor(index => Math.min(index, all.length - 1));
@@ -212,7 +216,7 @@ export function SetupScreen({
 				else if (key.upArrow) setCursor(index => Math.max(0, index - 1));
 				else if (key.downArrow) {
 					setCursor(index => Math.min(all.length - 1, index + 1));
-				} else if (key.return && all[cursor]) {
+				} else if (enter && all[cursor]) {
 					setView(viewFor(all[cursor], answers));
 					setPhase('answer');
 				}
@@ -221,7 +225,7 @@ export function SetupScreen({
 			}
 
 			case 'answer': {
-				if (view) onAnswerKey(view, input, key);
+				if (view) onAnswerKey(view, input, key, enter);
 				return;
 			}
 
@@ -239,7 +243,7 @@ export function SetupScreen({
 					}
 				} else if (input.toLowerCase() === 'y') decide(true);
 				else if (input.toLowerCase() === 'n') decide(false);
-				else if (key.return) decide(DEFAULT_YES(prompts[prompt]!.step));
+				else if (enter) decide(DEFAULT_YES(prompts[prompt]!.step));
 			}
 		}
 	});
@@ -248,6 +252,7 @@ export function SetupScreen({
 		current: AnswerView,
 		input: string,
 		key: Parameters<Parameters<typeof useInput>[0]>[1],
+		enter: boolean,
 	): void {
 		const {question} = current;
 		const rows = question.options.length + (question.kind === 'text' ? 1 : 0);
@@ -258,7 +263,7 @@ export function SetupScreen({
 			setView({...current, row: Math.max(0, current.row - 1)});
 		} else if (key.downArrow) {
 			setView({...current, row: Math.min(rows - 1, current.row + 1)});
-		} else if (key.return) {
+		} else if (enter) {
 			if (question.kind === 'ticks') answer(current.ticked);
 			else if (current.row < question.options.length) {
 				answer(question.options[current.row]!.value);
@@ -278,7 +283,13 @@ export function SetupScreen({
 			const edited = {...current, row: question.options.length, error: null};
 			if (key.backspace || key.delete) {
 				setView({...edited, typed: current.typed.slice(0, -1)});
-			} else if (input && !key.ctrl && !key.meta && !key.tab) {
+			} else if (
+				input &&
+				!input.includes('\n') &&
+				!key.ctrl &&
+				!key.meta &&
+				!key.tab
+			) {
 				setView({...edited, typed: current.typed + input});
 			}
 		}
