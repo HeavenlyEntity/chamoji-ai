@@ -339,3 +339,82 @@ test('detectVersionFiles finds native files and skips Pods and build folders', a
 		'apps/rn/android/app/build.gradle',
 	]);
 });
+
+async function configEdit(text: string, name = 'app.config.ts') {
+	const root = await repo({[`apps/m/${name}`]: text});
+	const [edit] = await editVersionFiles(
+		root,
+		unit('apps/m', {versionFiles: [`apps/m/${name}`]}),
+		'2.0.0',
+		options,
+	);
+	return edit;
+}
+
+const shapes: Array<[string, string, string]> = [
+	[
+		'destructured arrow',
+		"export default ({config}) => ({...config, version: '0.1.0', name: 'x'});\n",
+		"export default ({config}) => ({...config, version: '2.0.0', name: 'x'});\n",
+	],
+	[
+		'typed arrow',
+		"export default ({config}: ConfigContext): ExpoConfig => ({\n  ...config,\n  version: '0.1.0',\n});\n",
+		"export default ({config}: ConfigContext): ExpoConfig => ({\n  ...config,\n  version: '2.0.0',\n});\n",
+	],
+	[
+		'block-body arrow',
+		"export default ({config}) => {\n  const x = {version: '5.5.5'};\n  return {...config, version: '0.1.0', x};\n};\n",
+		"export default ({config}) => {\n  const x = {version: '5.5.5'};\n  return {...config, version: '2.0.0', x};\n};\n",
+	],
+	[
+		'module.exports with expo',
+		"module.exports = {\n  expo: {name: 'x', version: '0.1.0'},\n};\n",
+		"module.exports = {\n  expo: {name: 'x', version: '2.0.0'},\n};\n",
+	],
+	[
+		'defineConfig',
+		"import {defineConfig} from 'x';\nexport default defineConfig({\n  version: '0.1.0',\n});\n",
+		"import {defineConfig} from 'x';\nexport default defineConfig({\n  version: '2.0.0',\n});\n",
+	],
+	[
+		'named const with a type',
+		"const A = {version: '7.7.7'};\nconst config: ExpoConfig = {\n  name: 'x',\n  version: '0.1.0',\n};\n\nexport default config;\n",
+		"const A = {version: '7.7.7'};\nconst config: ExpoConfig = {\n  name: 'x',\n  version: '2.0.0',\n};\n\nexport default config;\n",
+	],
+	[
+		'version in a comment, a string and a nested object first',
+		"export default {\n  // version: '9.9.9'\n  description: \"version: '8.8.8'\",\n  extra: {version: '6.6.6'},\n  version: '0.1.0',\n};\n",
+		"export default {\n  // version: '9.9.9'\n  description: \"version: '8.8.8'\",\n  extra: {version: '6.6.6'},\n  version: '2.0.0',\n};\n",
+	],
+	[
+		'a commented-out export above the real one',
+		"// export default { version: '9.9.9' }\n/* module.exports = {version: '9.9.9'} */\nexport default {version: '0.1.0'};\n",
+		"// export default { version: '9.9.9' }\n/* module.exports = {version: '9.9.9'} */\nexport default {version: '2.0.0'};\n",
+	],
+	[
+		'a regex with a quote before version',
+		"const re = /it's/;\nexport default {pattern: /\"x/, version: '0.1.0'};\n",
+		"const re = /it's/;\nexport default {pattern: /\"x/, version: '2.0.0'};\n",
+	],
+];
+
+test.each(shapes)('app.config shape: %s', async (_name, before, after) => {
+	expect(await configEdit(before)).toEqual({
+		file: 'apps/m/app.config.ts',
+		text: after,
+		from: '0.1.0',
+	});
+});
+
+test('a listed package.json with no version stops the release', async () => {
+	const root = await repo({'apps/x/package.json': '{"name": "x"}'});
+	await expect(
+		editVersionFiles(
+			root,
+			unit('apps/x', {versionFiles: ['apps/x/package.json']}),
+			'1.0.0',
+			options,
+		),
+	).rejects.toThrow('apps/x/package.json');
+});
