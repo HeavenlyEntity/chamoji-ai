@@ -97,6 +97,11 @@ function skipValue(text: string, from: number): number {
 			continue;
 		}
 
+		if (ch === '/' && startsRegex(text, i)) {
+			i = skipRegex(text, i);
+			continue;
+		}
+
 		if ('([{'.includes(ch)) depth++;
 		else if (')]}'.includes(ch)) {
 			if (depth === 0) return i;
@@ -155,24 +160,211 @@ function props(text: string, open: number): Prop[] {
 	return found;
 }
 
-/** `{` of the object a JS/TS config file exports, or -1. */
-function exportedObject(text: string): number {
-	const exported = String.raw`(?:export\s+default|module\.exports\s*=)`;
-	const direct = new RegExp(String.raw`${exported}\s*\(?\s*\{`).exec(text);
-	if (direct) return direct.index + direct[0].length - 1;
-	const arrow = new RegExp(
-		String.raw`${exported}\s*(?:async\s*)?(?:\([^)]*\)|\w+)\s*=>\s*\(\s*\{`,
-	).exec(text);
-	if (arrow) return arrow.index + arrow[0].length - 1;
-	const named = new RegExp(String.raw`${exported}\s*(\w+)\s*;?`).exec(text);
-	if (named) {
-		const declared = new RegExp(
-			String.raw`(?:const|let|var)\s+${named[1]!}\b[^=\n]*=\s*\{`,
-		).exec(text);
-		if (declared) return declared.index + declared[0].length - 1;
+const isWordChar = (ch: string | undefined): boolean =>
+	ch !== undefined && /[\w$]/.test(ch);
+
+/** Whether the `/` at `i` opens a regex literal rather than dividing. */
+function startsRegex(text: string, i: number): boolean {
+	if (text.startsWith('//', i) || text.startsWith('/*', i)) return false;
+	let j = i - 1;
+	while (j >= 0 && /\s/.test(text[j]!)) j--;
+	if (j < 0 || '(,=:[!&|?{};'.includes(text[j]!)) return true;
+	let k = j;
+	while (k >= 0 && isWordChar(text[k])) k--;
+	return text.slice(k + 1, j + 1) === 'return';
+}
+
+/** Index just past the regex literal at `from`, or `from + 1` if unclosed. */
+function skipRegex(text: string, from: number): number {
+	let inClass = false;
+	for (let i = from + 1; i < text.length; i++) {
+		const ch = text[i]!;
+		if (ch === '\n') break;
+		if (ch === '\\') i++;
+		else if (ch === '[') inClass = true;
+		else if (ch === ']') inClass = false;
+		else if (ch === '/' && !inClass) return i + 1;
+	}
+
+	return from + 1;
+}
+
+/**
+ * The first match of the sticky `pattern` outside comments, strings and regex
+ * literals, starting at a token boundary; its index, or -1.
+ */
+function findToken(text: string, pattern: RegExp, from = 0): number {
+	let i = from;
+	while (i < text.length) {
+		const next = skipTrivia(text, i);
+		if (next !== i) {
+			i = next;
+			continue;
+		}
+
+		const ch = text[i]!;
+		if (ch === '"' || ch === "'" || ch === '`') {
+			i = skipString(text, i);
+			continue;
+		}
+
+		if (ch === '/' && startsRegex(text, i)) {
+			i = skipRegex(text, i);
+			continue;
+		}
+
+		pattern.lastIndex = i;
+		if (!isWordChar(text[i - 1]) && text[i - 1] !== '.' && pattern.test(text)) {
+			return i;
+		}
+
+		i++;
 	}
 
 	return -1;
+}
+
+/** Index of the `)`, `]` or `}` closing the opener at `open`, or -1. */
+function matchClose(text: string, open: number): number {
+	let depth = 0;
+	let i = open;
+	while (i < text.length) {
+		const ch = text[i]!;
+		if (ch === '"' || ch === "'" || ch === '`') {
+			i = skipString(text, i);
+			continue;
+		}
+
+		if (text.startsWith('//', i) || text.startsWith('/*', i)) {
+			i = skipTrivia(text, i);
+			continue;
+		}
+
+		if (ch === '/' && startsRegex(text, i)) {
+			i = skipRegex(text, i);
+			continue;
+		}
+
+		if ('([{'.includes(ch)) depth++;
+		else if (')]}'.includes(ch) && --depth === 0) return i;
+		i++;
+	}
+
+	return -1;
+}
+
+/** `{` of the `return`ed expression's object in the block at `open`, or -1. */
+function returnedObject(text: string, open: number): number {
+	const close = matchClose(text, open);
+	if (close === -1) return -1;
+	let depth = 0;
+	for (let i = open; i < close; i++) {
+		const ch = text[i]!;
+		if (ch === '"' || ch === "'" || ch === '`') {
+			i = skipString(text, i) - 1;
+		} else if (text.startsWith('//', i) || text.startsWith('/*', i)) {
+			i = skipTrivia(text, i) - 1;
+		} else if ('([{'.includes(ch)) depth++;
+		else if (')]}'.includes(ch)) depth--;
+		else if (
+			depth === 1 &&
+			text.startsWith('return', i) &&
+			!isWordChar(text[i - 1]) &&
+			!isWordChar(text[i + 6])
+		) {
+			return objectOf(text, i + 6);
+		}
+	}
+
+	return -1;
+}
+
+/**
+ * `{` of the object the expression at `from` evaluates to: a literal, a
+ * parenthesised one, an arrow function's result (with or without a typed
+ * parameter list and return type), a call wrapper such as `defineConfig(…)`
+ * or a variable declared as an object. -1 when it can't tell.
+ */
+function objectOf(text: string, from: number): number {
+	let i = skipTrivia(text, from);
+	if (text[i] === '{') return i;
+	if (/^async\b/.test(text.slice(i, i + 6))) i = skipTrivia(text, i + 5);
+	if (text[i] === '(') {
+		const close = matchClose(text, i);
+		if (close === -1) return -1;
+		const after = skipTrivia(text, close + 1);
+		if (text[after] === ':' || text.startsWith('=>', after)) {
+			return arrowBody(text, after);
+		}
+
+		return objectOf(text, i + 1);
+	}
+
+	const ident = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*/.exec(
+		text.slice(i, i + 200),
+	);
+	if (!ident) return -1;
+	const after = skipTrivia(text, i + ident[0].length);
+	if (text.startsWith('=>', after)) return arrowBody(text, after);
+	if (text[after] === '(') return objectOf(text, after + 1);
+	if (ident[0].includes('.')) return -1;
+	const declaration = String.raw`(?:const|let|var)\s+${ident[0]}(?![\w$])`;
+	const declared = findToken(text, new RegExp(declaration, 'y'));
+	if (declared === -1) return -1;
+	const head = new RegExp(`^${declaration}`).exec(text.slice(declared))![0];
+	const equals = findAssign(text, declared + head.length);
+	return equals === -1 ? -1 : objectOf(text, equals + 1);
+}
+
+/** Index of the `=` that begins an initialiser, skipping a type annotation. */
+function findAssign(text: string, from: number): number {
+	let depth = 0;
+	for (let i = from; i < text.length; i++) {
+		const ch = text[i]!;
+		if ('([{<'.includes(ch)) depth++;
+		else if (')]}'.includes(ch)) depth--;
+		else if (ch === '>' && text[i - 1] !== '=') depth--;
+		else if (ch === '=' && depth <= 0 && text[i + 1] !== '>') return i;
+		else if (ch === ';' && depth <= 0) return -1;
+	}
+
+	return -1;
+}
+
+/** From the `:` of a return type or the `=>` of an arrow, to its object. */
+function arrowBody(text: string, from: number): number {
+	const arrow = text.startsWith('=>', from) ? from : findArrow(text, from);
+	if (arrow === -1) return -1;
+	const body = skipTrivia(text, arrow + 2);
+	if (text[body] === '{') return returnedObject(text, body);
+	return objectOf(text, body);
+}
+
+function findArrow(text: string, from: number): number {
+	let depth = 0;
+	for (let i = from; i < text.length; i++) {
+		const ch = text[i]!;
+		if ('([{<'.includes(ch)) depth++;
+		else if (')]}'.includes(ch) || (ch === '>' && text[i - 1] !== '=')) {
+			depth--;
+		} else if (depth <= 0 && text.startsWith('=>', i)) return i;
+		else if (ch === ';') return -1;
+	}
+
+	return -1;
+}
+
+/** `{` of the object a JS/TS config file exports, or -1. */
+function exportedObject(text: string): number {
+	const start = findToken(
+		text,
+		/(?:export\s+default(?![\w$])|module\.exports\s*=(?!=))/y,
+	);
+	if (start === -1) return -1;
+	const token = /^(?:export\s+default|module\.exports\s*=)/.exec(
+		text.slice(start, start + 100),
+	)![0];
+	return objectOf(text, start + token.length);
 }
 
 /** `{` of the object that holds `version`, `ios` and `android`. */
@@ -273,11 +465,18 @@ function setPlist(text: string, settings: Settings): Edited | string {
 		return `its version is the build variable ${from}, so it lives in the Xcode project's MARKETING_VERSION: list that file instead`;
 	}
 
-	let next = text.replace(short, `$1${settings.to}$3`);
+	let next = text.replace(
+		short,
+		(_, a: string, __, c: string) => a + settings.to + c,
+	);
 	if (settings.increment) {
 		const build = plistString('CFBundleVersion');
 		const raised = bump(build.exec(next)?.[2] ?? '');
-		if (raised !== undefined) next = next.replace(build, `$1${raised}$3`);
+		if (raised !== undefined)
+			next = next.replace(
+				build,
+				(_, a: string, __, c: string) => a + raised + c,
+			);
 	}
 
 	return {text: next, from};
@@ -286,10 +485,14 @@ function setPlist(text: string, settings: Settings): Edited | string {
 function setGradle(text: string, settings: Settings): Edited | string {
 	const match = GRADLE_NAME.exec(text);
 	if (!match) return 'it has no versionName "…" to set';
-	let next = text.replace(GRADLE_NAME, `$1$2${settings.to}$2`);
+	let next = text.replace(
+		GRADLE_NAME,
+		(_, a: string, q: string) => a + q + settings.to + q,
+	);
 	if (settings.increment) {
 		const raised = bump(GRADLE_CODE.exec(next)?.[2] ?? '');
-		if (raised !== undefined) next = next.replace(GRADLE_CODE, `$1${raised}`);
+		if (raised !== undefined)
+			next = next.replace(GRADLE_CODE, (_, a: string) => a + raised);
 	}
 
 	return {text: next, from: match[3]!};
@@ -368,12 +571,16 @@ export async function editVersionFiles(
 		increment: options.buildNumber === 'increment' && !options.easRemote,
 	};
 	const own = joinPath(unit.path, 'package.json');
-	const files = [own, ...unit.versionFiles.filter(file => file !== own)];
+	const same = (a: string, b: string): boolean =>
+		path.posix.normalize(a) === path.posix.normalize(b);
+	const listed = unit.versionFiles.some(file => same(file, own));
+	const files = listed ? unit.versionFiles : [own, ...unit.versionFiles];
+	const isOwn = (file: string): boolean => !listed && file === own;
 	const edits: VersionFileEdit[] = [];
 	for (const file of files) {
 		const text = await readFileText(root, file);
 		if (text === undefined) {
-			if (file === own) continue;
+			if (isOwn(file)) continue;
 			throw new ReleaseError(
 				'invalid-version',
 				`${file} is listed in versionFiles but doesn't exist`,
@@ -382,7 +589,7 @@ export async function editVersionFiles(
 
 		const result = setVersion(file, text, settings);
 		if (typeof result === 'string') {
-			if (file === own) continue;
+			if (isOwn(file)) continue;
 			throw new ReleaseError(
 				'invalid-version',
 				`can't set the version in ${file}: ${result}`,
