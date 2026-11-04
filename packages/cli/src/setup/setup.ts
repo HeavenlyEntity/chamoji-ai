@@ -456,7 +456,7 @@ function questionFor(keys: string[]): string | null {
 		}
 
 		case 'upstream': {
-			return 'upstream.name';
+			return name === 'authors' ? 'upstream.authors' : 'upstream.name';
 		}
 
 		case 'units': {
@@ -513,10 +513,18 @@ function explain(
 
 		const name = `release${keys.map(segment).join('')}`;
 		const id = questionFor(keys);
-		const source =
-			keys[0] === 'schema'
-				? "the section's format"
-				: said[id === null ? 'kept' : (answers.why[id] ?? fallback)];
+		let why: Source = id === null ? 'kept' : (answers.why[id] ?? fallback);
+		// The remote and the starting point are read from the repo, whoever
+		// named the base.
+		if (
+			keys[0] === 'upstream' &&
+			(keys[1] === 'remote' || keys[1] === 'since') &&
+			why !== 'kept'
+		) {
+			why = 'detected';
+		}
+
+		const source = keys[0] === 'schema' ? "the section's format" : said[why];
 		lines.push(`${name} = ${JSON.stringify(value)} (${source})`);
 	};
 

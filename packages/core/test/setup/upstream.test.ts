@@ -2,17 +2,24 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {afterEach, expect, test} from 'vitest';
 import {
+	detect,
 	detectTags,
 	detectLayout,
 	detectUpstream,
 	findUpstreamRemote,
+	loadConfig,
+	planUnitReleases,
+	recommend,
+	releaseSection,
+	unitChangelog,
 } from '../../src/index.js';
 import {
 	createRepo,
 	gitOutput,
 	type FixtureRepo,
 } from '../helpers/fixture-repo.js';
-import {gearzLayout} from '../helpers/setup-fixtures.js';
+import {gearzLayout, PRUNED_SUBJECTS} from '../helpers/setup-fixtures.js';
+import {valid} from '../helpers/setup-detection.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -25,6 +32,17 @@ afterEach(async () => {
 
 const git = async (dir: string, args: string[]) =>
 	execFileAsync('git', args, {cwd: dir});
+
+/** The fork's first commit, by Gearz Dev. */
+const firstOwn = async (dir: string) =>
+	(
+		await gitOutput(dir, [
+			'log',
+			'--reverse',
+			'--author=Gearz Dev',
+			'--format=%H',
+		])
+	).split('\n')[0];
 
 async function upstreamOf(dir: string) {
 	const layout = await detectLayout(dir);
@@ -52,15 +70,20 @@ test('a fork with an upstream remote: since is the first own commit, 30 upstream
 		upstreamCommits: 30,
 		syncs: 0,
 		squashedSyncs: [],
+		authors: [{email: 'bot@makerkit.dev', name: 'Makerkit Bot', commits: 30}],
 	});
 });
 
 test('a real merge from upstream counts as one sync', async () => {
 	repo = await gearzLayout({template: true, sync: true});
 	const found = await upstreamOf(repo.dir);
+	expect(found.since).toBe(await firstOwn(repo.dir));
 	expect(found.upstreamCommits).toBe(33);
 	expect(found.syncs).toBe(1);
 	expect(found.squashedSyncs).toEqual([]);
+	expect(found.authors).toEqual([
+		{email: 'bot@makerkit.dev', name: 'Makerkit Bot', commits: 33},
+	]);
 });
 
 test("the base name comes from the remote URL's owner, title-cased", async () => {
@@ -96,6 +119,7 @@ test('an upstream remote with nothing fetched is reported, and since stays null'
 		upstreamCommits: 0,
 		syncs: 0,
 		squashedSyncs: [],
+		authors: [],
 	});
 });
 
@@ -119,6 +143,8 @@ test('a squash-merged sync is listed', async () => {
 	).trim();
 	expect(found.squashedSyncs).toEqual([short]);
 	expect(found.syncs).toBe(0);
+	expect(found.since).toBe(await firstOwn(repo.dir));
+	expect(found.upstreamCommits).toBe(30);
 });
 
 test('a repo with inherited tags but no remote still gets a starting point', async () => {
@@ -133,9 +159,10 @@ test('a repo with inherited tags but no remote still gets a starting point', asy
 		fetched: false,
 		name: null,
 		since: own,
-		upstreamCommits: 0,
+		upstreamCommits: 1,
 		syncs: 0,
 		squashedSyncs: [],
+		authors: [],
 	});
 });
 
@@ -149,5 +176,53 @@ test('no remote and no inherited tags: nothing applies', async () => {
 		upstreamCommits: 0,
 		syncs: 0,
 		squashedSyncs: [],
+		authors: [],
 	});
 });
+
+const TODAY = '2026-11-04';
+
+for (const kind of ['tagged', 'untagged'] as const) {
+	test(`a template branch merged and then pruned from upstream (${kind}) stays out of every note`, async () => {
+		repo = await gearzLayout({template: true, prunedBranch: kind});
+		const detection = await detect(repo.dir);
+		if (kind === 'tagged') {
+			expect(detection.tags.inherited.tags).toContain('4.1.0');
+		}
+
+		expect(detection.upstream).toMatchObject({
+			remote: 'upstream',
+			since: await firstOwn(repo.dir),
+			upstreamCommits: 32,
+			syncs: 1,
+			authors: [{email: 'bot@makerkit.dev', name: 'Makerkit Bot', commits: 32}],
+		});
+		const answers = recommend(detection);
+		expect(answers.upstream?.authors).toEqual(['bot@makerkit.dev']);
+		const config = {
+			...(await loadConfig(repo.dir)),
+			release: valid(releaseSection(answers)),
+		};
+		const plan = await planUnitReleases({
+			cwd: repo.dir,
+			config,
+			today: TODAY,
+		});
+		expect(plan.status).toBe('ready');
+		const web =
+			plan.status === 'ready'
+				? plan.units.find(unit => unit.unit === 'web')
+				: undefined;
+		expect(web?.notes).toContain('✨ Add invoices');
+		const to = kind === 'tagged' ? '4.1.0' : '';
+		expect(web?.notes).toContain(`Updated the Makerkit base to ${to}`);
+		const changelog = JSON.stringify(
+			await unitChangelog({cwd: repo.dir, config, unit: 'web'}),
+		);
+		expect(changelog).toContain('Add invoices');
+		for (const subject of [...PRUNED_SUBJECTS, 'Update the kit']) {
+			expect(web?.notes).not.toContain(subject);
+			expect(changelog).not.toContain(subject);
+		}
+	});
+}

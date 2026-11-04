@@ -182,3 +182,46 @@ test('version files are ticked as detected', async () => {
 		},
 	]);
 });
+
+test("the template's authors are a detected question under Change something", async () => {
+	const detection = await detected(gearzLayout({template: true}));
+	const answers = recommend(detection);
+	expect(answers.upstream?.authors).toEqual(['bot@makerkit.dev']);
+	expect(answers.why['upstream.authors']).toBe('detected');
+	const authors = questions(detection, answers).find(
+		question => question.id === 'upstream.authors',
+	);
+	expect(authors).toEqual({
+		id: 'upstream.authors',
+		title: "Whose commits are always Makerkit's?",
+		found:
+			'bot@makerkit.dev wrote 30 commits here, and none of your recent ones',
+		kind: 'ticks',
+		options: [
+			{
+				value: 'bot@makerkit.dev',
+				label: 'Makerkit Bot <bot@makerkit.dev>',
+				recommended: true,
+			},
+		],
+		needsAnswer: false,
+	});
+
+	// Unticking drops the key; ticking again, in any case, brings it back.
+	const none = applyAnswer(detection, answers, 'upstream.authors', []);
+	expect(none.upstream).not.toHaveProperty('authors');
+	expect(none.why['upstream.authors']).toBe('chosen');
+	const again = applyAnswer(detection, none, 'upstream.authors', [
+		'Bot@Makerkit.dev',
+		'ci@makerkit.dev',
+	]);
+	expect(again.upstream?.authors).toEqual([
+		'bot@makerkit.dev',
+		'ci@makerkit.dev',
+	]);
+	expect(
+		questions(detection, again)
+			.find(question => question.id === 'upstream.authors')
+			?.options.map(option => option.value),
+	).toEqual(['bot@makerkit.dev', 'ci@makerkit.dev']);
+});

@@ -387,6 +387,31 @@ export function questions(
 			},
 			upstream.remote !== null,
 		);
+		const chosen = answers.upstream?.authors ?? [];
+		const emails = unique([
+			...upstream.authors.map(author => author.email),
+			...chosen,
+		]);
+		if (emails.length > 0) {
+			const {prose} = baseName(detection, answers);
+			add({
+				id: 'upstream.authors',
+				title: `Whose commits are always ${prose}'s?`,
+				found:
+					upstream.authors.length > 0
+						? `${list(upstream.authors.map(author => `${author.email} wrote ${count(author.commits, 'commit', 'commits')}`))} here, and none of your recent ones`
+						: `No author wrote only ${prose}'s commits`,
+				kind: 'ticks',
+				options: emails.map(email => {
+					const author = upstream.authors.find(each => each.email === email);
+					return {
+						value: email,
+						label: author ? `${author.name} <${email}>` : email,
+						...(author ? {recommended: true} : {}),
+					};
+				}),
+			});
+		}
 	}
 
 	// The engine's own idea of which internal packages a unit uses.

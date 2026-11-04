@@ -316,3 +316,36 @@ test('exclude patterns are normalised and must stay inside the repo', () => {
 		);
 	}
 });
+
+test('upstream.authors is an optional list of emails', () => {
+	const settings = parseReleaseSettings(
+		withUnits(
+			{},
+			{
+				upstream: {
+					name: 'Makerkit',
+					authors: ['Giancarlo@Makerkit.dev', 'bot@makerkit.dev'],
+				},
+			},
+		),
+		FILE,
+	);
+	expect(settings.upstream).toEqual({
+		name: 'Makerkit',
+		authors: ['Giancarlo@Makerkit.dev', 'bot@makerkit.dev'],
+	});
+	expect(
+		parseReleaseSettings(withUnits({}, {upstream: {name: 'Makerkit'}}), FILE)
+			.upstream,
+	).toEqual({name: 'Makerkit'});
+	for (const authors of ['a@b.dev', [''], ['  '], [1], [null]]) {
+		expect(() =>
+			parseReleaseSettings(
+				withUnits({}, {upstream: {name: 'Makerkit', authors}}),
+				FILE,
+			),
+		).toThrow(
+			`Invalid config ${FILE}: release.upstream.authors must be a list of non-empty strings`,
+		);
+	}
+});

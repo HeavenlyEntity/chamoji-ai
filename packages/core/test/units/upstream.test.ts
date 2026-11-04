@@ -278,3 +278,122 @@ test("upstream's own merges and own branch merges are not syncs", async () => {
 		await rm(dir, {recursive: true, force: true});
 	}
 });
+
+/** A commit written by `email`, as a template's would be. */
+async function commitAs(dir: string, email: string, name: string) {
+	const file = path.join(dir, ...name.split('/'));
+	await mkdir(path.dirname(file), {recursive: true});
+	await writeFile(file, name);
+	await git(dir, ['add', '--', name]);
+	await git(dir, [
+		'-c',
+		'user.name=Template',
+		'-c',
+		`user.email=${email}`,
+		'commit',
+		'-q',
+		'-m',
+		`Template ${name}`,
+	]);
+}
+
+/**
+ * main is Base then Own; a template branch off Base gets two commits by
+ * tpl@kit.dev (tagged 1.1.0 when `tag`), main merges it, and the branch is
+ * deleted. upstream/main stays at Base, as when upstream prunes a branch.
+ */
+async function prunedTemplateBranch(tag: boolean) {
+	const repo = await createRepo([{commit: 'Base'}, {commit: 'Own'}]);
+	const {dir} = repo;
+	await git(dir, ['update-ref', 'refs/remotes/upstream/main', 'HEAD~1']);
+	await git(dir, ['switch', '-q', '-c', 'v3-step', 'HEAD~1']);
+	await commitAs(dir, 'tpl@kit.dev', 'apps/web/one.ts');
+	await commitAs(dir, 'tpl@kit.dev', 'apps/web/two.ts');
+	if (tag) await git(dir, ['tag', '1.1.0']);
+	const template = (await gitOutput(dir, ['rev-list', 'HEAD~2..HEAD']))
+		.split('\n')
+		.filter(Boolean);
+	const short = (await gitOutput(dir, ['rev-parse', '--short', 'HEAD'])).trim();
+	await git(dir, ['switch', '-q', 'main']);
+	await git(dir, ['merge', '--no-ff', '-q', '-m', 'Merge v3-step', 'v3-step']);
+	await git(dir, ['branch', '-q', '-D', 'v3-step']);
+	const own = (await gitOutput(dir, ['rev-parse', 'HEAD~1'])).trim();
+	return {repo, template, short, own};
+}
+
+test('with a remote, an ignored version tag still marks history the remote no longer has', async () => {
+	const {repo, template, own} = await prunedTemplateBranch(true);
+	try {
+		const tags = await listTags(repo.dir, 'HEAD');
+		const {commits, syncs} = await readUpstream(
+			repo.dir,
+			'HEAD',
+			withUpstream,
+			tags,
+		);
+		for (const hash of template) expect(commits.has(hash)).toBe(true);
+		expect(commits.has(own)).toBe(false);
+		expect(syncs.map(sync => sync.sync)).toEqual([
+			{base: 'Makerkit', to: '1.1.0'},
+		]);
+	} finally {
+		await repo.cleanup();
+	}
+});
+
+test('with a remote, a stray ignored tag still marks nothing', async () => {
+	const {repo, template} = await prunedTemplateBranch(false);
+	try {
+		await git(repo.dir, ['tag', 'wip/x', template[0]!]);
+		const stray = settings({
+			upstream: {remote: 'upstream', name: 'Makerkit'},
+			tags: {ignore: ['^wip/'], aliases: {}},
+		});
+		const tags = await listTags(repo.dir, 'HEAD');
+		const {commits, syncs} = await readUpstream(repo.dir, 'HEAD', stray, tags);
+		for (const hash of template) expect(commits.has(hash)).toBe(false);
+		expect(syncs).toEqual([]);
+	} finally {
+		await repo.cleanup();
+	}
+});
+
+test('upstream.authors marks their commits on HEAD, ignoring case, and a merge of them is a sync', async () => {
+	const {repo, template, short, own} = await prunedTemplateBranch(false);
+	try {
+		const byAuthor = settings({
+			upstream: {
+				remote: 'upstream',
+				name: 'Makerkit',
+				authors: ['TPL@Kit.dev'],
+			},
+		});
+		const before = await readUpstream(repo.dir, 'HEAD', withUpstream, []);
+		for (const hash of template) expect(before.commits.has(hash)).toBe(false);
+		expect(before.syncs).toEqual([]);
+
+		const {commits, syncs} = await readUpstream(repo.dir, 'HEAD', byAuthor, []);
+		for (const hash of template) expect(commits.has(hash)).toBe(true);
+		expect(commits.has(own)).toBe(false);
+		expect(syncs.map(sync => sync.sync)).toEqual([
+			{base: 'Makerkit', to: short},
+		]);
+	} finally {
+		await repo.cleanup();
+	}
+});
+
+test('upstream.authors works without a remote too', async () => {
+	const {repo, template, own} = await prunedTemplateBranch(false);
+	try {
+		await git(repo.dir, ['update-ref', '-d', 'refs/remotes/upstream/main']);
+		const byAuthor = settings({
+			upstream: {name: 'Makerkit', authors: ['tpl@kit.dev']},
+		});
+		const {commits} = await readUpstream(repo.dir, 'HEAD', byAuthor, []);
+		expect([...commits].sort()).toEqual([...template].sort());
+		expect(commits.has(own)).toBe(false);
+	} finally {
+		await repo.cleanup();
+	}
+});

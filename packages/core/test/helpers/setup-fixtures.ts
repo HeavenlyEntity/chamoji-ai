@@ -27,6 +27,15 @@ export type GearzOptions = {
 	 * the fork fetches upstream and merges it with a real merge commit.
 	 */
 	sync?: boolean;
+	/**
+	 * With `template`: after the fork's own commits the template grows a
+	 * v3-step branch of 2 commits by Makerkit Bot under apps/web (its tip
+	 * tagged 4.1.0 when 'tagged'), the fork merges it with "chore(makerkit):
+	 * merge v3-step", the template deletes the branch and the fork prunes it.
+	 * Then the fork keeps working: 50 empty own commits, then "✨ Add
+	 * invoices" to web, so its newest authors are its own.
+	 */
+	prunedBranch?: 'tagged' | 'untagged';
 };
 
 const TEMPLATE_AUTHOR = {name: 'Makerkit Bot', email: 'bot@makerkit.dev'};
@@ -61,6 +70,7 @@ async function forkOfTemplate(
 	steps: RepoStep[],
 	fromTemplate: RepoStep[] = templateSteps(),
 	sync = false,
+	pruned?: GearzOptions['prunedBranch'],
 ): Promise<FixtureRepo> {
 	const base = await mkdtemp(path.join(tmpdir(), 'chamoji-template-'));
 	const template = await createRepo(fromTemplate, {
@@ -75,6 +85,7 @@ async function forkOfTemplate(
 		cwd: fork.dir,
 	});
 	if (sync) await syncFromTemplate(template.dir, fork.dir);
+	if (pruned) await mergePrunedBranch(template.dir, fork.dir, pruned);
 	return {
 		dir: fork.dir,
 		async cleanup() {
@@ -132,6 +143,74 @@ async function syncFromTemplate(template: string, fork: string): Promise<void> {
 	);
 }
 
+/** Template subjects on the pruned branch; none may reach release notes. */
+export const PRUNED_SUBJECTS = ['✨ Template step one', '✨ Template step two'];
+
+async function mergePrunedBranch(
+	template: string,
+	fork: string,
+	kind: 'tagged' | 'untagged',
+): Promise<void> {
+	let minute = 0;
+	const run = async (cwd: string, args: string[], who: typeof FORK_AUTHOR) => {
+		const when = new Date(
+			Date.parse('2026-07-01T00:00:00Z') + minute++ * 60_000,
+		).toISOString();
+		return execFileAsync(
+			'git',
+			['-c', `user.name=${who.name}`, '-c', `user.email=${who.email}`, ...args],
+			{
+				cwd,
+				env: {...process.env, GIT_AUTHOR_DATE: when, GIT_COMMITTER_DATE: when},
+			},
+		);
+	};
+
+	await run(template, ['switch', '-q', '-c', 'v3-step'], TEMPLATE_AUTHOR);
+	for (const [index, subject] of PRUNED_SUBJECTS.entries()) {
+		const file = `apps/web/step-${index + 1}.ts`;
+		await mkdir(path.join(template, 'apps/web'), {recursive: true});
+		await writeFile(
+			path.join(template, file),
+			`export const step = ${index};\n`,
+		);
+		await run(template, ['add', '--', file], TEMPLATE_AUTHOR);
+		await run(template, ['commit', '-q', '-m', subject], TEMPLATE_AUTHOR);
+	}
+
+	if (kind === 'tagged') await run(template, ['tag', '4.1.0'], TEMPLATE_AUTHOR);
+	await run(template, ['switch', '-q', 'main'], TEMPLATE_AUTHOR);
+	await run(fork, ['fetch', '-q', 'upstream'], FORK_AUTHOR);
+	await run(
+		fork,
+		[
+			'merge',
+			'--no-ff',
+			'-q',
+			'-m',
+			'chore(makerkit): merge v3-step',
+			'upstream/v3-step',
+		],
+		FORK_AUTHOR,
+	);
+	await run(template, ['branch', '-q', '-D', 'v3-step'], TEMPLATE_AUTHOR);
+	await run(fork, ['fetch', '-q', '--prune', 'upstream'], FORK_AUTHOR);
+	for (let n = 1; n <= 50; n++) {
+		await run(
+			fork,
+			['commit', '-q', '--allow-empty', '-m', `🔧 Tune the CRM (${n})`],
+			FORK_AUTHOR,
+		);
+	}
+
+	await writeFile(
+		path.join(fork, 'apps/web/invoices.ts'),
+		'export const invoices = [];\n',
+	);
+	await run(fork, ['add', '--', 'apps/web/invoices.ts'], FORK_AUTHOR);
+	await run(fork, ['commit', '-q', '-m', '✨ Add invoices'], FORK_AUTHOR);
+}
+
 const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
 
 const manifest = (name: string, extra: Record<string, unknown> = {}): string =>
@@ -178,7 +257,7 @@ export async function gearzLayout(
 		...(options.extraSteps ?? []),
 	];
 	return options.template
-		? forkOfTemplate(steps, templateSteps(), options.sync)
+		? forkOfTemplate(steps, templateSteps(), options.sync, options.prunedBranch)
 		: createRepo(steps);
 }
 
