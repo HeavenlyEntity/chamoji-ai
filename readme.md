@@ -45,6 +45,7 @@ chamoji release                            # cut a release (see below)
 chamoji commit                             # write a commit (see below)
 chamoji ws                                 # list workstreams (see below)
 chamoji why src/auth.ts:42                 # why is this line here? (see Project memory)
+chamoji setup                              # set up releases, memory and more (see Monorepos)
 ```
 
 A bare `chamoji` draws the wordmark and a short help to stdout, and exits 0. `chamoji --help` lists every option. An unknown command prints a short message to stderr and exits 2.
@@ -316,7 +317,50 @@ On PRs from forks the token can't comment, so the preview goes to the job summar
 
 By default chamoji treats a repo as one package: one version, one `v*` tag and one `CHANGELOG.md`. That is also right for a monorepo whose packages ship together, like this one. A repo with no `release` section in `chamoji.config.json` gets the same versions, tags, changelog, release commit and `--json` output as in 0.12.0. That is proven byte for byte for `changelog`, `changelog --format json`, `next-version` and `release --dry-run --json` on two fixture repos. The only addition is a one-time note on stderr, in a monorepo with several apps, that you can version them separately (never under `--json` or in CI).
 
-When the packages or apps in a repo ship on their own, add a `release` section. Chamoji then gives every unit (an app or a package) its own version, tag, changelog and GitHub release, and a unit with no changes of its own isn't released, apart from the other units in its `fixed` group and, under `release-dependents`, the units that depend on a package that released. `chamoji setup`, which will write this section for you, is coming next. For now you write it by hand.
+When the packages or apps in a repo ship on their own, add a `release` section. Chamoji then gives every unit (an app or a package) its own version, tag, changelog and GitHub release, and a unit with no changes of its own isn't released, apart from the other units in its `fixed` group and, under `release-dependents`, the units that depend on a package that released. `chamoji setup` writes this section for you. You can also write it or change it by hand.
+
+### Set up releases
+
+```bash
+chamoji setup                            # look at the repo, show what it found, save with Enter
+chamoji setup --yes                      # take every recommended answer, for CI, agents and scripts
+chamoji setup releases --yes --explain   # only the release section, with where each value came from
+```
+
+`chamoji setup` reads git and the files in the repo, with no AI, and no network apart from the optional squash-merge check below. On a terminal it opens with a summary of what it found and what it recommends, such as:
+
+> Found 4 apps (mobile, web, dev-tool, e2e) and 39 internal packages. mobile and web get their own versions; dev-tool, e2e and tooling are left out. 135 tags look like they came from Makerkit and will be ignored. Shared changes ride along with each app's own releases.
+
+Under the summary are the questions the repo can't answer, such as a unit's first version when it has no tags yet, each with a recommended answer. Enter saves every answer as shown. `c` opens "Change something", which lists every question with what chamoji found. Beside the questions, a preview shows each unit's next release under the current answers: its version, its tag and the first lines of its notes. It changes as the answers change, and on a narrow terminal it goes under the questions. When a unit has releases of its own, setup also applies the answers to up to five of them and shows how each would have come out next to what was released. Esc on the summary, or Ctrl-C, cancels and saves nothing.
+
+What it looks for:
+
+- **Units.** Apps are the packages under `apps/`, and private top-level packages that nothing depends on. Test and tool apps (`e2e`, `test`, `tests`, `playwright`, `cypress`, `storybook`, `docs`, `dev-tool`) and `tooling/*` are left out. In a repo with no apps, each published package is a unit. A repo with both apps and published packages is set up as `apps` for now, and its published packages aren't units.
+- **Version files.** Other files that carry the app's version, such as Expo's `app.config.ts` or `app.json`, an `Info.plist` or an `android/app/build.gradle`, go in `versionFiles`. A unit with an EAS config gets `buildNumber`, left as `untouched`.
+- **Tags.** A unit keeps the tag format it already uses, and other formats it has used go in `read`. Tags that came with a template go in `tags.ignore`: the ones reachable from the template's remote, or else the ones reached only by commits from people who haven't committed recently. Setup writes general patterns such as `^\d+\.\d+\.\d+$`, and lists the exact tags instead when a pattern would also hide a release of your own. Stray tags such as `wip/…` are ignored too.
+- **The template.** A remote named `upstream`, or else another remote besides `origin` that shares history with yours, becomes `upstream.remote`. The name in sync lines comes from the remote URL's owner, so `github.com/makerkit/…` gives "Makerkit", and `since` is your first commit that isn't the template's. The summary says how many commits look like squash-merged syncs; they count as ordinary commits.
+- **Squash merges.** With the `gh` CLI and a GitHub `origin`, setup reads the repo's merge settings. If squash merges keep only the PR title, which drops `Release:`, `Workstream:` and intent-card trailers, it says which setting keeps the body.
+
+Setup has four steps, and `chamoji setup releases`, `setup memory`, `setup agents` and `setup hook` run one each:
+
+1. **Releases:** the `release` section of `chamoji.config.json`.
+2. **Memory sharing:** what `chamoji init` does. It's offered when the repo has an `origin`.
+3. **Claude Code:** what `chamoji init --agents` does. It's offered when the repo has a `.claude` folder or `claude` is on your PATH.
+4. **Commit composer:** what `chamoji hook install` does. It's offered, never assumed, and its prompt defaults to No.
+
+After the summary, the screen asks yes or no for each step that's offered and not done yet. Running setup again shows where each step stands, such as "✓ memory sharing is on in this clone", and asks only what isn't done. The `release` section and `.mcp.json` are committed and shared; memory sharing and the hook are per clone. So in a fresh clone of a repo that's set up, `chamoji setup` asks only for those, and a README can tell new contributors to run it. `chamoji setup releases` asks the release questions again even when the section exists.
+
+Setup never commits. Review `chamoji.config.json` and commit it; `git restore chamoji.config.json` undoes the releases step. The file's other keys are kept, a re-run with nothing new leaves it untouched, and setup won't write through a symlink.
+
+- `--yes` takes every recommended answer without asking. It also runs the memory and Claude Code steps when they're offered and not done. It never installs the hook; `chamoji setup hook --yes` does.
+- `--json` prints what setup found (`found`), the section (`answers`), where each answer came from (`why`), each step's result (`steps`), the files it wrote (`wrote`) and any squash-merge advice (`squashMerge`). Without `--yes` it writes nothing.
+- `--explain` prints each value it writes and where it came from, such as `release.sharedChanges = "ride-along" (recommended for apps)`.
+
+Setup exits 0 when it saved, or when nothing would change. While something would change, it exits 2 without writing when there's no terminal and no `--yes`, or with `--json` and no `--yes`, and says what it would do. It also exits 2 for a `release` section from a newer chamoji, and 1 when you cancel.
+
+### What setup writes
+
+The rest of this section describes the `release` section itself, for reading what setup wrote or for writing it by hand.
 
 ### An app monorepo
 

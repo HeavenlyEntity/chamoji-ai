@@ -236,7 +236,11 @@ const HELP = `
 	                                   Code and the commit composer; again to
 	                                   change settings. A step (releases,
 	                                   memory, agents or hook) runs just that
-	                                   one. It never commits.
+	                                   one. It writes the release section of
+	                                   chamoji.config.json and never commits.
+	                                   Exits 0 when it saved or nothing would
+	                                   change, 2 when it needs a terminal or
+	                                   --yes to go on, 1 when cancelled
 	  $ chamoji init                   Set this clone up to share memory, and
 	                                   take in what origin has
 	  $ chamoji init --agents          The same, and set up Claude Code here:
@@ -287,7 +291,8 @@ const HELP = `
 	             why: print the blame result; memory list and show: print
 	             the entries; memory search: print the matches;
 	             memory sync: print the result; setup: print what it
-	             found and did (with no --yes, what it would do; exits 2)
+	             found and did (with no --yes, what it would do, writing
+	             nothing; exits 2 when something would change)
 	  --none     ws switch: clear the active workstream
 	  --archived memory list: include archived entries
 	  --purge    memory archive: delete the entry and its history instead;
@@ -322,6 +327,8 @@ const HELP = `
 	  $ chamoji release 2.0.0-rc.1 --push
 	  $ chamoji release 2.0.0 --unit mobile --dry-run
 	  $ chamoji changelog --for-tag web/v1.4.0
+	  $ chamoji setup
+	  $ chamoji setup releases --yes --explain
 `;
 
 export const NO_RELEASE_NEEDED = 3;

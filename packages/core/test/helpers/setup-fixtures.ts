@@ -1,5 +1,5 @@
 import {execFile} from 'node:child_process';
-import {mkdtemp, rm, writeFile} from 'node:fs/promises';
+import {mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {promisify} from 'node:util';
@@ -23,8 +23,8 @@ export type GearzOptions = {
 	template?: boolean;
 	/**
 	 * With `template`: after the fork's own commits the template gains 3
-	 * commits and the tag 4.0.3, and the fork fetches upstream and merges it
-	 * with a real merge commit.
+	 * commits (the last adds apps/web/next.config.mjs) and the tag 4.0.3, and
+	 * the fork fetches upstream and merges it with a real merge commit.
 	 */
 	sync?: boolean;
 };
@@ -86,6 +86,8 @@ async function forkOfTemplate(
 }
 
 const SYNC_COMMITS = 3;
+/** The file the last sync commit adds, so the merge changes web. */
+const WEB_FILE = 'apps/web/next.config.mjs';
 
 /** The template gains commits and 4.0.3; the fork fetches and merges them. */
 async function syncFromTemplate(template: string, fork: string): Promise<void> {
@@ -107,6 +109,13 @@ async function syncFromTemplate(template: string, fork: string): Promise<void> {
 			`# Next Supabase SaaS Kit Turbo\n\nRevision ${TEMPLATE_COMMITS + n}\n`,
 		);
 		await run(template, ['add', '--', 'README.md'], TEMPLATE_AUTHOR);
+		if (n === SYNC_COMMITS) {
+			// As in the real kit, the sync reaches the web app.
+			await mkdir(path.join(template, 'apps/web'), {recursive: true});
+			await writeFile(path.join(template, WEB_FILE), 'export default {};\n');
+			await run(template, ['add', '--', WEB_FILE], TEMPLATE_AUTHOR);
+		}
+
 		await run(
 			template,
 			['commit', '-q', '-m', `Update the kit (${TEMPLATE_COMMITS + n})`],
