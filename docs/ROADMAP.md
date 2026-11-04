@@ -563,6 +563,8 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 
 ### 7.5. Monorepo releases — ⏭ next
 
+**Design (2026-11-03):** [`docs/superpowers/specs/2026-11-03-monorepo-releases-and-setup-design.md`](superpowers/specs/2026-11-03-monorepo-releases-and-setup-design.md), waiting for approval. It adds `chamoji setup` and replaces the scope below where they differ: releases per app with shared changes riding along, upstream template history left out, and any existing tag format kept.
+
 **Why:** most of our own workspaces are monorepos, and today chamoji treats a repo as one package. `chamoji release` gives every manifest that carries the previous version the same new version and makes one `v*` tag. That's right for chamoji-ai, whose two packages ship together. It's wrong when packages ship on their own: a fix in one package bumps all of them, and every changelog lists every commit. Changesets, release-please and Lerna all handle this, so its absence is the first thing a monorepo user notices.
 
 **Today:** fixed (lockstep) versioning only. `release.ts` bumps every tracked `package.json`, `package-lock.json`, `pyproject.toml` and `Cargo.toml` whose version matches the last tag, writes one root `CHANGELOG.md` and makes one tag.
