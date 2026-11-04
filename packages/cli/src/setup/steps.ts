@@ -115,6 +115,28 @@ export async function stepStates(
 	];
 }
 
+/**
+ * Whether the setup screen asks the releases questions: not for a single
+ * package, and not once releases are done (ruling R16).
+ */
+export function asksReleases(
+	detection: Detection,
+	states: StepState[],
+): boolean {
+	const releases = states.find(state => state.step === 'releases');
+	return (
+		releases !== undefined &&
+		!releases.done &&
+		detection.layout.kind !== 'single'
+	);
+}
+
+/** The per-clone steps the setup screen offers: those offered and not done. */
+export const stepPrompts = (states: StepState[]): StepState[] =>
+	states.filter(
+		state => state.step !== 'releases' && state.offered && !state.done,
+	);
+
 /** `chamoji hook install`: the hook step, with its output. */
 export async function setUpHook(io: Io): Promise<number> {
 	try {

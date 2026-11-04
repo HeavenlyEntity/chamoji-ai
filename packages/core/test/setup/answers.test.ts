@@ -4,6 +4,7 @@ import {expect, test} from 'vitest';
 import {
 	answersFromSection,
 	applyAnswer,
+	currentAnswer,
 	questions,
 	recommend,
 	releaseSection,
@@ -323,4 +324,29 @@ test('an answer the engine would refuse throws and changes nothing', async () =>
 		'rootFiles must be one of none, all, note',
 	);
 	expect(answers).toEqual(recommend(detection));
+});
+
+test('currentAnswer reads each question back in the form applyAnswer takes', async () => {
+	const detection = await detected(gearzLayout({template: true}));
+	const answers = recommend(detection);
+	expect(currentAnswer(answers, 'shape')).toBe('apps');
+	expect(currentAnswer(answers, 'units')).toEqual(['apps/mobile', 'apps/web']);
+	expect(currentAnswer(answers, 'firstVersion:web')).toBe('');
+	expect(currentAnswer(answers, 'zeroMajor')).toBe('minor');
+	expect(currentAnswer(answers, 'rootChangelog')).toBe('false');
+	expect(currentAnswer(answers, 'upstream.name')).toBe('Makerkit');
+	// Answering every question with its current answer changes no setting.
+	for (const question of questions(detection, answers)) {
+		const again = applyAnswer(
+			detection,
+			answers,
+			question.id,
+			currentAnswer(answers, question.id),
+		);
+		expect(releaseSection(again)).toEqual(releaseSection(answers));
+	}
+
+	const aliased = answersFromSection(rerunSection(), detection);
+	expect(currentAnswer(aliased, 'alias:final-release')).toBe('1.0.0');
+	expect(currentAnswer(aliased, 'alias:web-nightly')).toBe('');
 });

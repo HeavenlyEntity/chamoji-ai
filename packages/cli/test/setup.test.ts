@@ -30,7 +30,7 @@ import {
 } from '../../core/test/helpers/setup-fixtures.js';
 import {hookPath, readHookState} from '../src/hook.js';
 import {run, type GhRunner, type Io} from '../src/run.js';
-import {checkSquashMerge} from '../src/setup/setup.js';
+import {checkSquashMerge, type SetupScreenProps} from '../src/setup/setup.js';
 
 /** Native Windows has no unprivileged symlinks. */
 const WINDOWS = process.platform === 'win32';
@@ -707,4 +707,55 @@ test("in a terminal, the squash check doesn't hold up the screen", async () => {
 	});
 	expect(code).toBe(0);
 	expect(stdout).toContain(`${SQUASH_ADVICE}\n`);
+});
+
+test('in a terminal, a set-up repo with no per-clone prompt left never opens the screen (R16)', async () => {
+	// No origin, so no memory step; no Claude Code, so no agents step.
+	const dir = await made(gearzLayout({template: true}));
+	expect((await chamoji(['setup', 'releases', '--yes'], dir)).code).toBe(0);
+	expect((await chamoji(['setup', 'hook', '--yes'], dir)).code).toBe(0);
+	asTerminal();
+	const screen = vi.fn();
+	const {code, stdout} = await chamoji(['setup'], dir, {setupScreen: screen});
+	expect(screen).not.toHaveBeenCalled();
+	expect(code).toBe(0);
+	expect(stdout).toContain('chamoji.config.json is already up to date.\n');
+
+	const solo = await made(singlePackage());
+	expect((await chamoji(['setup', 'hook', '--yes'], solo)).code).toBe(0);
+	const alone = await chamoji(['setup'], solo, {setupScreen: screen});
+	expect(screen).not.toHaveBeenCalled();
+	expect(alone.code).toBe(0);
+	expect(alone.stdout).toContain(`${SINGLE}\n`);
+	expect(existsSync(path.join(solo, 'chamoji.config.json'))).toBe(false);
+});
+
+test('in a terminal, a set-up repo opens the screen for the per-clone steps only', async () => {
+	const dir = await gearz();
+	expect((await chamoji(['setup', 'releases', '--yes'], dir)).code).toBe(0);
+	asTerminal();
+	const seen: SetupScreenProps[] = [];
+	const {code} = await chamoji(['setup'], dir, {
+		async setupScreen(props) {
+			seen.push(props);
+			return {saved: true, answers: props.initial, steps: ['memory']};
+		},
+	});
+	expect(code).toBe(0);
+	expect(seen).toHaveLength(1);
+	expect(seen[0]!.states[0]).toMatchObject({step: 'releases', done: true});
+	expect(await fetchesMemory(dir)).toBe(true);
+
+	// Naming the step asks releases again, and only releases.
+	const named: SetupScreenProps[] = [];
+	await chamoji(['setup', 'releases'], dir, {
+		async setupScreen(props) {
+			named.push(props);
+			return {saved: false};
+		},
+	});
+	expect(named).toHaveLength(1);
+	expect(named[0]!.states).toEqual([
+		expect.objectContaining({step: 'releases', done: false}),
+	]);
 });

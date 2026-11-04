@@ -207,6 +207,7 @@ export {detectUpstream, type UpstreamDetection} from './setup/upstream.js';
 export {
 	answersFromSection,
 	applyAnswer,
+	currentAnswer,
 	detect,
 	recommend,
 	type Detection,
