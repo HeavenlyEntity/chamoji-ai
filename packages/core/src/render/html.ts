@@ -111,5 +111,5 @@ function renderCommit(commit: ParsedCommit, url: string | undefined): string {
 	const hash = `<code>${escapeHtml(commit.shortHash)}</code>`;
 	return `${emoji ? `${escapeHtml(emoji)} ` : ''}${scope}${description} (${
 		url ? anchor(commitLink(commit, url), hash) : hash
-	})`;
+	})${commit.via ? ` (via <code>${escapeHtml(commit.via)}</code>)` : ''}`;
 }
