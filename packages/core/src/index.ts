@@ -8,7 +8,12 @@ export {
 } from './bm25.js';
 export {buildChangelog, type BuildChangelogOptions} from './changelog.js';
 export {CARD_ENDPOINT, cardUrl, repoStats, type RepoStats} from './card.js';
-export {CONFIG_FILE, DEFAULT_GROUP_CONFIG, loadConfig} from './config.js';
+export {
+	CONFIG_FILE,
+	ConfigVersionError,
+	DEFAULT_GROUP_CONFIG,
+	loadConfig,
+} from './config.js';
 export {
 	assertGitRepo,
 	getRemoteWebUrl,

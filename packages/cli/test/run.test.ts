@@ -497,3 +497,20 @@ test('run stops the face on the way out, after an error too', async () => {
 		await rm(dir, {recursive: true, force: true});
 	}
 });
+
+test.each([['release', '--dry-run'], ['changelog']])(
+	'%s refuses a config with a release section',
+	async (...argv) => {
+		repo = await createRepo(history);
+		await writeFile(
+			path.join(repo.dir, 'chamoji.config.json'),
+			JSON.stringify({release: {schema: 1, shape: 'apps', units: {}}}),
+		);
+		const {code, stdout, stderr} = await chamoji(argv, repo.dir);
+		expect(code).toBe(2);
+		expect(stdout).toBe('');
+		expect(stderr).toBe(
+			"chamoji: this repo's release settings need chamoji 0.13.0 or newer\n",
+		);
+	},
+);
