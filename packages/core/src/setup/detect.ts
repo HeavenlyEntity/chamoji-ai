@@ -1,6 +1,7 @@
 import {lstat, readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {listTags, runGit} from '../git.js';
+import {escapeRegExp} from '../units/tags.js';
 import {detectVersionFiles, readEasRemote} from '../units/version-files.js';
 import {readWorkspace, type WorkspacePackage} from '../units/workspace.js';
 
@@ -71,9 +72,6 @@ const lastSegment = (folder: string): string =>
 /** Does folder `dir` hold `file`, on a segment boundary? */
 const holds = (dir: string, file: string): boolean =>
 	file === dir || file.startsWith(`${dir}/`);
-
-const escapeRegExp = (value: string): string =>
-	value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const isMissing = (error: unknown): boolean =>
 	(error as NodeJS.ErrnoException).code === 'ENOENT';
