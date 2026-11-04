@@ -657,6 +657,7 @@ test("upstream: a fork's first release leaves the template out", async () => {
 		1,
 	);
 	expect(web.notes).not.toContain('Configure chamoji');
+	expect(result.warnings).toEqual([]);
 });
 
 test('tag versus manifest', async () => {
@@ -756,4 +757,11 @@ test('a first release lists a version file that disagrees with the manifest', as
 		lastTag: null,
 		disagreed: ['apps/mobile/app.config.ts'],
 	});
+});
+
+test('without the upstream remote fetched, the plan warns that only ignored tags mark the template', async () => {
+	const dir = await appRepo([WEB_FEATURE]);
+	expect(ready(await plan(dir)).warnings).toEqual([
+		'upstream remote "upstream" has no fetched branches here, so template history is recognised only by ignored version tags; run git remote add upstream <url> && git fetch upstream before chamoji',
+	]);
 });

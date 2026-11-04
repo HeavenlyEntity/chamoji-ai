@@ -4,7 +4,12 @@ import type {ParsedCommit} from '../types.js';
 import type {ReleaseSettings} from './settings.js';
 import {isIgnoredTag} from './tags.js';
 
-export type Upstream = {commits: Set<string>; syncs: ParsedCommit[]};
+export type Upstream = {
+	commits: Set<string>;
+	syncs: ParsedCommit[];
+	/** Set when `upstream.remote` names a remote with nothing fetched. */
+	warning?: string;
+};
 
 const FIELD = '\u001F';
 // A tag that reads as a version: `v?`, digits and dots, then nothing or a prerelease.
@@ -19,26 +24,29 @@ async function upstreamCommits(
 	cwd: string,
 	settings: ReleaseSettings,
 	tags: ReleaseTag[],
-): Promise<Set<string>> {
+): Promise<Pick<Upstream, 'commits' | 'warning'>> {
 	const remote = settings.upstream?.remote;
+	let warning: string | undefined;
 	if (remote) {
 		const fromRemote = lines(
 			await runGit(['rev-list', `--glob=refs/remotes/${remote}/*`], cwd),
 		);
-		if (fromRemote.length > 0) return new Set(fromRemote);
+		if (fromRemote.length > 0) return {commits: new Set(fromRemote)};
+		warning = `upstream remote "${remote}" has no fetched branches here, so template history is recognised only by ignored version tags; run git remote add ${remote} <url> && git fetch ${remote} before chamoji`;
 	}
 
+	const withWarning = warning ? {warning} : {};
 	const names = tags
 		.map(tag => tag.name)
 		.filter(name => isInheritedTag(name, settings));
-	if (names.length === 0) return new Set();
+	if (names.length === 0) return {commits: new Set(), ...withWarning};
 	// Tag names go in on stdin, so there is no limit on how many.
 	const out = await runGitWithInput(
 		['rev-list', '--stdin'],
 		cwd,
 		names.map(name => `refs/tags/${name}\n`).join(''),
 	);
-	return new Set(lines(out));
+	return {commits: new Set(lines(out)), ...withWarning};
 }
 
 /** The newest inherited tag the upstream parent brings in over the first parent, else its short hash. */
@@ -67,17 +75,18 @@ async function syncTarget(
 	).trim();
 }
 
-/** Upstream commit hashes (reachable from refs/remotes/<remote>/* or an ignored tag) and one synthetic commit per sync merge in `range`. */
+/** Upstream commit hashes (reachable from refs/remotes/<remote>/* or an ignored tag), one synthetic commit per sync merge in `range`, and a warning when the remote has nothing fetched. */
 export async function readUpstream(
 	cwd: string,
 	range: string,
 	settings: ReleaseSettings,
 	tags: ReleaseTag[],
 ): Promise<Upstream> {
-	const commits = await upstreamCommits(cwd, settings, tags);
+	const {commits, warning} = await upstreamCommits(cwd, settings, tags);
+	const withWarning = warning ? {warning} : {};
 	const base = settings.upstream?.name;
 	if (commits.size === 0 || base === undefined) {
-		return {commits, syncs: []};
+		return {commits, syncs: [], ...withWarning};
 	}
 
 	const merges = await runGit(
@@ -121,7 +130,7 @@ export async function readUpstream(
 		});
 	}
 
-	return {commits, syncs};
+	return {commits, syncs, ...withWarning};
 }
 
 /** The window for a unit with no tag before `to`: commits after upstream.since up to `to`, or undefined. */

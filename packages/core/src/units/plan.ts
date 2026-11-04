@@ -135,7 +135,7 @@ export async function planUnitReleases(
 		...Object.keys(options.versions ?? {}),
 	]);
 
-	const {root, warnings} = await preflight(options);
+	const {root, warnings: checks} = await preflight(options);
 	const git = async (...args: string[]) => (await runGit(args, root)).trim();
 	const packages = await readWorkspace(root);
 	const units = dependencyOrder(resolveUnits(settings, packages));
@@ -144,6 +144,7 @@ export async function planUnitReleases(
 
 	// Read once for the whole plan: it covers every unit's window.
 	const upstream = await readUpstream(root, 'HEAD', settings, tags);
+	const warnings = [...checks, ...(upstream.warning ? [upstream.warning] : [])];
 	const reader = windowReader(root, upstream);
 	const since = await sinceRange(root, settings);
 	const ranges = units.map(unit => {
