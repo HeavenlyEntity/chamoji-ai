@@ -51,6 +51,15 @@ export async function runInit(
 		if (code !== 0) return code;
 	}
 
+	return setUpMemory(io);
+}
+
+/**
+ * The memory step: makes origin fetch chamoji memory and takes in what it
+ * has. Without an origin it says so and changes nothing. `chamoji init` and
+ * `chamoji setup memory` both run it.
+ */
+export async function setUpMemory(io: Io): Promise<number> {
 	if (!(await hasOrigin(io.cwd))) {
 		io.stdout(
 			'No remote named origin, so there is nothing to share memory with. Add one and run chamoji init again.\n',
@@ -143,20 +152,44 @@ const runChamoji = (viaNpx: boolean, subcommand: string) =>
 /** `chamoji agent-hook`, `npx --yes @chamoji/cli agent-hook` and the like. */
 const RUNS_AGENT_HOOK = /chamoji\S*\s+agent-hook\b/;
 
-/**
- * Merges chamoji into `.mcp.json` and `.claude/settings.json` at the repo
- * root. Both are read and checked before either is written, so a file chamoji
- * refuses leaves the other one alone as well.
- */
-async function setUpAgents(io: Io): Promise<number> {
+/** The shared files the agents step merges into, relative to the repo root. */
+export const AGENT_FILES = ['.mcp.json', '.claude/settings.json'] as const;
+
+/** The plan for each shared file; throws a Refusal for a file chamoji won't touch. */
+async function agentPlans(io: Io): Promise<{plans: Plan[]; viaNpx: boolean}> {
 	const root = (await runGit(['rev-parse', '--show-toplevel'], io.cwd)).trim();
 	const viaNpx = !onPath('chamoji', io.env ?? process.env);
-	let plans: Plan[];
-	try {
-		plans = [
+	return {
+		plans: [
 			await plan(root, mcpServer(viaNpx)),
 			await plan(root, commitHook(viaNpx)),
-		];
+		],
+		viaNpx,
+	};
+}
+
+/** Whether both shared files already have chamoji. A file chamoji refuses counts as not. */
+export async function agentsConnected(io: Io): Promise<boolean> {
+	try {
+		const {plans} = await agentPlans(io);
+		return plans.every(each => each.text === null);
+	} catch (error) {
+		if (error instanceof Refusal) return false;
+		throw error;
+	}
+}
+
+/**
+ * The agents step: merges chamoji into `.mcp.json` and `.claude/settings.json`
+ * at the repo root. Both are read and checked before either is written, so a
+ * file chamoji refuses leaves the other one alone as well. `chamoji init
+ * --agents` and `chamoji setup agents` both run it.
+ */
+export async function setUpAgents(io: Io): Promise<number> {
+	let plans: Plan[];
+	let viaNpx: boolean;
+	try {
+		({plans, viaNpx} = await agentPlans(io));
 	} catch (error) {
 		if (!(error instanceof Refusal)) throw error;
 		io.stderr(
@@ -374,7 +407,7 @@ async function plan(root: string, merge: Merge): Promise<Plan> {
  * doesn't count: npx and package scripts add one just for the run, so it says
  * nothing about what the rest of the team has.
  */
-function onPath(
+export function onPath(
 	name: string,
 	env: Record<string, string | undefined>,
 ): boolean {
