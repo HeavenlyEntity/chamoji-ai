@@ -327,19 +327,19 @@ chamoji setup --yes                      # take every recommended answer, for CI
 chamoji setup releases --yes --explain   # only the release section, with where each value came from
 ```
 
-`chamoji setup` reads git and the files in the repo, with no AI, and no network apart from the optional squash-merge check below. On a terminal it opens with a summary of what it found and what it recommends, such as:
+`chamoji setup` works out its answers from git and the files in the repo, with no AI and no network. Two things it does after that can reach the network: the optional squash-merge check below asks GitHub through `gh`, and the memory step talks to `origin` as `chamoji init` does, `--yes` included. On a terminal it opens with a summary of what it found and what it recommends, such as:
 
-> Found 4 apps (mobile, web, dev-tool, e2e) and 39 internal packages. mobile and web get their own versions; dev-tool, e2e and tooling are left out. 135 tags look like they came from Makerkit and will be ignored. Shared changes ride along with each app's own releases.
+> Found 4 apps (mobile, web, dev-tool, e2e) and 39 internal packages. mobile and web get their own versions; dev-tool, e2e and tooling are left out. 136 tags look like they came from Makerkit and will be ignored. Shared changes ride along with each app's own releases.
 
 Under the summary are the questions the repo can't answer, such as a unit's first version when it has no tags yet, each with a recommended answer. Enter saves every answer as shown. `c` opens "Change something", which lists every question with what chamoji found. Beside the questions, a preview shows each unit's next release under the current answers: its version, its tag and the first lines of its notes. It changes as the answers change, and on a narrow terminal it goes under the questions. When a unit has releases of its own, setup also applies the answers to up to five of them and shows how each would have come out next to what was released. Esc on the summary, or Ctrl-C, cancels and saves nothing.
 
 What it looks for:
 
-- **Units.** Apps are the packages under `apps/`, and private top-level packages that nothing depends on. Test and tool apps (`e2e`, `test`, `tests`, `playwright`, `cypress`, `storybook`, `docs`, `dev-tool`) and `tooling/*` are left out. In a repo with no apps, each published package is a unit. A repo with both apps and published packages is set up as `apps` for now, and its published packages aren't units.
+- **Units.** Apps are the packages under `apps/`, and private top-level packages that nothing depends on. Test and tool apps (`e2e`, `test`, `tests`, `playwright`, `cypress`, `storybook`, `docs`, `dev-tool`) and `tooling/*` are left out. In a repo with no apps, each published package is a unit. A repo with both apps and published packages is set up as `apps` for now, and its published packages aren't units; setup says so, since a `mixed` shape that versions them too is still to come.
 - **Version files.** Other files that carry the app's version, such as Expo's `app.config.ts` or `app.json`, an `Info.plist` or an `android/app/build.gradle`, go in `versionFiles`. A unit with an EAS config gets `buildNumber`, left as `untouched`.
-- **Tags.** A unit keeps the tag format it already uses, and other formats it has used go in `read`. Tags that came with a template go in `tags.ignore`: the ones reachable from the template's remote, or else the ones reached only by commits from people who haven't committed recently. Setup writes general patterns such as `^\d+\.\d+\.\d+$`, and lists the exact tags instead when a pattern would also hide a release of your own. Stray tags such as `wip/…` are ignored too.
-- **The template.** A remote named `upstream`, or else another remote besides `origin` that shares history with yours, becomes `upstream.remote`. The name in sync lines comes from the remote URL's owner, so `github.com/makerkit/…` gives "Makerkit", and `since` is your first commit that isn't the template's. The summary says how many commits look like squash-merged syncs; they count as ordinary commits.
-- **Squash merges.** With the `gh` CLI and a GitHub `origin`, setup reads the repo's merge settings. If squash merges keep only the PR title, which drops `Release:`, `Workstream:` and intent-card trailers, it says which setting keeps the body.
+- **Tags.** A unit keeps the tag format it already uses, and other formats it has used go in `read`. Tags that came with a template go in `tags.ignore`: the ones reachable from the template's remote, and the ones reached only by commits from people who haven't committed recently, which catches a template tag whose branch the template has since deleted. Setup writes general patterns such as `^\d+\.\d+\.\d+$`. When such a pattern would also match tags of your own, it leaves just those out, as in `^(?!(?:5\.0\.0)$)\d+\.\d+\.\d+$`, so the template's later tags stay ignored; it lists the exact tags only when a pattern would hide a unit's next release. Stray tags such as `wip/…` are ignored too.
+- **The template.** A remote named `upstream`, or else another remote besides `origin` that shares history with yours, becomes `upstream.remote`. The name in sync lines comes from the remote URL's owner, so `github.com/makerkit/…` gives "Makerkit", and `since` is your first commit that isn't the template's. The people who wrote the template's history, and none of your recent commits, go in `upstream.authors`, so template commits that came in through a branch the template has since deleted are still left out of your notes. The summary says how many commits look like squash-merged syncs; they count as ordinary commits.
+- **Squash merges.** With the `gh` CLI and a GitHub `origin`, setup reads the repo's merge settings. If squash merges keep only the PR title or its description (GitHub's "Pull request title" and "Pull request title and description"), which drops the commits' `Release:`, `Workstream:` and intent-card lines, it recommends "Default message" or "Pull request title and commit details", which keep them.
 
 Setup has four steps, and `chamoji setup releases`, `setup memory`, `setup agents` and `setup hook` run one each:
 
@@ -354,7 +354,7 @@ Setup never commits. Review `chamoji.config.json` and commit it; `git restore ch
 
 - `--yes` takes every recommended answer without asking. It also runs the memory and Claude Code steps when they're offered and not done. It never installs the hook; `chamoji setup hook --yes` does.
 - `--json` prints what setup found (`found`), the section (`answers`), where each answer came from (`why`), each step's result (`steps`), the files it wrote (`wrote`) and any squash-merge advice (`squashMerge`). Without `--yes` it writes nothing.
-- `--explain` prints each value it writes and where it came from, such as `release.sharedChanges = "ride-along" (recommended for apps)`.
+- `--explain` prints each value it writes and where it came from, such as `release.sharedChanges = "ride-along" (recommended for apps)` or `release.upstream.since = "…" (detected in the repo)`.
 
 Setup exits 0 when it saved, or when nothing would change. While something would change, it exits 2 without writing when there's no terminal and no `--yes`, or with `--json` and no `--yes`, and says what it would do. It also exits 2 for a `release` section from a newer chamoji, and 1 when you cancel.
 
@@ -433,10 +433,25 @@ Release: mobile
 If the repo began as a clone of a starter and keeps pulling from it, add the remote's history to the `release` section:
 
 ```json
-"upstream": {"remote": "upstream", "name": "Makerkit", "since": "<first commit that is yours>"}
+"upstream": {
+	"remote": "upstream",
+	"name": "Makerkit",
+	"since": "<first commit that is yours>",
+	"authors": ["giancarlo@makerkit.dev"]
+}
 ```
 
-`since` is a commit hash or ref, and the remote must be fetched. In CI, where the checkout has only `origin`, run `git remote add upstream <url> && git fetch upstream` before chamoji; when the remote has nothing fetched, chamoji warns. With no remote, tags you list in `tags.ignore` whose names read as versions mark the template's history. Commits that come from the upstream remote are left out of every unit's notes and never release anything. Each merge that brings upstream work in becomes one line, such as "Updated the Makerkit base to 4.0.2", and counts as one own commit for the units it changed.
+`since` is a commit hash or ref, and the remote must be fetched. In CI, where the checkout has only `origin`, run `git remote add upstream <url> && git fetch upstream` before chamoji; when the remote has nothing fetched, chamoji warns.
+
+The template's history is every commit that one of these reaches:
+
+- the upstream remote's fetched branches;
+- a tag you list in `tags.ignore` whose name reads as a version, such as `4.0.2` or `v4.0.0`, with or without a remote. Other ignored tags, such as `wip/…`, are your own and don't count;
+- `upstream.authors`: a commit on HEAD whose author email is in the list, compared ignoring case. A commit that one of them makes in your repo counts as the template's too.
+
+The last two cover template work that came in through a branch the template has since deleted. Those commits are left out of every unit's notes and never release anything. Each merge that brings them in becomes one line, such as "Updated the Makerkit base to 4.0.2", naming the newest template tag it brings, or the merged commit's short hash when it brings none. It counts as one own commit for the units it changed.
+
+`upstream.authors` needs chamoji 0.14.0. 0.13.0 accepts the key and ignores it, and in 0.13.0 ignored tags mark template history only when the remote has nothing fetched.
 
 ### Tags
 
