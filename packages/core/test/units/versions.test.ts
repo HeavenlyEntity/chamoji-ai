@@ -173,3 +173,70 @@ test('alignFixed does not mutate its input', () => {
 	alignFixed(next, [['core', 'types']], new Map());
 	expect(next.get('types')).toBeNull();
 });
+
+test('calver in January has no zero padding', () => {
+	const calver = unit({versioning: 'calver'});
+	expect(nextUnitVersion(input({unit: calver, today: '2026-01-15'}))).toEqual({
+		version: '2026.1.0',
+		bump: 'first',
+	});
+	expect(
+		nextUnitVersion(
+			input({
+				unit: calver,
+				last: tag('2025.12.3'),
+				today: '2026-01-15',
+				releasesThisMonth: 1,
+			}),
+		),
+	).toEqual({version: '2026.1.1', bump: 'calver'});
+});
+
+test('a calver and a semver member can share a fixed group in January', () => {
+	const cal = nextUnitVersion(
+		input({
+			unit: unit({versioning: 'calver'}),
+			last: tag('2025.12.3'),
+			today: '2026-01-15',
+		}),
+	);
+	const result = alignFixed(
+		new Map<string, NextVersion>([
+			['cal', cal],
+			['lib', patch],
+		]),
+		[['cal', 'lib']],
+		new Map([
+			['cal', '2025.12.3'],
+			['lib', '1.2.0'],
+		]),
+	);
+	expect(result.get('cal')).toEqual({version: '2026.1.0', bump: 'calver'});
+	expect(result.get('lib')).toEqual({version: '2026.1.0', bump: 'fixed'});
+});
+
+test('bumping from a prerelease uses semver.inc', () => {
+	expect(nextUnitVersion(input({last: tag('2.0.0-beta.3')}))).toEqual({
+		version: '2.0.0',
+		bump: 'patch',
+	});
+});
+
+test('alignFixed leaves the input map untouched', () => {
+	const next = new Map<string, NextVersion>([
+		['core', patch],
+		['types', null],
+		['other', null],
+	]);
+	const result = alignFixed(
+		next,
+		[['core', 'types']],
+		new Map([['core', '1.2.0']]),
+	);
+	expect(result.get('types')).toEqual({version: '1.2.1', bump: 'fixed'});
+	expect([...next]).toEqual([
+		['core', patch],
+		['types', null],
+		['other', null],
+	]);
+});

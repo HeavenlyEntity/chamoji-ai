@@ -19,6 +19,16 @@ export type NextVersion = {
 	bump: SemverBump | 'prerelease' | 'first' | 'calver' | 'fixed';
 } | null; // 'fixed': raised only to match its group
 
+/** `YEAR.MONTH.N` with no zero padding, so it stays valid semver. */
+function calverVersion(today: string, count: number): string {
+	const version = `${Number(today.slice(0, 4))}.${Number(today.slice(5, 7))}.${count}`;
+	if (!semver.valid(version)) {
+		throw new Error(`Can't make a calver version from "${today}"`);
+	}
+
+	return version;
+}
+
 /** The version `input.unit` releases next, or null when nothing is due. */
 export function nextUnitVersion(input: VersionInput): NextVersion {
 	const {unit, last, manifestVersion, commits, today, releasesThisMonth} =
@@ -29,7 +39,7 @@ export function nextUnitVersion(input: VersionInput): NextVersion {
 		const version =
 			unit.firstVersion ??
 			(calver
-				? `${today.slice(0, 7).replace('-', '.')}.${releasesThisMonth}`
+				? calverVersion(today, releasesThisMonth)
 				: (manifestVersion ?? '0.1.0'));
 		return {version, bump: 'first'};
 	}
@@ -41,7 +51,7 @@ export function nextUnitVersion(input: VersionInput): NextVersion {
 
 	if (calver) {
 		return {
-			version: `${today.slice(0, 7).replace('-', '.')}.${releasesThisMonth}`,
+			version: calverVersion(today, releasesThisMonth),
 			bump: 'calver',
 		};
 	}
