@@ -5,9 +5,14 @@ import {
 	detectLayout,
 	detectTags,
 	findUpstreamRemote,
+	matchesTagPattern,
 	type TagDetection,
 } from '../../src/index.js';
-import type {FixtureRepo, RepoStep} from '../helpers/fixture-repo.js';
+import {
+	createRepo,
+	type FixtureRepo,
+	type RepoStep,
+} from '../helpers/fixture-repo.js';
 import {gearzLayout, libraryLayout} from '../helpers/setup-fixtures.js';
 
 const execFileAsync = promisify(execFile);
@@ -34,7 +39,13 @@ const tagged = (...tags: string[]): RepoStep[] =>
 	tags.flatMap(tag => [{commit: `🔖 Release ${tag}`}, {tag}]);
 
 const ignoredBy = (tag: string, patterns: string[]): string[] =>
-	patterns.filter(pattern => new RegExp(pattern).test(tag));
+	patterns.filter(pattern => matchesTagPattern(tag, pattern));
+
+/** Every ignore pattern setup would propose. */
+const allPatterns = (found: TagDetection): string[] => [
+	...found.inherited.patterns,
+	...found.stray.patterns,
+];
 
 test('Makerkit tags reached from the upstream remote are inherited, as two shape patterns', async () => {
 	repo = await gearzLayout({template: true});
@@ -177,4 +188,88 @@ test('findUpstreamRemote takes a remote that shares history, never origin', asyn
 	expect(await findUpstreamRemote(repo.dir)).toBe('template');
 	await git(repo.dir, ['remote', 'rename', 'template', 'origin']);
 	expect(await findUpstreamRemote(repo.dir)).toBeNull();
+});
+
+test('own tags of units whose names end in a digit are learned, not stray', async () => {
+	const app = (name: string) =>
+		JSON.stringify({name, version: '1.0.0', private: true});
+	repo = await createRepo([
+		{
+			commit: '🎉 Start',
+			files: {
+				'package.json': JSON.stringify({name: 'root', private: true}),
+				'pnpm-workspace.yaml': "packages:\n  - 'apps/*'\n",
+				'apps/web3/package.json': app('web3'),
+				'apps/auth0/package.json': app('auth0'),
+			},
+		},
+		...tagged('web3-v1.2.0', 'auth0-1.0.0'),
+	]);
+	const found = await tagsOf(repo.dir);
+	expect(found.perUnit.web3).toMatchObject({
+		write: 'web3-v{version}',
+		last: {tag: 'web3-v1.2.0', version: '1.2.0'},
+	});
+	expect(found.perUnit.auth0).toMatchObject({
+		write: 'auth0-{version}',
+		last: {tag: 'auth0-1.0.0', version: '1.0.0'},
+	});
+	expect(found.stray.tags).toEqual([]);
+	for (const tag of ['web3-v1.2.0', 'auth0-1.0.0']) {
+		expect(ignoredBy(tag, allPatterns(found))).toEqual([]);
+	}
+});
+
+test("write follows the newest tag's format, even when an older tag has a higher version", async () => {
+	repo = await gearzLayout({extraSteps: tagged('web-v2.0', 'web/v1.5.0')});
+	const found = await tagsOf(repo.dir);
+	expect(found.perUnit.web).toMatchObject({
+		write: 'web/v{version}',
+		read: ['web-v{version}'],
+		last: {tag: 'web-v2.0', version: '2.0.0'},
+	});
+});
+
+test('an upstream that is the canonical repo with our own tags proposes no inherited tags', async () => {
+	// The maintainer tags releases and keeps committing after the last one;
+	// this clone is a contributor's, so upstream reaches every tag.
+	repo = await libraryLayout({
+		templateSteps: [
+			{commit: '✨ First feature'},
+			{tag: '1.0.0'},
+			{commit: '✨ Second feature'},
+			{tag: '1.1.0'},
+			{commit: '✨ Third feature'},
+		],
+	});
+	expect(await findUpstreamRemote(repo.dir)).toBe('upstream');
+	const found = await tagsOf(repo.dir);
+	expect(found.inherited).toEqual({tags: [], patterns: [], examples: []});
+});
+
+test("the libraries' next v{version} tag is never matched by an inherited pattern", async () => {
+	// Own tags are two-part (v1.2), so only the next tag, v1.0.0-shaped,
+	// overlaps the template's v4.0.2.
+	repo = await libraryLayout({
+		templateSteps: [{commit: 'Update the kit'}, {tag: 'v4.0.2'}],
+		extraSteps: [{tag: 'v1.2'}, {commit: '✨ Add the parser'}],
+	});
+	const found = await tagsOf(repo.dir);
+	expect(found.inherited.tags).toEqual(['v4.0.2']);
+	expect(found.perUnit.core!.write).toBe('v{version}');
+	expect(found.inherited.patterns).toEqual(['^v4\\.0\\.2$']);
+	expect(ignoredBy('v1.3.0', found.inherited.patterns)).toEqual([]);
+});
+
+test('an own tag on an unmerged branch is matched by no pattern', async () => {
+	repo = await gearzLayout({template: true});
+	await git(repo.dir, ['switch', '-q', '-c', 'release-candidate']);
+	await git(repo.dir, ['commit', '-q', '--allow-empty', '-m', '🔖 Try 1.2.3']);
+	await git(repo.dir, ['tag', '1.2.3']);
+	await git(repo.dir, ['switch', '-q', 'main']);
+	const found = await tagsOf(repo.dir);
+	expect(found.inherited.tags).not.toContain('1.2.3');
+	expect([...found.inherited.tags].sort()).toEqual(TEMPLATE_TAGS);
+	expect(ignoredBy('1.2.3', allPatterns(found))).toEqual([]);
+	expect(found.inherited.patterns).toContain('^4\\.0\\.1$');
 });

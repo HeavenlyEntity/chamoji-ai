@@ -11,11 +11,12 @@ export type Upstream = {
 	warning?: string;
 };
 
-const FIELD = '\u001F';
+export const FIELD = '\u001F';
 // A tag that reads as a version: `v?`, digits and dots, then nothing or a prerelease.
 export const VERSION_LIKE = /^v?\d+(\.\d+)*(-[0-9A-Za-z.-]+)?$/;
 
-const lines = (text: string): string[] => text.split('\n').filter(Boolean);
+export const lines = (text: string): string[] =>
+	text.split('\n').filter(Boolean);
 
 const isInheritedTag = (tag: string, settings: ReleaseSettings): boolean =>
 	VERSION_LIKE.test(tag) && isIgnoredTag(tag, settings);

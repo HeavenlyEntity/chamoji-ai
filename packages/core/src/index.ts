@@ -55,6 +55,7 @@ export {
 } from './units/settings.js';
 export {
 	isIgnoredTag,
+	matchesTagPattern,
 	renderTag,
 	unitTagHistory,
 	versionFromTag,

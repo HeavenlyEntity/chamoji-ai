@@ -1,7 +1,12 @@
 import semver from 'semver';
 import {listTags, runGit, runGitWithInput, type ReleaseTag} from '../git.js';
-import {renderTag, versionFromTag} from '../units/tags.js';
-import {VERSION_LIKE} from '../units/upstream.js';
+import {
+	escapeRegExp,
+	matchesTagPattern,
+	renderTag,
+	versionFromTag,
+} from '../units/tags.js';
+import {FIELD, lines, VERSION_LIKE} from '../units/upstream.js';
 import type {LayoutDetection, UnitFacts} from './detect.js';
 
 export type UnitTagFormats = {
@@ -24,19 +29,15 @@ export type TagDetection = {
 	perUnit: Record<string, UnitTagFormats>;
 };
 
-const FIELD = '\u001F';
 const RECENT_COMMITS = 50;
 const MAX_EXAMPLES = 3;
-// What setup strips from the end of a tag to find its prefix.
-const TRAILING_VERSION = /v?\d+(\.\d+)*(-[0-9A-Za-z.-]+)?$/;
+// A version-like tag without its anchors: what setup strips from the end of a
+// tag to find its prefix.
+const VERSION_BODY = VERSION_LIKE.source.slice(1, -1);
+const TRAILING_VERSION = new RegExp(`${VERSION_BODY}$`);
 // Rendered into each unit's write template, so no ignore pattern hides the
 // unit's next release either.
 const SAMPLE_VERSION = '1.0.0';
-
-const lines = (text: string): string[] => text.split('\n').filter(Boolean);
-
-const escapeRegExp = (value: string): string =>
-	value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const exactPattern = (tag: string): string => `^${escapeRegExp(tag)}$`;
 
@@ -46,10 +47,8 @@ const shapeOf = (tag: string): string =>
 
 const unique = <T>(values: T[]): T[] => [...new Set(values)];
 
-const matchesAny = (pattern: string, tags: string[]): boolean => {
-	const regex = new RegExp(pattern);
-	return tags.some(tag => regex.test(tag));
-};
+const matchesAny = (pattern: string, tags: string[]): boolean =>
+	tags.some(tag => matchesTagPattern(tag, pattern));
 
 async function hasHead(root: string): Promise<boolean> {
 	try {
@@ -185,14 +184,20 @@ async function inheritedByAuthors(
 	);
 }
 
-/** Version-like tags from the upstream remote, or else from no recent author. */
+/**
+ * Version-like tags from the upstream remote, or else from no recent author.
+ * `merged` are the candidates HEAD reaches; with a remote, the others can be
+ * inherited too, so an unmerged template tag doesn't count as an own tag.
+ */
 async function findInherited(
 	root: string,
 	candidates: string[],
+	merged: Set<string>,
 	remote: string | null,
+	commitOf: Map<string, string>,
 ): Promise<Set<string>> {
-	if (candidates.length === 0) return new Set();
-	const commitOf = await tagCommits(root);
+	const onHead = candidates.filter(name => merged.has(name));
+	if (onHead.length === 0) return new Set();
 	if (remote) {
 		const reachable = new Set(
 			lines(
@@ -201,13 +206,22 @@ async function findInherited(
 		);
 		// A remote with nothing fetched falls back to the authors rule.
 		if (reachable.size > 0) {
-			return new Set(
+			const found = new Set(
 				candidates.filter(name => reachable.has(commitOf.get(name) ?? '')),
 			);
+			// When upstream holds every release, it may be the canonical repo
+			// and these the team's own tags (origin is a contributor's fork).
+			// If recent authors reach any of them, none is proposed.
+			if (onHead.every(name => found.has(name))) {
+				const byAuthors = await inheritedByAuthors(root, onHead, commitOf);
+				if (onHead.some(name => !byAuthors.has(name))) return new Set();
+			}
+
+			return found;
 		}
 	}
 
-	return inheritedByAuthors(root, candidates, commitOf);
+	return inheritedByAuthors(root, onHead, commitOf);
 }
 
 type ReadTag = {
@@ -245,16 +259,40 @@ function unitNamedBy(
 	return best?.unit ?? null;
 }
 
+/**
+ * A tag's prefix and trailing version. A split whose prefix ends at a unit
+ * name comes first (longest name first), so 'web3-v1.2.0' is web3's 1.2.0 and
+ * not 'web' with '3-v1.2.0'; otherwise the leftmost trailing version.
+ */
+function splitTag(
+	tag: string,
+	names: Array<{unit: UnitFacts; name: string}>,
+): {prefix: string; version: string} | null {
+	const longestFirst = [...names].sort((a, b) => b.name.length - a.name.length);
+	for (const {name} of longestFirst) {
+		const found = new RegExp(
+			`^((?:.*[^a-z0-9])?${escapeRegExp(name)}[^a-z0-9]*)(${VERSION_BODY})$`,
+			'i',
+		).exec(tag);
+		if (found) return {prefix: found[1]!, version: found[2]!};
+	}
+
+	const found = TRAILING_VERSION.exec(tag);
+	return found ? {prefix: tag.slice(0, found.index), version: found[0]} : null;
+}
+
 function readTag(
 	layout: LayoutDetection,
 	tag: ReleaseTag,
 	names: Array<{unit: UnitFacts; name: string}>,
 ): ReadTag {
-	const found = TRAILING_VERSION.exec(tag.name);
-	const prefix = found ? tag.name.slice(0, found.index) : tag.name;
+	const split = splitTag(tag.name, names);
+	const prefix = split?.prefix ?? tag.name;
 	const unit = unitNamedBy(prefix, names);
-	if (!found || !unit) return {tag, unit, template: null, version: null};
-	const template = `${prefix}${found[0].startsWith('v') ? 'v' : ''}{version}`;
+	if (!split || !unit) return {tag, unit, template: null, version: null};
+	// A literal v (or V) stays in the template.
+	const v = /^v/i.test(split.version) ? split.version[0] : '';
+	const template = `${prefix}${v}{version}`;
 	const version = versionFromTag(tag.name, template, {
 		unit: unit.name,
 		name: packageName(layout, unit),
@@ -271,12 +309,13 @@ function formatsFor(
 	write: string | undefined,
 	fallback: string,
 ): UnitTagFormats {
-	// Newest version first; tags are already newest first, and sort is stable.
+	// `releases` are newest tag first, so write follows the newest tag's
+	// format; last is the highest version (sort is stable on ties).
 	const sorted = [...releases].sort((a, b) =>
 		semver.rcompare(a.version, b.version),
 	);
 	const last = sorted[0];
-	const template = write ?? last?.template ?? fallback;
+	const template = write ?? releases[0]?.template ?? fallback;
 	const manifest =
 		unit.version === null
 			? null
@@ -333,10 +372,15 @@ export async function detectTags(
 ): Promise<TagDetection> {
 	const {root, units} = layout;
 	const tags = (await hasHead(root)) ? await listTags(root, 'HEAD') : [];
+	// Every tag, merged or not, so a pattern never hides one on another branch.
+	const commitOf = await tagCommits(root);
+	const allTags = [...commitOf.keys()];
 	const inheritedSet = await findInherited(
 		root,
-		tags.map(tag => tag.name).filter(name => VERSION_LIKE.test(name)),
+		allTags.filter(name => VERSION_LIKE.test(name)),
+		new Set(tags.map(tag => tag.name)),
 		upstreamRemote,
+		commitOf,
 	);
 	const inherited = tags
 		.map(tag => tag.name)
@@ -396,32 +440,26 @@ export async function detectTags(
 	}
 
 	// Tags and next releases that no ignore pattern may hide.
-	const samples = units.flatMap(unit => {
-		try {
-			return [
-				renderTag(perUnit[unit.name]!.write, {
-					unit: unit.name,
-					name: packageName(layout, unit),
-					version: SAMPLE_VERSION,
-				}),
-			];
-		} catch {
-			return [];
-		}
-	});
-	const ownNames = own.map(tag => tag.name);
+	const samples = units.map(unit =>
+		renderTag(perUnit[unit.name]!.write, {
+			unit: unit.name,
+			name: packageName(layout, unit),
+			version: SAMPLE_VERSION,
+		}),
+	);
+	const notInherited = allTags.filter(name => !inheritedSet.has(name));
 	const strays = new Set(stray);
 
 	return {
 		inherited: {
 			tags: inherited,
-			patterns: shapePatterns(inherited, [...ownNames, ...samples]),
+			patterns: shapePatterns(inherited, [...notInherited, ...samples]),
 			examples: inherited.slice(0, MAX_EXAMPLES),
 		},
 		stray: {
 			tags: stray,
 			patterns: strayPatterns(stray, [
-				...ownNames.filter(name => !strays.has(name)),
+				...notInherited.filter(name => !strays.has(name)),
 				...samples,
 			]),
 		},

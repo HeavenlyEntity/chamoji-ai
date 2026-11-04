@@ -11,8 +11,9 @@ const PLACEHOLDER = /\{(unit|name|version)\}/g;
 // `v?`, digits and dots, then an optional prerelease. `semver.coerce` tidies it.
 const VERSION_PATTERN = 'v?\\d[\\d.]*(?:-[0-9A-Za-z.-]+)?';
 
-const escapeRegExp = (text: string): string =>
-	text.replaceAll(/[.*+?^${}()|[\]\\/-]/g, String.raw`\$&`);
+/** Escapes regex syntax so `text` matches itself outside a character class. */
+export const escapeRegExp = (text: string): string =>
+	text.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 
 /** Fills a tag template. Throws when a placeholder it uses has no value. */
 export function renderTag(
@@ -65,9 +66,14 @@ export function versionFromTag(
 	return semver.coerce(found[1]!, {includePrerelease: true})?.version ?? null;
 }
 
+/** Whether one `tags.ignore` pattern matches the tag. */
+export function matchesTagPattern(tag: string, pattern: string): boolean {
+	return new RegExp(pattern).test(tag);
+}
+
 /** Whether an ignore pattern from `tags.ignore` matches the whole tag name. */
 export function isIgnoredTag(tag: string, settings: ReleaseSettings): boolean {
-	return settings.tags.ignore.some(pattern => new RegExp(pattern).test(tag));
+	return settings.tags.ignore.some(pattern => matchesTagPattern(tag, pattern));
 }
 
 /** This unit's releases, newest version first, after ignore patterns and aliases. */

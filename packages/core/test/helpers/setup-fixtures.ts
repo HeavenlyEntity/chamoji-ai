@@ -46,10 +46,17 @@ function templateSteps(): RepoStep[] {
 	return steps;
 }
 
-/** The template at <tmp>/makerkit/next-supabase-saas-kit-turbo (ruling R1), and a fork of it replaying `steps`. */
-async function forkOfTemplate(steps: RepoStep[]): Promise<FixtureRepo> {
+/**
+ * A template at <tmp>/makerkit/next-supabase-saas-kit-turbo (ruling R1), its
+ * commits by Makerkit Bot, and a fork of it replaying `steps` as Gearz Dev,
+ * with origin renamed to upstream.
+ */
+async function forkOfTemplate(
+	steps: RepoStep[],
+	fromTemplate: RepoStep[] = templateSteps(),
+): Promise<FixtureRepo> {
 	const base = await mkdtemp(path.join(tmpdir(), 'chamoji-template-'));
-	const template = await createRepo(templateSteps(), {
+	const template = await createRepo(fromTemplate, {
 		dir: path.join(base, 'makerkit', 'next-supabase-saas-kit-turbo'),
 		author: TEMPLATE_AUTHOR,
 	});
@@ -120,9 +127,13 @@ export async function gearzLayout(
 
 /** Three published packages; `cli` depends on `core`. */
 export async function libraryLayout(
-	options: {extraSteps?: RepoStep[]} = {},
+	options: {
+		extraSteps?: RepoStep[];
+		/** Fork the libraries from a template made of these steps, as gearzLayout's template does. */
+		templateSteps?: RepoStep[];
+	} = {},
 ): Promise<FixtureRepo> {
-	return createRepo([
+	const steps: RepoStep[] = [
 		{
 			commit: '🎉 Start the libraries',
 			files: {
@@ -141,7 +152,10 @@ export async function libraryLayout(
 			},
 		},
 		...(options.extraSteps ?? []),
-	]);
+	];
+	return options.templateSteps
+		? forkOfTemplate(steps, options.templateSteps)
+		: createRepo(steps);
 }
 
 /** One root package.json and no workspace. */
