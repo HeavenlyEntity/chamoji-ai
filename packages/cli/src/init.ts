@@ -16,7 +16,9 @@ import {
 	assertGitRepo,
 	fetchesMemory,
 	hasOrigin,
+	inexactNumber,
 	pullMemory,
+	renderJsonText,
 	runGit,
 } from '@chamoji/core';
 import {isRecord, own} from './agent-hook.js';
@@ -364,50 +366,7 @@ async function plan(root: string, merge: Merge): Promise<Plan> {
 		throw refuse(`has the number ${lost}, which can't be written back exactly`);
 	}
 
-	return {...base, text: render(data, original)};
-}
-
-const JSON_NUMBER = /^(-?)(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/;
-
-/** A number as digits and a power of ten, so `1.50`, `15e-1` and `1.5` compare equal. */
-function numberValue(text: string): string | undefined {
-	const match = JSON_NUMBER.exec(text);
-	if (!match) return undefined;
-	const [, sign = '', whole = '', fraction = '', exponent = '0'] = match;
-	const digits = (whole + fraction).replace(/^0+/, '');
-	if (digits === '') return '0';
-	const trimmed = digits.replace(/0+$/, '');
-	const power =
-		Number(exponent) - fraction.length + (digits.length - trimmed.length);
-	return `${sign}${trimmed}e${power}`;
-}
-
-/**
- * The first number in JSON text that `JSON.parse` and `JSON.stringify` would
- * change in value, such as `12345678901234567890` or `1e999`. Strings are
- * skipped. Undefined when every number comes back the same.
- */
-function inexactNumber(json: string): string | undefined {
-	for (const [token] of json.matchAll(
-		/"(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g,
-	)) {
-		if (token.startsWith('"')) continue;
-		const back = JSON.stringify(Number(token));
-		if (numberValue(token) !== numberValue(back)) {
-			return token.length > 40 ? `${token.slice(0, 40)}…` : token;
-		}
-	}
-
-	return undefined;
-}
-
-/** JSON in the style of `original`: its indent, line endings and final newline. */
-function render(data: Record<string, unknown>, original: string): string {
-	const indent = /^([ \t]+)\S/m.exec(original)?.[1] ?? '  ';
-	let text = JSON.stringify(data, null, indent);
-	if (original === '' || /\n\s*$/.test(original)) text += '\n';
-	if (original.includes('\r\n')) text = text.replace(/\n/g, '\r\n');
-	return original.startsWith('\uFEFF') ? `\uFEFF${text}` : text;
+	return {...base, text: renderJsonText(data, original)};
 }
 
 /**
