@@ -5,6 +5,7 @@ import {afterEach, expect, test, vi} from 'vitest';
 import {
 	isAuthFailure,
 	listReleaseTags,
+	listTags,
 	quietGitEnv,
 	readCommits,
 	runGit,
@@ -139,6 +140,33 @@ test('listReleaseTags keeps semver tags sorted newest first', async () => {
 
 	const tags = await listReleaseTags(repo.dir, 'HEAD');
 	expect(tags.map(tag => tag.name)).toEqual(['v1.0.0', 'v1.0.0-rc.1']);
+	expect(tags[0]!.date).toMatch(/^2026-01-02/);
+});
+
+test('listTags returns tags merged into the ref only', async () => {
+	repo = await createRepo([
+		{commit: '🎉 Init'},
+		{tag: 'web/v1.0.0'},
+		{commit: '✨ Add'},
+		{tag: 'final-release', annotated: true},
+	]);
+	await gitOutput(repo.dir, ['switch', '-q', '-c', 'side']);
+	await gitOutput(repo.dir, [
+		'-c',
+		'user.name=Fixture Bot',
+		'-c',
+		'user.email=fixture@example.com',
+		'commit',
+		'-q',
+		'--allow-empty',
+		'-m',
+		'side work',
+	]);
+	await gitOutput(repo.dir, ['tag', 'side/v9.0.0']);
+	await gitOutput(repo.dir, ['switch', '-q', 'main']);
+
+	const tags = await listTags(repo.dir, 'HEAD');
+	expect(tags.map(tag => tag.name)).toEqual(['final-release', 'web/v1.0.0']);
 	expect(tags[0]!.date).toMatch(/^2026-01-02/);
 });
 

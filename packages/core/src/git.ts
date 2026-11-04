@@ -226,6 +226,36 @@ export async function listReleaseTags(
 		.sort((a, b) => semver.rcompare(a.name, b.name));
 }
 
+/**
+ * Every tag merged into `to`, whatever its name, newest commit date first.
+ * `date` is read the same way as in `listReleaseTags`.
+ */
+export async function listTags(cwd: string, to: string): Promise<ReleaseTag[]> {
+	const stdout = await runGit(
+		[
+			'tag',
+			`--merged=${to}`,
+			'--format=%(refname:strip=2)%1f%(committerdate:iso-strict)%1f%(*committerdate:iso-strict)',
+		],
+		cwd,
+	);
+
+	return stdout
+		.split('\n')
+		.filter(Boolean)
+		.map(line => {
+			const [name, direct, dereferenced] = line.split(FIELD);
+			const date = dereferenced || direct;
+			return {
+				name: name!,
+				date: date ? new Date(date).toISOString() : '',
+			};
+		})
+		.sort(
+			(a, b) => b.date.localeCompare(a.date) || a.name.localeCompare(b.name),
+		);
+}
+
 /** `origin` as an https web URL, or undefined when there is none. */
 export async function getRemoteWebUrl(
 	cwd: string,
