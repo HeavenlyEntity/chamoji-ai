@@ -1,4 +1,4 @@
-import {readFile, writeFile} from 'node:fs/promises';
+import {lstat, readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {
 	answersFromSection,
@@ -8,6 +8,7 @@ import {
 	getRemoteWebUrl,
 	loadConfig,
 	previewReleases,
+	readReleaseSection,
 	recommend,
 	releaseSection,
 	replayReleases,
@@ -20,7 +21,9 @@ import {
 	type SetupAnswers,
 	type Source,
 } from '@chamoji/core';
+import {writeAtomically} from '../init.js';
 import type {GhRunner, Io} from '../run.js';
+import {stripControlLines} from '../text.js';
 import {
 	plannedResult,
 	runStep,
@@ -40,6 +43,15 @@ export type ScreenResult =
  * (the recommended answers, or the existing section's), offers the steps in
  * `states` that aren't done, and calls `preview` and `replay` as the answers
  * change. It draws on stderr, `columns` wide.
+ *
+ * Every string in these props can come from the repo (folder, package, tag
+ * and remote names, versions, notes), so the screen must pass each one
+ * through `stripControlLines` before drawing it. Setup hands them over as
+ * detected, since the same values are matched against tags and paths.
+ *
+ * The releases state (`states[0]`) is done when the config's section is up to
+ * date or a single package needs none; then releases has nothing to ask and
+ * the screen offers only the per-clone steps that aren't done (ruling R16).
  */
 export type SetupScreenProps = {
 	detection: Detection;
@@ -64,6 +76,8 @@ const SQUASH_ADVICE =
 	'Squash merges here keep only the PR title, which drops Release:, Workstream: and intent-card trailers. In the repo\'s Settings → General → Pull Requests, set "Default commit message" for squash merges to "Pull request title and description".';
 const SQUASH_QUERY =
 	'[.allow_squash_merge, .squash_merge_commit_message] | @tsv';
+/** How long the squash-merge check may take before setup goes on without it. */
+const SQUASH_TIMEOUT_MS = 5000;
 
 /** What a step would do, said when there's no terminal to ask. */
 const WOULD: Record<Exclude<StepName, 'releases'>, string> = {
@@ -72,6 +86,10 @@ const WOULD: Record<Exclude<StepName, 'releases'>, string> = {
 		'Setup would also connect Claude Code here, as chamoji init --agents does.',
 	hook: 'Setup would also install the commit composer hook in this clone.',
 };
+const WOULD_OFFER =
+	'Setup would also offer the commit composer hook for this clone.';
+/** Results that mean a step would change nothing (ruling R15); skipped is a step not offered. */
+const SETTLED = new Set<StepResult>(['unchanged', 'nothing-to-do', 'skipped']);
 
 /** `owner/name` from an origin on github.com, or undefined for anywhere else. */
 export async function githubRepo(cwd: string): Promise<string | undefined> {
@@ -82,21 +100,36 @@ export async function githubRepo(cwd: string): Promise<string | undefined> {
 /**
  * The advice line when this repo's squash merges keep only the PR title,
  * which drops the trailers chamoji reads. Null with no gh, no GitHub origin,
- * any other setting or any failure.
+ * any other setting, any failure, or no answer within `timeoutMs`.
  */
 export async function checkSquashMerge(
 	gh: GhRunner,
 	root: string,
+	timeoutMs = SQUASH_TIMEOUT_MS,
 ): Promise<string | null> {
-	try {
+	let timer: NodeJS.Timeout | undefined;
+	const late = new Promise<null>(resolve => {
+		timer = setTimeout(() => resolve(null), timeoutMs);
+		// The check never keeps chamoji running on its own.
+		timer.unref();
+	});
+	const ask = async (): Promise<string | null> => {
 		const repo = await githubRepo(root);
 		if (!repo) return null;
-		const answer = await gh(['api', `repos/${repo}`, '--jq', SQUASH_QUERY]);
+		const answer = await gh(['api', `repos/${repo}`, '--jq', SQUASH_QUERY], {
+			timeoutMs,
+		});
 		if (!answer.ok) return null;
 		const [allowed, message] = answer.message.trim().split('\t');
 		return allowed === 'true' && message === 'PR_TITLE' ? SQUASH_ADVICE : null;
+	};
+
+	try {
+		return await Promise.race([ask(), late]);
 	} catch {
 		return null;
+	} finally {
+		clearTimeout(timer);
 	}
 }
 
@@ -123,25 +156,27 @@ function planReleases(
 	return {result: changed ? 'written' : 'unchanged', section, text};
 }
 
-/** The config's `release` section, undefined when it has none. */
-function releaseOf(original: string | null): unknown {
-	if (original === null) return undefined;
-	const body = original.replace(/^﻿/, '');
-	if (body.trim() === '') return undefined;
-	let data: unknown;
-	try {
-		data = JSON.parse(body);
-	} catch (error) {
+/**
+ * chamoji.config.json's text and permissions, or null text when there's none.
+ * Refuses a symlink or anything but a file: git commits the link, not what
+ * it points to, so setup would change a file the repo doesn't hold.
+ */
+async function readConfigFile(
+	file: string,
+): Promise<{original: string | null; mode?: number}> {
+	const found = await lstat(file).catch((error: NodeJS.ErrnoException) => {
+		if (error.code === 'ENOENT') return null;
+		throw error;
+	});
+	if (!found) return {original: null};
+	if (found.isSymbolicLink()) {
 		throw new Error(
-			`${CONFIG_FILE} isn't valid JSON: ${(error as Error).message}`,
+			`${CONFIG_FILE} is a symlink; chamoji won't write through links`,
 		);
 	}
 
-	return typeof data === 'object' &&
-		data !== null &&
-		Object.hasOwn(data, 'release')
-		? (data as {release: unknown}).release
-		: undefined;
+	if (!found.isFile()) throw new Error(`${CONFIG_FILE} is not a file`);
+	return {original: await readFile(file, 'utf8'), mode: found.mode};
 }
 
 /** `chamoji setup [step]`: see the help text and the spec's "chamoji setup". */
@@ -152,14 +187,15 @@ export async function runSetup(
 	await assertGitRepo(io.cwd);
 	const root = (await runGit(['rev-parse', '--show-toplevel'], io.cwd)).trim();
 	const file = path.join(root, CONFIG_FILE);
-	const original = await readFile(file, 'utf8').catch(
-		(error: NodeJS.ErrnoException) => {
-			if (error.code === 'ENOENT') return null;
-			throw error;
-		},
-	);
-	const existing = releaseOf(original);
 	const releases = args.step === undefined || args.step === 'releases';
+	// Only the releases step reads or writes the config.
+	const {original, mode} = releases
+		? await readConfigFile(file)
+		: {original: null, mode: undefined};
+	const existing = readReleaseSection(original).release;
+	// Started first, so the network never holds up detection or the screen.
+	const squashing =
+		releases && io.gh ? checkSquashMerge(io.gh, root) : Promise.resolve(null);
 	const detection = releases ? await detect(root) : null;
 	let answers =
 		detection &&
@@ -168,8 +204,10 @@ export async function runSetup(
 			: answersFromSection(existing, detection));
 	const states = await stepStates(io, detection, existing);
 	const scope = args.step ? [args.step] : [...STEP_NAMES];
-	const squash = releases && io.gh ? await checkSquashMerge(io.gh, root) : null;
-	const out = args.json ? () => {} : io.stdout;
+	// Names, versions and paths come from the repo; none reaches the terminal raw.
+	const out = args.json
+		? () => {}
+		: (text: string) => io.stdout(stripControlLines(text));
 	const terminal = Boolean(io.setupScreen) && process.stderr.isTTY === true;
 
 	if (!args.step) {
@@ -207,8 +245,10 @@ export async function runSetup(
 			picked = result.steps.filter(step => scope.includes(step));
 		}
 	} else {
-		return report();
+		return report(await squashing);
 	}
+
+	const squash = await squashing;
 
 	// Doing it.
 	const plan = releases
@@ -220,7 +260,7 @@ export async function runSetup(
 	if (plan) {
 		describeReleases(plan, true);
 		if (plan.result === 'written') {
-			await writeFile(file, plan.text);
+			await writeAtomically(file, plan.text, mode);
 			wrote.push(CONFIG_FILE);
 			out(`${WROTE}\n`);
 		}
@@ -247,11 +287,11 @@ export async function runSetup(
 	}
 
 	if (squash) out(`${squash}\n`);
-	if (args.json) printReport(plan, results, wrote);
+	if (args.json) printReport(plan, results, wrote, squash);
 	return code;
 
 	/** No --yes and no terminal, or --json without --yes: say what setup would do. */
-	function report(): number {
+	function report(squash: string | null): number {
 		const plan = releases
 			? planReleases(original, existing, detection!, answers!)
 			: null;
@@ -266,17 +306,19 @@ export async function runSetup(
 			const result = plannedResult(state, Boolean(args.step));
 			results.push({step: state.step, result});
 			if (result === 'written') out(`${WOULD[state.step]}\n`);
+			if (result === 'offered') out(`${WOULD_OFFER}\n`);
 		}
 
 		if (squash) out(`${squash}\n`);
+		// Nothing would change: exit 0 in both modes (ruling R15).
+		const settled = results.every(({result}) => SETTLED.has(result));
 		if (args.json) {
-			printReport(plan, results, []);
-			return 2;
+			printReport(plan, results, [], squash);
+		} else if (!settled) {
+			io.stderr(`${NO_TERMINAL}\n`);
 		}
 
-		if (!results.some(({result}) => result === 'written')) return 0;
-		io.stderr(`${NO_TERMINAL}\n`);
-		return 2;
+		return settled ? 0 : 2;
 	}
 
 	/** The summary and, before writing, the section; or why there's nothing to write. */
@@ -308,6 +350,7 @@ export async function runSetup(
 		plan: ReleasesPlan | null,
 		steps: Array<{step: StepName; result: StepResult}>,
 		wrote: string[],
+		squash: string | null,
 	): void {
 		const {layout, tags, upstream} = detection ?? {};
 		io.stdout(
@@ -326,7 +369,9 @@ export async function runSetup(
 								},
 							}
 						: null,
-					answers: plan?.section ?? null,
+					// A single package's section is never written.
+					answers:
+						plan && plan.result !== 'nothing-to-do' ? plan.section : null,
 					why: answers?.why ?? {},
 					steps,
 					wrote,

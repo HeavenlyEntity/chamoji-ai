@@ -1,8 +1,14 @@
 import {existsSync} from 'node:fs';
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
-import {fetchesMemory, hasOrigin, runGit, type Detection} from '@chamoji/core';
-import {HookError, installHook, readHookState} from '../hook.js';
+import {
+	fetchesMemory,
+	hasOrigin,
+	MemoryError,
+	runGit,
+	type Detection,
+} from '@chamoji/core';
+import {HookError, hookPath, installHook, readHookState} from '../hook.js';
 import {
 	AGENT_FILES,
 	agentsConnected,
@@ -103,7 +109,7 @@ export async function stepStates(
 			done: hook,
 			line: hook
 				? '✓ the commit composer hook is installed in this clone'
-				: "○ the commit composer hook isn't installed in this clone; chamoji setup hook installs it",
+				: "○ the commit composer hook isn't installed in this clone; chamoji setup hook --yes installs it",
 			offered: true,
 		},
 	];
@@ -145,7 +151,9 @@ const readText = async (file: string): Promise<string | null> =>
 
 /**
  * Runs one of the per-clone and agents steps and says how it went, with the
- * shared files it changed (repo-relative) for `--json`'s `wrote`.
+ * shared files it changed (repo-relative) for `--json`'s `wrote`. A step that
+ * fails the way steps do (git can't reach the remotes) is `failed` and lets
+ * the others run; anything else, such as a ConfigVersionError, is thrown.
  */
 export async function runStep(
 	step: Exclude<StepName, 'releases'>,
@@ -153,10 +161,13 @@ export async function runStep(
 	io: Io,
 ): Promise<{code: number; result: StepResult; wrote: string[]}> {
 	const root = await repoRoot(io.cwd);
+	// The files whose text says whether the step changed anything.
 	const files =
 		step === 'agents'
 			? AGENT_FILES.map(file => ({file, at: path.join(root, file)}))
-			: [];
+			: step === 'hook'
+				? [{file: null, at: await hookPath(io.cwd)}]
+				: [];
 	const before = await Promise.all(files.map(async ({at}) => readText(at)));
 	let code: number;
 	try {
@@ -166,18 +177,31 @@ export async function runStep(
 				? setUpAgents(io)
 				: setUpHook(io));
 	} catch (error) {
-		io.stderr(`chamoji: ${stripControlLines((error as Error).message)}\n`);
+		if (!(error instanceof MemoryError)) throw error;
+		io.stderr(`chamoji: ${stripControlLines(error.message)}\n`);
 		return {code: 1, result: 'failed', wrote: []};
 	}
 
 	const wrote: string[] = [];
+	let changed = false;
 	for (const [index, {file, at}] of files.entries()) {
-		if ((await readText(at)) !== before[index]) wrote.push(file);
+		if ((await readText(at)) === before[index]) continue;
+		changed = true;
+		// The hook is per clone, not a file to commit.
+		if (file) wrote.push(file);
 	}
 
 	if (code !== 0) return {code, result: 'failed', wrote};
-	if (step === 'memory' && !state.offered) {
-		return {code, result: 'nothing-to-do', wrote};
+	if (step === 'memory') {
+		return {
+			code,
+			result: state.offered
+				? state.done
+					? 'unchanged'
+					: 'written'
+				: 'nothing-to-do',
+			wrote,
+		};
 	}
 
 	if (step === 'hook' && (await readHookState(io.cwd)) !== 'installed') {
@@ -185,7 +209,7 @@ export async function runStep(
 		return {code, result: 'offered', wrote};
 	}
 
-	return {code, result: state.done ? 'unchanged' : 'written', wrote};
+	return {code, result: changed ? 'written' : 'unchanged', wrote};
 }
 
 /** What a step would do, for a report with no `--yes`, or a full run that doesn't run it. */

@@ -167,20 +167,27 @@ const realTerminal = (): ComposerTerminal | null => {
 
 export type GhRunner = (
 	args: string[],
+	/** `timeoutMs` kills gh after that long; the run then fails softly. */
+	options?: {timeoutMs?: number},
 ) => Promise<{ok: boolean; message: string}>;
 
 /** The GitHub CLI, without a shell. Missing `gh` is a soft failure. */
-const runGh: GhRunner = async args =>
+const runGh: GhRunner = async (args, options) =>
 	new Promise(resolve => {
-		execFile('gh', args, (error, stdout, stderr) => {
-			if (!error) {
-				resolve({ok: true, message: stdout.trim()});
-			} else if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-				resolve({ok: false, message: 'no gh CLI, so no GitHub release'});
-			} else {
-				resolve({ok: false, message: stderr.trim() || error.message});
-			}
-		});
+		execFile(
+			'gh',
+			args,
+			{timeout: options?.timeoutMs ?? 0},
+			(error, stdout, stderr) => {
+				if (!error) {
+					resolve({ok: true, message: stdout.trim()});
+				} else if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+					resolve({ok: false, message: 'no gh CLI, so no GitHub release'});
+				} else {
+					resolve({ok: false, message: stderr.trim() || error.message});
+				}
+			},
+		);
 	});
 
 const HELP = `
