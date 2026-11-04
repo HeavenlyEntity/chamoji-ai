@@ -568,6 +568,51 @@ test('runSetupScreen mounts the screen and resolves with its result', async () =
 	});
 });
 
+test('runSetupScreen waits for a preview and replay still running when it closes', async () => {
+	const stdin = new FakeStdin();
+	const stdout = new FakeStdout();
+	let finishPreview!: () => void;
+	let finishReplay!: () => void;
+	const order: string[] = [];
+	const done = runSetupScreen(
+		{
+			detection,
+			initial: recommend(detection),
+			states: NOTHING_ELSE,
+			preview: async answers =>
+				new Promise<Preview>(resolve => {
+					finishPreview = () => {
+						order.push('preview');
+						void fakePreview(answers).then(resolve);
+					};
+				}),
+			replay: async () =>
+				new Promise<ReplayLine[]>(resolve => {
+					finishReplay = () => {
+						order.push('replay');
+						resolve([]);
+					};
+				}),
+			columns: 100,
+		},
+		{
+			stdin: stdin as unknown as NodeJS.ReadStream,
+			stdout: stdout as unknown as NodeJS.WriteStream,
+		},
+	);
+	void done.then(() => order.push('resolved'));
+	await sleep(100);
+	stdin.write(ENTER);
+	await sleep(50);
+	expect(order).toEqual([]);
+	finishReplay();
+	await sleep(20);
+	expect(order).toEqual(['replay']);
+	finishPreview();
+	expect(await done).toMatchObject({saved: true});
+	expect(order).toEqual(['replay', 'preview', 'resolved']);
+});
+
 const PROPS = (): SetupScreenProps => ({
 	detection,
 	initial: recommend(detection),

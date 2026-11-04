@@ -397,14 +397,30 @@ export async function runSetupScreen(
 	streams: ComposeStreams,
 	look?: ScreenLook,
 ): Promise<ScreenResult> {
+	// Preview and replay runs read git. One still running when the screen
+	// closes, as after an early Enter, must finish before setup goes on, or
+	// git keeps working (and holding the repo's files) after setup has saved.
+	const running = new Set<Promise<unknown>>();
+	const tracked =
+		<A extends unknown[], T>(run: (...args: A) => Promise<T>) =>
+		(...args: A): Promise<T> => {
+			const promise = run(...args);
+			running.add(promise);
+			const done = () => running.delete(promise);
+			promise.then(done, done);
+			return promise;
+		};
+
 	return new Promise(resolve => {
 		const app = render(
 			<SetupScreen
 				{...props}
+				preview={tracked(props.preview)}
+				replay={tracked(props.replay)}
 				look={look}
 				onDone={result => {
 					app.unmount();
-					resolve(result);
+					void Promise.allSettled([...running]).then(() => resolve(result));
 				}}
 			/>,
 			{
