@@ -4,7 +4,8 @@ export type FaceCall =
 	| ['step', string]
 	| ['update', string]
 	| ['end', StepOutcome, string]
-	| ['stop'];
+	| ['stop']
+	| ['release'];
 
 /** A face that draws nothing and logs every call made to it, in order. */
 export function recordingFace(): {face: Face; calls: FaceCall[]} {
@@ -24,6 +25,9 @@ export function recordingFace(): {face: Face; calls: FaceCall[]} {
 		wrap: write => write,
 		stop() {
 			calls.push(['stop']);
+		},
+		async release() {
+			calls.push(['release']);
 		},
 	};
 	return {face, calls};

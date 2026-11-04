@@ -69,6 +69,8 @@ const SHOW_CURSOR = '\u001B[?25h';
 const CURSOR_UP = `\u001B[${LOGO_HEIGHT}A\r`;
 const SIGNALS = ['SIGINT', 'SIGTERM'] as const;
 
+type WelcomeSignal = 'SIGINT' | 'SIGTERM' | 'SIGTSTP' | 'SIGCONT';
+
 type Level = 0 | 1 | 2 | 3;
 
 /** The one-line logo: the face and `chamoji`, in the foil unless it is off. */
@@ -99,10 +101,12 @@ export type WelcomeOptions = {
 	/** Waits between frames; tests pass one that returns at once. */
 	sleep?: (ms: number) => Promise<void>;
 	signals?: {
-		once(event: 'SIGINT' | 'SIGTERM', fn: () => void): void;
+		once(event: WelcomeSignal, fn: () => void): void;
 		removeListener(event: string, fn: () => void): void;
 		kill(signal: string): void;
 	};
+	/** Decides whether Ctrl-Z is watched: Windows has no job control. */
+	platform?: NodeJS.Platform;
 };
 
 /**
@@ -141,7 +145,7 @@ export async function playWelcome(options: WelcomeOptions): Promise<void> {
 				setTimeout(resolve, ms);
 			}));
 	const signals = options.signals ?? {
-		once: (event: 'SIGINT' | 'SIGTERM', fn: () => void) => {
+		once: (event: WelcomeSignal, fn: () => void) => {
 			process.once(event, fn);
 		},
 		removeListener: (event: string, fn: () => void) => {
@@ -153,24 +157,58 @@ export async function playWelcome(options: WelcomeOptions): Promise<void> {
 	};
 	// The cursor must come back even when the user interrupts the intro.
 	const handlers = new Map<string, () => void>();
-	for (const signal of SIGNALS) {
-		const handler = () => {
-			write(SHOW_CURSOR);
-			signals.kill(signal);
-		};
-
+	const listen = (signal: WelcomeSignal, handler: () => void) => {
 		handlers.set(signal, handler);
 		signals.once(signal, handler);
+	};
+
+	for (const signal of SIGNALS) {
+		listen(signal, () => {
+			write(SHOW_CURSOR);
+			signals.kill(signal);
+		});
+	}
+
+	// Whether the last frame is still right above the cursor, so the next one
+	// can draw over it.
+	let drawn = false;
+	let finished = false;
+	/**
+	 * Ctrl-Z would stop the intro with the cursor hidden. So the cursor is
+	 * shown first, then the process stops for real: the handler is gone, so
+	 * SIGTSTP does what it always does. The shell prints below the wordmark
+	 * while it is stopped, so when it carries on, the next frame starts fresh.
+	 */
+	const suspend = () => {
+		handlers.delete('SIGTSTP');
+		write(SHOW_CURSOR);
+		listen('SIGCONT', () => {
+			handlers.delete('SIGCONT');
+			if (finished) {
+				return;
+			}
+
+			drawn = false;
+			write(HIDE_CURSOR);
+			listen('SIGTSTP', suspend);
+		});
+		signals.kill('SIGTSTP');
+	};
+
+	if ((options.platform ?? process.platform) !== 'win32') {
+		listen('SIGTSTP', suspend);
 	}
 
 	write(HIDE_CURSOR);
 	try {
 		for (const [index, step] of INTRO.entries()) {
-			write((index > 0 ? CURSOR_UP : '') + draw(step.face, index));
+			write((drawn ? CURSOR_UP : '') + draw(step.face, index));
+			drawn = true;
 			// eslint-disable-next-line no-await-in-loop
 			await sleep(step.ms);
 		}
 	} finally {
+		finished = true;
 		for (const [signal, handler] of handlers) {
 			signals.removeListener(signal, handler);
 		}

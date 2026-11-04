@@ -165,6 +165,12 @@ export type QueryOptions = {
 	isForeground?: () => Promise<boolean>;
 	/** Aborting ends the query at once, grace window and all. */
 	signal?: AbortSignal;
+	/**
+	 * Called once stdin is back as it was: the reply came, the grace window
+	 * passed, the query was aborted, or it never touched the terminal. Until
+	 * then another program reading the terminal could get the late reply.
+	 */
+	onSettled?: () => void;
 };
 
 /**
@@ -190,13 +196,23 @@ export async function queryBackground(
 	options: QueryOptions = {},
 ): Promise<Rgb | undefined> {
 	const {isForeground = async () => inForeground(), signal} = options;
+	let settled = false;
+	const settle = () => {
+		if (!settled) {
+			settled = true;
+			options.onSettled?.();
+		}
+	};
+
 	try {
 		if (signal?.aborted || !(await isForeground()) || signal?.aborted) {
+			settle();
 			return undefined;
 		}
 
-		return await ask(stdin, stderr, timeoutMs, interrupt, signal);
+		return await ask(stdin, stderr, timeoutMs, interrupt, signal, settle);
 	} catch {
+		settle();
 		return undefined;
 	}
 }
@@ -207,6 +223,7 @@ async function ask(
 	timeoutMs: number,
 	interrupt: () => void,
 	signal: AbortSignal | undefined,
+	settle: () => void,
 ): Promise<Rgb | undefined> {
 	return new Promise(resolve => {
 		const wasRaw = stdin.isRaw;
@@ -232,6 +249,7 @@ async function ask(
 			}
 
 			stdin.pause();
+			settle();
 		};
 
 		const onData = (chunk: Buffer | string) => {

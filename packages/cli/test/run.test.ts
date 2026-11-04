@@ -133,7 +133,8 @@ test('bare chamoji prints the logo and the grouped help to stdout and exits 0', 
 	expect(code).toBe(0);
 	expect(stderr).toBe('');
 	expect(stdout).toContain(LOGO_FRAMES.shades[0]);
-	expect(stdout).toContain(TAGLINE);
+	// A blank line between the wordmark and the tagline.
+	expect(stdout).toContain(`${LOGO_FRAMES.shades.at(-1)!}\n\n${TAGLINE}\n`);
 	expect(stdout).toContain(`\n\n${SHORT_HELP}\n`);
 	expect(stdout.endsWith('Every option: chamoji --help\n')).toBe(true);
 });

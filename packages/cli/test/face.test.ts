@@ -503,6 +503,56 @@ test('stop aborts the theme question and ignores a late answer', async () => {
 	expect(out()).not.toMatch(SGR);
 });
 
+test('release waits for the theme question to settle, then aborts it', async () => {
+	let given: AbortSignal | undefined;
+	let settle: () => void = () => {};
+	const {face, clock, writes} = setup({
+		level: 3,
+		theme: async (signal, settled) => {
+			given = signal;
+			settle = settled;
+			// The answer came at the limit: none, but the terminal is still raw.
+			return 'dark';
+		},
+	});
+	face.step('Fetching tags from origin');
+	clock.advance(300);
+	let released = false;
+	const releasing = face.release().then(() => {
+		released = true;
+	});
+	await flush();
+	// The line is gone at once, but git must not ask yet.
+	expect(writes.join('')).toContain(SHOW);
+	expect(released).toBe(false);
+	expect(given?.aborted).toBe(false);
+	settle();
+	await releasing;
+	expect(released).toBe(true);
+	expect(given?.aborted).toBe(true);
+	expect(clock.timers).toBe(0);
+});
+
+test('release resolves at once when the terminal was never asked', async () => {
+	const resolver = vi.fn(async () => 'dark' as const);
+	const {face} = setup({theme: resolver});
+	const started = Date.now();
+	await face.release();
+	expect(Date.now() - started).toBeLessThan(100);
+	expect(resolver).not.toHaveBeenCalled();
+});
+
+test('release gives up waiting after 500 ms', async () => {
+	const {face, clock} = setup({
+		theme: async () => new Promise(() => {}),
+	});
+	face.step('Fetching tags from origin');
+	clock.advance(300);
+	const started = Date.now();
+	await face.release();
+	expect(Date.now() - started).toBeGreaterThanOrEqual(450);
+});
+
 test('SIGINT while drawn clears the line, shows the cursor, removes its listener and re-raises SIGINT', () => {
 	const {face, clock, writes, signals} = setup();
 	face.step('Syncing memory');
@@ -670,8 +720,9 @@ test('gitStep reruns without the quiet env after an auth failure', async () => {
 	expect(calls).toEqual([
 		['step', "Fetching origin's memory"],
 		['end', 'warn', 'git needs your credentials'],
-		// It also ends a theme question that would read what is typed at git's.
-		['stop'],
+		// It also lets go of a theme question that would read what is typed at
+		// git's prompt, or whose late reply would land there.
+		['release'],
 	]);
 });
 

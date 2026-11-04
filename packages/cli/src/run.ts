@@ -511,7 +511,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 						...(io.welcome ?? PLAIN_WELCOME),
 						write: io.stdout,
 					});
-					io.stdout(`${TAGLINE}\n\n${SHORT_HELP}\n`);
+					io.stdout(`\n${TAGLINE}\n\n${SHORT_HELP}\n`);
 					return 0;
 				}
 
@@ -857,13 +857,14 @@ export async function run(argv: string[], given: Io): Promise<number> {
 						onStep() {
 							step.update('Fetching tags from origin');
 						},
-						onCredentials() {
+						async onCredentials() {
 							// Jev, if it runs after this, starts a step of its own.
 							jevHost = undefined;
 							step.end('warn', 'git needs your credentials');
 							// A theme question still open would read what is typed at
-							// git's prompt, so the face stops before git asks.
-							face.stop();
+							// git's prompt, or its late reply would land there, so the
+							// face lets go of the terminal before git asks.
+							await face.release();
 						},
 						...(env ? {env} : {}),
 					});

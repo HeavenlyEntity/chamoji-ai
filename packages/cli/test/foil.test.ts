@@ -229,6 +229,48 @@ test('queryBackground answers undefined at the limit, then restores after the gr
 	expect(vi.getTimerCount()).toBe(0);
 });
 
+test('queryBackground reports settled once the grace window ends, not at the limit', async () => {
+	vi.useFakeTimers();
+	const {input, stderr} = fakeStreams();
+	const onSettled = vi.fn();
+	const pending = queryBackground(input, stderr, 100, () => {}, {
+		isForeground: async () => true,
+		onSettled,
+	});
+	await vi.advanceTimersByTimeAsync(100);
+	expect(await pending).toBeUndefined();
+	expect(onSettled).not.toHaveBeenCalled();
+	await vi.advanceTimersByTimeAsync(200);
+	expect(onSettled).toHaveBeenCalledOnce();
+});
+
+test('queryBackground reports settled when the reply ends it', async () => {
+	vi.useFakeTimers();
+	const {stdin, input, stderr} = fakeStreams();
+	const onSettled = vi.fn();
+	const pending = queryBackground(input, stderr, 100, () => {}, {
+		isForeground: async () => true,
+		onSettled,
+	});
+	await vi.advanceTimersByTimeAsync(0);
+	stdin.emit('data', Buffer.from(`${ESC}]11;rgb:0000/0000/0000${ESC}\\`));
+	expect(await pending).toEqual({r: 0, g: 0, b: 0});
+	expect(onSettled).toHaveBeenCalledOnce();
+});
+
+test('queryBackground reports settled at once when it never asks', async () => {
+	const {input, stderr, write} = fakeStreams();
+	const onSettled = vi.fn();
+	expect(
+		await queryBackground(input, stderr, 100, () => {}, {
+			isForeground: async () => false,
+			onSettled,
+		}),
+	).toBeUndefined();
+	expect(write).not.toHaveBeenCalled();
+	expect(onSettled).toHaveBeenCalledOnce();
+});
+
 test('queryBackground swallows a reply that arrives after the limit', async () => {
 	vi.useFakeTimers();
 	const {stdin, input, stderr} = fakeStreams();
