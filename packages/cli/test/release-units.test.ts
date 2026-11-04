@@ -265,6 +265,21 @@ test('a version needs one --unit', async () => {
 	]);
 });
 
+test('a unit left out by --unit says so, not that it needs no release', async () => {
+	const dir = await appRepo([...TAGGED, WEB_FEATURE, MOBILE_FIX, SHARED_FIX]);
+	const left =
+		'mobile: left out by --unit (1 change of its own, 1 shared waiting)\n';
+	const dry = await chamoji(['release', '--unit', 'web', '--dry-run'], dir);
+	expect(dry.code).toBe(0);
+	expect(dry.stdout).toContain(left);
+	expect(dry.stdout).not.toContain('no release needed');
+
+	const released = await chamoji(['release', '--unit', 'web'], dir);
+	expect(released.code).toBe(0);
+	expect(released.stdout.split('\n')[0]).toBe('Released web/v0.2.0.');
+	expect(released.stdout).toContain(left);
+});
+
 test('an unknown --unit exits 1 with the core error', async () => {
 	const dir = await appRepo([...TAGGED, WEB_FEATURE]);
 	const {code, stderr} = await chamoji(
