@@ -650,3 +650,30 @@ test('the help lists --unit and --for-tag', async () => {
 	expect(stdout).toContain('  --unit');
 	expect(stdout).toContain('  --for-tag');
 });
+
+test('a first release notes a version file that disagrees with the manifest', async () => {
+	const dir = await appRepo(
+		[
+			{
+				commit: '🔧 Add the app config',
+				files: {'apps/web/app.json': '{"expo": {"version": "0.3.0"}}\n'},
+			},
+			WEB_FEATURE,
+		],
+		{
+			...RELEASE,
+			units: {
+				web: {
+					path: 'apps/web',
+					tag: 'web/v{version}',
+					versionFiles: ['apps/web/package.json', 'apps/web/app.json'],
+				},
+			},
+		},
+	);
+	const {code, stdout} = await chamoji(['release', '--dry-run'], dir);
+	expect(code).toBe(0);
+	expect(stdout).toContain(
+		'note: apps/web/app.json had a version other than 0.1.0 (its package.json version); it now says 0.1.0\n',
+	);
+});

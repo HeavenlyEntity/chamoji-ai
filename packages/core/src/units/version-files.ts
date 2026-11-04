@@ -1,4 +1,4 @@
-import {readdir, readFile} from 'node:fs/promises';
+import {lstat, readdir, readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {ReleaseError} from '../release.js';
 import type {ResolvedUnit} from './workspace.js';
@@ -15,6 +15,9 @@ export type VersionFileEdit = {
 type Prop = {key: string; start: number; end: number};
 type Edited = {text: string; from: string};
 type Settings = {to: string; current: string | null; increment: boolean};
+
+/** A config shape chamoji could misread, so it refuses to edit it. */
+class Unsupported extends Error {}
 
 const isMissing = (error: unknown): boolean =>
 	(error as NodeJS.ErrnoException).code === 'ENOENT';
@@ -306,7 +309,19 @@ function objectOf(text: string, from: number): number {
 	if (!ident) return -1;
 	const after = skipTrivia(text, i + ident[0].length);
 	if (text.startsWith('=>', after)) return arrowBody(text, after);
-	if (text[after] === '(') return objectOf(text, after + 1);
+	if (text[after] === '(') {
+		// `merge(base, {…})`: which argument is the config is anyone's guess.
+		let next = skipTrivia(text, skipValue(text, skipTrivia(text, after + 1)));
+		if (text[next] === ',') next = skipTrivia(text, next + 1);
+		if (text[next] !== ')') {
+			throw new Unsupported(
+				`its config is passed to ${ident[0]}(…) with other arguments, so chamoji can't tell which object is exported`,
+			);
+		}
+
+		return objectOf(text, after + 1);
+	}
+
 	if (ident[0].includes('.')) return -1;
 	const declaration = String.raw`(?:const|let|var)\s+${ident[0]}(?![\w$])`;
 	const declared = findToken(text, new RegExp(declaration, 'y'));
@@ -375,6 +390,16 @@ function configRoot(text: string, json: boolean): number {
 	return expo && text[expo.start] === '{' ? expo.start : top;
 }
 
+/** The `key` property of the object at `open`; JS keeps the last of a repeated `version`, so that is refused. */
+function findProp(text: string, open: number, key: string): Prop | undefined {
+	const found = props(text, open).filter(prop => prop.key === key);
+	if (key === 'version' && found.length > 1) {
+		throw new Unsupported('its config object has more than one version key');
+	}
+
+	return found[0];
+}
+
 function configProp(
 	text: string,
 	json: boolean,
@@ -384,7 +409,7 @@ function configProp(
 	let found: Prop | undefined;
 	for (const key of keys) {
 		if (open === -1) return undefined;
-		found = props(text, open).find(prop => prop.key === key);
+		found = findProp(text, open, key);
 		if (!found) return undefined;
 		open = text[found.start] === '{' ? found.start : -1;
 	}
@@ -433,6 +458,12 @@ function setExpo(text: string, json: boolean, settings: Settings) {
 	const prop = configProp(text, json, ['version']);
 	const literal = prop && stringLiteral(text, prop);
 	if (!prop || !literal) return undefined;
+	if (literal.quote === '`' && literal.value.includes('${')) {
+		throw new Unsupported(
+			"its version is a template literal with ${…}, which chamoji can't set",
+		);
+	}
+
 	let next = replace(text, prop.start + 1, prop.end - 1, settings.to);
 	if (settings.increment) next = incrementExpo(next, json);
 	return {text: next, from: literal.value};
@@ -444,7 +475,7 @@ function jsonProp(text: string, keys: string[]): Prop | undefined {
 	let found: Prop | undefined;
 	for (const key of keys) {
 		if (open === -1) return undefined;
-		found = props(text, open).find(prop => prop.key === key);
+		found = findProp(text, open, key);
 		if (!found) return undefined;
 		open = text[found.start] === '{' ? found.start : -1;
 	}
@@ -525,8 +556,21 @@ function setGradle(text: string, settings: Settings): Edited | string {
 	return {text: next, from: match[3]!};
 }
 
-/** The edited text, or the reason the file has no version to set. */
+/** The edited text, or the reason the file has no version chamoji can set. */
 function setVersion(
+	file: string,
+	text: string,
+	settings: Settings,
+): Edited | string {
+	try {
+		return setKnownVersion(file, text, settings);
+	} catch (error) {
+		if (error instanceof Unsupported) return error.message;
+		throw error;
+	}
+}
+
+function setKnownVersion(
 	file: string,
 	text: string,
 	settings: Settings,
@@ -562,6 +606,15 @@ function setVersion(
 		text: replace(text, index, index + current.length, settings.to),
 		from: current,
 	};
+}
+
+async function isSymlink(root: string, file: string): Promise<boolean> {
+	try {
+		return (await lstat(path.join(root, file))).isSymbolicLink();
+	} catch (error) {
+		if (isMissing(error)) return false;
+		throw new Error(`Can't read ${file}: ${(error as Error).message}`);
+	}
 }
 
 async function readFileText(
@@ -605,6 +658,14 @@ export async function editVersionFiles(
 	const isOwn = (file: string): boolean => !listed && file === own;
 	const edits: VersionFileEdit[] = [];
 	for (const file of files) {
+		// Writing through a link would change a file the config doesn't name.
+		if (!isOwn(file) && (await isSymlink(root, file))) {
+			throw new ReleaseError(
+				'invalid-version',
+				`${file} is listed in versionFiles but is a symlink; list the file it points to instead`,
+			);
+		}
+
 		const text = await readFileText(root, file);
 		if (text === undefined) {
 			if (isOwn(file)) continue;
