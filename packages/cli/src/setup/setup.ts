@@ -78,9 +78,15 @@ const WROTE = `Wrote ${CONFIG_FILE}. Review it and commit it; git restore ${CONF
 const UP_TO_DATE = `${CONFIG_FILE} is already up to date.`;
 const CANCELLED = 'Setup cancelled; nothing was saved.';
 const SQUASH_ADVICE =
-	'Squash merges here keep only the PR title, which drops Release:, Workstream: and intent-card trailers. In the repo\'s Settings → General → Pull Requests, set "Default commit message" for squash merges to "Pull request title and description".';
+	'Squash merges here keep only the PR title or its description, which drops the commits\' Release:, Workstream: and intent-card lines. In the repo\'s Settings → General → Pull Requests, set "Default commit message" for squash merges to "Default message" or "Pull request title and commit details".';
 const SQUASH_QUERY =
-	'[.allow_squash_merge, .squash_merge_commit_message] | @tsv';
+	'[.allow_squash_merge, .squash_merge_commit_title, .squash_merge_commit_message] | @tsv';
+/**
+ * GitHub's squash_merge_commit_message values that keep no commit bodies:
+ * BLANK ("Pull request title") and PR_BODY ("Pull request title and
+ * description"). COMMIT_MESSAGES keeps them.
+ */
+const BODILESS = new Set(['BLANK', 'PR_BODY']);
 /** How long the squash-merge check may take before setup goes on without it. */
 const SQUASH_TIMEOUT_MS = 5000;
 
@@ -111,8 +117,8 @@ export async function githubRepo(cwd: string): Promise<string | undefined> {
 }
 
 /**
- * The advice line when this repo's squash merges keep only the PR title,
- * which drops the trailers chamoji reads. Null with no gh, no GitHub origin,
+ * The advice line when this repo's squash merges keep only the PR title or
+ * description, which drops the commit lines chamoji reads. Null with no gh, no GitHub origin,
  * any other setting, any failure, or no answer within `timeoutMs`.
  */
 export async function checkSquashMerge(
@@ -133,8 +139,8 @@ export async function checkSquashMerge(
 			timeoutMs,
 		});
 		if (!answer.ok) return null;
-		const [allowed, message] = answer.message.trim().split('\t');
-		return allowed === 'true' && message === 'PR_TITLE' ? SQUASH_ADVICE : null;
+		const [allowed, , message = ''] = answer.message.trim().split('\t');
+		return allowed === 'true' && BODILESS.has(message) ? SQUASH_ADVICE : null;
 	};
 
 	try {
