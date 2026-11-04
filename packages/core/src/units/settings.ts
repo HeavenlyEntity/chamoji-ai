@@ -314,12 +314,22 @@ function parseUpstream(
 		fail('upstream.name', 'must be a non-empty string');
 	}
 
-	if (remote !== undefined && (typeof remote !== 'string' || !remote)) {
-		fail('upstream.remote', 'must be a non-empty string');
+	// Both reach git as arguments, so neither may read as an option.
+	if (
+		remote !== undefined &&
+		(typeof remote !== 'string' || !remote || /^-|\s/.test(remote))
+	) {
+		fail(
+			'upstream.remote',
+			'must be a non-empty string without whitespace, not starting with "-"',
+		);
 	}
 
-	if (since !== undefined && (typeof since !== 'string' || !since)) {
-		fail('upstream.since', 'must be a non-empty string');
+	if (
+		since !== undefined &&
+		(typeof since !== 'string' || !since || since.startsWith('-'))
+	) {
+		fail('upstream.since', 'must be a non-empty string not starting with "-"');
 	}
 
 	return {

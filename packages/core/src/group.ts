@@ -25,11 +25,16 @@ export function groupCommits(
 		}
 	}
 
+	// Where a sync goes: Changed, else the first group that is shown and not collapsed.
+	const syncGroup = buckets.has(SYNC_GROUP)
+		? SYNC_GROUP
+		: config.find(item => !item.hidden && !item.collapse)?.group;
+
 	for (const commit of commits) {
-		// A sync is its own line under Changed, never part of a collapsed group.
+		// A sync is its own line, never part of a collapsed group.
 		const target =
-			commit.sync && buckets.has(SYNC_GROUP)
-				? SYNC_GROUP
+			commit.sync && syncGroup !== undefined
+				? syncGroup
 				: commit.breaking && buckets.has(BREAKING_GROUP)
 					? BREAKING_GROUP
 					: (commit.gitmoji && groupByCode.get(commit.gitmoji)) ||

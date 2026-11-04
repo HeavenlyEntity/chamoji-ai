@@ -212,3 +212,15 @@ test('aliases normalise from the one-unit string form', () => {
 		),
 	).toThrow(/release\.tags\.aliases.*nope/);
 });
+
+test('upstream.since and upstream.remote reject option-like values', () => {
+	for (const upstream of [
+		{name: 'Makerkit', since: '--output=x'},
+		{name: 'Makerkit', remote: '-u'},
+		{name: 'Makerkit', remote: 'my remote'},
+	]) {
+		expect(() => parseReleaseSettings(withUnits({}, {upstream}), FILE)).toThrow(
+			/release\.upstream\.(since|remote)/,
+		);
+	}
+});
