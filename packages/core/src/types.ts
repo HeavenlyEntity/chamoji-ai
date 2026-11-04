@@ -51,6 +51,8 @@ export type ParsedCommit = Omit<RawCommit, 'trailers'> & {
 	workstream?: string;
 	/** The commit's intent lines. Absent when it has none. */
 	card?: IntentCard;
+	/** For a commit shared with a unit: the internal package path it changed. */
+	via?: string;
 };
 
 export type GroupConfigItem = {
