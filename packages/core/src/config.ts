@@ -1,6 +1,7 @@
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
 import type {ChamojiConfig, GroupConfig} from './types.js';
+import {parseReleaseSettings} from './units/settings.js';
 
 export const CONFIG_FILE = 'chamoji.config.json';
 
@@ -187,13 +188,7 @@ export async function loadConfig(
 		throw new Error(`Invalid config ${file}: expected an object or an array`);
 	}
 
-	const {groups, repositoryUrl} = data as Record<string, unknown>;
-	if ('release' in data) {
-		throw new ConfigVersionError(
-			"this repo's release settings need chamoji 0.13.0 or newer",
-		);
-	}
-
+	const {groups, repositoryUrl, release} = data as Record<string, unknown>;
 	if (repositoryUrl !== undefined && typeof repositoryUrl !== 'string') {
 		throw new Error(`Invalid config ${file}: repositoryUrl must be a string`);
 	}
@@ -204,6 +199,9 @@ export async function loadConfig(
 				? DEFAULT_GROUP_CONFIG
 				: validateGroups(groups, file),
 		...(repositoryUrl ? {repositoryUrl} : {}),
+		...(release === undefined
+			? {}
+			: {release: parseReleaseSettings(release, file)}),
 	};
 }
 

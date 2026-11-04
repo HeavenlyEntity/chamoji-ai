@@ -89,15 +89,26 @@ test('typo fixes are documentation, not bug fixes', () => {
 	expect(fixed?.emojis).not.toContain('pencil2');
 });
 
-test('a config with a release section is refused by this version', async () => {
+test('a config with a newer release schema is refused by this version', async () => {
 	dir = await mkdtemp(path.join(tmpdir(), 'chamoji-config-'));
 	await writeFile(
 		path.join(dir, 'chamoji.config.json'),
-		JSON.stringify({release: {schema: 1, shape: 'apps', units: {}}}),
+		JSON.stringify({release: {schema: 2, shape: 'apps', units: {}}}),
 	);
 
 	await expect(loadConfig(dir)).rejects.toThrow(
 		"this repo's release settings need chamoji 0.13.0 or newer",
 	);
 	await expect(loadConfig(dir)).rejects.toBeInstanceOf(ConfigVersionError);
+});
+
+test('a config with a release section loads it', async () => {
+	dir = await mkdtemp(path.join(tmpdir(), 'chamoji-config-'));
+	await writeFile(
+		path.join(dir, 'chamoji.config.json'),
+		JSON.stringify({release: {schema: 1, shape: 'single'}}),
+	);
+
+	const config = await loadConfig(dir);
+	expect(config.release?.shape).toBe('single');
 });

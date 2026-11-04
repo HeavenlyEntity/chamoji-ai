@@ -34,6 +34,12 @@ export {
 	type GitmojiInfo,
 	type GitmojiMatch,
 } from './gitmojis.js';
+export {
+	parseReleaseSettings,
+	type ReleaseSettings,
+	type Shape,
+	type UnitSettings,
+} from './units/settings.js';
 export {groupCommits} from './group.js';
 export {splitHighlights} from './highlights.js';
 export {readIntent} from './intent.js';
