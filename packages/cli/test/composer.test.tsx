@@ -22,6 +22,7 @@ function open(
 	config: Partial<ComposeConfig> = {},
 	advice?: Promise<Advice | null>,
 	adviceTimeoutMs?: number,
+	impact?: {own: string[]; rides: string[]},
 ) {
 	const onSubmit = vi.fn();
 	const onCancel = vi.fn();
@@ -32,6 +33,7 @@ function open(
 			onCancel={onCancel}
 			advice={advice}
 			adviceTimeoutMs={adviceTimeoutMs}
+			impact={impact}
 		/>,
 	);
 	cleanup = app.unmount;
@@ -238,4 +240,55 @@ test('advice that fails or comes too late changes nothing', async () => {
 	await tick();
 	await app.type('\u007F');
 	expect(app.lastFrame()).not.toContain('suggested');
+});
+
+test('the composer shows releases with: web · rides along to: mobile for a web and supabase change', async () => {
+	const app = open({}, undefined, undefined, {own: ['web'], rides: ['mobile']});
+	expect(app.lastFrame()).toContain(
+		'releases with: web · rides along to: mobile',
+	);
+	await app.type('bug', ENTER, 'api', ENTER, 'fix timeout', ENTER);
+	await app.type(ENTER, ENTER, ENTER); // no body, no why, not breaking
+	// web is released by this change, so there is nothing to offer.
+	expect(app.onSubmit).toHaveBeenCalledWith('🐛 (api): Fix timeout');
+});
+
+test('the impact line leaves out an empty half and strips control characters', async () => {
+	const own = open({}, undefined, undefined, {own: ['web'], rides: []});
+	expect(own.lastFrame()).toContain('releases with: web');
+	expect(own.lastFrame()).not.toContain('rides along');
+	const rides = open({}, undefined, undefined, {
+		own: [],
+		rides: ['we\u001B[2Jb'],
+	});
+	expect(rides.lastFrame()).toContain('rides along to: we[2Jb');
+	expect(rides.lastFrame()).not.toContain('\u001B[2J');
+	expect(rides.lastFrame()).not.toContain('releases with');
+	const none = open({}, undefined, undefined, {own: [], rides: []});
+	expect(none.lastFrame()).not.toContain('releases with');
+});
+
+test('a shared-only change offers Release trailers, default No', async () => {
+	const impact = {own: [], rides: ['web', 'mobile']};
+	const no = open({}, undefined, undefined, impact);
+	await no.type('bug', ENTER, 'api', ENTER, 'fix timeout', ENTER);
+	await no.type(ENTER, ENTER, ENTER); // no body, no why, not breaking
+	expect(no.lastFrame()).toContain('Release web, mobile now? (y/N)');
+	expect(no.onSubmit).not.toHaveBeenCalled();
+	await no.type(ENTER);
+	expect(no.onSubmit).toHaveBeenCalledWith('🐛 (api): Fix timeout');
+
+	const yes = open({}, undefined, undefined, impact);
+	await yes.type('bug', ENTER, 'api', ENTER, 'fix timeout', ENTER);
+	await yes.type(ENTER, ENTER, ENTER, 'y');
+	expect(yes.onSubmit).toHaveBeenCalledWith(
+		'🐛 (api): Fix timeout\n\nRelease: web\nRelease: mobile',
+	);
+
+	const breaking = open({}, undefined, undefined, impact);
+	await breaking.type('bug', ENTER, 'api', ENTER, 'fix timeout', ENTER);
+	await breaking.type(ENTER, ENTER, 'y', 'it breaks', ENTER, 'y');
+	expect(breaking.onSubmit).toHaveBeenCalledWith(
+		'🐛 (api): Fix timeout\n\nBREAKING CHANGE: it breaks\nRelease: web\nRelease: mobile',
+	);
 });

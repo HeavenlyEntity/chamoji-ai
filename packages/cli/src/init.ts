@@ -1,4 +1,4 @@
-import {accessSync, constants, statSync} from 'node:fs';
+import {accessSync, constants, existsSync, statSync} from 'node:fs';
 import {randomBytes} from 'node:crypto';
 import {
 	chmod,
@@ -51,7 +51,29 @@ export async function runInit(
 		if (code !== 0) return code;
 	}
 
-	return setUpMemory(io);
+	const code = await setUpMemory(io);
+	if (code === 0) await setupHint(io);
+	return code;
+}
+
+const SETUP_HINT =
+	'chamoji setup also sets up releases, AI agents and the commit composer.\n';
+
+/** Says once per clone, on stderr, what setup adds. Never in CI, never in the way of init. */
+async function setupHint(io: Io): Promise<void> {
+	if ((io.env ?? process.env)['CI']) return;
+	try {
+		const gitDir = (
+			await runGit(['rev-parse', '--absolute-git-dir'], io.cwd)
+		).trim();
+		const marker = path.join(gitDir, 'chamoji', 'setup-hint');
+		if (existsSync(marker)) return;
+		await mkdir(path.dirname(marker), {recursive: true});
+		await writeFile(marker, '');
+		io.stderr(SETUP_HINT);
+	} catch {
+		// A hint is never worth failing init over.
+	}
 }
 
 /**

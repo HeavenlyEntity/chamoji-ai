@@ -4,6 +4,7 @@ import path from 'node:path';
 import {
 	fetchesMemory,
 	hasOrigin,
+	loadConfig,
 	MemoryError,
 	runGit,
 	type Detection,
@@ -113,6 +114,22 @@ export async function stepStates(
 			offered: true,
 		},
 	];
+}
+
+/**
+ * Whether this is a git repo where nothing is set up: no `release` key,
+ * memory not fetched, no chamoji in `.mcp.json` and no hook. It reads the
+ * same states setup does, with no layout detection, so bare `chamoji` stays
+ * fast. A repo it can't read counts as set up, so the welcome stays quiet.
+ */
+export async function nothingSetUp(io: Io): Promise<boolean> {
+	try {
+		const config = await loadConfig(io.cwd);
+		const states = await stepStates(io, null, config.release);
+		return states.every(state => !state.done);
+	} catch {
+		return false;
+	}
 }
 
 /**

@@ -10,6 +10,8 @@ export type CommitDraft = {
 	why?: string;
 	/** `true`, or a description for the `BREAKING CHANGE:` trailer. */
 	breaking?: string | boolean;
+	/** Extra trailer lines, such as `Release: web`, after the others. */
+	trailers?: string[];
 };
 
 export type FormatOptions = {
@@ -54,6 +56,7 @@ export function formatCommitMessage(
 				]
 			: []),
 		...(draft.why?.trim() ? [`Why: ${draft.why.trim()}`] : []),
+		...(draft.trailers ?? []),
 	];
 	return [subject, draft.body?.trim(), trailers.join('\n')]
 		.filter(Boolean)

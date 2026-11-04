@@ -800,3 +800,74 @@ test('hook run stamps nothing on the message of a clean git revert', async () =>
 	await withTerminal(['hook', 'run', file, 'message'], repo.dir, () => null);
 	expect(await readFile(file, 'utf8')).toBe(text);
 });
+
+test('hook run hands the composer which units the staged change touches', async () => {
+	const json = (value: unknown) => `${JSON.stringify(value)}\n`;
+	const uses = {'@gearz/supabase': 'workspace:*'};
+	repo = await createRepo([
+		{
+			commit: '🎉 Start',
+			files: {
+				'package.json': json({name: 'gearz', private: true}),
+				'pnpm-workspace.yaml': 'packages:\n  - apps/*\n  - packages/*\n',
+				'chamoji.config.json': json({
+					release: {
+						schema: 1,
+						shape: 'apps',
+						units: {
+							web: {path: 'apps/web', tag: 'web/v{version}'},
+							mobile: {path: 'apps/mobile', tag: 'mobile/v{version}'},
+						},
+					},
+				}),
+				'apps/web/package.json': json({name: '@gearz/web', dependencies: uses}),
+				'apps/mobile/package.json': json({
+					name: '@gearz/mobile',
+					dependencies: uses,
+				}),
+				'packages/supabase/package.json': json({name: '@gearz/supabase'}),
+			},
+		},
+	]);
+	await mkdir(path.join(repo.dir, 'apps/web'), {recursive: true});
+	await writeFile(path.join(repo.dir, 'apps/web/a.ts'), 'a\n');
+	await writeFile(path.join(repo.dir, 'packages/supabase/s.ts'), 's\n');
+	await gitOutput(repo.dir, ['add', '--all']);
+	const file = await messageFile(repo.dir);
+	const seen: unknown[] = [];
+	await withTerminal(
+		['hook', 'run', file],
+		repo.dir,
+		() =>
+			({
+				async compose(_config: unknown, _advice: unknown, impact: unknown) {
+					seen.push(impact);
+					return '🐛 Fix';
+				},
+				close() {},
+			}) as never,
+	);
+	expect(seen).toEqual([{own: ['web'], rides: ['mobile']}]);
+
+	// A repo with no release section gets none.
+	const plain = await createRepo([{commit: '🎉 Init'}]);
+	try {
+		const plainFile = await messageFile(plain.dir);
+		const none: unknown[] = [];
+		await withTerminal(
+			['hook', 'run', plainFile],
+			plain.dir,
+			() =>
+				({
+					async compose(_config: unknown, _advice: unknown, impact: unknown) {
+						none.push(impact);
+						return '🐛 Fix';
+					},
+					close() {},
+				}) as never,
+		);
+		expect(none).toEqual([undefined]);
+	} finally {
+		await plain.cleanup();
+	}
+});

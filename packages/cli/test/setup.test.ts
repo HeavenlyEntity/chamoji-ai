@@ -474,7 +474,13 @@ test("setup hook installs the hook; setup memory equals init's memory output", a
 	expect(memory.code).toBe(init.code);
 	expect(memory.stdout).toBe(init.stdout);
 	expect(memory.stdout).toContain('origin now fetches chamoji memory.');
-	expect(memory.stderr).toBe(init.stderr);
+	// init adds its once-per-clone hint on stderr; setup has no need of it.
+	expect(memory.stderr).toBe(
+		init.stderr.replace(
+			'chamoji setup also sets up releases, AI agents and the commit composer.\n',
+			'',
+		),
+	);
 
 	// With no origin too.
 	const [bareLeft, bareRight] = [

@@ -16,6 +16,8 @@ import {recordingFace} from './helpers/recording-face.js';
 
 const execFileAsync = promisify(execFile);
 
+const GET_STARTED = 'Get started: run chamoji setup';
+
 let repo: FixtureRepo | undefined;
 
 afterEach(async () => {
@@ -137,6 +139,27 @@ test('bare chamoji prints the logo and the grouped help to stdout and exits 0', 
 	expect(stdout).toContain(`${LOGO_FRAMES.shades.at(-1)!}\n\n${TAGLINE}\n`);
 	expect(stdout).toContain(`\n\n${SHORT_HELP}\n`);
 	expect(stdout.endsWith('Every option: chamoji --help\n')).toBe(true);
+});
+
+test("bare chamoji in a repo with nothing set up adds the welcome line; with anything set up it doesn't", async () => {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	const bare = await chamoji([], repo.dir);
+	expect(bare.code).toBe(0);
+	expect(bare.stdout).toContain(`\n\n${SHORT_HELP}\n\n${GET_STARTED}\n`);
+	expect(bare.stdout.endsWith(`${GET_STARTED}\n`)).toBe(true);
+
+	await writeFile(
+		path.join(repo.dir, 'chamoji.config.json'),
+		JSON.stringify({release: {schema: 1, shape: 'single'}}),
+	);
+	const released = await chamoji([], repo.dir);
+	expect(released.stdout).not.toContain(GET_STARTED);
+	expect(released.stdout.endsWith('Every option: chamoji --help\n')).toBe(true);
+
+	await rm(path.join(repo.dir, 'chamoji.config.json'));
+	expect((await chamoji(['hook', 'install'], repo.dir)).code).toBe(0);
+	const hooked = await chamoji([], repo.dir);
+	expect(hooked.stdout).not.toContain(GET_STARTED);
 });
 
 test('bare chamoji piped writes no escape codes', async () => {
