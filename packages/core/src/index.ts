@@ -21,6 +21,7 @@ export {
 	listReleaseTags,
 	listTags,
 	quietGitEnv,
+	readCommitFiles,
 	readCommits,
 	runGit,
 	runGitWithInput,
@@ -35,6 +36,7 @@ export {
 	type GitmojiInfo,
 	type GitmojiMatch,
 } from './gitmojis.js';
+export {attribute, releaseTargets, type Attributed} from './units/attribute.js';
 export {
 	parseReleaseSettings,
 	type ReleaseSettings,

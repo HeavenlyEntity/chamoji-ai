@@ -194,6 +194,58 @@ export async function readCommits(
 }
 
 /**
+ * The paths each non-merge commit in `range` changed, newest first, keyed by
+ * hash. Renames are split into a delete and an add (`--no-renames`), so both
+ * the old and the new path are listed. `-z` leaves paths unquoted and ends each
+ * with a NUL; a commit starts at an empty field, which no path can be, and its
+ * hash is the field after it. The format's own newline is dropped from the
+ * first path, so a path can't forge a record either.
+ */
+export async function readCommitFiles(
+	cwd: string,
+	range: string,
+): Promise<Map<string, string[]>> {
+	const stdout = await runGit(
+		[
+			'log',
+			'-z',
+			'--no-merges',
+			'--no-renames',
+			'--no-show-signature',
+			'--name-only',
+			'--format=%x00%H',
+			'--end-of-options',
+			range,
+			'--',
+		],
+		cwd,
+	);
+
+	const files = new Map<string, string[]>();
+	const fields = stdout.split('\0');
+	let current: string[] | undefined;
+	for (let i = 0; i < fields.length; i++) {
+		if (fields[i] === '') {
+			const hash = fields[i + 1];
+			if (hash === undefined) break;
+			current = [];
+			files.set(hash, current);
+			i++;
+			// The newline that ends the format sticks to the next field.
+			if (fields[i + 1]?.startsWith('\n')) {
+				fields[i + 1] = fields[i + 1]!.slice(1);
+			}
+
+			continue;
+		}
+
+		current?.push(fields[i]!);
+	}
+
+	return files;
+}
+
+/**
  * Semver tags reachable from `to`, newest first. `date` is the tagged
  * commit's committer date, so annotated and lightweight tags agree, in UTC
  * so it matches the date `--release` writes.
