@@ -392,7 +392,7 @@ If the repo began as a clone of a starter and keeps pulling from it, add the rem
 "upstream": {"remote": "upstream", "name": "Makerkit", "since": "<first commit that is yours>"}
 ```
 
-`since` is a commit hash or ref, and the remote must be fetched. With no remote, tags you list in `tags.ignore` whose names read as versions mark the template's history. Commits that come from the upstream remote are left out of every unit's notes and never release anything. Each merge that brings upstream work in becomes one line, such as "Updated the Makerkit base to 4.0.2", and counts as one own commit for the units it changed.
+`since` is a commit hash or ref, and the remote must be fetched. In CI, where the checkout has only `origin`, run `git remote add upstream <url> && git fetch upstream` before chamoji; when the remote has nothing fetched, chamoji warns. With no remote, tags you list in `tags.ignore` whose names read as versions mark the template's history. Commits that come from the upstream remote are left out of every unit's notes and never release anything. Each merge that brings upstream work in becomes one line, such as "Updated the Makerkit base to 4.0.2", and counts as one own commit for the units it changed.
 
 ### Tags
 
