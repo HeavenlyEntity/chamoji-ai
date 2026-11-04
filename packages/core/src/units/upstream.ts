@@ -124,10 +124,11 @@ export async function readUpstream(
 	return {commits, syncs};
 }
 
-/** The window's lower bound for a unit with no tag: commits after upstream.since, or undefined. */
+/** The window for a unit with no tag before `to`: commits after upstream.since up to `to`, or undefined. */
 export async function sinceRange(
 	cwd: string,
 	settings: ReleaseSettings,
+	to = 'HEAD',
 ): Promise<string | undefined> {
 	const since = settings.upstream?.since;
 	if (!since) return undefined;
@@ -137,7 +138,7 @@ export async function sinceRange(
 			cwd,
 		),
 	)[0]!.split(' ');
-	return parents.length > 0 ? `${since}^..HEAD` : 'HEAD';
+	return parents.length > 0 ? `${since}^..${to}` : to;
 }
 
 /** Files the merge changed compared with its first parent. */

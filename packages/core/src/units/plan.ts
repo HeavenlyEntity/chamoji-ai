@@ -27,7 +27,7 @@ import type {
 	SemverBump,
 } from '../types.js';
 import {bumpFor} from '../version.js';
-import {attribute, releaseTargets} from './attribute.js';
+import {attribute, releaseTargets, type Attributed} from './attribute.js';
 import {readStyle, renderUnitSection, writeUnitChangelog} from './notes.js';
 import {
 	dependencyLine,
@@ -58,6 +58,8 @@ export type UnitPlan = {
 	version: string;
 	tag: string;
 	lastTag: string | null;
+	/** The version before this release: the last tag's, else the manifest's. */
+	from: string | null;
 	bump: SemverBump | 'prerelease' | 'first' | 'calver' | 'fixed';
 	own: number;
 	shared: number;
@@ -128,24 +130,10 @@ export async function planUnitReleases(
 	options: UnitReleaseOptions,
 ): Promise<UnitReleasePlan> {
 	const {config} = options;
-	const settings = config.release;
-	if (!settings || settings.units.length === 0) {
-		throw new Error(
-			'no release units are set up; add them under release.units in chamoji.config.json',
-		);
-	}
-
-	const names = settings.units.map(unit => unit.name);
-	for (const name of [
+	const settings = unitSettings(config, [
 		...(options.units ?? []),
 		...Object.keys(options.versions ?? {}),
-	]) {
-		if (!names.includes(name)) {
-			throw new Error(
-				`unknown unit "${name}"; the units are ${names.join(', ')}`,
-			);
-		}
-	}
+	]);
 
 	const {root, warnings} = await preflight(options);
 	const git = async (...args: string[]) => (await runGit(args, root)).trim();
@@ -172,32 +160,19 @@ export async function planUnitReleases(
 	const windows: Window[] = [];
 	for (const {unit, history, last, range} of ranges) {
 		const read = await reader.read(range);
-		const sorted = attribute(
-			read.commits,
-			read.files,
+		const sorted = await sortWindow(
+			reader,
+			read,
 			unit,
 			units,
 			packages,
 			settings,
 		);
-		const own = [...sorted.own];
-		for (const sync of upstream.syncs) {
-			if (!read.position.has(sync.hash)) continue;
-			const files = await reader.syncFiles(sync);
-			if (files.some(file => ownsFile(file, unit, units, packages, settings))) {
-				own.push(sync);
-			}
-		}
-
-		const byPosition = (a: ParsedCommit, b: ParsedCommit) =>
-			read.position.get(a.hash)! - read.position.get(b.hash)!;
 		windows.push({
 			unit,
 			history,
 			last,
-			own: own.sort(byPosition),
-			shared: sorted.shared,
-			root: sorted.root,
+			...sorted,
 			targeted: read.commits.some(commit =>
 				releaseTargets(commit, [unit.name]).includes(unit.name),
 			),
@@ -403,6 +378,33 @@ export async function pushUnitReleases(
 const SECTION_ADDED =
 	'new section added above the previous release; older entries untouched';
 
+/**
+ * The release settings, once every name in `names` is checked against them.
+ * Throws when there are no units, or for a name that isn't one.
+ */
+export function unitSettings(
+	config: ChamojiConfig,
+	names: string[],
+): ReleaseSettings {
+	const settings = config.release;
+	if (!settings || settings.units.length === 0) {
+		throw new Error(
+			'no release units are set up; add them under release.units in chamoji.config.json',
+		);
+	}
+
+	const known = settings.units.map(unit => unit.name);
+	for (const name of names) {
+		if (!known.includes(name)) {
+			throw new Error(
+				`unknown unit "${name}"; the units are ${known.join(', ')}`,
+			);
+		}
+	}
+
+	return settings;
+}
+
 /** Units whose packages another unit depends on come first; otherwise config order. */
 function dependencyOrder(units: ResolvedUnit[]): ResolvedUnit[] {
 	const done = new Set<string>();
@@ -432,7 +434,7 @@ function ownsFile(
 	return owner.kind === 'unit' && owner.unit === unit.name;
 }
 
-type Read = {
+export type Read = {
 	/** Non-merge commits, upstream ones left out, newest first. */
 	commits: ParsedCommit[];
 	files: Map<string, string[]>;
@@ -440,11 +442,13 @@ type Read = {
 	position: Map<string, number>;
 };
 
+export type WindowReader = ReturnType<typeof windowReader>;
+
 /**
  * Reads windows, once per range. A commit in several windows is parsed once,
  * so a classifier's picks reach every unit.
  */
-function windowReader(root: string, upstream: Upstream) {
+export function windowReader(root: string, upstream: Upstream) {
 	const parsed = new Map<string, ParsedCommit>();
 	const files = new Map<string, string[]>();
 	const reads = new Map<string, Promise<Read>>();
@@ -479,6 +483,8 @@ function windowReader(root: string, upstream: Upstream) {
 	};
 
 	return {
+		/** Sync merges anywhere in history; a window holds the ones in its range. */
+		syncs: upstream.syncs,
 		read(range: string): Promise<Read> {
 			let read = reads.get(range);
 			if (!read) {
@@ -501,6 +507,48 @@ function windowReader(root: string, upstream: Upstream) {
 		parsed: () => [...parsed.values()],
 		files: () => files,
 	};
+}
+
+/**
+ * A window's commits for `unit`: own ones, with the syncs that changed its
+ * files, in window order; shared ones; and root-only ones.
+ */
+export async function sortWindow(
+	reader: WindowReader,
+	read: Read,
+	unit: ResolvedUnit,
+	units: ResolvedUnit[],
+	packages: WorkspacePackage[],
+	settings: ReleaseSettings,
+): Promise<Attributed> {
+	const sorted = attribute(
+		read.commits,
+		read.files,
+		unit,
+		units,
+		packages,
+		settings,
+	);
+	const own = [...sorted.own];
+	for (const sync of reader.syncs) {
+		if (!read.position.has(sync.hash)) continue;
+		const files = await reader.syncFiles(sync);
+		if (files.some(file => ownsFile(file, unit, units, packages, settings))) {
+			own.push(sync);
+		}
+	}
+
+	return {...sorted, own: inWindowOrder(own, read.position)};
+}
+
+/** `commits` newest first, by their position in the window. */
+export function inWindowOrder<T extends ParsedCommit>(
+	commits: T[],
+	position: Map<string, number>,
+): T[] {
+	return [...commits].sort(
+		(a, b) => position.get(a.hash)! - position.get(b.hash)!,
+	);
 }
 
 /**
@@ -745,9 +793,7 @@ async function planUnit(
 	);
 
 	const noted = [
-		...[...window.own, ...window.shared].sort(
-			(a, b) => window.position.get(a.hash)! - window.position.get(b.hash)!,
-		),
+		...inWindowOrder([...window.own, ...window.shared], window.position),
 		...updates.map(update => dependencyLine(update)),
 	];
 	const built = await buildRelease(
@@ -815,6 +861,7 @@ async function planUnit(
 			version,
 			tag,
 			lastTag: last?.tag ?? null,
+			from: current.get(unit.name) ?? null,
 			bump,
 			own: window.own.length,
 			shared: window.shared.length,

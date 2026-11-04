@@ -60,6 +60,7 @@ export {
 	versionFromTag,
 	type UnitTag,
 } from './units/tags.js';
+export {unitChangelog, type UnitChangelogOptions} from './units/history.js';
 export {
 	applyUnitReleases,
 	planUnitReleases,
