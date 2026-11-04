@@ -44,6 +44,18 @@ type Obj = Record<string, unknown>;
 
 const SUPPORTED_SHAPES = ['single', 'apps', 'libraries'];
 const UNSUPPORTED_SHAPES = ['train', 'mixed'];
+/** Settings that only mean something with units. */
+const UNIT_ONLY = [
+	'exclude',
+	'sharedChanges',
+	'rootFiles',
+	'zeroMajor',
+	'fixed',
+	'upstream',
+	'tags',
+	'rootChangelog',
+	'githubReleases',
+];
 
 /**
  * Validates the `release` section of chamoji.config.json and fills in the
@@ -84,11 +96,22 @@ export function parseReleaseSettings(
 	}
 
 	const kind = shape as Shape;
+	if (kind === 'single') {
+		for (const key of UNIT_ONLY) {
+			if (value[key] !== undefined) {
+				fail(key, 'is only used with apps or libraries');
+			}
+		}
+	}
+
 	const units = parseUnits(value.units, kind, fail);
 	const names = new Set(units.map(unit => unit.name));
 
-	const exclude = stringList(value.exclude, 'exclude', fail).map(pattern =>
-		pattern.replaceAll('\\', '/').replace(/\/+$/, ''),
+	const exclude = insideRepo(
+		stringList(value.exclude, 'exclude', fail),
+		'exclude',
+		'a path',
+		fail,
 	);
 
 	const sharedChanges = oneOf(
@@ -114,6 +137,7 @@ export function parseReleaseSettings(
 	);
 
 	const fixed = parseFixed(value.fixed, names, fail);
+	checkSharedTemplates(units, fixed, fail);
 	const upstream = parseUpstream(value.upstream, fail);
 	const tags = parseTags(value.tags, units, fail);
 
@@ -220,11 +244,12 @@ function parseUnits(value: unknown, shape: Shape, fail: Fail): UnitSettings[] {
 			fail(`${key}.firstVersion`, 'must be a non-empty string');
 		}
 
-		const versionFiles = stringList(
-			unit.versionFiles,
+		const versionFiles = insideRepo(
+			stringList(unit.versionFiles, `${key}.versionFiles`, fail),
 			`${key}.versionFiles`,
+			'a file',
 			fail,
-		).map(file => file.replaceAll('\\', '/'));
+		);
 		const buildNumber = oneOf(
 			unit.buildNumber,
 			['untouched', 'increment'] as const,
@@ -392,6 +417,55 @@ function parseTags(
 	}
 
 	return {ignore, aliases};
+}
+
+/**
+ * Two units share a tag template only in one fixed group, where one version
+ * makes one tag. A template with {unit} or {name} renders apart per unit; a
+ * clash among those is caught when the release is planned.
+ */
+function checkSharedTemplates(
+	units: UnitSettings[],
+	fixed: string[][],
+	fail: Fail,
+): void {
+	const groupOf = (name: string) =>
+		fixed.findIndex(group => group.includes(name));
+	for (const [index, unit] of units.entries()) {
+		if (/\{(unit|name)\}/.test(unit.tag)) continue;
+		const other = units
+			.slice(0, index)
+			.find(
+				earlier =>
+					earlier.tag === unit.tag &&
+					(groupOf(unit.name) === -1 ||
+						groupOf(earlier.name) !== groupOf(unit.name)),
+			);
+		if (other) {
+			fail(
+				`units.${unit.name}.tag`,
+				`${JSON.stringify(unit.tag)} is the same as units.${other.name}'s; units share a tag template only in one fixed group`,
+			);
+		}
+	}
+}
+
+/** Each path normalised as unit paths are, duplicates dropped; one outside the repo fails. */
+function insideRepo(
+	list: string[],
+	key: string,
+	what: string,
+	fail: Fail,
+): string[] {
+	const normal = list.map(raw => {
+		const found = normalisePath(raw);
+		if (found === undefined) {
+			fail(key, `${JSON.stringify(raw)} must be ${what} inside the repo`);
+		}
+
+		return found as string;
+	});
+	return [...new Set(normal)];
 }
 
 /** '/'-separated, relative, inside the repo, no trailing slash; else undefined. */

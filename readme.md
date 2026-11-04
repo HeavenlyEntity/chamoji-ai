@@ -357,7 +357,7 @@ Each app gets a `CHANGELOG.md` in its own folder and a tag such as `web/v1.3.0`.
 }
 ```
 
-Each package gets a tag such as `@acme/ui@1.3.0` and a `CHANGELOG.md` in its folder. Units in a `fixed` group always share one version, the largest bump of any of them, and when one of them releases they all do. Under `release-dependents`, the default for libraries, a package that releases also releases the packages that depend on it, by at least a patch, with the new range and a Dependencies line. Ranges are rewritten in `dependencies` only; peer ranges stay as written, and so do `workspace:` ranges, since pnpm rewrites them when you publish. `shape` can be `apps` or `libraries` for now; `single` is today's behaviour.
+Each package gets a tag such as `@acme/ui@1.3.0` and a `CHANGELOG.md` in its folder. Units in a `fixed` group always share one version, the largest bump of any of them, and when one of them releases they all do. Under `release-dependents`, the default for libraries, a package that releases also releases the packages that depend on it, by at least a patch, with the new range and a Dependencies line. Ranges are rewritten in `dependencies` only; peer ranges stay as written, and so do `workspace:` ranges, since pnpm rewrites them when you publish. `shape` can be `apps` or `libraries` for now; `single` is today's behaviour, and takes no other settings.
 
 ### Which commits belong to which unit
 
