@@ -387,8 +387,17 @@ function formatsFor(
 	};
 }
 
-/** Ignore patterns for `tags`: one per shape unless the shape would hide a tag in `keep`. */
-function shapePatterns(tags: string[], keep: string[]): string[] {
+/**
+ * Ignore patterns for `tags`: one per shape. A shape that would hide one of
+ * the `own` tags leaves exactly those out with a lookahead, so the
+ * template's later tags of that shape stay ignored; a shape that would hide
+ * a unit's next release (`samples`) falls back to exact tags.
+ */
+function shapePatterns(
+	tags: string[],
+	own: string[],
+	samples: string[],
+): string[] {
 	const byShape = new Map<string, string[]>();
 	for (const tag of tags) {
 		const shape = shapeOf(tag);
@@ -397,8 +406,19 @@ function shapePatterns(tags: string[], keep: string[]): string[] {
 
 	const patterns: string[] = [];
 	for (const [shape, members] of byShape) {
-		if (matchesAny(shape, keep)) patterns.push(...members.map(exactPattern));
-		else patterns.push(shape);
+		if (matchesAny(shape, samples)) {
+			patterns.push(...members.map(exactPattern));
+			continue;
+		}
+
+		const spared = unique(own.filter(tag => matchesTagPattern(tag, shape)));
+		if (spared.length === 0) {
+			patterns.push(shape);
+			continue;
+		}
+
+		const names = spared.sort().map(escapeRegExp).join('|');
+		patterns.push(`^(?!(?:${names})$)${shape.slice(1)}`);
 	}
 
 	return unique(patterns).sort();
@@ -542,7 +562,7 @@ export async function detectTags(
 	return {
 		inherited: {
 			tags: inherited,
-			patterns: shapePatterns(inherited, [...notInherited, ...samples]),
+			patterns: shapePatterns(inherited, notInherited, samples),
 			examples: inherited.slice(0, MAX_EXAMPLES),
 		},
 		stray: {
