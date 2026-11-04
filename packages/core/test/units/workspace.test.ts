@@ -52,6 +52,33 @@ test('reads pnpm workspace globs, nested and negated', async () => {
 	]);
 });
 
+test('a malformed package.json under a workspace glob throws, naming it', async () => {
+	const root = await repo({
+		'pnpm-workspace.yaml': 'packages:\n  - apps/*\n',
+		'apps/web/package.json': '{nope',
+	});
+	await expect(readWorkspace(root)).rejects.toThrow(/apps.web.package\.json/);
+});
+
+test('a malformed pnpm-workspace.yaml throws, naming it', async () => {
+	const root = await repo({
+		'pnpm-workspace.yaml': 'packages: [unclosed\n',
+		'package.json': JSON.stringify({name: 'root', workspaces: ['apps/*']}),
+	});
+	await expect(readWorkspace(root)).rejects.toThrow(/pnpm-workspace\.yaml/);
+});
+
+test('folders outside every glob prefix are never read', async () => {
+	const root = await repo({
+		'pnpm-workspace.yaml': 'packages:\n  - apps/*\n  - packages/**\n',
+		'apps/web/package.json': pkg('web'),
+		'other/x/package.json': '{nope',
+		'.claude/worktrees/w/package.json': '{nope',
+	});
+	const found = await readWorkspace(root);
+	expect(found.map(item => item.path)).toEqual(['apps/web']);
+});
+
 test('reads npm workspaces as an object', async () => {
 	const root = await repo({
 		'package.json': JSON.stringify({

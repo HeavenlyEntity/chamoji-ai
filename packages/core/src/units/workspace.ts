@@ -32,25 +32,47 @@ const stringList = (value: unknown): string[] =>
 		? value.filter((item): item is string => typeof item === 'string')
 		: [];
 
-async function readJson(file: string): Promise<Obj | undefined> {
+const isMissing = (error: unknown): boolean =>
+	(error as NodeJS.ErrnoException).code === 'ENOENT';
+
+/** The file's text, or undefined when it doesn't exist. Other failures throw. */
+async function readText(file: string): Promise<string | undefined> {
 	try {
-		const value: unknown = JSON.parse(await readFile(file, 'utf8'));
-		return isObject(value) ? value : undefined;
-	} catch {
-		return undefined;
+		return await readFile(file, 'utf8');
+	} catch (error) {
+		if (isMissing(error)) return undefined;
+		throw new Error(`Can't read ${file}: ${(error as Error).message}`);
 	}
 }
 
-async function workspaceGlobs(root: string): Promise<string[]> {
+async function readJson(file: string): Promise<Obj | undefined> {
+	const text = await readText(file);
+	if (text === undefined) return undefined;
+	let value: unknown;
 	try {
-		const yaml: unknown = parse(
-			await readFile(path.join(root, 'pnpm-workspace.yaml'), 'utf8'),
-		);
+		value = JSON.parse(text);
+	} catch (error) {
+		throw new Error(`Can't parse ${file}: ${(error as Error).message}`);
+	}
+
+	if (!isObject(value)) throw new Error(`Can't use ${file}: not an object`);
+	return value;
+}
+
+async function workspaceGlobs(root: string): Promise<string[]> {
+	const file = path.join(root, 'pnpm-workspace.yaml');
+	const text = await readText(file);
+	if (text !== undefined) {
+		let yaml: unknown;
+		try {
+			yaml = parse(text);
+		} catch (error) {
+			throw new Error(`Can't parse ${file}: ${(error as Error).message}`);
+		}
+
 		if (isObject(yaml) && Array.isArray(yaml['packages'])) {
 			return stringList(yaml['packages']);
 		}
-	} catch {
-		// No pnpm workspace file; fall back to package.json.
 	}
 
 	const manifest = await readJson(path.join(root, 'package.json'));
@@ -107,12 +129,28 @@ function coversPath(glob: string, file: string): boolean {
 	return false;
 }
 
-async function findManifests(root: string, dir = ''): Promise<string[]> {
+/** Could a folder at `parts` hold, or sit above, something `glob` matches? */
+function canReach(glob: string[], parts: string[]): boolean {
+	if (parts.length === 0 || glob.length === 0) return parts.length === 0;
+	const [head, ...rest] = glob as [string, ...string[]];
+	if (head === '**') return true;
+	if (!segmentPattern(head).test(parts[0]!)) return false;
+	return parts.length === 1 || canReach(rest, parts.slice(1));
+}
+
+async function findManifests(
+	root: string,
+	globs: string[][],
+	dir = '',
+): Promise<string[]> {
 	let entries;
 	try {
 		entries = await readdir(path.join(root, dir), {withFileTypes: true});
-	} catch {
-		return [];
+	} catch (error) {
+		if (isMissing(error)) return [];
+		throw new Error(
+			`Can't read ${path.join(root, dir)}: ${(error as Error).message}`,
+		);
 	}
 
 	const found: string[] = [];
@@ -120,7 +158,10 @@ async function findManifests(root: string, dir = ''): Promise<string[]> {
 		if (entry.name === 'node_modules' || entry.name === '.git') continue;
 		const rel = dir ? `${dir}/${entry.name}` : entry.name;
 		if (entry.isDirectory()) {
-			found.push(...(await findManifests(root, rel)));
+			const parts = segmentsOf(rel);
+			if (globs.some(glob => canReach(glob, parts))) {
+				found.push(...(await findManifests(root, globs, rel)));
+			}
 		} else if (entry.name === 'package.json' && dir) {
 			found.push(dir);
 		}
@@ -177,7 +218,12 @@ export async function readWorkspace(root: string): Promise<WorkspacePackage[]> {
 		.map(glob => glob.slice(1));
 	if (include.length === 0) return [];
 
-	const folders = (await findManifests(root))
+	const folders = (
+		await findManifests(
+			root,
+			include.map(glob => segmentsOf(clean(glob))),
+		)
+	)
 		.filter(folder => include.some(glob => matchesGlob(glob, folder)))
 		.filter(folder => !negated.some(glob => matchesGlob(glob, folder)))
 		.sort();
