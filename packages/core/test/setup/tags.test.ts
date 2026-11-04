@@ -84,14 +84,18 @@ test('without a remote, a fork released at HEAD takes its newest authors as rece
 	expect([...found.inherited.tags].sort()).toEqual(TEMPLATE_TAGS);
 });
 
-test('an app that tags plain versions itself gets exact patterns for the template tags', async () => {
+test('an app that tags plain versions itself gets one shape pattern that leaves its own tags out', async () => {
 	repo = await gearzLayout({template: true, extraSteps: tagged('1.0.0')});
 	const found = await tagsOf(repo.dir);
 	expect([...found.inherited.tags].sort()).toEqual(TEMPLATE_TAGS);
-	expect(found.inherited.patterns).toContain('^4\\.0\\.1$');
-	expect(found.inherited.patterns).toContain('^4\\.0\\.2$');
+	expect(found.inherited.patterns).toEqual([
+		String.raw`^(?!(?:1\.0\.0)$)\d+\.\d+\.\d+$`,
+		String.raw`^v\d+\.\d+\.\d+-\d+$`,
+	]);
 	expect(ignoredBy('1.0.0', found.inherited.patterns)).toEqual([]);
-	for (const tag of TEMPLATE_TAGS) {
+	// The template's next tags are still ignored; only the exact own tag is
+	// spared, not one it is a prefix or suffix of.
+	for (const tag of [...TEMPLATE_TAGS, '4.0.3', '11.0.0', '1.0.01']) {
 		expect(ignoredBy(tag, found.inherited.patterns)).not.toEqual([]);
 	}
 });
@@ -271,7 +275,10 @@ test('an own tag on an unmerged branch is matched by no pattern', async () => {
 	expect(found.inherited.tags).not.toContain('1.2.3');
 	expect([...found.inherited.tags].sort()).toEqual(TEMPLATE_TAGS);
 	expect(ignoredBy('1.2.3', allPatterns(found))).toEqual([]);
-	expect(found.inherited.patterns).toContain('^4\\.0\\.1$');
+	expect(found.inherited.patterns).toContain(
+		String.raw`^(?!(?:1\.2\.3)$)\d+\.\d+\.\d+$`,
+	);
+	expect(ignoredBy('4.0.9', found.inherited.patterns)).not.toEqual([]);
 });
 
 test('with a remote, a template tag whose branch upstream pruned is inherited, and an own unmerged tag is not', async () => {
@@ -288,4 +295,8 @@ test('with a remote, a template tag whose branch upstream pruned is inherited, a
 	]);
 	expect(ignoredBy('4.1.0', found.inherited.patterns)).not.toEqual([]);
 	expect(ignoredBy('5.0.0', allPatterns(found))).toEqual([]);
+	expect(found.inherited.patterns).toEqual([
+		String.raw`^(?!(?:5\.0\.0)$)\d+\.\d+\.\d+$`,
+		String.raw`^v\d+\.\d+\.\d+-\d+$`,
+	]);
 });
