@@ -196,19 +196,21 @@ const json = (value: unknown) => `${JSON.stringify(value, null, '\t')}\n`;
 const uses = {'@gearz/supabase': 'workspace:*'};
 
 // An app monorepo: web and mobile on a shared supabase package.
+const unitConfig = (release: unknown = unitRelease()) => ({
+	'chamoji.config.json': json({release}),
+});
+const unitRelease = (webTag = 'web/v{version}') => ({
+	schema: 1,
+	shape: 'apps',
+	units: {
+		web: {path: 'apps/web', tag: webTag},
+		mobile: {path: 'apps/mobile', tag: 'mobile/v{version}'},
+	},
+});
 const unitFiles: Record<string, string> = {
 	'package.json': json({name: 'gearz', private: true}),
 	'pnpm-workspace.yaml': 'packages:\n  - apps/*\n  - packages/*\n',
-	'chamoji.config.json': json({
-		release: {
-			schema: 1,
-			shape: 'apps',
-			units: {
-				web: {path: 'apps/web', tag: 'web/v{version}'},
-				mobile: {path: 'apps/mobile', tag: 'mobile/v{version}'},
-			},
-		},
-	}),
+	...unitConfig(),
 	'apps/web/package.json': json({
 		name: '@gearz/web',
 		version: '0.1.0',
@@ -694,5 +696,176 @@ exec "${realGit}" "$@"
 		expect(result.code).toBe(0);
 		expect(await git('tag', '--list', 'web/v0.2.0')).toBe('web/v0.2.0');
 		expect(await git('tag', '--list', 'mobile/v1.1.0')).toBe('');
+	});
+	test('a hyphenated tag template is not a prerelease, a real suffix is', async () => {
+		const files = {...unitFiles, ...unitConfig(unitRelease('web-v{version}'))};
+		const hyphen = await setup([
+			{commit: '🎉 Start the gearz monorepo', files},
+			{tag: 'web-v0.1.0', annotated: true},
+			{
+				commit: '✨ Add the dashboard',
+				files: {'apps/web/src/dashboard.ts': 'dashboard\n'},
+			},
+			{tag: 'web-v0.2.0', annotated: true},
+		]);
+		const first = await hyphen.action({
+			CHAMOJI_CLI: hyphen.unitCli,
+			GITHUB_EVENT_NAME: 'push',
+			GITHUB_REF: 'refs/tags/web-v0.2.0',
+		});
+		expect(first.code).toBe(0);
+		const created = await hyphen.read('calls');
+		expect(created).toContain('release create web-v0.2.0');
+		expect(created).not.toContain('--prerelease');
+
+		const beta = await setup([
+			...unitStart,
+			{
+				commit: '✨ Add the dashboard',
+				files: {'apps/web/src/dashboard.ts': 'dashboard\n'},
+			},
+			{tag: 'web/v0.2.0-beta.1', annotated: true},
+		]);
+		const second = await beta.action({
+			CHAMOJI_CLI: beta.unitCli,
+			GITHUB_EVENT_NAME: 'push',
+			GITHUB_REF: 'refs/tags/web/v0.2.0-beta.1',
+		});
+		expect(second.code).toBe(0);
+		expect(await beta.read('calls')).toContain('--prerelease');
+	});
+
+	test('the PR comment shows only what the PR adds, not the base’s unreleased work', async () => {
+		const {action, unitCli, read, rev} = await setup([
+			...unitStart,
+			{
+				commit: '✨ Add the dashboard',
+				files: {'apps/web/src/dashboard.ts': 'dashboard\n'},
+			},
+			{
+				commit: '🐛 Fix the camera crash',
+				files: {'apps/mobile/src/camera.ts': 'camera\n'},
+			},
+		]);
+		const result = await action({
+			CHAMOJI_CLI: unitCli,
+			GITHUB_EVENT_NAME: 'pull_request',
+			CHAMOJI_PR: '7',
+			CHAMOJI_BASE_SHA: await rev('HEAD~1'),
+			CHAMOJI_HEAD_SHA: await rev('HEAD'),
+		});
+		expect(result.code).toBe(0);
+		const body = await read('body');
+		expect(body).toContain('- mobile → 1.0.1');
+		expect(body).toContain('Fix the camera crash');
+		expect(body).not.toContain('web');
+		expect(body).not.toContain('dashboard');
+	});
+
+	test('the PR comment says when a unit only rides along', async () => {
+		const {action, unitCli, read, rev} = await setup([
+			...unitStart,
+			{
+				commit: '✨ Add the dashboard',
+				files: {'apps/web/src/dashboard.ts': 'dashboard\n'},
+			},
+			{
+				commit: '🐛 Fix the session refresh',
+				files: {'packages/supabase/src/session.ts': 'refresh\n'},
+			},
+		]);
+		await action({
+			CHAMOJI_CLI: unitCli,
+			GITHUB_EVENT_NAME: 'pull_request',
+			CHAMOJI_PR: '7',
+			CHAMOJI_BASE_SHA: await rev('HEAD~1'),
+			CHAMOJI_HEAD_SHA: await rev('HEAD'),
+		});
+		const body = await read('body');
+		expect(body).toContain('- web → 0.2.0 (rides along with its next release)');
+		expect(body).toContain('- mobile: rides along');
+		expect(body).toContain('Fix the session refresh');
+		expect(body).not.toContain('dashboard');
+	});
+
+	test('the unit PR comment with nothing to release says so', async () => {
+		const {action, unitCli, read, rev} = await setup([
+			...unitStart,
+			{commit: '📝 Mention the repo', files: {'NOTES.md': 'notes\n'}},
+		]);
+		const result = await action({
+			CHAMOJI_CLI: unitCli,
+			GITHUB_EVENT_NAME: 'pull_request',
+			CHAMOJI_PR: '7',
+			CHAMOJI_BASE_SHA: await rev('HEAD~1'),
+			CHAMOJI_HEAD_SHA: await rev('HEAD'),
+		});
+		expect(result.code).toBe(0);
+		const body = await read('body');
+		expect(body).toContain('adds nothing to any unit');
+		expect(body).not.toContain('→');
+	});
+
+	test('the unit PR comment is updated in place', async () => {
+		const {action, unitCli, read, rev} = await setup([
+			...unitStart,
+			{
+				commit: '🐛 Fix the camera crash',
+				files: {'apps/mobile/src/camera.ts': 'camera\n'},
+			},
+		]);
+		await action({
+			CHAMOJI_CLI: unitCli,
+			GITHUB_EVENT_NAME: 'pull_request',
+			CHAMOJI_PR: '7',
+			CHAMOJI_BASE_SHA: await rev('HEAD~1'),
+			CHAMOJI_HEAD_SHA: await rev('HEAD'),
+			FAKE_COMMENT_ID: '42',
+		});
+		const calls = await read('calls');
+		expect(calls).toContain(
+			'api -X PATCH repos/acme/widgets/issues/comments/42',
+		);
+		expect(calls).not.toContain('-X POST');
+	});
+
+	test('shape single keeps the old behaviour but still needs a new CLI', async () => {
+		const files = {
+			...unitFiles,
+			...unitConfig({schema: 1, shape: 'single'}),
+		};
+		const steps: RepoStep[] = [
+			{commit: '🎉 Start the gearz monorepo', files},
+			{tag: 'v1.0.0', annotated: true},
+			{commit: '✨ Add search'},
+			{tag: 'v1.1.0', annotated: true},
+			{tag: 'wip/x'},
+		];
+		const old = await setup(steps);
+		const refused = await old.action({
+			CHAMOJI_CLI: old.unitCli,
+			FAKE_CLI_VERSION: '0.12.1',
+			GITHUB_EVENT_NAME: 'push',
+			GITHUB_REF: 'refs/tags/v1.1.0',
+		});
+		expect(refused.code).toBe(1);
+		expect(refused.stderr).toContain('need chamoji 0.13.0 or newer');
+
+		const fresh = await setup(steps);
+		const skipped = await fresh.action({
+			CHAMOJI_CLI: fresh.unitCli,
+			GITHUB_EVENT_NAME: 'push',
+			GITHUB_REF: 'refs/tags/wip/x',
+		});
+		expect(skipped.code).toBe(0);
+		expect(await fresh.read('calls')).toBe('');
+		const whole = await fresh.action({
+			CHAMOJI_CLI: fresh.unitCli,
+			GITHUB_EVENT_NAME: 'push',
+			GITHUB_REF: 'refs/tags/v1.1.0',
+		});
+		expect(whole.code).toBe(0);
+		expect(await fresh.read('calls')).toContain('release create v1.1.0');
+		expect(await fresh.read('notes')).toContain('Add search');
 	});
 });
