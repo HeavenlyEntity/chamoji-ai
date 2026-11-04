@@ -110,6 +110,8 @@ export async function previewReleases(
 export type ReplayLine = {
 	unit: string;
 	tag: string;
+	/** The release's version, as the unit's tag formats read it. */
+	version: string;
 	/** Entries in the section the release shipped with; null when it had none. */
 	shipped: number | null;
 	/** Entries chamoji would write now. */
@@ -192,6 +194,7 @@ export async function replayReleases(
 			lines.push({
 				unit: unit.name,
 				tag: release.tag!,
+				version: release.version,
 				shipped: shipped?.length ?? null,
 				chamoji: mine.length,
 				extra: shipped ? lacking(mine, shipped).slice(0, REPLAY_EXAMPLES) : [],
@@ -211,8 +214,7 @@ const quoted = (items: string[]): string =>
 
 /** One line saying how a past release compares. */
 export function replayText(line: ReplayLine): string {
-	const version = /(\d+\.\d+\.\d+\S*)$/.exec(line.tag)?.[1] ?? line.tag;
-	const name = `${line.unit} v${version}`;
+	const name = `${line.unit} v${line.version}`;
 	if (line.shipped === null) {
 		return `${name}: no changelog then; chamoji would write ${count(line.chamoji)}`;
 	}
