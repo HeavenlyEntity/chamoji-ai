@@ -31,7 +31,13 @@ export type ReleaseSettings = {
 	rootFiles: 'none' | 'all' | 'note';
 	zeroMajor?: 'minor';
 	fixed: string[][];
-	upstream?: {remote?: string; name: string; since?: string};
+	upstream?: {
+		remote?: string;
+		name: string;
+		since?: string;
+		/** Emails whose commits are template history; compared ignoring case. */
+		authors?: string[];
+	};
 	tags: {
 		ignore: string[];
 		aliases: Record<string, {unit: string; version: string}>;
@@ -334,7 +340,7 @@ function parseUpstream(
 		return fail('upstream', 'must be an object');
 	}
 
-	const {remote, name, since} = value;
+	const {remote, name, since, authors} = value;
 	if (typeof name !== 'string' || !name) {
 		fail('upstream.name', 'must be a non-empty string');
 	}
@@ -357,10 +363,21 @@ function parseUpstream(
 		fail('upstream.since', 'must be a non-empty string not starting with "-"');
 	}
 
+	if (
+		authors !== undefined &&
+		(!Array.isArray(authors) ||
+			!authors.every(author => typeof author === 'string' && author.trim()))
+	) {
+		fail('upstream.authors', 'must be a list of non-empty strings');
+	}
+
 	return {
 		...(remote ? {remote: remote as string} : {}),
 		name: name as string,
 		...(since ? {since: since as string} : {}),
+		...(Array.isArray(authors) && authors.length > 0
+			? {authors: authors as string[]}
+			: {}),
 	};
 }
 

@@ -28,6 +28,8 @@ test('a no-op re-run leaves a section alone, even one not written in canonical f
 }
 `,
 		'{"groups": [], "release": {"schema": 1.0, "shape": "apps", "units": {"web": {"path": "apps/web/", "tag": "{unit}/v{version}"}}}}',
+		// Authors in another case and order mean the same.
+		'{"release": {"schema": 1, "shape": "apps", "units": {"web": {"path": "apps/web"}}, "upstream": {"name": "Makerkit", "authors": ["CI@makerkit.dev", "Bot@Makerkit.dev"]}}}',
 	]) {
 		const answers = answersFromSection(
 			(JSON.parse(original) as {release: unknown}).release,

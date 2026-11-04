@@ -273,3 +273,19 @@ test('an own tag on an unmerged branch is matched by no pattern', async () => {
 	expect(ignoredBy('1.2.3', allPatterns(found))).toEqual([]);
 	expect(found.inherited.patterns).toContain('^4\\.0\\.1$');
 });
+
+test('with a remote, a template tag whose branch upstream pruned is inherited, and an own unmerged tag is not', async () => {
+	repo = await gearzLayout({template: true, prunedBranch: 'tagged'});
+	await git(repo.dir, ['switch', '-q', '-c', 'offline-publish']);
+	await git(repo.dir, ['commit', '-q', '--allow-empty', '-m', '🔖 5.0.0']);
+	await git(repo.dir, ['tag', '5.0.0']);
+	await git(repo.dir, ['switch', '-q', 'main']);
+	const found = await tagsOf(repo.dir);
+	expect([...found.inherited.tags].sort()).toEqual([
+		...TEMPLATE_TAGS.slice(0, 2),
+		'4.1.0',
+		TEMPLATE_TAGS[2],
+	]);
+	expect(ignoredBy('4.1.0', found.inherited.patterns)).not.toEqual([]);
+	expect(ignoredBy('5.0.0', allPatterns(found))).toEqual([]);
+});

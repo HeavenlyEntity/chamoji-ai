@@ -56,7 +56,13 @@ export type SetupAnswers = {
 	rootFiles: 'none' | 'all' | 'note';
 	zeroMajor?: 'minor';
 	fixed: string[][];
-	upstream?: {remote?: string; name: string; since?: string};
+	upstream?: {
+		remote?: string;
+		name: string;
+		since?: string;
+		/** Lower-cased and sorted. */
+		authors?: string[];
+	};
 	ignore: string[];
 	rootChangelog: boolean;
 	/** Hand-written keys setup doesn't ask about, carried through as written. */
@@ -77,6 +83,7 @@ const DETECTED = new Set([
 	'name',
 	'tag',
 	'versionFiles',
+	'upstream.authors',
 ]);
 /** Unit questions, answered in this order when answers are replayed. */
 const UNIT_KINDS = new Set([
@@ -152,6 +159,9 @@ function recommendFor(detection: Detection, shape: Shape): SetupAnswers {
 						...(upstream.remote ? {remote: upstream.remote} : {}),
 						name: baseName(detection).name,
 						...(upstream.since ? {since: upstream.since} : {}),
+						...(upstream.authors.length > 0
+							? {authors: upstream.authors.map(author => author.email)}
+							: {}),
 					},
 				}
 			: {}),
@@ -207,7 +217,16 @@ export function answersFromSection(
 		rootFiles: settings.rootFiles,
 		...(settings.zeroMajor ? {zeroMajor: settings.zeroMajor} : {}),
 		fixed: settings.fixed,
-		...(settings.upstream ? {upstream: settings.upstream} : {}),
+		...(settings.upstream
+			? {
+					upstream: {
+						...settings.upstream,
+						...(settings.upstream.authors
+							? {authors: sortedEmails(settings.upstream.authors)}
+							: {}),
+					},
+				}
+			: {}),
 		ignore: settings.tags.ignore,
 		rootChangelog: settings.rootChangelog,
 		kept: unasked(section as Record<string, unknown>),
@@ -216,6 +235,10 @@ export function answersFromSection(
 	answers.why = whyFor(detection, answers, () => 'kept');
 	return answers;
 }
+
+/** Emails as upstream.authors holds them: lower-cased, unique, sorted. */
+const sortedEmails = (emails: string[]): string[] =>
+	unique(emails.map(email => email.trim().toLowerCase())).sort();
 
 const text = (id: string, value: string | string[]): string => {
 	if (typeof value !== 'string') throw new Error(`${id} takes one value`);
@@ -389,6 +412,16 @@ export function applyAnswer(
 			break;
 		}
 
+		case 'upstream.authors': {
+			const authors = sortedEmails(ticks(id, value)).filter(Boolean);
+			const upstream = {
+				...(next.upstream ?? {name: baseName(detection).name}),
+			};
+			delete upstream.authors;
+			next.upstream = authors.length > 0 ? {...upstream, authors} : upstream;
+			break;
+		}
+
 		case 'sharedChanges':
 			next.sharedChanges = oneOf(id, value, [
 				'ride-along',
@@ -455,6 +488,8 @@ function answerOf(
 			return answers.ignore;
 		case 'upstream.name':
 			return answers.upstream?.name;
+		case 'upstream.authors':
+			return answers.upstream?.authors ?? [];
 		case 'sharedChanges':
 			return answers.sharedChanges;
 		case 'rootFiles':

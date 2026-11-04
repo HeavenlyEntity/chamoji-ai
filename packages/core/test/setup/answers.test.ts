@@ -39,7 +39,12 @@ test("gearz: the recommended section is the spec's example", async () => {
 		sharedChanges: 'ride-along',
 		rootFiles: 'none',
 		zeroMajor: 'minor',
-		upstream: {remote: 'upstream', name: 'Makerkit', since},
+		upstream: {
+			remote: 'upstream',
+			name: 'Makerkit',
+			since,
+			authors: ['bot@makerkit.dev'],
+		},
 		tags: {
 			ignore: [
 				String.raw`^\d+\.\d+\.\d+$`,

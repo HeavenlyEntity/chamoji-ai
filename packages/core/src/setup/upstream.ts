@@ -1,7 +1,11 @@
-import {runGit, runGitWithInput} from '../git.js';
+import {listTags, runGit, runGitWithInput} from '../git.js';
 import {escapeRegExp} from '../units/tags.js';
 import type {ReleaseSettings} from '../units/settings.js';
-import {FIELD, lines, readUpstream} from '../units/upstream.js';
+import {FIELD, lines, readUpstream, VERSION_LIKE} from '../units/upstream.js';
+import {recentAuthors} from './tags.js';
+
+/** Someone who wrote template history; `commits` counts theirs on HEAD. */
+export type TemplateAuthor = {email: string; name: string; commits: number};
 
 export type UpstreamDetection = {
 	/** 'upstream' if present; else another non-origin remote whose fetched refs share history with HEAD. */
@@ -12,12 +16,17 @@ export type UpstreamDetection = {
 	name: string | null;
 	/** Full hash of the oldest own commit. */
 	since: string | null;
-	/** Reachable from HEAD and the remote. */
+	/** Commits on HEAD in the engine's upstream set. */
 	upstreamCommits: number;
 	/** Merges that bring upstream commits in. */
 	syncs: number;
 	/** Short hashes of commits that look like squashed syncs. */
 	squashedSyncs: string[];
+	/**
+	 * Authors of the remote's commits and the inherited tags' who aren't
+	 * recent own authors, by email (lower-cased, sorted), for upstream.authors.
+	 */
+	authors: TemplateAuthor[];
 };
 
 const EMPTY: UpstreamDetection = {
@@ -28,6 +37,7 @@ const EMPTY: UpstreamDetection = {
 	upstreamCommits: 0,
 	syncs: 0,
 	squashedSyncs: [],
+	authors: [],
 };
 
 const titleCase = (text: string): string =>
@@ -62,56 +72,79 @@ async function remoteUrl(root: string, remote: string): Promise<string> {
 	}
 }
 
-/** The oldest commit, in topo order, that none of the tags reaches. */
-async function oldestBeyondTags(
+/**
+ * Who wrote the upstream set (the remote's commits and those the inherited
+ * tags reach) and isn't a recent own author: one of the author rule's recent
+ * authors, with what the remote reaches left out of the recent window too.
+ */
+async function templateAuthors(
 	root: string,
-	tags: string[],
-): Promise<string | null> {
+	remote: string | null,
+	refs: string[],
+	inheritedTags: string[],
+): Promise<TemplateAuthor[]> {
+	const onHead = (await listTags(root, 'HEAD'))
+		.map(tag => tag.name)
+		.filter(name => VERSION_LIKE.test(name));
+	// Recent own work: what the remote reaches, a sync just merged, isn't.
+	const recent = await recentAuthors(root, onHead, refs);
+	const names = new Set(recent.map(author => author.name));
+	const emails = new Set(recent.map(author => author.email));
 	const out = await runGitWithInput(
-		['rev-list', '--reverse', '--topo-order', '--stdin'],
+		[
+			'log',
+			'--format=%an%x1f%ae',
+			...(remote ? [`--glob=refs/remotes/${remote}/*`] : []),
+			'--stdin',
+		],
 		root,
-		`HEAD\n--not\n${tags.map(tag => `refs/tags/${tag}`).join('\n')}\n`,
+		inheritedTags.map(tag => `refs/tags/${tag}\n`).join(''),
 	);
-	return lines(out)[0] ?? null;
+	const found = new Map<string, string>();
+	for (const line of lines(out)) {
+		const [name = '', email = ''] = line.split(FIELD);
+		const key = email.toLowerCase();
+		if (!key || names.has(name) || emails.has(key) || found.has(key)) continue;
+		found.set(key, name);
+	}
+
+	if (found.size === 0) return [];
+	const counts = new Map<string, number>();
+	for (const email of lines(
+		await runGit(['log', '--format=%ae', 'HEAD'], root),
+	)) {
+		const key = email.toLowerCase();
+		if (found.has(key)) counts.set(key, (counts.get(key) ?? 0) + 1);
+	}
+
+	return [...found]
+		.map(([email, name]) => ({email, name, commits: counts.get(email) ?? 0}))
+		.sort((a, b) => (a.email < b.email ? -1 : a.email > b.email ? 1 : 0));
 }
+
+const exactPattern = (tag: string): string => `^${escapeRegExp(tag)}$`;
 
 export async function detectUpstream(
 	root: string,
 	remote: string | null,
 	inheritedTags: string[],
 ): Promise<UpstreamDetection> {
-	if (remote === null) {
-		if (inheritedTags.length === 0) return {...EMPTY};
-		return {...EMPTY, since: await oldestBeyondTags(root, inheritedTags)};
-	}
+	if (remote === null && inheritedTags.length === 0) return {...EMPTY};
 
-	const name = baseName(await remoteUrl(root, remote));
-	const refs = lines(
-		await runGit(
-			['for-each-ref', '--format=%(objectname)', `refs/remotes/${remote}`],
-			root,
-		),
-	);
-	if (refs.length === 0) return {...EMPTY, remote, name};
+	const name = remote ? baseName(await remoteUrl(root, remote)) : null;
+	const refs = remote
+		? lines(
+				await runGit(
+					['for-each-ref', '--format=%(objectname)', `refs/remotes/${remote}`],
+					root,
+				),
+			)
+		: [];
+	if (remote && refs.length === 0) return {...EMPTY, remote, name};
 
-	const own = lines(
-		await runGit(
-			[
-				'rev-list',
-				'--reverse',
-				'--topo-order',
-				'HEAD',
-				'--not',
-				`--remotes=${remote}`,
-			],
-			root,
-		),
-	);
-	const total = Number(
-		(await runGit(['rev-list', '--count', 'HEAD'], root)).trim(),
-	);
-
-	// Reuse the engine's own idea of a sync.
+	const authors = await templateAuthors(root, remote, refs, inheritedTags);
+	// The engine's own upstream set and idea of a sync: the remote, the
+	// inherited tags and the template's authors.
 	const settings: ReleaseSettings = {
 		schema: 1,
 		shape: 'apps',
@@ -120,43 +153,72 @@ export async function detectUpstream(
 		sharedChanges: 'ride-along',
 		rootFiles: 'none',
 		fixed: [],
-		upstream: {remote, name: name ?? remote},
-		tags: {ignore: [], aliases: {}},
+		upstream: {
+			...(remote ? {remote} : {}),
+			name: name ?? remote ?? 'template',
+			...(authors.length > 0
+				? {authors: authors.map(author => author.email)}
+				: {}),
+		},
+		tags: {ignore: inheritedTags.map(exactPattern), aliases: {}},
 		rootChangelog: false,
 		githubReleases: 'per-unit',
 	};
-	const {syncs} = await readUpstream(root, 'HEAD', settings, []);
+	const {commits, syncs} = await readUpstream(
+		root,
+		'HEAD',
+		settings,
+		inheritedTags.map(tag => ({name: tag, date: ''})),
+	);
+
+	// Everything the remote and the inherited tags reach goes on the --not
+	// side; commits by the template's authors are taken out after.
+	const own = lines(
+		await runGitWithInput(
+			['rev-list', '--reverse', '--topo-order', '--stdin'],
+			root,
+			[
+				'HEAD',
+				'--not',
+				...refs,
+				...inheritedTags.map(tag => `refs/tags/${tag}`),
+			]
+				.map(rev => `${rev}\n`)
+				.join(''),
+		),
+	).filter(hash => !commits.has(hash));
+	const total = Number(
+		(await runGit(['rev-list', '--count', 'HEAD'], root)).trim(),
+	);
 
 	const since = own[0] ?? null;
 	const pattern = new RegExp(
 		String.raw`\b(merge|sync|update|pull)\b.*\b(upstream|template${name ? `|${escapeRegExp(name)}` : ''})\b`,
 		'i',
 	);
+	const ownSet = new Set(own);
 	const candidates = lines(
 		await runGit(
-			[
-				'log',
-				'--no-merges',
-				`--format=%H${FIELD}%h${FIELD}%s`,
-				'HEAD',
-				'--not',
-				`--remotes=${remote}`,
-			],
+			['log', '--no-merges', `--format=%H${FIELD}%h${FIELD}%s`, 'HEAD'],
 			root,
 		),
 	);
 	const squashedSyncs = candidates
 		.map(line => line.split(FIELD) as [string, string, string])
-		.filter(([hash, , subject]) => hash !== since && pattern.test(subject))
+		.filter(
+			([hash, , subject]) =>
+				ownSet.has(hash) && hash !== since && pattern.test(subject),
+		)
 		.map(([, short]) => short);
 
 	return {
 		remote,
-		fetched: true,
+		fetched: remote !== null,
 		name,
 		since,
 		upstreamCommits: total - own.length,
 		syncs: syncs.length,
 		squashedSyncs,
+		authors,
 	};
 }

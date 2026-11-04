@@ -118,7 +118,7 @@ async function tagCommits(root: string): Promise<Map<string, string>> {
 	return commits;
 }
 
-type Author = {name: string; email: string};
+export type Author = {name: string; email: string};
 
 const parseAuthors = (out: string): Author[] =>
 	lines(out).map(line => {
@@ -127,15 +127,15 @@ const parseAuthors = (out: string): Author[] =>
 	});
 
 /**
- * Version-like tags none of whose commits a recent author wrote. Recent
- * authors wrote the newest 50 non-merge commits on HEAD that no version-like
- * tag reaches; when every commit is tagged, the newest 50 non-merge commits.
+ * Who wrote the newest 50 non-merge commits on HEAD that none of `tags`
+ * (nor any of the `not` commits) reaches; when every commit is reached, the
+ * newest 50 non-merge commits. Emails are lower-cased.
  */
-async function inheritedByAuthors(
+export async function recentAuthors(
 	root: string,
-	candidates: string[],
-	commitOf: Map<string, string>,
-): Promise<Set<string>> {
+	tags: string[],
+	not: string[] = [],
+): Promise<Author[]> {
 	const log = [
 		'log',
 		'--no-merges',
@@ -143,31 +143,53 @@ async function inheritedByAuthors(
 		'--format=%an%x1f%ae',
 	];
 	// Tag names go in on stdin, so there is no limit on how many.
-	const input = ['HEAD', ...candidates.map(name => `^refs/tags/${name}`)]
+	const input = [
+		'HEAD',
+		...tags.map(name => `^refs/tags/${name}`),
+		...not.map(commit => `^${commit}`),
+	]
 		.map(rev => `${rev}\n`)
 		.join('');
-	let recent = parseAuthors(
+	const recent = parseAuthors(
 		await runGitWithInput([...log, '--stdin'], root, input),
 	);
-	if (recent.length === 0) {
-		recent = parseAuthors(await runGit([...log, 'HEAD'], root));
-	}
+	return recent.length > 0
+		? recent
+		: parseAuthors(await runGit([...log, 'HEAD'], root));
+}
 
+/**
+ * The `candidates` none of whose commits a recent author wrote, recent
+ * authors being those of the commits beyond the `onHead` tags and the `not`
+ * commits. The graph covers HEAD and every candidate, so an unmerged tag is
+ * judged too.
+ */
+async function inheritedByAuthors(
+	root: string,
+	onHead: string[],
+	candidates: string[],
+	commitOf: Map<string, string>,
+	not: string[] = [],
+): Promise<Set<string>> {
+	const recent = await recentAuthors(root, onHead, not);
 	if (recent.length === 0) return new Set();
 
 	const names = new Set(recent.map(author => author.name));
 	const emails = new Set(recent.map(author => author.email));
 	// Parents come before children, so each commit knows whether a recent
 	// author wrote it or any of its ancestors.
-	const graph = await runGit(
+	const graph = await runGitWithInput(
 		[
 			'log',
 			'--topo-order',
 			'--reverse',
 			'--format=%H%x1f%P%x1f%an%x1f%ae',
-			'HEAD',
+			'--stdin',
 		],
 		root,
+		['HEAD', ...candidates.map(name => `refs/tags/${name}`)]
+			.map(rev => `${rev}\n`)
+			.join(''),
 	);
 	const touched = new Map<string, boolean>();
 	for (const line of lines(graph)) {
@@ -191,9 +213,10 @@ async function inheritedByAuthors(
 }
 
 /**
- * Version-like tags from the upstream remote, or else from no recent author.
- * `merged` are the candidates HEAD reaches; with a remote, the others can be
- * inherited too, so an unmerged template tag doesn't count as an own tag.
+ * Version-like tags from the upstream remote or from no recent author, or
+ * with no remote fetched, from no recent author alone. `merged` are the
+ * candidates HEAD reaches; with a remote, the others can be inherited too,
+ * so an unmerged template tag doesn't count as an own tag.
  */
 async function findInherited(
 	root: string,
@@ -212,22 +235,47 @@ async function findInherited(
 		);
 		// A remote with nothing fetched falls back to the authors rule.
 		if (reachable.size > 0) {
-			const found = new Set(
+			const fromRemote = new Set(
 				candidates.filter(name => reachable.has(commitOf.get(name) ?? '')),
 			);
 			// When upstream holds every release, it may be the canonical repo
 			// and these the team's own tags (origin is a contributor's fork).
 			// If recent authors reach any of them, none is proposed.
-			if (onHead.every(name => found.has(name))) {
-				const byAuthors = await inheritedByAuthors(root, onHead, commitOf);
+			if (onHead.every(name => fromRemote.has(name))) {
+				const byAuthors = await inheritedByAuthors(
+					root,
+					onHead,
+					onHead,
+					commitOf,
+				);
 				if (onHead.some(name => !byAuthors.has(name))) return new Set();
 			}
 
-			return found;
+			// A template tag whose branch the remote has since deleted is
+			// still the template's when no recent own author reaches it; what
+			// the remote reaches (a sync just merged) isn't own work.
+			const tips = lines(
+				await runGit(
+					['for-each-ref', '--format=%(objectname)', `refs/remotes/${remote}`],
+					root,
+				),
+			);
+			const byOwnAuthors = await inheritedByAuthors(
+				root,
+				onHead,
+				candidates,
+				commitOf,
+				unique(tips),
+			);
+			return new Set(
+				candidates.filter(
+					name => fromRemote.has(name) || byOwnAuthors.has(name),
+				),
+			);
 		}
 	}
 
-	return inheritedByAuthors(root, onHead, commitOf);
+	return inheritedByAuthors(root, onHead, onHead, commitOf);
 }
 
 type ReadTag = {

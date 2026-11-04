@@ -21,33 +21,65 @@ export const lines = (text: string): string[] =>
 const isInheritedTag = (tag: string, settings: ReleaseSettings): boolean =>
 	VERSION_LIKE.test(tag) && isIgnoredTag(tag, settings);
 
+/** Commits on HEAD written by one of `upstream.authors`, ignoring case. */
+async function authorCommits(
+	cwd: string,
+	authors: string[],
+): Promise<string[]> {
+	const wanted = new Set(authors.map(author => author.toLowerCase()));
+	const out = await runGit(['log', `--format=%H${FIELD}%ae`, 'HEAD'], cwd);
+	return lines(out).flatMap(line => {
+		const [hash, email = ''] = line.split(FIELD) as [string, string];
+		return wanted.has(email.toLowerCase()) ? [hash] : [];
+	});
+}
+
+/**
+ * The upstream set: commits reachable from the remote's fetched branches, or
+ * from an ignored version-like tag, or on HEAD and written by one of
+ * `upstream.authors`. Unit mode only.
+ */
 async function upstreamCommits(
 	cwd: string,
 	settings: ReleaseSettings,
 	tags: ReleaseTag[],
 ): Promise<Pick<Upstream, 'commits' | 'warning'>> {
 	const remote = settings.upstream?.remote;
+	const authors = settings.upstream?.authors ?? [];
+	const commits = new Set<string>();
+	const add = (hashes: string[]) => {
+		for (const hash of hashes) commits.add(hash);
+	};
+
 	let warning: string | undefined;
 	if (remote) {
 		const fromRemote = lines(
 			await runGit(['rev-list', `--glob=refs/remotes/${remote}/*`], cwd),
 		);
-		if (fromRemote.length > 0) return {commits: new Set(fromRemote)};
-		warning = `upstream remote "${remote}" has no fetched branches here, so template history is recognised only by ignored version tags; run git remote add ${remote} <url> && git fetch ${remote} before chamoji`;
+		add(fromRemote);
+		if (fromRemote.length === 0) {
+			const by = authors.length > 0 ? ' and upstream.authors' : '';
+			warning = `upstream remote "${remote}" has no fetched branches here, so template history is recognised only by ignored version tags${by}; run git remote add ${remote} <url> && git fetch ${remote} before chamoji`;
+		}
 	}
 
-	const withWarning = warning ? {warning} : {};
+	// Ignored version-like tags count even with a remote: a template branch
+	// the remote has since deleted is still template history.
 	const names = tags
 		.map(tag => tag.name)
 		.filter(name => isInheritedTag(name, settings));
-	if (names.length === 0) return {commits: new Set(), ...withWarning};
-	// Tag names go in on stdin, so there is no limit on how many.
-	const out = await runGitWithInput(
-		['rev-list', '--stdin'],
-		cwd,
-		names.map(name => `refs/tags/${name}\n`).join(''),
-	);
-	return {commits: new Set(lines(out)), ...withWarning};
+	if (names.length > 0) {
+		// Tag names go in on stdin, so there is no limit on how many.
+		const out = await runGitWithInput(
+			['rev-list', '--stdin'],
+			cwd,
+			names.map(name => `refs/tags/${name}\n`).join(''),
+		);
+		add(lines(out));
+	}
+
+	if (authors.length > 0) add(await authorCommits(cwd, authors));
+	return {commits, ...(warning ? {warning} : {})};
 }
 
 /** The newest inherited tag the upstream parent brings in over the first parent, else its short hash. */
@@ -76,7 +108,7 @@ async function syncTarget(
 	).trim();
 }
 
-/** Upstream commit hashes (reachable from refs/remotes/<remote>/* or an ignored tag), one synthetic commit per sync merge in `range`, and a warning when the remote has nothing fetched. */
+/** Upstream commit hashes (reachable from refs/remotes/<remote>/* or an ignored version tag, or by upstream.authors), one synthetic commit per sync merge in `range`, and a warning when the remote has nothing fetched. */
 export async function readUpstream(
 	cwd: string,
 	range: string,

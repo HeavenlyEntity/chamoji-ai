@@ -153,8 +153,20 @@ function orderLike(next: unknown, previous: unknown): unknown {
 /** Parsed settings with `{unit}` resolved, as the engine reads them. */
 function canonical(value: unknown): ReleaseSettings {
 	const settings = parseReleaseSettings(value, CONFIG_FILE);
+	const {upstream} = settings;
 	return {
 		...settings,
+		// The engine compares authors ignoring case and order.
+		...(upstream?.authors
+			? {
+					upstream: {
+						...upstream,
+						authors: [
+							...new Set(upstream.authors.map(email => email.toLowerCase())),
+						].sort(),
+					},
+				}
+			: {}),
 		units: settings.units.map(unit => ({
 			...unit,
 			tag: unit.tag.replaceAll('{unit}', unit.name),

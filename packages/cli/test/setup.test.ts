@@ -159,7 +159,12 @@ async function gearzSection(dir: string) {
 		sharedChanges: 'ride-along',
 		rootFiles: 'none',
 		zeroMajor: 'minor',
-		upstream: {remote: 'upstream', name: 'Makerkit', since},
+		upstream: {
+			remote: 'upstream',
+			name: 'Makerkit',
+			since,
+			authors: ['bot@makerkit.dev'],
+		},
 		tags: {
 			ignore: [
 				String.raw`^\d+\.\d+\.\d+$`,
@@ -308,6 +313,9 @@ test("--explain names each value's source", async () => {
 	const {code, stdout} = await chamoji(['setup', '--yes', '--explain'], dir);
 	expect(code).toBe(0);
 	const lines = stdout.split('\n');
+	expect(lines.find(line => line.startsWith('release.upstream.since'))).toMatch(
+		/ \(detected in the repo\)$/,
+	);
 	for (const line of [
 		'release.shape = "apps" (detected in the repo)',
 		'release.units.web.path = "apps/web" (detected in the repo)',
@@ -317,6 +325,8 @@ test("--explain names each value's source", async () => {
 		'release.sharedChanges = "ride-along" (recommended for apps)',
 		'release.zeroMajor = "minor" (recommended for apps)',
 		'release.upstream.name = "Makerkit" (recommended for apps)',
+		'release.upstream.remote = "upstream" (detected in the repo)',
+		'release.upstream.authors = ["bot@makerkit.dev"] (detected in the repo)',
 	]) {
 		expect(lines).toContain(line);
 	}
