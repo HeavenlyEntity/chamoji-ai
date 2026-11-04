@@ -73,7 +73,7 @@ release_config() {
 	node -e '
 		try {
 			const release = JSON.parse(require("fs").readFileSync("chamoji.config.json", "utf8")).release;
-			if (release === undefined || release === null) process.stdout.write("none");
+			if (typeof release !== "object" || release === null) process.stdout.write("none");
 			else process.stdout.write(release.shape === "single" ? "single" : "units");
 		} catch {
 			process.stdout.write("none");
@@ -86,7 +86,11 @@ units=false
 
 # Release settings came with chamoji 0.13.0; an older CLI would ignore them.
 if [ "$config_release" != none ]; then
-	cli_version=$("${cli[@]}" --version --no-update-check 2>/dev/null | head -n 1 || true)
+	probe_error="$work/chamoji-version.err"
+	cli_version=$("${cli[@]}" --version --no-update-check 2>"$probe_error" | head -n 1 || true)
+	if [ -z "$cli_version" ]; then
+		fail "couldn't run chamoji to check its version: $(head -c 300 "$probe_error" | tr '\n' ' ')"
+	fi
 	if ! node -e '
 		const parse = text => (/^v?(\d+)\.(\d+)\.(\d+)/.exec(text) ?? []).slice(1).map(Number);
 		const [have, need] = [parse(process.argv[1]), [0, 13, 0]];
@@ -111,11 +115,10 @@ notes)
 	notes="$work/chamoji-notes.md"
 	prerelease=
 	if [ "$units" = true ]; then
-		# The unit that owns the tag writes its own section. The version is what
-		# follows the last / or @, so a name like my-lib isn't taken for a prerelease.
+		# The unit that owns the tag writes its own section. A prerelease has a
+		# suffix right after a x.y.z, so a hyphen in a name (web-v1.0.0) doesn't count.
 		chamoji changelog --for-tag "$tag" | strip_title >"$notes"
-		tag_version=${tag##*[@/]}
-		case "$tag_version" in *-*) prerelease=--prerelease ;; esac
+		if printf '%s' "$tag" | grep -Eq '[0-9]+\.[0-9]+\.[0-9]+-'; then prerelease=--prerelease; fi
 	else
 		if ! printf '%s' "$tag" | grep -Eq "$semver"; then
 			echo "chamoji: $tag isn't a whole-repo version tag; leaving its release alone"
@@ -151,84 +154,113 @@ comment)
 
 	body="$work/chamoji-comment.md"
 	if [ "$units" = true ]; then
-		# A repo with release units previews each unit: its next version (or why it
-		# has none), then the notes it would release with. Both read the checkout,
-		# which is the PR's head (or its merge with the base), so --since and --to
-		# don't come into it. next-version exits 3 when no unit releases, still
-		# printing every unit.
+		# A repo with release units previews what this PR adds to each unit's next
+		# release. The CLI plans from the checkout, so it runs in a detached
+		# worktree at the PR's head (the default checkout may be the base, as under
+		# pull_request_target), and the lines are cut down to the PR's own commits.
+		wt="$work/chamoji-head"
+		cleanup_worktree() {
+			git worktree remove --force "$wt" >/dev/null 2>&1 || true
+			git worktree prune >/dev/null 2>&1 || true
+		}
+		trap cleanup_worktree EXIT
+		cleanup_worktree
+		git worktree add --detach --quiet "$wt" "$head" || fail "couldn't check out $head to preview the PR"
+
+		# next-version exits 3 when no unit releases, still printing every unit.
 		set +e
-		versions=$(chamoji next-version --json)
+		versions=$(cd "$wt" && chamoji next-version --json)
 		status=$?
 		set -e
 		{ [ "$status" -eq 0 ] || [ "$status" -eq 3 ]; } || fail "next-version failed with exit code $status"
-		set +e
-		planned=$(chamoji release --dry-run --any-branch --json)
-		status=$?
-		set -e
-		{ [ "$status" -eq 0 ] || [ "$status" -eq 3 ]; } || fail "release --dry-run failed with exit code $status"
-		CHAMOJI_VERSIONS=$versions CHAMOJI_PLANNED=$planned CHAMOJI_MARKER=$marker node -e '
+
+		# Each unit's unreleased lines, from its own changelog, in a file per unit.
+		rm -f "$work"/chamoji-unit-*.md
+		index=0
+		while IFS= read -r name; do
+			set +e
+			(cd "$wt" && chamoji changelog --unit "$name") >"$work/chamoji-unit-$index.md"
+			status=$?
+			set -e
+			[ "$status" -eq 0 ] || fail "changelog --unit $name failed with exit code $status"
+			index=$((index + 1))
+		done < <(printf '%s' "$versions" | node -e 'let s = ""; process.stdin.on("data", d => (s += d)).on("end", () => process.stdout.write(JSON.parse(s).units.map(u => u.unit).join("\n") + "\n"))')
+
+		CHAMOJI_VERSIONS=$versions CHAMOJI_WORK=$work CHAMOJI_MARKER=$marker CHAMOJI_PR_COMMITS=$(git rev-list --no-merges "$base..$head") node -e '
+			const fs = require("fs");
 			const {units} = JSON.parse(process.env.CHAMOJI_VERSIONS);
-			const plan = JSON.parse(process.env.CHAMOJI_PLANNED);
-			const releasing = plan.units ?? [];
-			const line = unit => {
-				if (unit.version !== null) return `- ${unit.unit} → ${unit.version}`;
-				if (unit.own === 0 && unit.shared > 0) return `- ${unit.unit}: rides along`;
-				if (unit.own > 0) return `- ${unit.unit}: no release yet`;
-				return `- ${unit.unit}: nothing to release`;
+			const commits = process.env.CHAMOJI_PR_COMMITS.split("\n").filter(Boolean);
+			const inPr = text => {
+				const hash = /\(([0-9a-f]{7,40})\)/.exec(text)?.[1];
+				return hash !== undefined && commits.some(full => full.startsWith(hash));
 			};
-			const out = [
-				process.env.CHAMOJI_MARKER,
-				"### Changelog preview",
-				"",
-				releasing.length > 0
-					? "Merging this releases:"
-					: "Nothing here needs a release on its own: only docs, tests, refactors or similar.",
-				"",
-				...units.map(line),
-			];
-			for (const unit of releasing) {
-				// Headings drop below the unit title, which sits under the comment title.
-				const notes = unit.notes
-					.split("\n")
-					.filter(text => !/^## /.test(text))
-					.map(text => text.replace(/^### /, "##### "))
-					.join("\n")
-					.trim();
-				out.push("", `#### ${unit.unit} ${unit.version}`, "", notes || "_No changelog lines._");
+			const out = [process.env.CHAMOJI_MARKER, "### Changelog preview", ""];
+			const heads = [];
+			const sections = [];
+			units.forEach((unit, index) => {
+				// Only the Unreleased part, and in it only the lines this PR added.
+				const text = fs.readFileSync(`${process.env.CHAMOJI_WORK}/chamoji-unit-${index}.md`, "utf8");
+				const unreleased = /^## Unreleased\n([\s\S]*?)(?=^## |(?![\s\S]))/m.exec(text)?.[1] ?? "";
+				const kept = [];
+				let heading;
+				let own = 0;
+				let shared = 0;
+				for (const line of unreleased.split("\n")) {
+					if (/^### /.test(line)) heading = line.replace(/^### /, "##### ");
+					else if (/^- /.test(line) && inPr(line)) {
+						if (heading !== undefined) kept.push("", heading, "");
+						heading = undefined;
+						kept.push(line);
+						if (line.includes("(via ")) shared++;
+						else own++;
+					}
+				}
+				if (own + shared === 0) return;
+				const versioned = unit.version !== null;
+				if (own > 0) heads.push(versioned ? `- ${unit.unit} → ${unit.version}` : `- ${unit.unit}: no release yet`);
+				else heads.push(versioned ? `- ${unit.unit} → ${unit.version} (rides along with its next release)` : `- ${unit.unit}: rides along`);
+				sections.push("", `#### ${unit.unit}${versioned ? ` ${unit.version}` : ""}`, ...kept);
+			});
+			if (heads.length === 0) {
+				out.push("This PR adds nothing to any unit’s release notes.", "", "_No commits in this PR add changelog lines._");
+			} else {
+				out.push("After merging, the next releases would be:", "", ...heads, ...sections);
 			}
 			out.push("", "<sub>From [chamoji](https://github.com/HeavenlyEntity/chamoji-ai), updated on every push.</sub>");
 			process.stdout.write(out.join("\n") + "\n");
 		' >"$body"
+		cleanup_worktree
+		trap - EXIT
 	else
-	# Section headings drop a level so they sit under the comment's title.
-	lines=$(chamoji changelog --since "$base" --to "$head" | strip_title | sed '1{/^## /d;}' | awk 'NF { started = 1 } started' | sed 's/^### /#### /')
-	last=$(newest_tag "$head")
-	set +e
-	next=$(chamoji next-version --to "$head" 2>/dev/null)
-	status=$?
-	set -e
-	prefix=v
-	case "$last" in [0-9]*) prefix= ;; esac
-	if [ -z "$last" ]; then
-		headline='There are no release tags yet, so this is part of the first release.'
-	elif [ "$status" -eq 3 ]; then
-		headline='Nothing here needs a release on its own: only docs, tests, refactors or similar.'
-	elif [ "$status" -eq 0 ]; then
-		headline="Merging this makes the next release **${prefix}${next}** ($(bump_kind "$last" "$next"))."
-	else
-		fail "next-version failed with exit code $status"
-	fi
+		# Section headings drop a level so they sit under the comment's title.
+		lines=$(chamoji changelog --since "$base" --to "$head" | strip_title | sed '1{/^## /d;}' | awk 'NF { started = 1 } started' | sed 's/^### /#### /')
+		last=$(newest_tag "$head")
+		set +e
+		next=$(chamoji next-version --to "$head" 2>/dev/null)
+		status=$?
+		set -e
+		prefix=v
+		case "$last" in [0-9]*) prefix= ;; esac
+		if [ -z "$last" ]; then
+			headline='There are no release tags yet, so this is part of the first release.'
+		elif [ "$status" -eq 3 ]; then
+			headline='Nothing here needs a release on its own: only docs, tests, refactors or similar.'
+		elif [ "$status" -eq 0 ]; then
+			headline="Merging this makes the next release **${prefix}${next}** ($(bump_kind "$last" "$next"))."
+		else
+			fail "next-version failed with exit code $status"
+		fi
 
-	{
-		echo "$marker"
-		echo '### Changelog preview'
-		echo
-		echo "$headline"
-		echo
-		if [ -n "$lines" ]; then echo "$lines"; else echo '_No commits in this PR add changelog lines._'; fi
-		echo
-		echo '<sub>From [chamoji](https://github.com/HeavenlyEntity/chamoji-ai), updated on every push.</sub>'
-	} >"$body"
+		{
+			echo "$marker"
+			echo '### Changelog preview'
+			echo
+			echo "$headline"
+			echo
+			if [ -n "$lines" ]; then echo "$lines"; else echo '_No commits in this PR add changelog lines._'; fi
+			echo
+			echo '<sub>From [chamoji](https://github.com/HeavenlyEntity/chamoji-ai), updated on every push.</sub>'
+		} >"$body"
 	fi
 	cat "$body" >>"$summary"
 
@@ -270,7 +302,7 @@ release)
 
 	[ "$status" -eq 0 ] || fail "chamoji release failed with exit code $status"
 	version=$(printf '%s' "$result" | node -e 'let s = ""; process.stdin.on("data", d => (s += d)).on("end", () => { const j = JSON.parse(s); process.stdout.write(j.units ? j.units.map(u => u.tag).join(", ") : j.tag) })')
-	printf '%s' "$result" | node -e 'let s = ""; process.stdin.on("data", d => (s += d)).on("end", () => { const j = JSON.parse(s); process.stdout.write((j.units ? j.units.map(u => `## ${u.tag}\n\n${u.notes}`).join("\n\n") : j.notes) + "\n") })' >>"$summary"
+	printf '%s' "$result" | node -e 'let s = ""; process.stdin.on("data", d => (s += d)).on("end", () => { const j = JSON.parse(s); process.stdout.write((j.units ? j.units.map(u => `## ${u.tag}\n\n${u.notes.replace(/^## .*\n+/, "")}`).join("\n\n") : j.notes) + "\n") })' >>"$summary"
 	echo "version=$version" >>"$output"
 	;;
 
