@@ -163,7 +163,6 @@ async function gearzSection(dir: string) {
 			remote: 'upstream',
 			name: 'Makerkit',
 			since,
-			authors: ['bot@makerkit.dev'],
 		},
 		tags: {
 			ignore: [
@@ -181,7 +180,12 @@ type Report = {
 		units: string[];
 		excluded: string[];
 		inheritedTags: string[];
-		upstream: {remote: string | null; name: string | null};
+		upstream: {
+			remote: string | null;
+			name: string | null;
+			since: string | null;
+			authors: Array<{email: string; name: string; commits: number}>;
+		};
 	} | null;
 	answers: unknown;
 	why: Record<string, string>;
@@ -302,10 +306,35 @@ test('--json without --yes reports and exits 2; with --yes it reports written st
 	expect(report.found?.upstream).toMatchObject({
 		remote: 'upstream',
 		name: 'Makerkit',
+		authors: [],
 	});
 	expect(report.squashMerge).toBeNull();
 	expect(await fetchesMemory(dir)).toBe(true);
 	expect(await readHookState(dir)).toBe('missing');
+});
+
+test("a template's authors are in --json's found.upstream, the section, the summary and --explain", async () => {
+	const dir = await made(
+		gearzLayout({template: true, prunedBranch: 'untagged'}),
+	);
+	const json = await chamoji(['setup', '--json'], dir);
+	expect(json.code).toBe(2);
+	const report = JSON.parse(json.stdout) as Report;
+	expect(report.found?.upstream.authors).toEqual([
+		{email: 'bot@makerkit.dev', name: 'Makerkit Bot', commits: 32},
+	]);
+	expect(report.answers).toMatchObject({
+		upstream: {authors: ['bot@makerkit.dev']},
+	});
+
+	const {code, stdout} = await chamoji(['setup', '--yes', '--explain'], dir);
+	expect(code).toBe(0);
+	expect(stdout).toContain(
+		"and commits by bot@makerkit.dev count as Makerkit's.",
+	);
+	expect(stdout.split('\n')).toContain(
+		'release.upstream.authors = ["bot@makerkit.dev"] (detected in the repo)',
+	);
 });
 
 test("--explain names each value's source", async () => {
@@ -326,7 +355,6 @@ test("--explain names each value's source", async () => {
 		'release.zeroMajor = "minor" (recommended for apps)',
 		'release.upstream.name = "Makerkit" (recommended for apps)',
 		'release.upstream.remote = "upstream" (detected in the repo)',
-		'release.upstream.authors = ["bot@makerkit.dev"] (detected in the repo)',
 	]) {
 		expect(lines).toContain(line);
 	}

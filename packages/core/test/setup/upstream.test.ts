@@ -1,4 +1,6 @@
 import {execFile} from 'node:child_process';
+import {writeFile} from 'node:fs/promises';
+import path from 'node:path';
 import {promisify} from 'node:util';
 import {afterEach, expect, test} from 'vitest';
 import {
@@ -18,7 +20,12 @@ import {
 	gitOutput,
 	type FixtureRepo,
 } from '../helpers/fixture-repo.js';
-import {gearzLayout, PRUNED_SUBJECTS} from '../helpers/setup-fixtures.js';
+import {
+	CONTRIBUTOR_SUBJECTS,
+	forkWorkflow,
+	gearzLayout,
+	PRUNED_SUBJECTS,
+} from '../helpers/setup-fixtures.js';
 import {valid} from '../helpers/setup-detection.js';
 
 const execFileAsync = promisify(execFile);
@@ -70,7 +77,9 @@ test('a fork with an upstream remote: since is the first own commit, 30 upstream
 		upstreamCommits: 30,
 		syncs: 0,
 		squashedSyncs: [],
-		authors: [{email: 'bot@makerkit.dev', name: 'Makerkit Bot', commits: 30}],
+		// The remote and the inherited tags reach every template commit, so
+		// no author needs naming: this is also how a fork-workflow clone looks.
+		authors: [],
 	});
 });
 
@@ -81,9 +90,7 @@ test('a real merge from upstream counts as one sync', async () => {
 	expect(found.upstreamCommits).toBe(33);
 	expect(found.syncs).toBe(1);
 	expect(found.squashedSyncs).toEqual([]);
-	expect(found.authors).toEqual([
-		{email: 'bot@makerkit.dev', name: 'Makerkit Bot', commits: 33},
-	]);
+	expect(found.authors).toEqual([]);
 });
 
 test("the base name comes from the remote URL's owner, title-cased", async () => {
@@ -224,5 +231,60 @@ for (const kind of ['tagged', 'untagged'] as const) {
 			expect(web?.notes).not.toContain(subject);
 			expect(changelog).not.toContain(subject);
 		}
+	});
+}
+
+for (const teamAfterLastTag of [true, false]) {
+	const kind = teamAfterLastTag
+		? 'the team committed after the last tag'
+		: "the contributor's commits are the only ones after the last tag";
+	test(`a fork-workflow clone (${kind}) names no template authors and hides no own commit`, async () => {
+		repo = await forkWorkflow({teamAfterLastTag});
+		const detection = await detect(repo.dir);
+		expect(detection.upstream.authors).toEqual([]);
+		// The canonical-repo guard fires only when the team's own recent
+		// commits reach a release.
+		expect(detection.tags.canonical).toBe(teamAfterLastTag);
+		const answers = recommend(detection);
+		expect(answers.upstream).toBeDefined();
+		expect(answers.upstream).not.toHaveProperty('authors');
+		const config = {
+			...(await loadConfig(repo.dir)),
+			release: valid(releaseSection(answers)),
+		};
+		const dir = repo.dir;
+		const expectOwn = async (subjects: string[]) => {
+			const plan = await planUnitReleases({cwd: dir, config, today: TODAY});
+			expect(plan.status).toBe('ready');
+			const web =
+				plan.status === 'ready'
+					? plan.units.find(unit => unit.unit === 'web')
+					: undefined;
+			const changelog = JSON.stringify(
+				await unitChangelog({cwd: dir, config, unit: 'web'}),
+			);
+			for (const subject of subjects) {
+				expect(web?.notes).toContain(subject);
+				expect(changelog).toContain(subject.replace(/^✨ /, ''));
+			}
+		};
+
+		await expectOwn(CONTRIBUTOR_SUBJECTS);
+		// The same section in a checkout with no remote, as CI on the
+		// canonical repo is, where Alice keeps shipping.
+		await git(dir, ['remote', 'remove', 'upstream']);
+		await writeFile(path.join(dir, 'apps/web/checkout.ts'), 'checkout\n');
+		await git(dir, ['add', '--', 'apps/web/checkout.ts']);
+		await git(dir, [
+			'-c',
+			'user.name=Alice',
+			'-c',
+			'user.email=alice@team.example',
+			'commit',
+			'-q',
+			'-m',
+			'✨ Ship the checkout',
+		]);
+		await expectOwn([...CONTRIBUTOR_SUBJECTS, '✨ Ship the checkout']);
 	});
 }

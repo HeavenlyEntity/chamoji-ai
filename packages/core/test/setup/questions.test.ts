@@ -20,6 +20,40 @@ test("summary reads like the spec's example", async () => {
 	);
 });
 
+test("the summary's template clause names the template's authors", async () => {
+	const detection = await detected(
+		gearzLayout({template: true, prunedBranch: 'untagged'}),
+	);
+	const answers = recommend(detection);
+	expect(summary(detection, answers)).toContain(
+		"3 tags look like they came from Makerkit and will be ignored, and commits by bot@makerkit.dev count as Makerkit's.",
+	);
+	// Two are both named, the most prolific first; more are counted.
+	const two = applyAnswer(detection, answers, 'upstream.authors', [
+		'ci@makerkit.dev',
+		'bot@makerkit.dev',
+	]);
+	expect(summary(detection, two)).toContain(
+		"and commits by bot@makerkit.dev and ci@makerkit.dev count as Makerkit's.",
+	);
+	const three = applyAnswer(detection, answers, 'upstream.authors', [
+		'ci@makerkit.dev',
+		'bot@makerkit.dev',
+		'a@makerkit.dev',
+	]);
+	expect(summary(detection, three)).toContain(
+		"and commits by bot@makerkit.dev and 2 others count as Makerkit's.",
+	);
+	// With no tag ignored, the authors get a sentence of their own.
+	expect(summary(detection, {...answers, ignore: []})).toContain(
+		" Commits by bot@makerkit.dev count as Makerkit's. Shared changes",
+	);
+	// No authors, no clause.
+	const none = applyAnswer(detection, answers, 'upstream.authors', []);
+	expect(summary(detection, none)).not.toContain('Commits by');
+	expect(summary(detection, none)).not.toContain('commits by');
+});
+
 test('summary ends with a tag that disagrees with its manifest, then squashed syncs', async () => {
 	const syncs: RepoStep[] = [1, 2].map(n => ({
 		commit: `Merge upstream Makerkit changes (${n})`,
@@ -184,7 +218,9 @@ test('version files are ticked as detected', async () => {
 });
 
 test("the template's authors are a detected question under Change something", async () => {
-	const detection = await detected(gearzLayout({template: true}));
+	const detection = await detected(
+		gearzLayout({template: true, prunedBranch: 'untagged'}),
+	);
 	const answers = recommend(detection);
 	expect(answers.upstream?.authors).toEqual(['bot@makerkit.dev']);
 	expect(answers.why['upstream.authors']).toBe('detected');
@@ -195,7 +231,7 @@ test("the template's authors are a detected question under Change something", as
 		id: 'upstream.authors',
 		title: "Whose commits are always Makerkit's?",
 		found:
-			'bot@makerkit.dev wrote 30 commits here, and none of your recent ones',
+			'bot@makerkit.dev wrote 32 commits here, and none of your recent ones',
 		kind: 'ticks',
 		options: [
 			{

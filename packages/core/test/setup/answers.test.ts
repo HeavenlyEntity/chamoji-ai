@@ -43,7 +43,6 @@ test("gearz: the recommended section is the spec's example", async () => {
 			remote: 'upstream',
 			name: 'Makerkit',
 			since,
-			authors: ['bot@makerkit.dev'],
 		},
 		tags: {
 			ignore: [
