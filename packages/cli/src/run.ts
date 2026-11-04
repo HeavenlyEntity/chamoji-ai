@@ -1,10 +1,11 @@
 import {execFile} from 'node:child_process';
 import {existsSync} from 'node:fs';
-import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
+import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {
 	applyRelease,
+	applyUnitReleases,
 	buildChangelog,
 	CARD_ENDPOINT,
 	cardUrl,
@@ -20,20 +21,30 @@ import {
 	openJudgmentCache,
 	readStagedChanges,
 	planRelease,
+	planUnitReleases,
 	pushRelease,
+	pushUnitReleases,
 	quietGitEnv,
+	readWorkspace,
 	ReleaseError,
 	render,
 	repoStats,
+	resolveUnits,
 	runGit,
 	shouldPrompt,
 	shouldStamp,
 	stampWorkstream,
 	syncMemory,
+	unitChangelog,
+	unitTagHistory,
+	type ChamojiConfig,
 	type CommitClassifier,
 	type ComposeConfig,
 	type OutputFormat,
 	type ReadyPlan,
+	type ReadyUnitPlan,
+	type UnitPending,
+	type UnitPlan,
 } from '@chamoji/core';
 import {TypeSafeClient} from '@typesafe-ai/sdk';
 import meow from 'meow';
@@ -237,6 +248,11 @@ const HELP = `
 	  --trailer  release: add "Key: value" to the release commit (repeatable)
 	  --any-branch
 	             release: allow a branch other than origin's default
+	  --unit     release and next-version: only this release unit (repeatable;
+	             release 2.0.0 needs exactly one); changelog: this unit's
+	             releases
+	  --for-tag  changelog: only the release with this tag, from the unit
+	             whose tag format it fits
 	  --json     release: print the result as JSON; card: print the numbers;
 	             ws list: print the workstreams as an array;
 	             why: print the blame result; memory list and show: print
@@ -274,6 +290,8 @@ const HELP = `
 	  $ chamoji changelog --format html --output changelog.html
 	  $ chamoji release --dry-run
 	  $ chamoji release 2.0.0-rc.1 --push
+	  $ chamoji release 2.0.0 --unit mobile --dry-run
+	  $ chamoji changelog --for-tag web/v1.4.0
 `;
 
 export const NO_RELEASE_NEEDED = 3;
@@ -306,6 +324,8 @@ function parse(argv: string[]) {
 			push: {type: 'boolean'},
 			trailer: {type: 'string', isMultiple: true},
 			anyBranch: {type: 'boolean'},
+			unit: {type: 'string', isMultiple: true, default: []},
+			forTag: {type: 'string'},
 			json: {type: 'boolean'},
 			none: {type: 'boolean'},
 			purge: {type: 'boolean'},
@@ -398,9 +418,15 @@ export async function run(argv: string[], given: Io): Promise<number> {
 						);
 					}
 
+					const config = await loadConfig(io.cwd, flags.config);
+					if (releasesUnits(config)) {
+						return await changelogUnits(config, format, classify);
+					}
+
+					refuseUnitFlags();
 					const changelog = await buildChangelog({
 						cwd: io.cwd,
-						config: await loadConfig(io.cwd, flags.config),
+						config,
 						to: flags.to,
 						from: flags.from,
 						release: flags.release,
@@ -421,6 +447,12 @@ export async function run(argv: string[], given: Io): Promise<number> {
 
 				case 'next-version': {
 					const config = await loadConfig(io.cwd, flags.config);
+					if (releasesUnits(config)) {
+						return await nextVersions(config, classify);
+					}
+
+					refuseUnitFlags();
+					await monorepoHint(config);
 					// Only --ai has a face here, and Jev's progress shows on this step.
 					const next = await runStep(
 						face,
@@ -457,6 +489,13 @@ export async function run(argv: string[], given: Io): Promise<number> {
 				}
 
 				case 'release': {
+					const config = await loadConfig(io.cwd, flags.config);
+					if (releasesUnits(config)) {
+						return await releaseUnits(config, cli.input[1], classify);
+					}
+
+					refuseUnitFlags();
+					await monorepoHint(config);
 					return await release(cli.input[1], classify);
 				}
 
@@ -1028,6 +1067,412 @@ export async function run(argv: string[], given: Io): Promise<number> {
 	}
 
 	/**
+	 * `release` in a repo with release units: one release commit, a tag per
+	 * unit, and a GitHub release per tag (or one for all of them) on --push.
+	 */
+	async function releaseUnits(
+		config: ChamojiConfig,
+		version: string | undefined,
+		classify: CommitClassifier | undefined,
+	): Promise<number> {
+		const only = flags.unit;
+		if (version !== undefined && only.length !== 1) {
+			throw new Error(
+				'give --unit with a version, for example: chamoji release 2.0.0 --unit mobile',
+			);
+		}
+
+		// As in release(): under a face the tag fetch must not ask for a password.
+		const env = face === NO_FACE ? undefined : await quietGitEnv(io.cwd);
+		const plan = await runStep(
+			face,
+			'Planning the release',
+			async step => {
+				jevHost = step;
+				try {
+					return await planUnitReleases({
+						cwd: io.cwd,
+						config,
+						...(only.length > 0 ? {units: only} : {}),
+						...(version === undefined ? {} : {versions: {[only[0]!]: version}}),
+						anyBranch: flags.anyBranch,
+						fetch: io.fetchTags ?? true,
+						allowDirty: flags.dryRun,
+						today: io.today,
+						classify,
+						onStep() {
+							step.update('Fetching tags from origin');
+						},
+						async onCredentials() {
+							jevHost = undefined;
+							step.end('warn', 'git needs your credentials');
+							await face.release();
+						},
+						...(env ? {env} : {}),
+					});
+				} finally {
+					jevHost = undefined;
+				}
+			},
+			result =>
+				planned(
+					result.status === 'nothing'
+						? undefined
+						: `Ready to release ${tagList(result)}`,
+				),
+		);
+		const print = (lines: string[], json: Record<string, unknown>) => {
+			io.stdout(
+				flags.json
+					? `${JSON.stringify(json, null, 2)}\n`
+					: `${lines.join('\n')}\n`,
+			);
+		};
+
+		const waiting = plan.pending.map(line => pendingLine(line));
+		if (plan.status === 'nothing') {
+			print(
+				[
+					'Nothing to release: no unit has a commit of its own that implies a version bump.',
+					...waiting,
+				],
+				{status: 'nothing', pending: plan.pending},
+			);
+			return NO_RELEASE_NEEDED;
+		}
+
+		const tags = plan.units.map(unit => unit.tag);
+		const files = plan.changes.map(change => change.file);
+		const units = plan.units.map(unit => unitLine(unit));
+		const notices = [
+			...plan.warnings.map(warning => `warning: ${warning}`),
+			...plan.units.flatMap(unit =>
+				unit.disagreed.map(
+					file =>
+						`note: ${file} had a version other than ${unit.from ?? 'none'} (${unit.lastTag}); it now says ${unit.version}`,
+				),
+			),
+			...(plan.excludedNote ? plan.excludedNote.split('\n') : []),
+		];
+		const notes = plan.units.flatMap(unit => [
+			'',
+			`## ${unit.tag}`,
+			'',
+			unit.notes,
+		]);
+		const unitFacts = {
+			units: plan.units,
+			files,
+			warnings: plan.warnings,
+			pending: plan.pending,
+		};
+		if (flags.dryRun) {
+			print(
+				[
+					'Would release:',
+					...units,
+					`files: ${files.join(', ')}`,
+					...notices,
+					...waiting,
+					...notes,
+				],
+				{status: 'dry-run', ...unitFacts},
+			);
+			return 0;
+		}
+
+		const {commit} = await applyUnitReleases(plan, {trailers: flags.trailer});
+		const listed = tagList(plan);
+		let pushed = `no; to ship: git push origin HEAD ${tags.join(' ')}`;
+		let pushError: string | undefined;
+		let githubRelease = false;
+		let memory: string | undefined;
+		if (flags.push) {
+			try {
+				unsettle(
+					await gitStep(
+						face,
+						plan.root,
+						`Pushing HEAD and ${listed}`,
+						async env => settle(pushUnitReleases(plan, env)),
+						result =>
+							result.ok
+								? {outcome: 'ok', text: `Pushed HEAD and ${listed}`}
+								: {
+										outcome: 'warn',
+										text: `The push failed; ${listed} ${tags.length === 1 ? 'is' : 'are'} kept here`,
+									},
+					),
+				);
+				pushed = `yes (HEAD and ${listed})`;
+				memory = await syncAfterRelease();
+				const notesFile = path.join(
+					(await runGit(['rev-parse', '--absolute-git-dir'], plan.root)).trim(),
+					'chamoji-release-notes.md',
+				);
+				const failed: string[] = [];
+				const releases = githubReleases(plan, config);
+				for (const item of releases) {
+					const named = releases.length === 1 ? '' : ` for ${item.tag}`;
+					const result = unsettle(
+						await runStep(
+							face,
+							`Creating the GitHub release${named}`,
+							async () =>
+								settle(
+									(async () => {
+										await writeFile(notesFile, `${item.notes}\n`);
+										return (io.gh ?? runGh)([
+											'release',
+											'create',
+											item.tag,
+											'--title',
+											item.title,
+											'--notes-file',
+											notesFile,
+											...(item.prerelease ? ['--prerelease'] : []),
+										]);
+									})(),
+								),
+							created =>
+								created.ok && created.value.ok
+									? {outcome: 'ok', text: `Created the GitHub release${named}`}
+									: {
+											outcome: 'warn',
+											text: `GitHub release${named} not created`,
+										},
+						),
+					);
+					if (!result.ok) {
+						failed.push(
+							`GitHub release not created${named}: ${stripControlLines(result.message)}`,
+						);
+					}
+				}
+
+				githubRelease = failed.length === 0;
+				pushed += githubRelease
+					? `; GitHub release${releases.length === 1 ? '' : 's'} created`
+					: `; ${failed.join('; ')}`;
+			} catch (error) {
+				pushError = stripControlLines((error as Error).message);
+				pushed = `failed: ${pushError}`;
+			}
+		}
+
+		print(
+			[
+				`Released ${listed}.`,
+				...units,
+				`files: ${files.join(', ')}`,
+				`commit: ${commit} ${plan.subject}`,
+				`tags: ${listed} (annotated)`,
+				`pushed: ${pushed}`,
+				...(memory === undefined ? [] : [`memory: ${memory}`]),
+				...notices,
+				...waiting,
+				...(pushed.startsWith('yes')
+					? []
+					: [
+							`undo before pushing: git tag -d ${tags.join(' ')} && git reset --hard ${plan.start.slice(0, 7)}`,
+						]),
+				...notes,
+			],
+			{
+				status: 'released',
+				...unitFacts,
+				commit,
+				pushed: pushed.startsWith('yes'),
+				githubRelease,
+				...(pushError ? {error: pushError} : {}),
+				...(memory === undefined ? {} : {memory}),
+			},
+		);
+		return pushError ? 1 : 0;
+	}
+
+	/** `next-version` in a repo with release units: one line per unit. */
+	async function nextVersions(
+		config: ChamojiConfig,
+		classify: CommitClassifier | undefined,
+	): Promise<number> {
+		// Like next-version without units, this reads; it checks no branch or tree.
+		const plan = await runStep(
+			face,
+			'Working out the next versions',
+			async step => {
+				jevHost = step;
+				try {
+					return await planUnitReleases({
+						cwd: io.cwd,
+						config,
+						...(flags.unit.length > 0 ? {units: flags.unit} : {}),
+						anyBranch: true,
+						allowDirty: true,
+						fetch: false,
+						today: io.today,
+						classify,
+					});
+				} finally {
+					jevHost = undefined;
+				}
+			},
+			result =>
+				planned(
+					result.status === 'nothing'
+						? undefined
+						: `Next: ${result.units.map(unit => `${unit.unit} ${unit.version}`).join(', ')}`,
+				),
+		);
+		const releasing = plan.status === 'ready' ? plan.units : [];
+		const names =
+			flags.unit.length > 0
+				? flags.unit
+				: config.release!.units.map(unit => unit.name);
+		const units = names.map(name => {
+			const found = releasing.find(unit => unit.unit === name);
+			if (found) {
+				const {unit, version, own, shared} = found;
+				return {unit, version, own, shared};
+			}
+
+			const waiting = plan.pending.find(item => item.unit === name);
+			return {
+				unit: name,
+				version: null,
+				own: waiting?.own ?? 0,
+				shared: waiting?.shared ?? 0,
+			};
+		});
+		io.stdout(
+			flags.json
+				? `${JSON.stringify({units}, null, 2)}\n`
+				: `${units
+						.map(unit =>
+							unit.version === null
+								? unit.shared > 0
+									? pendingLine(unit)
+									: `${unit.unit}: nothing to release`
+								: `${unit.unit}: ${unit.version}`,
+						)
+						.join('\n')}\n`,
+		);
+		return units.some(unit => unit.version !== null) ? 0 : NO_RELEASE_NEEDED;
+	}
+
+	/** `changelog --unit` and `--for-tag`, in a repo with release units. */
+	async function changelogUnits(
+		config: ChamojiConfig,
+		format: OutputFormat,
+		classify: CommitClassifier | undefined,
+	): Promise<number> {
+		const {forTag} = flags;
+		if (flags.unit.length === 0 && forTag === undefined) {
+			throw new Error(
+				`this repo releases units (${config.release!.units.map(unit => unit.name).join(', ')}); pass --unit <name> or --for-tag <tag>`,
+			);
+		}
+
+		if (flags.unit.length > 0 && forTag !== undefined) {
+			throw new Error('pass --unit or --for-tag, not both');
+		}
+
+		if (flags.unit.length > 1) {
+			throw new Error('changelog takes one --unit');
+		}
+
+		if (
+			flags.from !== undefined ||
+			flags.release !== undefined ||
+			flags.since !== undefined ||
+			flags.to !== 'HEAD'
+		) {
+			throw new Error(
+				"--from, --to, --release and --since don't work with --unit or --for-tag",
+			);
+		}
+
+		const unit = forTag === undefined ? flags.unit[0]! : await ownerOf(forTag);
+		const changelog = await unitChangelog({
+			cwd: io.cwd,
+			config,
+			unit,
+			...(classify ? {classify} : {}),
+		});
+		let {releases} = changelog;
+		if (forTag !== undefined) {
+			releases = releases.filter(release => release.tag === forTag);
+			if (releases.length === 0) {
+				throw new Error(
+					`${forTag} isn't one of ${unit}'s releases on this branch`,
+				);
+			}
+		}
+
+		const output = render({...changelog, releases}, format);
+		if (flags.output) {
+			await writeFile(path.resolve(io.cwd, flags.output), output);
+			io.stderr(`Wrote ${flags.output}\n`);
+		} else {
+			io.stdout(output);
+		}
+
+		return 0;
+
+		/** The unit whose tag format the tag fits, as its tag history reads it. */
+		async function ownerOf(tag: string): Promise<string> {
+			const settings = config.release!;
+			const root = (
+				await runGit(['rev-parse', '--show-toplevel'], io.cwd)
+			).trim();
+			const owner = resolveUnits(settings, await readWorkspace(root)).find(
+				item =>
+					unitTagHistory([{name: tag, date: ''}], item, settings).length > 0,
+			);
+			if (!owner) throw new Error(`no unit's tag format matches ${tag}`);
+			return owner.name;
+		}
+	}
+
+	/** The unit flags only mean something with release units. */
+	function refuseUnitFlags(): void {
+		if (flags.unit.length > 0 || flags.forTag !== undefined) {
+			throw new Error(
+				'--unit and --for-tag need release units; add them under release.units in chamoji.config.json',
+			);
+		}
+	}
+
+	/**
+	 * Says once per clone, on stderr, that setup can version each app, in a
+	 * repo with no release section and two or more packages under apps/. Never
+	 * under --json or in CI, and never in the way of the command.
+	 */
+	async function monorepoHint(config: ChamojiConfig): Promise<void> {
+		if (config.release !== undefined || flags.json) return;
+		if ((io.env ?? process.env)['CI']) return;
+		try {
+			const gitDir = (
+				await runGit(['rev-parse', '--absolute-git-dir'], io.cwd)
+			).trim();
+			const marker = path.join(gitDir, 'chamoji', 'monorepo-hint');
+			if (existsSync(marker)) return;
+			const root = (
+				await runGit(['rev-parse', '--show-toplevel'], io.cwd)
+			).trim();
+			const apps = (await readWorkspace(root)).filter(pkg =>
+				/^apps\/[^/]+$/.test(pkg.path),
+			);
+			if (apps.length < 2) return;
+			await mkdir(path.dirname(marker), {recursive: true});
+			await writeFile(marker, '');
+			io.stderr(`${MONOREPO_HINT}\n`);
+		} catch {
+			// A hint is never worth failing a release over.
+		}
+	}
+
+	/**
 	 * Syncs only a clone that opted in with `chamoji init`, and otherwise says
 	 * how to, if there's anything to share. The release is out by now, so a
 	 * problem here is only ever reported.
@@ -1117,6 +1562,56 @@ function facts(plan: ReadyPlan, files: string[]) {
 		files,
 		warnings: plan.warnings,
 	};
+}
+
+const MONOREPO_HINT =
+	'chamoji: this looks like a monorepo with several apps; chamoji setup can version each one (coming in 0.14), or add a release section by hand: see the readme';
+
+/** Whether `release`, `next-version` and `changelog` work per unit: a release section whose shape isn't single. */
+function releasesUnits(config: ChamojiConfig): boolean {
+	return config.release !== undefined && config.release.shape !== 'single';
+}
+
+/** `web  0.1.0 → 0.2.0  minor  3 own, 1 shared` */
+function unitLine(unit: UnitPlan): string {
+	return `${unit.unit}  ${unit.from ?? 'none'} → ${unit.version}  ${unit.bump}  ${unit.own} own, ${unit.shared} shared`;
+}
+
+/** What a unit that isn't releasing has waiting. */
+function pendingLine({unit, own, shared}: UnitPending): string {
+	const changes =
+		shared === 1 ? '1 shared change rides' : `${shared} shared changes ride`;
+	return `${unit}: ${own === 0 ? 'no changes of its own' : 'nothing of its own that needs a release'}; ${changes} along with its next release`;
+}
+
+function tagList(plan: ReadyUnitPlan): string {
+	return plan.units.map(unit => unit.tag).join(', ');
+}
+
+/** One GitHub release per unit tag, or one for the whole release commit under `combined`. */
+function githubReleases(
+	plan: ReadyUnitPlan,
+	config: ChamojiConfig,
+): Array<{tag: string; title: string; notes: string; prerelease: boolean}> {
+	if (config.release?.githubReleases === 'combined') {
+		return [
+			{
+				tag: plan.units[0]!.tag,
+				title: tagList(plan),
+				notes: plan.units
+					.map(unit => `## ${unit.tag}\n\n${unit.notes}`)
+					.join('\n\n'),
+				prerelease: plan.units.some(unit => unit.bump === 'prerelease'),
+			},
+		];
+	}
+
+	return plan.units.map(unit => ({
+		tag: unit.tag,
+		title: unit.tag,
+		notes: unit.notes,
+		prerelease: unit.bump === 'prerelease',
+	}));
 }
 
 /** `owner/name` from an origin on github.com, or undefined for anywhere else. */
