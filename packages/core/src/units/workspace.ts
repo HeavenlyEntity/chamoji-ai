@@ -1,6 +1,8 @@
+import {existsSync} from 'node:fs';
 import {readdir, readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {parse} from 'yaml';
+import {runGit} from '../git.js';
 import type {ReleaseSettings, UnitSettings} from './settings.js';
 
 export type WorkspacePackage = {
@@ -129,6 +131,21 @@ function coversPath(glob: string, file: string): boolean {
 	return false;
 }
 
+/** Folders pnpm never looks inside below a glob's fixed prefix. */
+const IGNORED_SEGMENTS = new Set([
+	'node_modules',
+	'bower_components',
+	'test',
+	'tests',
+]);
+
+/** Does `parts` pass through an ignored folder below the glob's fixed prefix? */
+function ignoredBy(glob: string[], parts: string[]): boolean {
+	let fixed = 0;
+	while (fixed < glob.length && !glob[fixed]!.includes('*')) fixed++;
+	return parts.slice(fixed).some(part => IGNORED_SEGMENTS.has(part));
+}
+
 /** Could a folder at `parts` hold, or sit above, something `glob` matches? */
 function canReach(glob: string[], parts: string[]): boolean {
 	if (parts.length === 0 || glob.length === 0) return parts.length === 0;
@@ -207,6 +224,32 @@ function readPackage(folder: string, manifest: Obj): WorkspacePackage | null {
 }
 
 /**
+ * Folders holding a package.json. In a git repo they come from git's file
+ * list, so ignored build output never counts; otherwise the folders are walked.
+ */
+async function candidateFolders(
+	root: string,
+	globs: string[][],
+): Promise<string[]> {
+	if (existsSync(path.join(root, '.git'))) {
+		const listed = await runGit(
+			['ls-files', '-z', '--cached', '--others', '--exclude-standard'],
+			root,
+		);
+		const folders = new Set<string>();
+		for (const file of listed.split('\0')) {
+			if (file.endsWith('/package.json')) {
+				folders.add(file.slice(0, -'/package.json'.length));
+			}
+		}
+
+		return [...folders];
+	}
+
+	return findManifests(root, globs);
+}
+
+/**
  * The workspace packages of the repo at `root`, from pnpm-workspace.yaml or
  * package.json `workspaces`. `!` globs exclude; `node_modules` never matches.
  */
@@ -218,13 +261,16 @@ export async function readWorkspace(root: string): Promise<WorkspacePackage[]> {
 		.map(glob => glob.slice(1));
 	if (include.length === 0) return [];
 
-	const folders = (
-		await findManifests(
-			root,
-			include.map(glob => segmentsOf(clean(glob))),
+	const globSegments = include.map(glob => segmentsOf(clean(glob)));
+	const candidates = await candidateFolders(root, globSegments);
+	const folders = candidates
+		.filter(folder =>
+			globSegments.some(
+				glob =>
+					matchSegments(glob, segmentsOf(folder)) &&
+					!ignoredBy(glob, segmentsOf(folder)),
+			),
 		)
-	)
-		.filter(folder => include.some(glob => matchesGlob(glob, folder)))
 		.filter(folder => !negated.some(glob => matchesGlob(glob, folder)))
 		.sort();
 

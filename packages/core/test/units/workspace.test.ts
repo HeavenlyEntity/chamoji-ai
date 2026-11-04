@@ -1,6 +1,7 @@
 import {mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
+import {execFileSync} from 'node:child_process';
 import {afterEach, expect, test} from 'vitest';
 import {
 	ownerOf,
@@ -77,6 +78,33 @@ test('folders outside every glob prefix are never read', async () => {
 	});
 	const found = await readWorkspace(root);
 	expect(found.map(item => item.path)).toEqual(['apps/web']);
+});
+
+test('git-ignored build output is not a package', async () => {
+	const root = await repo({
+		'pnpm-workspace.yaml': 'packages:\n  - packages/**\n',
+		'.gitignore': 'dist/\n',
+		'packages/ui/package.json': pkg('@k/ui'),
+		'packages/ui/dist/package.json': pkg('@k/ui-dist'),
+	});
+	execFileSync('git', ['init', '-q'], {cwd: root});
+	const found = await readWorkspace(root);
+	expect(found.map(item => item.name)).toEqual(['@k/ui']);
+});
+
+test('test folders under a ** glob are skipped, in git and plain folders', async () => {
+	const files = {
+		'pnpm-workspace.yaml': 'packages:\n  - packages/**\n',
+		'packages/x/package.json': pkg('x'),
+		'packages/x/test/fixtures/bad/package.json': '{nope',
+	};
+	const plain = await repo(files);
+	expect((await readWorkspace(plain)).map(item => item.name)).toEqual(['x']);
+	await rm(plain, {recursive: true, force: true});
+
+	const root = await repo(files);
+	execFileSync('git', ['init', '-q'], {cwd: root});
+	expect((await readWorkspace(root)).map(item => item.name)).toEqual(['x']);
 });
 
 test('reads npm workspaces as an object', async () => {
