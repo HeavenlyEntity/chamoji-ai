@@ -158,6 +158,55 @@ comment)
 		# release. The CLI plans from the checkout, so it runs in a detached
 		# worktree at the PR's head (the default checkout may be the base, as under
 		# pull_request_target), and the lines are cut down to the PR's own commits.
+		# The PR's files are untrusted (under pull_request_target this job holds
+		# secrets and a write token), so the barrier is that no PR-controlled code
+		# runs: the CLI is resolved to absolute paths from the trusted workspace
+		# before the PR's worktree exists, and it can't go through a package manager
+		# or take option words, since those would read the PR's .npmrc, scripts,
+		# node_modules or --require/--import files. The environment allowlist below
+		# is defense in depth, not the barrier.
+		unit_cli_help='unset cli or point it at a built CLI (for example node packages/cli/dist/cli.js)'
+		trusted=()
+		if [ -n "${CHAMOJI_CLI:-}" ]; then
+			case "${cli[0]##*/}" in
+				npx | npm | pnpm | pnpx | yarn | bunx | bun)
+					fail "unit-mode PR previews can't run the cli through a package manager, which would read the PR's files; $unit_cli_help"
+					;;
+			esac
+			resolved=$(command -v -- "${cli[0]}") || fail "unit-mode PR previews need the cli's command to exist: ${cli[0]}"
+			case "$resolved" in /*) ;; *) fail "unit-mode PR previews need an absolute command, but ${cli[0]} resolves to $resolved" ;; esac
+			trusted=("$resolved")
+			for word in "${cli[@]:1}"; do
+				case "$word" in
+					-*) fail "unit-mode PR previews can't take the option $word in cli, which could load files from the PR; $unit_cli_help" ;;
+					/*) [ -f "$word" ] || fail "unit-mode PR previews need $word to be a file"; trusted+=("$word") ;;
+					*) [ -f "$PWD/$word" ] || fail "unit-mode PR previews need $word to be a file in the workspace, not in the PR; $unit_cli_help"; trusted+=("$PWD/$word") ;;
+				esac
+			done
+		else
+			prefix_dir="$work/chamoji-cli"
+			npm install --prefix "$prefix_dir" --no-save --ignore-scripts --no-audit --no-fund "@chamoji/cli@${CHAMOJI_VERSION:-latest}" >&2 || fail "couldn't install @chamoji/cli@${CHAMOJI_VERSION:-latest} to preview the PR"
+			trusted=("$prefix_dir/node_modules/.bin/chamoji")
+		fi
+
+		# Calls in the worktree get a short allowlist instead of the job's
+		# environment, and a PATH without relative or empty entries. Neither
+		# next-version (fetch is off) nor changelog --unit touches the network.
+		env_bin=$(command -v env)
+		case "$env_bin" in /*) ;; *) fail "couldn't find an absolute env command" ;; esac
+		safe_path=
+		IFS=: read -r -a path_words <<<"${PATH:-}"
+		for word in ${path_words[@]+"${path_words[@]}"}; do
+			case "$word" in /*) safe_path=${safe_path:+$safe_path:}$word ;; esac
+		done
+		allowed=("PATH=$safe_path" GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0)
+		for name in HOME LANG LC_ALL TMPDIR TZ CI; do
+			if [ -n "${!name+x}" ]; then allowed+=("$name=${!name}"); fi
+		done
+		in_worktree() {
+			(cd "$wt" && "$env_bin" -i "${allowed[@]}" "${trusted[@]}" "$@" --no-update-check)
+		}
+
 		wt="$work/chamoji-head"
 		cleanup_worktree() {
 			git worktree remove --force "$wt" >/dev/null 2>&1 || true
@@ -165,41 +214,9 @@ comment)
 		}
 		trap cleanup_worktree EXIT
 		cleanup_worktree
-		git worktree add --detach --quiet "$wt" "$head" || fail "couldn't check out $head to preview the PR"
-
-		# The worktree holds the PR's files, which under pull_request_target are
-		# untrusted while this job has secrets and a write token. So the CLI that
-		# runs there is resolved first, from the trusted workspace, to absolute
-		# paths (a relative cli input would also not exist in the worktree); the
-		# default npx path is installed once outside the worktree, without lifecycle
-		# scripts and with an empty npm user config, so no .npmrc from the PR
-		# applies. Every call in the worktree then runs without secrets and never
-		# with --ai.
-		empty_npmrc="$work/chamoji-empty.npmrc"
-		: >"$empty_npmrc"
-		trusted=()
-		if [ -n "${CHAMOJI_CLI:-}" ]; then
-			for word in "${cli[@]}"; do
-				case "$word" in
-					/* | -*) trusted+=("$word") ;;
-					*/*) if [ -e "$PWD/$word" ]; then trusted+=("$PWD/$word"); else trusted+=("$word"); fi ;;
-					*) trusted+=("$word") ;;
-				esac
-			done
-		else
-			prefix_dir="$work/chamoji-cli"
-			NPM_CONFIG_USERCONFIG=$empty_npmrc npm install --prefix "$prefix_dir" --no-save --ignore-scripts --no-audit --no-fund "@chamoji/cli@${CHAMOJI_VERSION:-latest}" >&2 || fail "couldn't install @chamoji/cli@${CHAMOJI_VERSION:-latest} to preview the PR"
-			trusted=("$prefix_dir/node_modules/.bin/chamoji")
-		fi
-		scrub=()
-		while IFS= read -r name; do
-			case "$name" in
-				INPUT_* | *TOKEN* | *SECRET* | *KEY*) scrub+=(-u "$name") ;;
-			esac
-		done < <(compgen -e)
-		in_worktree() {
-			(cd "$wt" && NPM_CONFIG_USERCONFIG=$empty_npmrc env ${scrub[@]+"${scrub[@]}"} "${trusted[@]}" "$@" --no-update-check)
-		}
+		# The PR's .gitattributes must not run a smudge filter (git-lfs would read
+		# the PR's .lfsconfig).
+		GIT_LFS_SKIP_SMUDGE=1 git -c filter.lfs.smudge= -c filter.lfs.process= -c filter.lfs.required=false worktree add --detach --quiet "$wt" "$head" || fail "couldn't check out $head to preview the PR"
 
 		# next-version exits 3 when no unit releases, still printing every unit.
 		set +e

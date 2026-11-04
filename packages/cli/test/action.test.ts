@@ -1,4 +1,5 @@
 import {execFile} from 'node:child_process';
+import {randomUUID} from 'node:crypto';
 import {existsSync} from 'node:fs';
 import {chmod, mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -25,7 +26,7 @@ const cli = `${process.execPath} ${path.join(root, 'packages/cli/dist/cli.js')}`
 // refuses for repos with release settings.
 const FAKE_CLI = `#!/usr/bin/env bash
 if [ "$1" = --version ]; then echo "\${FAKE_CLI_VERSION:-0.13.0}"; exit 0; fi
-case "$(pwd)" in *chamoji-head) { pwd; env; } >> "$FAKE_GH_DIR/worktree-env" ;; esac
+case "$(pwd)" in *chamoji-head) { pwd; env; } >> "$(dirname "$0")/worktree-env" ;; esac
 exec "${process.execPath}" "${path.join(root, 'packages/cli/dist/cli.js')}" "$@"
 `;
 
@@ -103,6 +104,12 @@ async function setup(steps: RepoStep[]) {
 	await chmod(path.join(fake, 'gh'), 0o755);
 	await writeFile(path.join(fake, 'chamoji-cli'), FAKE_CLI);
 	await chmod(path.join(fake, 'chamoji-cli'), 0o755);
+	// A package runner that would answer --version; the unit preview refuses it.
+	await writeFile(
+		path.join(fake, 'npx'),
+		'#!/usr/bin/env bash\necho "${FAKE_CLI_VERSION:-0.13.0}"\n',
+	);
+	await chmod(path.join(fake, 'npx'), 0o755);
 	await writeFile(path.join(fake, 'curl'), FAKE_CURL);
 	await chmod(path.join(fake, 'curl'), 0o755);
 	await writeFile(path.join(fake, 'card.png'), PNG);
@@ -870,45 +877,141 @@ exec "${realGit}" "$@"
 		expect(await fresh.read('calls')).toContain('release create v1.1.0');
 		expect(await fresh.read('notes')).toContain('Add search');
 	});
-	test('the unit preview runs the trusted CLI, without secrets, whatever the PR plants', async () => {
-		const {action, unitCli, read, rev, dir, fake} = await setup([
-			...unitStart,
+	// pull_request_target: the workspace is the base commit, with a trusted CLI
+	// wrapper; the PR head carries a different file at the same path plus an
+	// .npmrc. Returns the paths the assertions need.
+	async function targetRepo(where: string) {
+		const plantedMarker = path.join(
+			tmpdir(),
+			`chamoji-planted-${randomUUID()}`,
+		);
+		const real = path.join(root, 'packages/cli/dist/cli.js');
+		const trusted = `const {spawnSync} = require('node:child_process');
+const fs = require('node:fs');
+const path = require('node:path');
+fs.writeFileSync(path.join(__dirname, 'trusted-ran'), 'x');
+if (process.argv.includes('--version')) { console.log('0.13.0'); process.exit(0); }
+process.exit(spawnSync(process.execPath, [${JSON.stringify(real)}, ...process.argv.slice(2)], {stdio: 'inherit'}).status ?? 1);
+`;
+		const planted = `require('node:fs').writeFileSync(${JSON.stringify(plantedMarker)}, 'x');\n`;
+		const repo = await setup([
+			{
+				commit: '🎉 Start the gearz monorepo',
+				files: {...unitFiles, [where]: trusted},
+			},
+			{tag: 'web/v0.1.0', annotated: true},
+			{tag: 'mobile/v1.0.0', annotated: true},
 			{
 				commit: '🐛 Fix the camera crash',
 				files: {
 					'apps/mobile/src/camera.ts': 'camera\n',
+					[where]: planted,
 					'.npmrc': 'registry=http://127.0.0.1:1/\nscript-shell=/bin/false\n',
-					'packages/cli/dist/cli.js':
-						"require('node:fs').writeFileSync(process.env.FAKE_GH_DIR + '/planted', 'x');\n",
 				},
 			},
 		]);
-		// A relative cli that exists in the trusted workspace only, not in the PR.
-		await mkdir(path.join(dir, 'tools'));
-		await writeFile(
-			path.join(dir, 'tools', 'chamoji.sh'),
-			await readFile(unitCli, 'utf8'),
-		);
-		const result = await action({
-			CHAMOJI_CLI: 'bash tools/chamoji.sh',
-			GITHUB_EVENT_NAME: 'pull_request',
+		const head = await repo.rev('HEAD');
+		const base = await repo.rev('HEAD~1');
+		await repo.git('checkout', '--quiet', '--detach', base);
+		const event = {
+			GITHUB_EVENT_NAME: 'pull_request_target',
 			CHAMOJI_PR: '7',
-			CHAMOJI_BASE_SHA: await rev('HEAD~1'),
-			CHAMOJI_HEAD_SHA: await rev('HEAD'),
+			CHAMOJI_BASE_SHA: base,
+			CHAMOJI_HEAD_SHA: head,
+		};
+		return {
+			...repo,
+			event,
+			plantedMarker,
+			trustedMarker: path.join(repo.dir, path.dirname(where), 'trusted-ran'),
+		};
+	}
+
+	test.each([
+		['node packages/cli/dist/cli.js', 'packages/cli/dist/cli.js'],
+		['node cli.js', 'cli.js'],
+	])(
+		'the unit preview runs the workspace’s CLI, not the PR’s: %s',
+		async (command, where) => {
+			const {action, read, event, plantedMarker, trustedMarker} =
+				await targetRepo(where);
+			const result = await action({CHAMOJI_CLI: command, ...event});
+			expect(result.code).toBe(0);
+			expect(await read('body')).toContain('- mobile → 1.0.1');
+			expect(existsSync(trustedMarker)).toBe(true);
+			expect(existsSync(plantedMarker)).toBe(false);
+			await rm(plantedMarker, {force: true});
+		},
+	);
+
+	test('a cli file that only the PR has fails closed', async () => {
+		const {action, read, event, plantedMarker, dir} =
+			await targetRepo('cli.js');
+		await rm(path.join(dir, 'cli.js'));
+		const result = await action({CHAMOJI_CLI: 'node cli.js', ...event});
+		expect(result.code).not.toBe(0);
+		expect(await read('body')).toBe('');
+		expect(existsSync(plantedMarker)).toBe(false);
+	});
+
+	test('an option word in cli fails closed', async () => {
+		const {action, read, event, plantedMarker} = await targetRepo('cli.js');
+		const result = await action({
+			CHAMOJI_CLI: 'node --no-warnings cli.js',
+			...event,
+		});
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain('the option --no-warnings');
+		expect(await read('body')).toBe('');
+		expect(existsSync(plantedMarker)).toBe(false);
+	});
+
+	test('a package manager cli fails closed in the unit preview', async () => {
+		const {action, read, event} = await targetRepo('cli.js');
+		const result = await action({CHAMOJI_CLI: 'npx chamoji', ...event});
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain(
+			"chamoji: unit-mode PR previews can't run the cli through a package manager, which would read the PR's files; unset cli or point it at a built CLI (for example node packages/cli/dist/cli.js)",
+		);
+		expect(await read('body')).toBe('');
+	});
+
+	test('the CLI in the worktree sees only allowlisted environment', async () => {
+		const {action, unitCli, read, event} = await targetRepo('cli.js');
+		const result = await action({
+			CHAMOJI_CLI: unitCli,
 			GH_TOKEN: 'ghs_leak',
 			TYPESAFE_API_KEY: 'tsk_leak',
 			INPUT_SOMETHING: 'input_leak',
 			MY_SECRET_VALUE: 'secret_leak',
+			DB_PASSWORD: 'password_leak',
 			CHAMOJI_AI: 'true',
+			...event,
 		});
 		expect(result.code).toBe(0);
-		expect(await read('body')).toContain('- mobile → 1.0.1');
-		expect(existsSync(path.join(fake, 'planted'))).toBe(false);
-		const seen = await read('worktree-env');
-		expect(seen).toContain('chamoji-head');
-		for (const leak of ['ghs_leak', 'tsk_leak', 'input_leak', 'secret_leak']) {
-			expect(seen).not.toContain(leak);
-		}
+		const lines = (await read('worktree-env')).split('\n').filter(Boolean);
+		expect(lines.some(line => line.endsWith('chamoji-head'))).toBe(true);
+		const allowed = new Set([
+			'PATH',
+			'HOME',
+			'LANG',
+			'LC_ALL',
+			'TMPDIR',
+			'TZ',
+			'CI',
+			'GIT_CONFIG_NOSYSTEM',
+			'GIT_TERMINAL_PROMPT',
+			// Set by bash itself.
+			'PWD',
+			'OLDPWD',
+			'SHLVL',
+			'_',
+		]);
+		const names = lines
+			.filter(line => /^[A-Za-z_][A-Za-z0-9_]*=/.test(line))
+			.map(line => line.split('=')[0]!);
+		expect(names.filter(name => !allowed.has(name))).toEqual([]);
+		expect(lines.join('\n')).not.toContain('_leak');
 	});
 
 	test('the unit PR comment fails loudly when the base is missing', async () => {
