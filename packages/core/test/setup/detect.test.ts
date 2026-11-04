@@ -60,7 +60,7 @@ test('a single package or no workspace is single', async () => {
 	try {
 		const none = await detectLayout(empty.dir);
 		expect(none.kind).toBe('single');
-		expect(none.rootOnly).toEqual({count: 0, examples: []});
+		expect(none.rootOnly).toEqual({count: 0, examples: [], since: null});
 	} finally {
 		await empty.cleanup();
 	}
@@ -80,6 +80,22 @@ test('root-only commits are counted with up to three example files', async () =>
 	expect(found.rootOnly).toEqual({
 		count: 2,
 		examples: ['.github/workflows/ci.yml', 'pnpm-lock.yaml'],
+		since: null,
+	});
+});
+
+test('root-only commits after a tag are counted since that tag', async () => {
+	repo = await gearzLayout({
+		extraSteps: [
+			{tag: 'web/v0.1.0'},
+			{commit: '🔧 Pin the lockfile', files: {'pnpm-lock.yaml': 'v: 2\n'}},
+		],
+	});
+	const found = await detectLayout(repo.dir);
+	expect(found.rootOnly).toEqual({
+		count: 1,
+		examples: ['pnpm-lock.yaml'],
+		since: 'web/v0.1.0',
 	});
 });
 

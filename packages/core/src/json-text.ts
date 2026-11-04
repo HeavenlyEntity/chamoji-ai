@@ -64,7 +64,7 @@ function spellings(original: string): unknown {
 			: value;
 	try {
 		return JSON.parse(
-			original.replace(/^﻿/, ''),
+			original.replace(/^\uFEFF/, ''),
 			reviver as Parameters<typeof JSON.parse>[1],
 		);
 	} catch {
@@ -132,5 +132,5 @@ export function renderJson(data: Obj, original: string): string {
 	let text = stringify(data, spellings(original), indent, 0) ?? '';
 	if (original === '' || /\n\s*$/.test(original)) text += '\n';
 	if (original.includes('\r\n')) text = text.replace(/\n/g, '\r\n');
-	return original.startsWith('﻿') ? `﻿${text}` : text;
+	return original.startsWith('\uFEFF') ? `\uFEFF${text}` : text;
 }
