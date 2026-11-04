@@ -1,5 +1,21 @@
 # Changelog
 
+## [v0.12.1](https://github.com/HeavenlyEntity/chamoji-ai/compare/v0.12.0...v0.12.1) - 2026-11-04
+
+### Fixed
+
+- 🐛 Refuse release settings this version can't follow ([797da7f](https://github.com/HeavenlyEntity/chamoji-ai/commit/797da7fbc87affbda5b7ada8fc3dd2c0e9b60501))
+- 🐛 Fix the terminal face's Ctrl-Z, late OSC reply and missing blank line ([e3176ed](https://github.com/HeavenlyEntity/chamoji-ai/commit/e3176ed361361b1d22c4b8d9ca85e10af3f3aa07))
+
+### Documentation
+
+- 📝 Show chamoji's own card and tick off the roadmap leftovers ([372b221](https://github.com/HeavenlyEntity/chamoji-ai/commit/372b221f6db8347e3935a98ca02505c9e141c60d))
+- 📝 Add monorepo releases and npm publishing to the roadmap ([171f368](https://github.com/HeavenlyEntity/chamoji-ai/commit/171f36893346d90ffff4e348033a08f673ed990f))
+
+### Maintenance
+
+- 💚 Give the purge-sync test more time on Windows ([dfe8302](https://github.com/HeavenlyEntity/chamoji-ai/commit/dfe8302c854011d8a93c5c287d69782e791ee087))
+
 ## [v0.12.0](https://github.com/HeavenlyEntity/chamoji-ai/compare/v0.11.0...v0.12.0) - 2026-11-04
 
 ### Highlights

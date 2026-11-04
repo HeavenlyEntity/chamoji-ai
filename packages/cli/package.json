@@ -1,6 +1,6 @@
 {
 	"name": "@chamoji/cli",
-	"version": "0.12.0",
+	"version": "0.12.1",
 	"description": "Changelogs, workstreams and project memory, all kept in your git history.",
 	"license": "MIT",
 	"author": "AMWARE Technologies LLC",
