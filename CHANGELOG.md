@@ -1,5 +1,43 @@
 # Changelog
 
+## [v0.12.0](https://github.com/HeavenlyEntity/chamoji-ai/compare/v0.11.0...v0.12.0) - 2026-11-04
+
+### Highlights
+
+- 😎 **Terminal face**
+  - ✨ Add the animated welcome and regroup the help ([96eb05b](https://github.com/HeavenlyEntity/chamoji-ai/commit/96eb05bb6d980a8fd49c449f7fc6d7093b857750))
+  - ✨ Show faces in the commands that wait ([f74ba63](https://github.com/HeavenlyEntity/chamoji-ai/commit/f74ba632851281a9f336369b2175161bfef918e3))
+  - ✨ Add the face settings, gitStep and Jev's progress ([e803a46](https://github.com/HeavenlyEntity/chamoji-ai/commit/e803a46847754c739551106da1ad30d2732ac8b3))
+  - ✨ Report sync steps and keep network git quiet ([8982f3b](https://github.com/HeavenlyEntity/chamoji-ai/commit/8982f3b6abfb723dad6c59c92aee3567ed66476f))
+  - ✨ Add the face helper ([cffe1e4](https://github.com/HeavenlyEntity/chamoji-ai/commit/cffe1e443ac5a400931f07b8e6db1461608a569d))
+  - ✨ Add the wordmark frames and their generator ([3f1b962](https://github.com/HeavenlyEntity/chamoji-ai/commit/3f1b962c82816812beb7b110835573871dce08c1))
+  - ✨ Add the one-line faces and the ASCII fallback ([28e8c67](https://github.com/HeavenlyEntity/chamoji-ai/commit/28e8c67b1323176d4f8123954e4bf1417436a12e))
+  - ✨ Add the foil colour and theme detection ([cc348bc](https://github.com/HeavenlyEntity/chamoji-ai/commit/cc348bc98f354480678ebae67f18c760235d6bc1))
+  - 🔧 Start the terminal face workstream ([4c62794](https://github.com/HeavenlyEntity/chamoji-ai/commit/4c62794fbdb85c179544cc037cba39a24e884cb5))
+  - 🐛 Treat every ssh "Permission denied (" as a credentials failure ([1a4756d](https://github.com/HeavenlyEntity/chamoji-ai/commit/1a4756db60fbfceadf57e039aa77ee62466a16fa))
+  - 🐛 End a planning step warn when Jev left commits unsorted ([d995a2e](https://github.com/HeavenlyEntity/chamoji-ai/commit/d995a2e015739393988626acd1a5510dfefd616f))
+  - 🐛 Ask the terminal for its theme only from the foreground, and only once a face draws ([ff03fc9](https://github.com/HeavenlyEntity/chamoji-ai/commit/ff03fc9e1ab351176c94e00fbc89342da86fda12))
+  - 🐛 Retry a quiet tag fetch, count a failed Jev and let Ctrl-C through ([4aea810](https://github.com/HeavenlyEntity/chamoji-ai/commit/4aea81074440d3171e0dd6c05149b38cf1ce670b))
+  - 🐛 Leave ssh alone when GIT_SSH is set ([13bcb22](https://github.com/HeavenlyEntity/chamoji-ai/commit/13bcb2220e20ef92f3810f5227dd53edee1ea75c))
+  - 🐛 Keep partial text when the face first draws ([4f99012](https://github.com/HeavenlyEntity/chamoji-ai/commit/4f99012f3da967534aa17a874ba777808b19c01e))
+  - 🐛 Keep swallowing a late terminal reply ([32d4b72](https://github.com/HeavenlyEntity/chamoji-ai/commit/32d4b72e4e6d6f8f8b221ccd515122f1563f4e9c))
+  - 📝 Correct the terminal section of the brand guide ([9247330](https://github.com/HeavenlyEntity/chamoji-ai/commit/92473309449b0f6244a9ec366c20ac35d26326b9))
+  - 📝 Record the first real terminal check ([00efe43](https://github.com/HeavenlyEntity/chamoji-ai/commit/00efe43b3e72c520d6bf213e158b7aa78fbfd386))
+  - 📝 Record the terminal face: brand, roadmap, readme and results ([66ce0fc](https://github.com/HeavenlyEntity/chamoji-ai/commit/66ce0fcef866d4bc2c873bab0094f3de118a22d1))
+  - 💚 Make the face and release tests pass on Windows ([c912e46](https://github.com/HeavenlyEntity/chamoji-ai/commit/c912e4660e92a6ed0faa7e704af84c6901f0de50))
+
+### Changed
+
+- 🔧 Ship the terminal face workstream and use its tagline ([902ed98](https://github.com/HeavenlyEntity/chamoji-ai/commit/902ed98269c423a4d9bbcda3df015eef0a529b08))
+
+### Documentation
+
+- 📝 Plan the terminal face build ([74bcde2](https://github.com/HeavenlyEntity/chamoji-ai/commit/74bcde2f6b0768d30c1edfd04d13583ee477d470))
+- 📝 Give the terminal face a wink and sunglasses ([50b5b9d](https://github.com/HeavenlyEntity/chamoji-ai/commit/50b5b9d17ac7a9c79c61b5eeedb6accefe3f01bf))
+- 📝 Draw the terminal wordmark from Marow Block ([5955a2e](https://github.com/HeavenlyEntity/chamoji-ai/commit/5955a2e10badb57fcbc763b4428646d8b27d19c9))
+- 📝 Settle the terminal background check for the foil ([21b068a](https://github.com/HeavenlyEntity/chamoji-ai/commit/21b068a02c092136d22c52bec340dd6f129937e9))
+- 📝 Design the terminal face, animated logo and help screen ([0acc5b0](https://github.com/HeavenlyEntity/chamoji-ai/commit/0acc5b077d841035497289026cc1ae4ee3905a8c))
+
 ## [v0.11.0](https://github.com/HeavenlyEntity/chamoji-ai/compare/v0.10.1...v0.11.0) - 2026-11-03
 
 ### Highlights
