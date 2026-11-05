@@ -70,6 +70,7 @@ Stage your changes and run `chamoji commit`. With `-a` it also takes every chang
 4. **A body,** for more detail. Optional.
 5. **Why?** Your answer is kept as a `Why:` line.
 6. **Whether it breaks anything.** The default is No.
+7. **Whether to release units now,** only in a repo with release units, when the change has no unit of its own but rides along to some. It asks, for example, “Release mobile, web now? (y/N)”, and Yes adds a `Release:` line for each.
 
 Enter moves on, Esc goes back and Ctrl-C cancels without committing. The subject builds up under the header as you answer:
 
@@ -110,7 +111,7 @@ The title was typed as “move between months…”. The composer capitalizes it
 - `capitalizeTitle: false` keeps the title as you typed it.
 - `autoAdd: true` stages every change first.
 
-With no settings, it writes the emoji character and asks for a scope. In a repo with release units, the composer also says which units the change releases, and can add `Release:` lines for you. The [commit](/commands/commit) page shows it.
+With no settings, it writes the emoji character and asks for a scope. In a repo with release units, a line under the header also says which units the change releases with, and which it only rides along to. The [commit](/commands/commit) page shows both.
 
 ## The hook {{ tag: 'SETUP', variant: 'setup', label: 'chamoji hook install', icon: 'terminal' }}
 
@@ -156,9 +157,9 @@ git commit -m "🐛 Return null for an empty date" \
 
 ## Breaking changes {{ icon: 'flag' }}
 
-The composer’s last question is whether the change breaks anything. Yes asks what breaks, and adds a `BREAKING CHANGE:` line with your answer, or with the title when you leave it empty. Writing by hand, use a `BREAKING CHANGE:` line, the 💥 gitmoji, or a `!` after the type, as in `feat!:`.
+The composer’s breaking question asks whether the change breaks anything. Yes asks what breaks, and adds a `BREAKING CHANGE:` line with your answer, or with the title when you leave it empty. Writing by hand, use a `BREAKING CHANGE:` line, the 💥 gitmoji, or a `!` after the type, as in `feat!:`.
 
-A breaking change is listed under Breaking changes and gives a major bump. Only you declare one: no suggestion and no `--ai` run ever marks a commit as breaking.
+A breaking change is listed under Breaking changes and gives a major bump. In a monorepo, a unit at 0.x with `"zeroMajor": "minor"` gets a minor bump instead. Only you declare one: no suggestion and no `--ai` run ever marks a commit as breaking.
 
 ## Suggestions from Jev {{ icon: 'sparkle' }}
 
@@ -169,12 +170,12 @@ git config --global chamoji.composer true   # or without --global, for one repos
 git config --global chamoji.sendDiffs true  # optional: send the diff too
 ```
 
-It needs a key: `TYPESAFE_API_KEY` in the environment, or that one line in an untracked `.env.local` or `.env` at the root of the repo. A `.env` that git tracks is skipped. Because both the opt-in and the key stay out of the repository’s files, a repository you clone can’t switch this on for you.
+It needs a key: `TYPESAFE_API_KEY` in the environment, or a `TYPESAFE_API_KEY=…` line in an untracked `.env.local` or `.env` at the root of the repo. A file that git tracks is skipped, and the opt-in lives in git config, so a repository you clone can’t switch this on for you.
 
 What Jev can suggest:
 
 - **The gitmoji.** Its three likeliest gitmojis show as a hint above the list. When it’s very sure, 90% or more, they move to the top of the list instead, and the first is selected.
-- **Breaking.** When Jev thinks the change may break something, 70% or more, the last question says so. The default is still No.
+- **Breaking.** When Jev thinks the change may break something, 70% or more, the breaking question says so. The default is still No.
 - **Split.** When the staged changes look like unrelated pieces of work, 70% or more, the title question suggests committing them separately.
 
 Its limits:

@@ -8,18 +8,22 @@ export const metadata = {
 
 <p className="lead">
 	By default chamoji treats a repo as one package. When the apps or packages in
-	a monorepo ship on their own, a `release` section in `chamoji.config.json`
-	gives each one, a unit, its own version, tag, changelog and GitHub release.
-	This guide shows how the pieces fit, with real runs in two small monorepos.
+	a monorepo ship on their own, add a `release` section to
+	`chamoji.config.json`. Each app or package then becomes a unit, with its own
+	version, tag, changelog and GitHub release. This guide shows how the pieces
+	fit, with real runs in three small repos.
 </p>
 
 <Tag variant="mono">MONOREPOS</Tag>
 <Tag variant="setup">SINCE 0.13.0</Tag>
 
 <Note>
-	Pin the CLI to 0.13.0 or newer before you add a `release` section. 0.12.1
-	refuses it, and 0.12.0 ignores it and cuts one release for the whole repo.
+	chamoji reads `chamoji.config.json` in the current folder, not at the repo
+	root, so run chamoji from the root. From `apps/web`, `next-version` gives a
+	single-package answer.
 </Note>
+
+A `release` section needs chamoji 0.13.0 or newer. See [Older versions of the CLI](#older-versions-of-the-cli).
 
 ## One package, or many {{ icon: 'package' }}
 
@@ -32,7 +36,16 @@ chamoji: this looks like a monorepo with several apps; run chamoji setup to vers
 
 It never shows under `--json` or in CI.
 
-With a `release` section, each unit releases on its own. A unit with no changes of its own isn’t released, apart from two cases: the other units in its `fixed` group, and, under `release-dependents`, the units that depend on a package that released.
+With a `release` section, each unit releases on its own. A unit releases when:
+
+- it has an own commit that implies a version bump;
+- you name it with `--unit`, or give it a version;
+- a commit since its last tag has a `Release:` line that names it;
+- under `release-dependents`, it has a shared commit that implies a bump;
+- another unit in its `fixed` group releases;
+- under `release-dependents`, a unit it depends on releases.
+
+Otherwise it isn’t released, and its waiting changes go in its next release. `--unit` limits every case but a `fixed` group.
 
 `chamoji setup` writes the section for you, as [Set up a repo](/set-up-a-repo) shows. This guide explains what it writes, for reading it or writing it by hand. [Config](/reference/config#the-release-section) lists every key.
 
@@ -40,26 +53,30 @@ With a `release` section, each unit releases on its own. A unit with no changes 
 
 The first example is a shop with two apps, `apps/web` and `apps/mobile`, an end-to-end test app in `apps/e2e`, and a shared package in `packages/ui`. The mobile app is an Expo app with an `app.config.ts`. This is what `chamoji setup releases --yes` wrote:
 
-```json {{ title: 'chamoji.config.json' }}
+```txt {{ title: 'chamoji.config.json' }}
 {
-	"release": {
-		"schema": 1,
-		"shape": "apps",
-		"units": {
-			"mobile": {
-				"path": "apps/mobile",
-				"tag": "mobile/v{version}",
-				"versionFiles": ["apps/mobile/app.config.ts"]
-			},
-			"web": {
-				"path": "apps/web",
-				"tag": "web/v{version}"
-			}
-		},
-		"exclude": ["apps/e2e"],
-		"sharedChanges": "ride-along",
-		"rootFiles": "none"
-	}
+  "release": {
+    "schema": 1,
+    "shape": "apps",
+    "units": {
+      "mobile": {
+        "path": "apps/mobile",
+        "tag": "mobile/v{version}",
+        "versionFiles": [
+          "apps/mobile/app.config.ts"
+        ]
+      },
+      "web": {
+        "path": "apps/web",
+        "tag": "web/v{version}"
+      }
+    },
+    "exclude": [
+      "apps/e2e"
+    ],
+    "sharedChanges": "ride-along",
+    "rootFiles": "none"
+  }
 }
 ```
 
@@ -286,7 +303,7 @@ mobile: left out by --unit (3 changes of its own, 1 shared waiting)
 
 ## Shared changes ride along {{ icon: 'git-merge' }}
 
-For `apps`, a shared commit never releases an app on its own. An app releases when it has a commit of its own, and its notes then carry every shared commit since its last release.
+For `apps`, a shared commit never releases an app on its own, without a `Release:` line or `--unit`. An app releases when it has an own commit that implies a version bump, and its notes then carry every shared commit since its last release.
 
 After both apps released, the shop got one more commit, a fix in `packages/ui`. On its own, it releases nothing:
 
@@ -319,7 +336,16 @@ web: no changes of its own; 1 shared change rides along with its next release
 - 🔒️ Fix the session refresh (ba4115d) (via `packages/ui`)
 ```
 
-`Release: web, mobile` names several units, and `Release: all` names every unit. `chamoji release --unit mobile` does the same from the command line. Web still has the fix waiting. Its next own commit releases both:
+`Release: web, mobile` names several units, and `Release: all` names every unit. `chamoji release --unit mobile` does the same from the command line.
+
+Web still has the fix waiting. A docs commit to web doesn’t release it, because a docs change implies no version bump:
+
+```txt {{ title: 'chamoji release --dry-run' }}
+Nothing to release: no unit has a commit of its own that implies a version bump.
+web: no release needed (1 change of its own doesn't need one); 1 shared change rides along with its next release
+```
+
+It exits 3. A feature in web instead releases both:
 
 ```txt {{ title: 'chamoji release --dry-run --unit web' }}
 Would release:
