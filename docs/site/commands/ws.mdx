@@ -94,9 +94,9 @@ None of it touches the network or commits for you. The file is committed and sha
 
 <Properties>
 	<Property name="--json" type="boolean · list">
-		Print the workstreams as a JSON array: `slug`, `title`, `status`, `emoji`,
-		`active` and `commits` for each. Only for the list; the other subcommands
-		ignore it.
+		Print the workstreams as a JSON array. Each has `slug`, `title`, `status`,
+		`active` and `commits`, plus `emoji`, `description` and `links` when the
+		file sets them. Only for the list; the other subcommands ignore it.
 	</Property>
 	<Property name="--none" type="boolean · switch">
 		With `ws switch`: clear the active workstream. Not with a slug; both exit 2.

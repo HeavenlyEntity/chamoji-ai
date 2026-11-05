@@ -67,8 +67,8 @@ export const metadata = {
 	</Property>
 	<Property name="--to <ref>" type="string · default HEAD">
 		Treat this ref as the head of history. Commits and tags after it are left
-		out. Combines with `--from`, `--release` and `--since`. Not with `--unit` or
-		`--for-tag`.
+		out. Combines with `--from`, `--release` and `--since`. With `--unit` or
+		`--for-tag`, any ref other than `HEAD` exits 1.
 	</Property>
 	<Property name="--release <version>" type="semver">
 		Name and date the Unreleased section with this version, as when you cut a
@@ -82,8 +82,10 @@ export const metadata = {
 		`--to`. Not with `--from`, `--release`, `--unit` or `--for-tag`.
 	</Property>
 	<Property name="--config <file>" type="string · default chamoji.config.json">
-		Read this config file instead. The default is `chamoji.config.json` when the
-		repo has one. A file that doesn’t exist exits 1.
+		Read this config file instead, from a path relative to the current folder.
+		Without it, chamoji reads `chamoji.config.json` in the current folder, not
+		at the repo root, so run chamoji from the root. A file that doesn’t exist
+		exits 1.
 	</Property>
 	<Property name="--ai" type="boolean">
 		Sort the commits no rule can place with Jev, TypeSafe’s classification
@@ -294,7 +296,7 @@ $ chamoji changelog --format yaml
 chamoji: Unknown format "yaml" (use markdown, json or html)
 ```
 
-```txt {{ title: '--unit' }}
+```txt {{ title: '--unit (shop)' }}
 $ chamoji changelog --unit web --since HEAD~2
 chamoji: --from, --to, --release and --since don't work with --unit or --for-tag
 ```
