@@ -47,7 +47,16 @@ When a newer version is out, chamoji says so once, after your command finishes. 
 chamoji 0.14.0 is available (you have 0.13.0): run npx @chamoji/cli@latest
 ```
 
-With a global install, it tells you to run `npm i -g @chamoji/cli@latest` instead.
+The last part depends on how you installed chamoji. It tells you to:
+
+| Installed with                      | The notice ends with                  |
+| ----------------------------------- | ------------------------------------- |
+| `npm i -g`                          | `npm i -g @chamoji/cli@latest`        |
+| `pnpm add -g`                       | `pnpm add -g @chamoji/cli@latest`     |
+| `yarn global add`                   | `yarn global add @chamoji/cli@latest` |
+| `npx`                               | `run npx @chamoji/cli@latest`         |
+| `pnpm dlx`, `yarn dlx`, `bunx`      | `run it with @chamoji/cli@latest`     |
+| a dependency in your `package.json` | `update @chamoji/cli in package.json` |
 
 - **What it sends:** at most one request a day, to `registry.npmjs.org`, asking for the latest `@chamoji/cli` version. Nothing about you or your repo is sent.
 - **It never slows a command down.** The check runs in the background, and its answer shows on a later run.

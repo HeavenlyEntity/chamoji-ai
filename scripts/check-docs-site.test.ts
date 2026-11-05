@@ -97,7 +97,7 @@ test('the names gearz or Makerkit anywhere', () => {
 		]),
 		'index.mdx': page(
 			'Introduction',
-			'Commits by giancarlo@makerkit.dev count as the template’s.',
+			'Commits by dev@makerkit.example count as the template’s.',
 		),
 	});
 	expect(checkDocsSite(dir)).toEqual([

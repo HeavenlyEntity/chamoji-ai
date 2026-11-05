@@ -88,8 +88,9 @@ chamoji release --push || [ $? -eq 3 ]
 		1 for anything else, such as a workstream that doesn’t exist.
 	</Property>
 	<Property name="why">
-		0 when it found the commit, and for a line you haven’t committed yet. 2
-		without exactly one `file:line`. 1 for a file or line that doesn’t exist.
+		0 when it found the commit, and for a line you haven’t committed yet. 2 with
+		no location, or more than one. 1 for a location that isn’t `file:line`, and
+		for a file or line that doesn’t exist.
 	</Property>
 	<Property name="memory">
 		0 when it worked. 2 when it was used wrongly, such as an unknown subcommand

@@ -11,6 +11,11 @@ export const metadata = {
 	this page is from a real run of chamoji 0.14.0 in a small repo called widgets.
 </p>
 
+<Note>
+	The first release needs a version from you, such as `chamoji release 0.1.0`.
+	With no release tags yet, chamoji won’t guess one.
+</Note>
+
 ## The repo
 
 Any git repo with a few commits will do. This one has five, in three styles of message chamoji understands:
@@ -57,11 +62,6 @@ Commits since the last release tag form the Unreleased section. There is no tag 
 To write it to a file, add `--output CHANGELOG.md`. You don't need to for a release: `chamoji release` writes the file itself.
 
 ## Your first release {{ tag: 'CHANGES YOUR REPO', variant: 'changes', label: 'chamoji release', icon: 'rocket-launch' }}
-
-<Note>
-	The first release needs a version from you, such as `chamoji release 0.1.0`.
-	With no release tags yet, chamoji won’t guess one.
-</Note>
 
 Preview it first. `--dry-run` changes nothing:
 
