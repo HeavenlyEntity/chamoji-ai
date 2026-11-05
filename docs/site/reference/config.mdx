@@ -1,0 +1,333 @@
+export const metadata = {
+	title: 'Config',
+	description:
+		'Every key in chamoji.config.json, including the release section, with its default.',
+};
+
+# Config
+
+<p className="lead">
+	chamoji reads `chamoji.config.json` at the root of the repo, when there is
+	one. Every key is optional: with no file, you get the default sections, links
+	from `origin`, and one version for the whole repo.
+</p>
+
+<Tag variant="setup">CONFIG</Tag>
+
+<Note>
+	You don’t have to write the `release` section by hand. `chamoji setup` writes
+	it from what it finds in the repo.
+</Note>
+
+## The file {{ icon: 'file-code' }}
+
+```json {{ title: 'chamoji.config.json' }}
+{
+	"repositoryUrl": "https://github.com/acme/widgets",
+	"groups": [
+		{"group": "added", "label": "Added", "emojis": ["sparkles", "tada"]},
+		{"group": "fixed", "label": "Fixed", "emojis": ["bug", "ambulance"]},
+		{
+			"group": "useless",
+			"label": "Useless",
+			"emojis": ["bookmark"],
+			"hidden": true
+		},
+		{"group": "misc", "label": "Miscellaneous", "emojis": []}
+	]
+}
+```
+
+`--config <file>` reads another file instead. A file that doesn’t parse, or a key with the wrong type, stops the command with a message that names the key.
+
+## Top-level keys {{ badge: '3', icon: 'brackets-curly' }}
+
+<Properties>
+	<Property name="repositoryUrl" type="string">
+		The repo’s URL, for commit, issue (`#12`) and compare links. Default: the
+		`origin` remote.
+	</Property>
+	<Property name="groups" type="list of groups">
+		The changelog’s sections, in order. It replaces the default sections; it
+		doesn’t add to them. Default: the sections below. A plain JSON array of
+		groups, the older format of this file, is also accepted.
+	</Property>
+	<Property name="release" type="object" since="0.13.0">
+		How releases are versioned and tagged. Default: one package, one `v*` tag
+		and one `CHANGELOG.md`. See [The release section](#the-release-section).
+	</Property>
+</Properties>
+
+## A group {{ badge: '5', icon: 'list-numbers' }}
+
+<Properties>
+	<Property name="group" type="string · required">
+		The section’s key, such as `added`. Commits that match no group go to `misc`
+		when that group exists.
+	</Property>
+	<Property name="label" type="string · required">
+		The heading in the changelog, such as `Added`.
+	</Property>
+	<Property name="emojis" type="list of strings · required">
+		Gitmoji codes, such as `sparkles` for ✨. Colons are dropped, so
+		`:sparkles:` works too. Conventional types and plain messages land here
+		through the gitmoji they map to.
+	</Property>
+	<Property name="hidden" type="boolean">
+		Match these commits, then leave them out of the output. Default: false.
+	</Property>
+	<Property name="collapse" type="boolean">
+		Render the group as one summary line, as the default Dependencies group
+		does. Default: false.
+	</Property>
+</Properties>
+
+### The default sections
+
+| `group`            | `label`          | Notes                                       |
+| ------------------ | ---------------- | ------------------------------------------- |
+| `added`            | Added            | ✨ 🎉 and other additions                   |
+| `changed`          | Changed          | ♻️ ⚡️ 🎨 ⏪ and other changes               |
+| `breaking_changes` | Breaking changes | 💥, and every commit marked breaking        |
+| `deprecated`       | Deprecated       | 🗑️                                          |
+| `removed`          | Removed          | 🔥 🔇 ⚰️                                    |
+| `fixed`            | Fixed            | 🐛 🚑️ 🩹                                    |
+| `security`         | Security         | 🔒️ 🔐 🛂                                    |
+| `documentation`    | Documentation    | 📝 ✏️                                       |
+| `maintenance`      | Maintenance      | 👷 💚 ✅ 🧪                                 |
+| `dependencies`     | Dependencies     | ⬆️ ⬇️ 📌 ➕ ➖, collapsed into one line     |
+| `useless`          | Useless          | 🔖 🔀, hidden                               |
+| `misc`             | Miscellaneous    | 💡 🚀 🚧 and anything no other group claims |
+
+Every official gitmoji is in exactly one of them.
+
+## The release section {{ tag: 'MONOREPOS', variant: 'mono', label: 'release', icon: 'tree-structure', badge: '12' }}
+
+Without a `release` section, the repo is one package: one version, one `v*` tag and one `CHANGELOG.md`. That is also right for a monorepo whose packages ship together. With one, every unit (an app or a package) gets its own version, tag, changelog and GitHub release.
+
+```json {{ title: 'An app monorepo' }}
+{
+	"release": {
+		"schema": 1,
+		"shape": "apps",
+		"units": {
+			"web": {"path": "apps/web", "tag": "web/v{version}"},
+			"mobile": {
+				"path": "apps/mobile",
+				"tag": "mobile/v{version}",
+				"versionFiles": ["apps/mobile/app.config.ts"]
+			}
+		},
+		"exclude": ["apps/e2e", "apps/dev-tool", "tooling/*"]
+	}
+}
+```
+
+```json {{ title: 'A library monorepo' }}
+{
+	"release": {
+		"schema": 1,
+		"shape": "libraries",
+		"units": {
+			"core": {"path": "packages/core"},
+			"cli": {"path": "packages/cli"},
+			"ui": {"path": "packages/ui"}
+		},
+		"fixed": [["core", "cli"]]
+	}
+}
+```
+
+<Note>
+	Pin the CLI to 0.13.0 or newer before you add a `release` section. 0.12.1
+	refuses it, and 0.12.0 ignores it and cuts one release for the whole repo.
+</Note>
+
+<Properties>
+	<Property name="schema" type="1 · required" since="0.13.0">
+		The section’s format. A higher number is from a newer chamoji, which stops
+		with “this repo’s release settings need chamoji 0.13.0 or newer” and exit
+		code 2.
+	</Property>
+	<Property
+		name="shape"
+		type="'single' | 'apps' | 'libraries' · required"
+		since="0.13.0"
+	>
+		`apps` versions each app, `libraries` each package. `single` is the default
+		behaviour, one release for the whole repo, and takes no other key.
+	</Property>
+	<Property name="units" type="object" since="0.13.0">
+		Each unit by name, with its settings (below). A name can’t be empty or
+		contain `/` or spaces. Default: none.
+	</Property>
+	<Property name="exclude" type="list of path globs" since="0.13.0">
+		Paths that belong to no unit. Commits that change only these are left out.
+		Default: none.
+	</Property>
+	<Property
+		name="sharedChanges"
+		type="'ride-along' | 'release-dependents'"
+		since="0.13.0"
+	>
+		What a commit to an internal package does. `ride-along` releases nothing on
+		its own, and goes in each unit’s next release, marked “via `packages/…`”.
+		`release-dependents` releases every unit that uses the package, by at least
+		a patch. Default: `ride-along` for apps, `release-dependents` for libraries.
+	</Property>
+	<Property name="rootFiles" type="'none' | 'all' | 'note'" since="0.13.0">
+		What a commit that changes only files outside every package, such as the
+		lockfile or CI, does. `none` leaves it out, `all` counts it for every unit,
+		and `note` adds a line such as “Tooling and CI: 12 changes” to each unit’s
+		notes. Default: `none`.
+	</Property>
+	<Property name="zeroMajor" type="'minor'" since="0.13.0">
+		Make a breaking change raise the minor version while a unit is at 0.x.
+		Default: unset, so a breaking change raises the major version.
+	</Property>
+	<Property name="fixed" type="list of lists of unit names" since="0.13.0">
+		Units that always share one version: the largest bump of any of them. When
+		one releases, they all do. A unit can be in one group only. Default: none.
+	</Property>
+	<Property name="upstream" type="object" since="0.13.0">
+		The history of a template you started from, so it stays out of your notes.
+		See [upstream](#upstream). Default: unset.
+	</Property>
+	<Property name="tags" type="object" since="0.13.0">
+		`ignore` and `aliases`, for tags that aren’t releases or don’t parse. See
+		[tags](#tags). Default: none of either.
+	</Property>
+	<Property name="rootChangelog" type="boolean" since="0.13.0">
+		Add a root `CHANGELOG.md` that lists every release, with links to the units’
+		changelogs. Default: false.
+	</Property>
+	<Property name="githubReleases" type="'per-unit' | 'combined'" since="0.13.0">
+		One GitHub release per unit, or one per release commit. Default: `per-unit`.
+	</Property>
+</Properties>
+
+Every key but `schema` and `shape` needs `apps` or `libraries`. With `single`, any other key stops the command.
+
+## A unit {{ badge: '8', icon: 'package' }}
+
+Each entry in `release.units`, such as `"web": {"path": "apps/web"}`.
+
+<Properties>
+	<Property name="path" type="string · required">
+		The unit’s folder, from the repo root, such as `apps/web`. Paths match on
+		whole folder names, so `apps/web` doesn’t match `apps/web-admin`.
+	</Property>
+	<Property name="tag" type="template">
+		The tag for a release. `{unit}` is the unit’s name in `units`, `{name}` its
+		package name and `{version}` the version, which the template must contain.
+		Default: `{unit}/v{version}` for apps and `{name}@{version}` for libraries.
+		Two units share a template without `{unit}` or `{name}` only in one `fixed`
+		group.
+	</Property>
+	<Property name="read" type="list of templates">
+		Older tag formats to read the unit’s past releases from, such as `web-v
+		{version}`. Default: none.
+	</Property>
+	<Property name="versioning" type="'semver' | 'calver'">
+		`calver` gives date versions: the year, the month and a count of the unit’s
+		releases that month, such as `2026.11.0`, with no zero padding. Default:
+		`semver`.
+	</Property>
+	<Property name="firstVersion" type="string">
+		The version of the unit’s first release, when it has no tag yet. Default:
+		the version in its manifest, or a date version for a `calver` unit.
+	</Property>
+	<Property name="versionFiles" type="list of paths">
+		Other files that carry the version, such as `apps/mobile/app.config.ts`, an
+		`Info.plist` or an `android/app/build.gradle`. The unit’s `package.json` is
+		always bumped. A path outside the repo, or a symlink, is refused, and a
+		listed file where chamoji can’t find the version stops the release before
+		anything changes. Default: none.
+	</Property>
+	<Property name="buildNumber" type="'untouched' | 'increment'">
+		`increment` raises `CFBundleVersion`, `versionCode` and Expo’s
+		`ios.buildNumber` and `android.versionCode` by one. It does nothing when the
+		app uses EAS remote versioning. Default: `untouched`.
+	</Property>
+	<Property name="changelog" type="path">
+		Where the unit’s changelog goes, from the repo root. Default: `CHANGELOG.md`
+		in the unit’s folder.
+	</Property>
+</Properties>
+
+## upstream {{ badge: '4', icon: 'git-merge' }}
+
+For a repo that began as a clone of a template you started from, and keeps pulling from it.
+
+```json {{ title: 'release.upstream' }}
+"upstream": {
+	"remote": "upstream",
+	"name": "Acme Starter",
+	"since": "<first commit that is yours>",
+	"authors": ["dev@acme-starter.example"]
+}
+```
+
+The template’s history is every commit that the remote’s fetched branches reach, that a version-like tag in `tags.ignore` reaches, or that one of `authors` wrote. Those commits are left out of every unit’s notes and never release anything. Each merge that brings them in becomes one line, such as “Updated the Acme Starter base to 4.0.2”.
+
+<Properties>
+	<Property name="name" type="string · required">
+		The template’s name, for the sync lines in your notes.
+	</Property>
+	<Property name="remote" type="string">
+		The template’s remote, which must be fetched. In CI, where the checkout has
+		only `origin`, add and fetch it before chamoji runs. Default: unset.
+	</Property>
+	<Property name="since" type="commit or ref">
+		Your first commit that isn’t the template’s. Default: unset.
+	</Property>
+	<Property name="authors" type="list of emails" since="0.14.0">
+		Commits on HEAD by these authors, compared ignoring case, are the
+		template’s. 0.13.0 accepts the key and ignores it. Default: none.
+	</Property>
+</Properties>
+
+## tags {{ badge: '2', icon: 'tag' }}
+
+```json {{ title: 'release.tags' }}
+"tags": {
+	"aliases": {"final-release": {"unit": "web", "version": "1.0.0"}},
+	"ignore": ["^\\d+\\.\\d+\\.\\d+$", "^wip/"]
+}
+```
+
+<Properties>
+	<Property name="ignore" type="list of regular expressions">
+		Tags that aren’t releases, such as ones that came with a template. These
+		are regular expressions, not globs: `^wip/` matches tags that start with
+		`wip/`. Default: none.
+	</Property>
+	<Property name="aliases" type="object">
+		A version for a tag that doesn’t parse but is a real release, as
+		`{unit, version}`. With one unit, the value can be the version
+		string alone. Default: none.
+	</Property>
+</Properties>
+
+chamoji never moves, deletes or renames a tag. Tags that match nothing stay in git, untouched.
+
+## Settings kept elsewhere {{ icon: 'gear' }}
+
+Two things aren’t in `chamoji.config.json`:
+
+- **The commit composer** reads gitmoji-cli’s settings, from `.gitmojirc.json` or the `gitmoji` key in `package.json`: `emojiFormat` (`emoji` or `code`; default `emoji`), and `scopePrompt`, `messagePrompt`, `capitalizeTitle` and `autoAdd` (default true, true, true and false).
+- **Suggestions from Jev** are opt-ins in git config, `chamoji.composer` and `chamoji.sendDiffs`, so a repo you clone can’t switch them on for you.
+
+## Related {{ anchor: false }}
+
+<Guides>
+	<Guide href="/set-up-a-repo" name="Set up a repo">
+		Let chamoji setup write the release section for you.
+	</Guide>
+	<Guide href="/guides/monorepos" name="Monorepos">
+		Which commits belong to which unit, and how shared changes ride along.
+	</Guide>
+	<Guide href="/reference/how-commits-are-read" name="How commits are read">
+		How a commit finds its section.
+	</Guide>
+</Guides>

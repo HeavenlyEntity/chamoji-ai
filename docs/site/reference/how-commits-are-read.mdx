@@ -1,0 +1,170 @@
+export const metadata = {
+	title: 'How commits are read',
+	description:
+		'How chamoji finds releases in your tags and sorts gitmoji, Conventional and plain commits into changelog sections.',
+};
+
+# How commits are read
+
+<p className="lead">
+	chamoji finds your releases in your tags, then sorts every commit since each
+	one into a section. It reads gitmoji, Conventional Commits and plain messages,
+	and a repo can mix all three.
+</p>
+
+## An example {{ icon: 'git-commit' }}
+
+This repo has fifteen commits in every style chamoji reads, with no tags:
+
+```txt {{ title: 'git log --format=%s' }}
+🐛 Fix focus in the dialog
+feat!: drop support for Node 20
+1.2.1
+Revert "✨ Add the date picker"
+ci: cache the pnpm store
+⬆️ Bump react to 19.3.1
+chore(deps): bump vite from 7.0.0 to 7.1.0
+Fix the typo in the footer
+[docs] Explain the config file
+Core: Fix the ready handler
+fix: handle an empty search box
+Add the export button
+:sparkles: Add dark mode
+feat(auth): add the login form
+✨ Add the date picker
+```
+
+The first one has a `BREAKING CHANGE:` footer. This is the changelog:
+
+```txt {{ title: 'chamoji changelog' }}
+# Changelog
+
+## Unreleased
+
+### Added
+
+- Add the export button (d9633fd)
+- ✨ Add dark mode (b589652)
+- ✨ **auth:** add the login form (f7d0594)
+- ✨ Add the date picker (05224d7)
+
+### Changed
+
+- Revert "Add the date picker" (257091e)
+
+### Breaking changes
+
+- 🐛 Fix focus in the dialog (67b3c37)
+- ✨ drop support for Node 20 (f820ae9)
+
+### Fixed
+
+- **Core:** Fix the ready handler (ce3ae2e)
+- 🐛 handle an empty search box (7288e52)
+
+### Documentation
+
+- Fix the typo in the footer (0809046)
+- Explain the config file (200a2ea)
+
+### Maintenance
+
+- 👷 cache the pnpm store (f2fed96)
+
+### Dependencies
+
+- ⬆️ 2 dependency updates: react, vite
+```
+
+`1.2.1` is hidden, as a version-only commit. With breaking changes in it, the next version is a major one:
+
+```txt {{ title: 'chamoji next-version' }}
+1.0.0
+```
+
+The rules below explain each line.
+
+## Releases {{ icon: 'tag' }}
+
+- **Releases are semver tags** reachable from `--to`, such as `v1.2.0` or `1.2.0`, prereleases included. They are ordered by semver.
+- **Commits after the newest tag** form the Unreleased section.
+- **Merge commits** are skipped.
+- **In a monorepo** with a `release` section, each unit reads only the tags that fit its own template, and its commits are the ones since its own last tag. See [Config](/reference/config#a-unit).
+
+## The gitmoji {{ icon: 'sparkle' }}
+
+- **It can be a character or a shortcode:** `✨`, with or without the invisible U+FE0F variation selector, or `:sparkles:`.
+- **chamoji uses the earliest one** in the subject.
+- **The list** comes from the official [`gitmojis`](https://www.npmjs.com/package/gitmojis) package. Each gitmoji’s section is in [Config](/reference/config#a-group).
+
+## Subject forms {{ icon: 'notes' }}
+
+These all work:
+
+- `✨ Add login`
+- `✨ (auth): Add login`
+- `feat(auth): ✨ Add login`
+- `feat: Add login`. A Conventional type without an emoji maps to one: `feat` to ✨, `fix` to 🐛, `docs` to 📝, and so on.
+
+A scope shows in bold, as **auth:** does above.
+
+## Plain messages {{ icon: 'pencil-simple' }}
+
+Messages with no gitmoji and no type are sorted by their wording:
+
+- “Add …” goes to Added, “Fix …” to Fixed, “Remove …” to Removed, “Deprecate …” to Deprecated.
+- Messages about docs, tests, CI, performance, security and refactoring each go to their own section. Typo fixes count as documentation.
+- Version-only commits and release chores are hidden, such as `1.2.1`, `Release 3.0.0`, “Tagging the 3.7.1 release” and “Build 2.29.4”. So are merge leftovers like “Merge commit…” and “Squashed commit of…”.
+- chamoji doesn’t add emojis to plain messages, so they appear as written.
+
+Messages too vague for any rule, such as “Accept camelCase flags”, go to Miscellaneous. `--ai` can sort them; see [Sorting with AI](/guides/sorting-with-ai).
+
+## Prefixes and tags {{ icon: 'brackets-angle' }}
+
+Component and tag prefixes are read through to the subject behind them:
+
+- `Core: Fix the ready handler` is a fix, with `Core` as its scope. When the rest says nothing, the subject is left as written, so prose like “Note: …” isn’t touched.
+- `[bugfix]`, `[feature]`, `[tests]`, `[docs]` and similar tags pick the section on their own.
+- Other tags, such as `[locale]` or `[pkg]`, become the scope, and the subject behind them picks the section.
+- “Require Node.js 20” counts as a breaking change.
+
+## Reverts {{ icon: 'arrow-counter-clockwise' }}
+
+A `git revert` commit, such as `Revert "✨ Add the date picker"`, is read as a ⏪ revert, not by the emoji of the commit it undoes. Reverts go under Changed.
+
+## Maintenance and dependencies {{ icon: 'package' }}
+
+- **CI and test commits** (👷 💚 ✅ 🧪, `ci:`, `test:`, “Fix CI”) go under Maintenance, so internal work doesn’t read as new features.
+- **Dependency updates** (⬆️ ⬇️ 📌 ➕ ➖, `chore(deps):`, `fix(deps):`, and Dependabot or Renovate subjects) become one line, such as `⬆️ 47 dependency updates: jest, vite, … and 12 more`. The JSON output keeps every commit.
+
+## Breaking changes {{ icon: 'flag' }}
+
+- **A commit is breaking** when it has 💥, a `!` after any type (`feat!:`, `deps!:`), or a `BREAKING CHANGE:` footer.
+- **Breaking commits** are listed under Breaking changes, and give a major bump.
+- **Only authors declare breaking changes.** `--ai` never marks a commit breaking.
+
+## The next version {{ icon: 'rocket-launch' }}
+
+The next version comes from each gitmoji’s `semver` field: ✨ is a minor bump, 🐛 a patch, 💥 a major. The largest bump since the last tag wins. When no commit implies a bump, as with only docs, tests or refactors, `chamoji next-version` exits 3.
+
+## Trailers {{ icon: 'brackets-curly' }}
+
+Commit trailers, the `Key: value` lines at the end of a message, are parsed and included in the JSON output. Some of them mean something to chamoji:
+
+- **`Why:`, `Constraint:`, `Gotcha:` and `Follow-up:`** are an intent card, which `chamoji why` and project memory show.
+- **`Workstream:`** puts the commit in a workstream, which the changelog shows as one Highlight once it ships.
+- **`Release:`** names units that release now, in a monorepo, such as `Release: mobile` or `Release: all`.
+
+## Related {{ anchor: false }}
+
+<Guides>
+	<Guide href="/guides/writing-commits" name="Writing commits">
+		Commits that sort themselves, with the composer.
+	</Guide>
+	<Guide href="/guides/sorting-with-ai" name="Sorting with AI">
+		Let Jev sort the commits no rule can place.
+	</Guide>
+	<Guide href="/reference/config" name="Config">
+		Change the sections, or add your own.
+	</Guide>
+</Guides>
