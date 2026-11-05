@@ -9,6 +9,17 @@
 		]
 	},
 	{
+		"title": "Commands",
+		"links": [
+			{"title": "setup", "href": "/commands/setup"},
+			{"title": "commit", "href": "/commands/commit"},
+			{"title": "changelog", "href": "/commands/changelog"},
+			{"title": "next-version", "href": "/commands/next-version"},
+			{"title": "release", "href": "/commands/release"},
+			{"title": "ws", "href": "/commands/ws"}
+		]
+	},
+	{
 		"title": "Reference",
 		"links": [
 			{"title": "Config", "href": "/reference/config"},

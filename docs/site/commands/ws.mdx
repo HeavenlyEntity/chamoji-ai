@@ -1,0 +1,296 @@
+export const metadata = {
+	title: 'chamoji ws',
+	description:
+		'Start, switch, ship and drop workstreams, so a piece of work that takes many commits becomes one Highlight in the changelog.',
+};
+
+# `chamoji ws`
+
+<p className="lead">
+	List and manage workstreams. A workstream is a piece of work that takes more
+	than one commit, such as “Keyboard support”. Its commits carry a `Workstream:`
+	line, and once it ships, the changelog shows them as one Highlight.
+</p>
+
+<Tag variant="changes">CHANGES YOUR REPO</Tag>
+<Tag variant="ci">--json FOR CI AND AGENTS</Tag>
+
+<Note>
+	`git commit` stamps the `Workstream:` line only through chamoji’s hook, and
+	git doesn’t clone hooks. Run `chamoji hook install` once in each clone, or
+	commit with `chamoji commit`.
+</Note>
+
+## What it does, in order {{ tag: 'CHANGES YOUR REPO', variant: 'changes', label: 'chamoji ws', icon: 'stack' }}
+
+<Steps>
+	<Step title="ws start.">
+		Adds the workstream to `.chamoji/workstreams.yml`, stages the file, and
+		makes the workstream active in this worktree. It says whether `git commit`
+		will stamp your commits.
+	</Step>
+	<Step title="Your commits.">
+		While it’s active, the hook and `chamoji commit` add `Workstream: <slug>` to
+		each new commit made with `-m` or the composer.
+	</Step>
+	<Step title="ws ship.">
+		Marks it shipped in the file, stages the file, stops stamping it, and saves
+		its commits on this branch to project memory.
+	</Step>
+	<Step title="Your next commit.">
+		Records the change to the file. From then on, the changelog’s next release
+		folds the workstream’s commits into one Highlight. Earlier releases don’t
+		change.
+	</Step>
+</Steps>
+
+None of it touches the network or commits for you. The file is committed and shared with your team. Which workstream is active is per worktree, in `.git/chamoji/active`. [Workstreams](/guides/workstreams) has what gets stamped and how squash merges keep it.
+
+## Subcommands {{ icon: 'terminal', badge: '5' }}
+
+<Properties>
+	<Property name="chamoji ws">
+		List the workstreams, with each one’s slug, status, emoji, title and its
+		commits since the latest tag on this branch. `*` marks the active one.
+		`chamoji ws list` is the same.
+	</Property>
+	<Property name="chamoji ws start <title> [emoji]">
+		Start a workstream and make it active. Quote a title of several words:
+		`chamoji ws start "Auth revamp" 🔐`. The slug comes from the title, such as
+		`auth-revamp`. A slug that exists already exits 1.
+	</Property>
+	<Property name="chamoji ws switch <slug>">
+		Make another workstream active. It must exist and still be active, or it
+		exits 1. With `--none` instead of a slug, no workstream is active.
+	</Property>
+	<Property name="chamoji ws ship [slug]">
+		Mark a workstream shipped, the active one when you name none, and save its
+		commits to memory.
+	</Property>
+	<Property name="chamoji ws drop [slug]">
+		Mark a workstream dropped, the active one when you name none, and save its
+		commits to memory. Its commits stay loose in the changelog.
+	</Property>
+</Properties>
+
+## Arguments
+
+<Properties>
+	<Property name="title" type="string · required by start">
+		The workstream’s name, as the changelog shows it. Quote it when it has
+		spaces.
+	</Property>
+	<Property name="emoji" type="string · optional, start">
+		Shown before the title in the list and the changelog, such as `🔐`. A word
+		in its place exits 2, because it usually means an unquoted title.
+	</Property>
+	<Property name="slug" type="string">
+		The workstream’s id, as `chamoji ws` lists it. Required by `switch`, unless
+		you pass `--none`. Optional for `ship` and `drop`.
+	</Property>
+</Properties>
+
+## Flags {{ badge: '3', icon: 'flag' }}
+
+<Properties>
+	<Property name="--json" type="boolean · list">
+		Print the workstreams as a JSON array: `slug`, `title`, `status`, `emoji`,
+		`active` and `commits` for each. Only for the list; the other subcommands
+		ignore it.
+	</Property>
+	<Property name="--none" type="boolean · switch">
+		With `ws switch`: clear the active workstream. Not with a slug; both exit 2.
+	</Property>
+	<Property name="--no-update-check" type="boolean">
+		Don’t check npm for a newer chamoji. See [the update
+		notice](/install#the-update-notice).
+	</Property>
+</Properties>
+
+## Common combinations
+
+<Resources>
+	<Resource name='chamoji ws start "Auth revamp" 🔐' icon="sparkle" code>
+		Start a piece of work, and stamp what you commit next.
+	</Resource>
+	<Resource name="chamoji ws" icon="list-numbers" code>
+		What’s open, what’s active, and how many commits each has waiting.
+	</Resource>
+	<Resource name="chamoji ws ship" icon="rocket-launch" code>
+		Mark the active one shipped, then commit the file.
+	</Resource>
+	<Resource name="chamoji ws switch --none" icon="arrow-counter-clockwise" code>
+		Commit something unrelated without a Workstream line.
+	</Resource>
+	<Resource name="chamoji ws --json" icon="robot" code>
+		The workstreams, for a script or an agent.
+	</Resource>
+</Resources>
+
+## Output {{ icon: 'terminal-window' }}
+
+These are from real runs in a small repo called widgets. With none yet:
+
+```txt {{ title: 'chamoji ws' }}
+No workstreams yet. Start one with: chamoji ws start <title> [emoji]
+```
+
+In a clone without the hook, `start` warns on stderr:
+
+```txt {{ title: 'chamoji ws start "Keyboard support" ⌨️' }}
+Started keyboard-support. Staged .chamoji/workstreams.yml; your next commit records it.
+chamoji: no hook runs chamoji here, so `git commit` won't add "Workstream: keyboard-support". Run `chamoji hook install`, or commit with `chamoji commit`.
+```
+
+With the hook installed:
+
+```txt {{ title: 'chamoji ws start "Dark mode" 🌙' }}
+Started dark-mode. Staged .chamoji/workstreams.yml; your next commit records it.
+New commits in this worktree get "Workstream: dark-mode".
+```
+
+A `-m` commit gets the line:
+
+```txt {{ title: 'git log -1 --format=%B' }}
+✨ Move between days with the arrow keys
+
+Workstream: keyboard-support
+```
+
+```txt {{ title: 'chamoji ws' }}
+  keyboard-support  active  ⌨️ Keyboard support  2 commits
+* dark-mode         active  🌙 Dark mode         1 commit
+```
+
+```txt {{ title: 'chamoji ws --json' }}
+[
+  {
+    "slug": "keyboard-support",
+    "title": "Keyboard support",
+    "status": "active",
+    "emoji": "⌨️",
+    "active": false,
+    "commits": 2
+  },
+  {
+    "slug": "dark-mode",
+    "title": "Dark mode",
+    "status": "active",
+    "emoji": "🌙",
+    "active": true,
+    "commits": 1
+  }
+]
+```
+
+<CodeGroup title="Switch, ship and drop">
+
+```txt {{ title: 'switch' }}
+$ chamoji ws switch keyboard-support
+Switched to keyboard-support.
+New commits in this worktree get "Workstream: keyboard-support".
+```
+
+```txt {{ title: 'ship' }}
+$ chamoji ws ship
+Shipped keyboard-support. Staged .chamoji/workstreams.yml; your next commit records it.
+Saved 2 commits to memory.
+```
+
+```txt {{ title: 'switch --none' }}
+$ chamoji ws switch --none
+No active workstream now.
+```
+
+```txt {{ title: 'drop' }}
+$ chamoji ws drop dark-mode
+Dropped dark-mode. Staged .chamoji/workstreams.yml; your next commit records it.
+Saved 1 commit to memory.
+```
+
+</CodeGroup>
+
+After both changes are committed:
+
+```txt {{ title: 'chamoji ws' }}
+  keyboard-support  shipped  ⌨️ Keyboard support  2 commits
+  dark-mode         dropped  🌙 Dark mode         1 commit
+```
+
+The shipped workstream is one Highlight in the changelog. The dropped one’s commit stays loose:
+
+```txt {{ title: 'chamoji changelog --from v0.2.1' }}
+# Changelog
+
+## Unreleased
+
+### Highlights
+
+- ⌨️ **Keyboard support**
+  - ✨ Move between days with the arrow keys (83832de)
+  - 🐛 Trap focus inside the dialog (8970246)
+
+### Changed
+
+- 🔧 Drop dark mode for now (c7f432c)
+- 🔧 Ship keyboard support (b0bf4bf)
+- 💄 Add dark colours to the picker (cae8275)
+```
+
+<CodeGroup title="Errors">
+
+```txt {{ title: 'Unquoted title' }}
+$ chamoji ws start Auth revamp
+chamoji: ws start takes a title and an optional emoji; quote a title of several words: chamoji ws start "Auth revamp" 🔐
+```
+
+```txt {{ title: 'Not active' }}
+$ chamoji ws switch dark-mode
+chamoji: dark-mode is dropped, so it can't be made active
+```
+
+```txt {{ title: 'Nothing active' }}
+$ chamoji ws ship
+chamoji: no active workstream; name one: chamoji ws ship <slug>
+```
+
+```txt {{ title: 'Unknown' }}
+$ chamoji ws frob
+chamoji: ws needs start, switch, list, ship or drop, not "frob"
+```
+
+</CodeGroup>
+
+## Exit codes
+
+<Properties>
+	<Property name="0">It worked.</Property>
+	<Property name="2">
+		It was used wrongly: an unknown subcommand, `start` with no title or an
+		unquoted one, or `switch` with neither a slug nor `--none`, or both.
+	</Property>
+	<Property name="1">
+		Anything else, such as a workstream that doesn’t exist or isn’t active, a
+		slug that’s taken, `ship` or `drop` with nothing active, or outside a git
+		repo.
+	</Property>
+</Properties>
+
+[Exit codes](/reference/exit-codes) has every command’s codes.
+
+## Related {{ anchor: false }}
+
+<Guides>
+	<Guide href="/guides/workstreams" name="Workstreams">
+		What gets stamped, when a workstream becomes a Highlight, and squash merges.
+	</Guide>
+	<Guide href="/commands/hook" name="hook">
+		The hook that stamps git commit.
+	</Guide>
+	<Guide href="/commands/memory" name="memory">
+		What shipped and dropped workstreams leave behind.
+	</Guide>
+	<Guide href="/commands/commit" name="commit">
+		The composer, which stamps its commits too.
+	</Guide>
+</Guides>

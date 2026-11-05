@@ -1,0 +1,195 @@
+export const metadata = {
+	title: 'chamoji next-version',
+	description:
+		'Print the next semver version from the commits since the last release tag, or exit 3 when no release is needed.',
+};
+
+# `chamoji next-version`
+
+<p className="lead">
+	Print the next version, worked out from the commits since the last release
+	tag. It doesn’t fetch, check the branch or touch your files. When no commit
+	calls for a release, it prints nothing to stdout and exits 3.
+</p>
+
+<Tag variant="mono">MONOREPO-AWARE</Tag>
+<Tag variant="ci">EXIT 3 FOR SCRIPTS</Tag>
+
+<Note>
+	With no release tag yet, it counts from 0.0.0, so a ✨ commit gives 0.1.0.
+	`chamoji release 0.1.0` cuts that first release; `chamoji release` alone won’t
+	guess one.
+</Note>
+
+## What it does, in order {{ icon: 'list-numbers' }}
+
+<Steps>
+	<Step title="Finds the last release.">
+		The newest release tag in the history of `HEAD`, or of the ref you give with
+		`--to`.
+	</Step>
+	<Step title="Reads the commits since.">
+		Each gitmoji has a bump: ✨ is minor, 🐛 is patch, 💥 is major. A breaking
+		change is always major. The largest one wins.
+	</Step>
+	<Step title="Prints the version.">
+		Without a `v`, such as `0.2.0`, and exits 0. When no commit implies a bump,
+		as with only docs, tests or refactors, it says so on stderr and exits 3.
+	</Step>
+</Steps>
+
+In a repo with release units, it does this for each unit, with the unit’s own tags and commits, and prints one line per unit. A unit with no tag of its own gets its `firstVersion` when that’s set, or else the version in its manifest, or a date version for a `calver` unit. Settings such as `zeroMajor` and a unit’s `versioning` change how its version moves; [Config](/reference/config) has them.
+
+## Arguments
+
+`chamoji next-version` takes no arguments.
+
+## Flags {{ badge: '6', icon: 'flag' }}
+
+<Properties>
+	<Property name="--to <ref>" type="string · default HEAD">
+		Work out the version as of this ref instead of `HEAD`. Only in a repo
+		without release units; with units it’s ignored.
+	</Property>
+	<Property name="--config <file>" type="string · default chamoji.config.json">
+		Read this config file instead. The default is `chamoji.config.json` when the
+		repo has one. A file that doesn’t exist exits 1.
+	</Property>
+	<Property name="--ai" type="boolean">
+		Sort the commits no rule can place with Jev first, so their bumps count. It
+		sends only unreleased commits. Needs `TYPESAFE_API_KEY`, or it exits 1.
+	</Property>
+	<Property
+		name="--unit <name>"
+		type="string · repeatable · monorepos"
+		since="0.13.0"
+	>
+		Only these units. Repeat it for several. Only in a repo with release units;
+		elsewhere it exits 1. An unknown unit exits 1 and lists the units.
+	</Property>
+	<Property name="--json" type="boolean · monorepos" since="0.13.0">
+		Print each unit as JSON: its name, next version (`null` when it has nothing
+		to release), and how many of its own and shared changes are waiting. Works
+		with `--unit`. Only in a repo with release units; elsewhere it’s ignored and
+		the version prints as usual.
+	</Property>
+	<Property name="--no-update-check" type="boolean">
+		Don’t check npm for a newer chamoji. See [the update
+		notice](/install#the-update-notice).
+	</Property>
+</Properties>
+
+## Common combinations
+
+<Resources>
+	<Resource name="chamoji next-version" icon="tag" code>
+		The next version, or exit 3 when there’s nothing to release.
+	</Resource>
+	<Resource name="chamoji next-version --to v1.4.0" icon="git-commit" code>
+		What the version would have been at an older ref.
+	</Resource>
+	<Resource name="chamoji next-version --json" icon="robot" code>
+		Every unit’s next version, and what is waiting, for CI or an agent.
+	</Resource>
+	<Resource name="chamoji next-version --unit web" icon="tree-structure" code>
+		One unit in a monorepo.
+	</Resource>
+</Resources>
+
+In a release script, exit 3 stops the chain before anything is written:
+
+```bash
+version=$(chamoji next-version) && chamoji changelog --release "$version" -o CHANGELOG.md
+```
+
+## Output {{ icon: 'terminal-window' }}
+
+These are from real runs. In widgets, a single package with a ✨ and a 🐛 since `v0.1.0`:
+
+```txt {{ title: 'chamoji next-version' }}
+0.2.0
+```
+
+After a release, with only a 📝 commit since, it exits 3:
+
+```txt {{ title: 'chamoji next-version' }}
+chamoji: no release needed (no commits since the last tag imply a version bump)
+```
+
+In `shop`, whose two apps release on their own. `web` has a fix since `web/v1.2.0`, and `mobile` has no tag yet, so it takes the version in its `package.json`:
+
+```txt {{ title: 'chamoji next-version' }}
+mobile: 1.0.0
+web: 1.2.1
+```
+
+```txt {{ title: 'chamoji next-version --json' }}
+{
+  "units": [
+    {
+      "unit": "mobile",
+      "version": "1.0.0",
+      "own": 2,
+      "shared": 2
+    },
+    {
+      "unit": "web",
+      "version": "1.2.1",
+      "own": 1,
+      "shared": 1
+    }
+  ]
+}
+```
+
+When no unit would release, each line says why, and it exits 3:
+
+```txt {{ title: 'chamoji next-version' }}
+mobile: nothing to release
+web: no release needed (1 change of its own doesn't need one)
+```
+
+In a repo with two or more apps under `apps/` and no `release` section, the first run in each clone suggests setup, on stderr:
+
+```txt {{ title: 'chamoji next-version' }}
+chamoji: this looks like a monorepo with several apps; run chamoji setup to version each one
+0.1.0
+```
+
+## Exit codes
+
+<Properties>
+	<Property name="0">
+		It printed a version. In a monorepo, at least one unit would release.
+	</Property>
+	<Property name="3">
+		No commit since the last tag implies a bump. In a monorepo, no unit would
+		release.
+	</Property>
+	<Property name="2">
+		The config’s `release` section is from a newer chamoji.
+	</Property>
+	<Property name="1">
+		Anything else, such as `--unit` in a repo without release units, or a
+		missing config file.
+	</Property>
+</Properties>
+
+[Exit codes](/reference/exit-codes) has every command’s codes.
+
+## Related {{ anchor: false }}
+
+<Guides>
+	<Guide href="/reference/how-commits-are-read" name="How commits are read">
+		Which commits imply which bump.
+	</Guide>
+	<Guide href="/commands/release" name="release">
+		Cut the release next-version describes.
+	</Guide>
+	<Guide href="/guides/monorepos" name="Monorepos">
+		Versions per unit, and the changes that ride along.
+	</Guide>
+	<Guide href="/reference/exit-codes" name="Exit codes">
+		Using exit 3 in scripts and CI.
+	</Guide>
+</Guides>
