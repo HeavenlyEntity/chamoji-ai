@@ -7,7 +7,7 @@ Thanks for helping. Chamoji writes its own changelog from this repo's history, s
 ```bash
 pnpm install
 pnpm test     # vitest
-pnpm check    # build, type-check (including tests) and prettier
+pnpm check    # build, type-check (including tests), prettier and the docs check
 ```
 
 Node.js 22 or newer and git are required. `packages/core` is the engine and `packages/cli` is the `chamoji` command. [`docs/ROADMAP.md`](docs/ROADMAP.md) says what we're building next.
@@ -50,6 +50,7 @@ pnpm build && node packages/cli/dist/cli.js changelog | head -40
 ## Pull requests
 
 - Write tests first, then make them pass, and keep `pnpm check` green.
+- A PR that changes behaviour updates `docs/site/` in the same PR, as it does the readme.
 - If you change commit parsing, run chamoji on the benchmark repos listed in the roadmap, and put the before and after numbers in the PR.
 - Never commit secrets. `.env` and `.env.*` files are git-ignored; put `TYPESAFE_API_KEY` in `.env.local`.
 
