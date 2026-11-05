@@ -126,7 +126,7 @@ The other commands handle a missing key in their own way:
 - **`memory search --ai`** prints the same message and exits 2, also when the only key is in a tracked file.
 - **`mcp --ai`** says on stderr that `search_memory` stays on keyword order, and the server runs.
 - **`card`** ignores `--ai`: it counts what the rules sort.
-- **The Action** with `ai: true` and no `typesafe-api-key` fails the job, since the CLI exits 1.
+- **The Action** with `ai: true` and no `typesafe-api-key` fails the jobs that pass `--ai`, since the CLI exits 1: `notes`, `release`, and the PR preview without release units. `card` and the preview with release units don’t pass it, and still run.
 
 ## When a request fails {{ icon: 'shield' }}
 

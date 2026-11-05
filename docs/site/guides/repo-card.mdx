@@ -83,8 +83,8 @@ The card shows up after the workflow’s first run.
 		history and prints the renderer’s URL with the counts in it.
 	</Step>
 	<Step title="Downloads the image.">
-		From that URL, with two retries and at most 30 seconds. An answer that isn’t
-		a PNG is treated as a failure.
+		From that URL, with up to two retries and at most 30 seconds per try. An
+		answer that isn’t a PNG is treated as a failure.
 	</Step>
 	<Step title="Checks the branch.">
 		The `chamoji-card` branch must not exist yet, or hold exactly `card.png`.
