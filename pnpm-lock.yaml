@@ -17,6 +17,9 @@ importers:
       '@vdemedes/prettier-config':
         specifier: ^2.0.1
         version: 2.0.1
+      acorn:
+        specifier: 8.19.0
+        version: 8.19.0
       prettier:
         specifier: ^3.6.2
         version: 3.9.10
