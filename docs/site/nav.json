@@ -26,6 +26,15 @@
 		]
 	},
 	{
+		"title": "Guides",
+		"links": [
+			{"title": "Writing commits", "href": "/guides/writing-commits"},
+			{"title": "Workstreams", "href": "/guides/workstreams"},
+			{"title": "Project memory", "href": "/guides/project-memory"},
+			{"title": "Monorepos", "href": "/guides/monorepos"}
+		]
+	},
+	{
 		"title": "Reference",
 		"links": [
 			{"title": "Config", "href": "/reference/config"},

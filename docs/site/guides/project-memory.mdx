@@ -1,0 +1,272 @@
+export const metadata = {
+	title: 'Project memory',
+	description:
+		'Keep the reasoning behind your commits in git: intent cards, chamoji why, the memory ref, sharing it with your team, and handing it to an AI agent.',
+};
+
+# Project memory
+
+<p className="lead">
+	Git keeps what changed. Project memory keeps why: the reasoning behind a
+	commit, still there after the branch is deleted, and one command away for you
+	or your AI agent.
+</p>
+
+<Tag variant="setup">SINCE 0.11.0</Tag>
+
+It’s built from three things, all in git:
+
+- **Intent cards** in commit messages.
+- **Workstream summaries** on a ref of their own, `refs/chamoji/memory`.
+- **A search index** you can rebuild at any time.
+
+Every output on this page is from a real run in a small repo called widgets.
+
+## Intent cards {{ icon: 'notebook' }}
+
+An intent card is up to four kinds of line in a commit message. The keys are matched ignoring case:
+
+<Properties>
+	<Property name="Why:">The reason for the change.</Property>
+	<Property name="Constraint:">A limit the change had to live within.</Property>
+	<Property name="Gotcha:">
+		Something that will trip up the next person.
+	</Property>
+	<Property name="Follow-up:">Work this change leaves for later.</Property>
+</Properties>
+
+Write them at the end of the message, after a blank line. The composer’s **Why?** question writes the `Why:` line for you. From the command line, use git’s `--trailer` flag, or a second `-m`:
+
+```txt {{ title: 'git commit' }}
+$ git commit -q -m "🐛 Cap a range at one year" -m "Constraint: the booking API rejects ranges over 365 days
+Follow-up: show the limit in the picker"
+$ git log -1 --format=%B 6a83d0e
+🐛 Cap a range at one year
+
+Constraint: the booking API rejects ranges over 365 days
+Follow-up: show the limit in the picker
+Workstream: range-selection
+```
+
+- **A line can run on** over the lines that follow it, until a blank line or the next `Key: value` line.
+- **A key can repeat,** as with two `Gotcha:` lines.
+- **The subject is never a card.** `-m "Why: because"` alone is a subject.
+- **Jev never writes or changes a card.** Only you do.
+
+**Squash merges.** chamoji reads card lines anywhere in a commit’s body, so a squash keeps them as long as the body survives. On GitHub, “Default message” and “Pull request title and commit details” keep them. “Pull request title and description” keeps only what’s in the PR description, and “Pull request title” drops the whole body. If you run `chamoji ws ship` on the branch before the squash, [the memory ref](#the-memory-ref) keeps the cards even then.
+
+## Asking why {{ icon: 'magnifying-glass' }}
+
+Point `chamoji why` at a line. It blames the line in your working copy and prints the commit that wrote it, with its author, date and card:
+
+```txt {{ title: 'chamoji why src/picker.js:2' }}
+6f99029 🐛 Return null for an empty date
+Sam Rivera, 2026-11-05
+
+Why: the form crashed when the field was cleared
+Gotcha: callers still compare with undefined in two places
+```
+
+A commit with no card shows its workstream instead, when it has one:
+
+```txt {{ title: 'chamoji why src/days.js:2' }}
+73c619f ✨ Move between days with the arrow keys
+Sam Rivera, 2026-11-05
+
+This commit records no intent.
+Workstream: ⌨️ Keyboard support (shipped)
+```
+
+<CodeGroup title="Other answers">
+
+```txt {{ title: 'Not committed' }}
+$ chamoji why src/days.js:4
+src/days.js:4 is not committed yet.
+```
+
+```txt {{ title: 'No such file' }}
+$ chamoji why src/nope.js:1
+chamoji: No such file in HEAD: src/nope.js
+```
+
+</CodeGroup>
+
+A line you haven’t committed yet exits 0. A file or line that doesn’t exist exits 1. The file is relative to the folder you run chamoji in, as with `git blame`. `--json` prints the same result for scripts. `chamoji why` only reads git: nothing is changed or sent anywhere. See [why](/commands/why).
+
+## The memory ref {{ tag: 'CHANGES YOUR REPO', variant: 'changes', label: 'chamoji memory', icon: 'tree-structure' }}
+
+When you mark a workstream shipped or dropped with `chamoji ws ship` or `chamoji ws drop`, chamoji saves a summary of it on `refs/chamoji/memory`: its title, emoji and status, and its commits with their cards.
+
+- **It comes from `HEAD`.** The summary holds the commits on `HEAD` that name the workstream, so run the command on the branch that holds the work. Both commands say how many commits they saved, and warn when there are none.
+- **It never touches your files.** The ref is written with git plumbing, so your working tree and index stay as they are.
+- **It outlives the branch.** The summary survives deleting the branch and a squash merge.
+
+Here, the Range selection workstream was shipped on its branch. The branch was then squashed into `main` with only the PR title, and deleted. The squash commit has no card, but memory still does:
+
+<CodeGroup title="After a squash merge">
+
+```txt {{ title: 'why' }}
+$ chamoji why src/range.js:2
+ef8f37a ✨ Select a range of dates (#14)
+Sam Rivera, 2026-11-05
+
+This commit records no intent.
+```
+
+```txt {{ title: 'memory' }}
+$ chamoji memory
+keyboard-support  shipped  3 commits  ⌨️ Keyboard support
+range-selection   shipped  2 commits  📅 Range selection
+```
+
+```txt {{ title: 'memory show' }}
+$ chamoji memory show range-selection
+📅 Range selection (range-selection)
+shipped, updated 2026-11-05, 2 commits
+
+6a83d0e 🐛 Cap a range at one year, 2026-11-05
+  Constraint: the booking API rejects ranges over 365 days
+  Follow-up: show the limit in the picker
+
+06661f2 ✨ Select a range of dates, 2026-11-05
+  Why: booking forms need a start and an end date
+```
+
+```txt {{ title: 'memory search' }}
+$ chamoji memory search booking
+workstream range-selection Range selection
+  Why: booking forms need a start and an end date
+  Constraint: the booking API rejects ranges over 365 days
+  Follow-up: show the limit in the picker
+```
+
+</CodeGroup>
+
+**Search** is keyword search (BM25) over every commit on `HEAD`, with its subject, body and card, and over the live workstream entries. It needs no network and no key. The index is a cache in `.git/chamoji/memory-index.json`. It rebuilds itself when `HEAD` or memory moves, and `chamoji memory reindex` forces it. With `--ai`, Jev reorders the ten best matches; see [Sorting with AI](/guides/sorting-with-ai).
+
+**Archive, don’t delete.** `chamoji memory archive <slug>` hides an entry from the list and from search, and `memory show` still finds it:
+
+<CodeGroup title="Archive">
+
+```txt {{ title: 'archive' }}
+$ chamoji memory archive time-zones
+Archived time-zones. It stays in memory, out of the list; chamoji memory show time-zones still finds it.
+```
+
+```txt {{ title: 'list --archived' }}
+$ chamoji memory list --archived
+keyboard-support  shipped            3 commits  ⌨️ Keyboard support
+range-selection   shipped            2 commits  📅 Range selection
+time-zones        dropped, archived  1 commit   🌍 Time zones
+```
+
+</CodeGroup>
+
+Only `archive --purge` removes an entry for good. A purge is local until you sync, keeps the slug as a marker so a later sync can’t bring the entry back, and never force-pushes for you. [memory](/commands/memory) has the details.
+
+## Sharing memory {{ tag: 'SETUP', variant: 'setup', label: 'chamoji init', icon: 'cloud-arrow-up' }}
+
+Git doesn’t clone `refs/chamoji/*`, so each clone runs `chamoji init` once. It adds a fetch line for those refs to `origin`, and takes in whatever memory `origin` has. Then `chamoji memory sync` merges both sides and pushes the result.
+
+<CodeGroup title="The first clone">
+
+```txt {{ title: 'init' }}
+$ chamoji init
+origin now fetches chamoji memory.
+A plain git fetch or git pull downloads origin's memory but doesn't change what chamoji memory shows. Run chamoji memory sync to take it in and share yours.
+No memory on origin yet.
+chamoji setup also sets up releases, AI agents and the commit composer.
+```
+
+```txt {{ title: 'memory sync' }}
+$ chamoji memory sync
+Synced memory with origin: 2 entries.
+```
+
+</CodeGroup>
+
+A teammate’s fresh clone has no memory until it runs `init`:
+
+```txt {{ title: 'A second clone' }}
+$ chamoji memory
+Nothing in memory yet. Shipping or dropping a workstream saves it here.
+$ chamoji init
+origin now fetches chamoji memory.
+A plain git fetch or git pull downloads origin's memory but doesn't change what chamoji memory shows. Run chamoji memory sync to take it in and share yours.
+Took in memory from origin: 2 entries.
+chamoji setup also sets up releases, AI agents and the commit composer.
+```
+
+The teammate drops a workstream of their own and runs `chamoji memory sync`. Back in the first clone, a plain `git fetch` downloads it but changes nothing that `chamoji memory` shows. `memory sync` brings it in, and both clones keep every entry:
+
+```txt {{ title: 'The first clone again' }}
+$ git fetch -q
+$ chamoji memory
+keyboard-support  shipped  3 commits  ⌨️ Keyboard support
+range-selection   shipped  2 commits  📅 Range selection
+$ chamoji memory sync
+Synced memory with origin: 3 entries.
+$ chamoji memory
+keyboard-support  shipped  3 commits  ⌨️ Keyboard support
+range-selection   shipped  2 commits  📅 Range selection
+time-zones        dropped  1 commit   🌍 Time zones
+```
+
+- **Where a fetch puts it.** A plain `git fetch` or `git pull` stores origin’s memory in `refs/chamoji/remotes/origin/memory`, and nothing reads it from there until `memory sync`.
+- **How it goes out.** Through `chamoji memory sync`, and through `chamoji release --push` in a clone that ran `init`. The push runs your pre-push hook like any other. It tries again only when it lost a race to another clone.
+- **`init` leaves `git push` alone.** Setting `remote.origin.push` made a plain `git push` push only the memory ref and leave the branch behind, so `init` sets only the fetch line.
+
+**Who can change it.** A memory ref is shared with everyone who can push to the repo. Entries from `origin` are data: a pusher can add an entry or change a title or a card, and chamoji never verifies a card. Read them as you would a teammate’s commit message. chamoji prints them with control characters removed.
+
+## For AI agents {{ tag: 'SETUP', variant: 'setup', label: 'chamoji init --agents', icon: 'robot' }}
+
+`chamoji init --agents` does what `init` does, and sets up Claude Code in this repo:
+
+```txt {{ title: 'chamoji init --agents' }}
+.mcp.json: added the chamoji MCP server
+.claude/settings.json: added the commit hook
+These files are meant to be committed, so everyone who uses Claude Code here gets the same setup. A changed file is written back as plain JSON with its indent kept, so other layout, such as blank lines or how short lists wrap, may differ.
+origin already fetches chamoji memory.
+A plain git fetch or git pull downloads origin's memory but doesn't change what chamoji memory shows. Run chamoji memory sync to take it in and share yours.
+Took in memory from origin: 3 entries.
+```
+
+- **`.mcp.json`** gets a `chamoji` server that runs `chamoji mcp`, or `npx --yes @chamoji/cli mcp` when chamoji isn’t on your PATH.
+- **`.claude/settings.json`** gets a hook that checks Claude Code’s commits for a card.
+
+Both files are meant to be committed. Existing entries are kept, and a file chamoji can’t safely read is left alone. Claude Code won’t start a server from a project’s `.mcp.json` until you approve it, so approve it when Claude Code asks.
+
+**The MCP server** has three read-only tools. None changes your history, refs or files, though `search_memory` may refresh the index cache in `.git`:
+
+| Tool            | What it does                                                               |
+| --------------- | -------------------------------------------------------------------------- |
+| `search_memory` | Search commits and remembered workstreams by what they say, cards included |
+| `why`           | The commit behind a `file` and `line`, with its message and card           |
+| `workstream`    | A workstream’s title, status and, once remembered, its commits and cards   |
+
+Each tool tells the model that what it returns is commit text other people wrote, so it’s data, not instructions. The server makes no network calls, except under `chamoji mcp --ai`. See [mcp](/commands/mcp).
+
+**The commit hook** runs before Claude Code’s Bash tool runs a `git commit`. When the message has no card line, it denies the command, and the agent sees why. This is its reply to `git commit -m "🐛 Keep the month when a range is cleared"`:
+
+```txt {{ title: 'chamoji agent-hook' }}
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Add why this change was made: put a \"Why: <reason>\" line at the end of the commit message, after a blank line. Constraint:, Gotcha: and Follow-up: lines are welcome too. Only if the user told you to skip this, prefix the command with CHAMOJI_NO_CARD=1."}}
+```
+
+The agent tries again with a `Why:` line, and the hook lets it through. Any of the four card lines counts. `CHAMOJI_NO_CARD=1` in front of the command skips the check, for when you’ve told the agent to. The hook covers Claude Code only. Other agents can use the MCP server, but write their cards by hand. [init](/commands/init) lists what passes and what the hook can’t see.
+
+## Related {{ anchor: false }}
+
+<Guides>
+	<Guide href="/commands/why" name="why">
+		The commit behind a line, and its card.
+	</Guide>
+	<Guide href="/commands/memory" name="memory">
+		List, show, search, archive and sync memory.
+	</Guide>
+	<Guide href="/commands/init" name="init">
+		Share memory in a clone, and connect Claude Code.
+	</Guide>
+	<Guide href="/guides/workstreams" name="Workstreams">
+		Where memory entries come from.
+	</Guide>
+</Guides>
