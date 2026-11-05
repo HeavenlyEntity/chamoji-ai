@@ -105,3 +105,181 @@ test('the names gearz or Makerkit anywhere', () => {
 		'nav.json:1 names "Gearz"; call it the template you started from.',
 	]);
 });
+
+/** A one-page site whose index.mdx has `body` under its metadata and title. */
+const onePage = (body: string) =>
+	checkDocsSite(site({'nav.json': nav('/'), 'index.mdx': page('Home', body)}));
+
+test('the components, attributes and heading annotations the docs use are fine', () => {
+	expect(
+		onePage(
+			[
+				'<p className="lead">Lead.</p>',
+				'<Tag variant="changes">CHANGES YOUR REPO</Tag>',
+				"## Flags {{ tag: 'X', variant: 'mono', label: 'release', icon: 'flag', badge: '9', anchor: false }}",
+				'<Properties>\n\t<Property name="--dry-run" type="boolean" since="0.9.0">\n\t\tText.\n\t</Property>\n</Properties>',
+				'<Steps>\n\t<Step title="One.">Text.</Step>\n</Steps>',
+				'<Row>\n\t<Col sticky>\n\t\tText.\n\t</Col>\n</Row>',
+				'<Guides>\n\t<Guide href="/x" name="X" description="Y" />\n</Guides>',
+				'<Resources>\n\t<Resource href="/x" name="X" description="Y" icon="robot" />\n</Resources>',
+				'<Button href="/x" arrow="right" count={3} wide={true}>Go</Button>',
+				'<Note>Careful.</Note>',
+				'<CodeGroup title="Install">\n\n```bash\nnpm i chamoji\n```\n\n</CodeGroup>',
+				'Code like `{x}` and `<b>` is only text.',
+			].join('\n\n'),
+		),
+	).toEqual([]);
+});
+
+test('MDX that does not parse', () => {
+	expect(onePage('<Note>never closed')).toEqual([
+		expect.stringMatching(/^index\.mdx:\d+(:\d+)? isn't valid MDX: /),
+	]);
+});
+
+test('an import', () => {
+	expect(onePage("import x from 'y'")).toEqual([
+		'index.mdx:5 has an import. Pages are compiled as code on chamoji.dev, so they may only export metadata.',
+	]);
+});
+
+test('ESM other than the metadata export', () => {
+	expect(onePage('export const other = 1')).toEqual([
+		'index.mdx:5 exports something other than `export const metadata = {title, description}`.',
+	]);
+});
+
+test('a second metadata export', () => {
+	expect(
+		onePage("export const metadata = {title: 'B', description: 'C'}"),
+	).toEqual([
+		'index.mdx:5 exports metadata a second time; a page has one `export const metadata`.',
+	]);
+});
+
+test('metadata whose title or description is not a string literal', () => {
+	const dir = site({
+		'nav.json': nav('/'),
+		'index.mdx':
+			"export const metadata = {title: `Home ${1}`, description: 'D', extra: 'E'};\n\n# Home\n",
+	});
+	expect(checkDocsSite(dir)).toEqual([
+		'index.mdx:1 metadata title must be a string literal.',
+		'index.mdx:1 metadata has extra, but only title and description belong there.',
+	]);
+});
+
+test('a component outside the allowed list', () => {
+	expect(onePage('<Script>x</Script>\n\nText with <span>html</span>.')).toEqual(
+		[
+			'index.mdx:5 uses <Script>, which the docs site does not provide. Use one of Note, Properties, Property, Steps, Step, CodeGroup, Row, Col, Guides, Guide, Resources, Resource, Tag, Button, p.',
+			'index.mdx:7 uses <span>, which the docs site does not provide. Use one of Note, Properties, Property, Steps, Step, CodeGroup, Row, Col, Guides, Guide, Resources, Resource, Tag, Button, p.',
+		],
+	);
+});
+
+test('a fragment', () => {
+	expect(onePage('<>x</>')).toEqual([
+		'index.mdx:5 uses <>, which the docs site does not provide. Use one of Note, Properties, Property, Steps, Step, CodeGroup, Row, Col, Guides, Guide, Resources, Resource, Tag, Button, p.',
+	]);
+});
+
+test('an attribute value that is an expression', () => {
+	expect(
+		onePage('<Note title={globalThis.x}>a</Note>\n\n<Note {...props}>b</Note>'),
+	).toEqual([
+		'index.mdx:5 gives <Note> title={globalThis.x}; attribute values must be strings, numbers or booleans.',
+		'index.mdx:7 spreads {...props} into <Note>; attribute values must be strings, numbers or booleans.',
+	]);
+});
+
+test('a text expression that is not a heading annotation', () => {
+	expect(onePage('Text {1 + 1}.\n\n{globalThis.process}')).toEqual([
+		"index.mdx:5 has the expression {1 + 1}. Pages are compiled as code, so the only `{…}` allowed is a heading annotation such as {{ icon: 'flag' }}.",
+		"index.mdx:7 has the expression {globalThis.process}. Pages are compiled as code, so the only `{…}` allowed is a heading annotation such as {{ icon: 'flag' }}.",
+	]);
+});
+
+test('a heading annotation with an unknown key or a value that is not a literal', () => {
+	expect(
+		onePage("## A {{ onClick: 'x' }}\n\n## B {{ label: someVariable }}"),
+	).toEqual([
+		'index.mdx:5 annotates a heading with onClick; the keys are tag, variant, label, icon, badge, anchor and className.',
+		'index.mdx:7 annotates a heading with label: someVariable; annotation values must be strings, numbers or booleans.',
+	]);
+});
+
+test('an unknown icon name', () => {
+	expect(
+		onePage(
+			'## A {{ icon: \'rocket\' }}\n\n<Resources>\n\t<Resource href="/x" name="X" description="Y" icon="spaceship" />\n</Resources>',
+		),
+	).toEqual([
+		'index.mdx:5 uses the icon "rocket", which the docs site does not have.',
+		'index.mdx:8 uses the icon "spaceship", which the docs site does not have.',
+	]);
+});
+
+test('an unknown Tag variant', () => {
+	expect(
+		onePage(
+			"<Tag variant=\"danger\">X</Tag>\n\n## A {{ tag: 'X', variant: 'loud' }}",
+		),
+	).toEqual([
+		'index.mdx:5 uses the Tag variant "danger"; the variants are changes, mono, ci and setup.',
+		'index.mdx:7 uses the Tag variant "loud"; the variants are changes, mono, ci and setup.',
+	]);
+});
+
+test('a nav href listed twice', () => {
+	const dir = site({
+		'nav.json': JSON.stringify([
+			{title: 'A', links: [{title: 'Home', href: '/'}]},
+			{title: 'B', links: [{title: 'Home again', href: '/'}]},
+		]),
+		'index.mdx': page('Home'),
+	});
+	expect(checkDocsSite(dir)).toEqual([
+		'nav.json lists / twice (Home, Home again); each page goes in the nav once.',
+	]);
+});
+
+test('a nav.json with the wrong shape', () => {
+	const shapes = [
+		[{title: 'A', links: [{title: 'Home', href: '/'}]}, {links: []}],
+		{title: 'A'},
+		[{title: 'A', links: [{title: 'Home'}]}],
+		[{title: 'A', links: [{title: 'Home', href: 'install'}]}],
+	];
+	expect(
+		shapes.map(shape =>
+			checkDocsSite(
+				site({'nav.json': JSON.stringify(shape), 'index.mdx': page('Home')}),
+			),
+		),
+	).toEqual([
+		[
+			'nav.json must be a list of groups, each {title, links: [{title, href}]} with string values and hrefs that start with /: group 2 has no title.',
+		],
+		[
+			'nav.json must be a list of groups, each {title, links: [{title, href}]} with string values and hrefs that start with /: it is not a list.',
+		],
+		[
+			'nav.json must be a list of groups, each {title, links: [{title, href}]} with string values and hrefs that start with /: link 1 of group 1 (A) has no href.',
+		],
+		[
+			'nav.json must be a list of groups, each {title, links: [{title, href}]} with string values and hrefs that start with /: link 1 of group 1 (A) has the href "install".',
+		],
+	]);
+});
+
+test('a page at /changelog, which the docs build writes itself', () => {
+	const dir = site({
+		'nav.json': nav('/', '/changelog'),
+		'index.mdx': page('Home'),
+		'changelog.mdx': page('Changelog'),
+	});
+	expect(checkDocsSite(dir)).toEqual([
+		'changelog.mdx is reserved: chamoji.dev/docs builds /changelog from CHANGELOG.md. Rename the page.',
+	]);
+});
