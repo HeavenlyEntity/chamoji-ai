@@ -99,9 +99,9 @@ Add `"--ai"` to `args` to let Jev reorder `search_memory`’s results. The commi
 
 <Properties>
 	<Property name="--ai" type="boolean">
-		Let Jev reorder `search_memory`’s matches before it answers: the ten best,
-		or as many as the call’s `limit` when that’s more. Jev sees what it sees for
-		`memory search --ai`. Needs `TYPESAFE_API_KEY`, from the environment or an
+		Let Jev reorder `search_memory`’s ten best matches before it answers, as
+		`memory search --ai` does. With a `limit` above 10, the rest follow in
+		keyword order. Needs `TYPESAFE_API_KEY`, from the environment or an
 		untracked `.env.local` or `.env`. Without a key, it says so on stderr and
 		keeps the keyword order, and the server still runs. A rerank that fails also
 		keeps it.

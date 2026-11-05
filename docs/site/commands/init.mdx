@@ -111,7 +111,12 @@ When `chamoji` isn’t on your PATH, the server starts with `npx --yes @chamoji/
 
 Claude Code won’t start a server from a project’s `.mcp.json` until you approve it. Until then, `claude mcp list` shows it as pending approval.
 
-chamoji leaves a file alone, and changes nothing, when it is a symlink or in a symlinked folder, isn’t valid JSON or a JSON object, has an `mcpServers`, `hooks` or `hooks.PreToolUse` of the wrong type, or holds a number that can’t be written back exactly. Not verified: the `.mcp.json` it writes on native Windows, where `npx` and a `chamoji` shim may need a `cmd /c` wrapper.
+chamoji leaves a file alone, and changes nothing, when it is a symlink or in a symlinked folder, isn’t valid JSON or a JSON object, has an `mcpServers`, `hooks` or `hooks.PreToolUse` of the wrong type, or holds a number that can’t be written back exactly.
+
+<Note>
+	On native Windows, the `.mcp.json` entry may need a `cmd /c` wrapper for `npx`
+	or a `chamoji` shim. This hasn’t been tested there yet.
+</Note>
 
 ## The commit hook {{ icon: 'git-commit' }}
 
