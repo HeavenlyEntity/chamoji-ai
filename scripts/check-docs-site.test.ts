@@ -120,9 +120,10 @@ test('the components, attributes and heading annotations the docs use are fine',
 				'<Properties>\n\t<Property name="--dry-run" type="boolean" since="0.9.0">\n\t\tText.\n\t</Property>\n</Properties>',
 				'<Steps>\n\t<Step title="One.">Text.</Step>\n</Steps>',
 				'<Row>\n\t<Col sticky>\n\t\tText.\n\t</Col>\n</Row>',
-				'<Guides>\n\t<Guide href="/x" name="X" description="Y" />\n</Guides>',
-				'<Resources>\n\t<Resource href="/x" name="X" description="Y" icon="robot" />\n</Resources>',
-				'<Button href="/x" arrow="right" count={3} wide={true}>Go</Button>',
+				'<Guides>\n\t<Guide href="/x" name="X">Y</Guide>\n</Guides>',
+				'<Resources>\n\t<Resource href="/x" name="X" icon="robot" code={true}>Y</Resource>\n</Resources>',
+				'<Button href="/x" arrow="right" variant="text">Go</Button>',
+				'<Tag variant="mono" size="small">MONO</Tag>',
 				'<Note>Careful.</Note>',
 				'<CodeGroup title="Install">\n\n```bash\nnpm i chamoji\n```\n\n</CodeGroup>',
 				'Code like `{x}` and `<b>` is only text.',
@@ -191,9 +192,9 @@ test('a fragment', () => {
 
 test('an attribute value that is an expression', () => {
 	expect(
-		onePage('<Note title={globalThis.x}>a</Note>\n\n<Note {...props}>b</Note>'),
+		onePage('<Step title={globalThis.x}>a</Step>\n\n<Note {...props}>b</Note>'),
 	).toEqual([
-		'index.mdx:5 gives <Note> title={globalThis.x}; attribute values must be strings, numbers or booleans.',
+		'index.mdx:5 gives <Step> title={globalThis.x}; attribute values must be strings, numbers or booleans.',
 		'index.mdx:7 spreads {...props} into <Note>; attribute values must be strings, numbers or booleans.',
 	]);
 });
@@ -217,7 +218,7 @@ test('a heading annotation with an unknown key or a value that is not a literal'
 test('an unknown icon name', () => {
 	expect(
 		onePage(
-			'## A {{ icon: \'rocket\' }}\n\n<Resources>\n\t<Resource href="/x" name="X" description="Y" icon="spaceship" />\n</Resources>',
+			'## A {{ icon: \'rocket\' }}\n\n<Resources>\n\t<Resource href="/x" name="X" icon="spaceship">Y</Resource>\n</Resources>',
 		),
 	).toEqual([
 		'index.mdx:5 uses the icon "rocket", which the docs site does not have.',
@@ -338,7 +339,7 @@ test('a link that is not a path, a web address or a mail address', () => {
 				'[a](javascript:alert(1)) and ![b](data:text/html,x) and [c][ref].',
 				'[ref]: VBScript:msgbox',
 				'<Button href=" java\tscript:alert(1)">Go</Button>',
-				'<Guides>\n\t<Guide href="//evil.example" name="X" description="Y" />\n</Guides>',
+				'<Guides>\n\t<Guide href="//evil.example" name="X">Y</Guide>\n</Guides>',
 			].join('\n\n'),
 		),
 	).toEqual([
@@ -347,5 +348,35 @@ test('a link that is not a path, a web address or a mail address', () => {
 		'index.mdx:7 links to VBScript:msgbox; a link is a path such as /commands/release, or an http, https or mailto address.',
 		'index.mdx:9 links to " java\\tscript:alert(1)"; a link is a path such as /commands/release, or an http, https or mailto address.',
 		'index.mdx:12 links to //evil.example; a link is a path such as /commands/release, or an http, https or mailto address.',
+	]);
+});
+
+test('an attribute the component does not take, such as annotation, which the build runs as code', () => {
+	expect(
+		onePage(
+			[
+				'<Note annotation="{ title: globalThis.x }">a</Note>',
+				'<p annotation={"{ className: globalThis.x }"}>a</p>',
+				'<Button href="/x" formAction="javascript:alert(1)">x</Button>',
+			].join('\n\n'),
+		),
+	).toEqual([
+		'index.mdx:5 gives <Note> the attribute annotation, which it does not take. It takes none.',
+		'index.mdx:7 gives <p> the attribute annotation, which it does not take. Its attributes are className.',
+		'index.mdx:9 gives <Button> the attribute formAction, which it does not take. Its attributes are href, variant, arrow, className.',
+	]);
+});
+
+test('a brace after a code block language that is not an annotation', () => {
+	expect(
+		onePage(
+			[
+				"```bash {{ title: 'a' }} extra\necho hi\n```",
+				'```js {title}\nx\n```',
+			].join('\n\n'),
+		),
+	).toEqual([
+		"index.mdx:5 has a { after a code block's language that isn't an annotation; write it like {{ title: 'Install' }}.",
+		"index.mdx:9 has a { after a code block's language that isn't an annotation; write it like {{ title: 'Install' }}.",
 	]);
 });

@@ -33,24 +33,30 @@ const bannedWord = new RegExp(
 );
 const bannedName = new RegExp(BANNED_NAMES.join('|'), 'gi');
 
-/** The components the docs site gives MDX pages. */
-const COMPONENTS = [
-	'Note',
-	'Properties',
-	'Property',
-	'Steps',
-	'Step',
-	'CodeGroup',
-	'Row',
-	'Col',
-	'Guides',
-	'Guide',
-	'Resources',
-	'Resource',
-	'Tag',
-	'Button',
-	'p',
-];
+/**
+ * The components the docs site gives MDX pages, each with the attributes it
+ * takes: the props of the components in chamoji-web's apps/docs. Any other
+ * attribute is refused, since the MDX build runs some (an `annotation`) as
+ * code and some components pass the rest on to the page.
+ */
+const COMPONENT_ATTRIBUTES = {
+	Note: [],
+	Properties: [],
+	Property: ['name', 'type', 'since'],
+	Steps: [],
+	Step: ['title'],
+	CodeGroup: ['title', 'tag', 'label'],
+	Row: [],
+	Col: ['sticky'],
+	Guides: [],
+	Guide: ['href', 'name'],
+	Resources: [],
+	Resource: ['name', 'icon', 'href', 'code'],
+	Tag: ['variant', 'size', 'className'],
+	Button: ['href', 'variant', 'arrow', 'className'],
+	p: ['className'],
+};
+const COMPONENTS = Object.keys(COMPONENT_ATTRIBUTES);
 
 /** The keys a heading annotation, `## Title {{ icon: 'flag' }}`, may set. */
 const ANNOTATION_KEYS = [
@@ -424,6 +430,14 @@ function elementProblems(page, node) {
 			continue;
 		}
 
+		const allowed = COMPONENT_ATTRIBUTES[name];
+		if (!allowed.includes(attribute.name)) {
+			problems.push(
+				`${page}:${at} gives <${name}> the attribute ${attribute.name}, which it does not take. ${allowed.length > 0 ? `Its attributes are ${allowed.join(', ')}.` : 'It takes none.'}`,
+			);
+			continue;
+		}
+
 		let value = attribute.value ?? true;
 		if (typeof attribute.value === 'object' && attribute.value !== null) {
 			const literal = literalValue(expressionOf(attribute.value));
@@ -483,6 +497,11 @@ function mdxProblems(page, text) {
 				const annotation = codeAnnotationOf(node);
 				if (annotation !== undefined) {
 					problems.push(...codeAnnotationProblems(page, line, annotation));
+				} else if (`${node.lang ?? ''}${node.meta ?? ''}`.includes('{')) {
+					// Fail closed: a brace the build might read as an annotation one day.
+					problems.push(
+						`${page}:${line} has a { after a code block's language that isn't an annotation; write it like {{ title: 'Install' }}.`,
+					);
 				}
 
 				break;
