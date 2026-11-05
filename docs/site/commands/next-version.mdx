@@ -8,17 +8,18 @@ export const metadata = {
 
 <p className="lead">
 	Print the next version, worked out from the commits since the last release
-	tag. It doesn’t fetch, check the branch or touch your files. When no commit
-	calls for a release, it prints nothing to stdout and exits 3.
+	tag. It doesn’t check the branch or touch your files, and in a single package
+	it doesn’t fetch. When no commit calls for a release, it prints nothing to
+	stdout and exits 3.
 </p>
 
 <Tag variant="mono">MONOREPO-AWARE</Tag>
 <Tag variant="ci">EXIT 3 FOR SCRIPTS</Tag>
 
 <Note>
-	With no release tag yet, it counts from 0.0.0, so a ✨ commit gives 0.1.0.
-	`chamoji release 0.1.0` cuts that first release; `chamoji release` alone won’t
-	guess one.
+	In a single package with no release tag yet, it counts from 0.0.0, so a ✨
+	commit gives 0.1.0. But a bare `chamoji release` won’t guess a first version:
+	run `chamoji release 0.1.0`.
 </Note>
 
 ## What it does, in order {{ icon: 'list-numbers' }}
@@ -40,6 +41,8 @@ export const metadata = {
 
 In a repo with release units, it does this for each unit, with the unit’s own tags and commits, and prints one line per unit. A unit with no tag of its own gets its `firstVersion` when that’s set, or else the version in its manifest, or a date version for a `calver` unit. Settings such as `zeroMajor` and a unit’s `versioning` change how its version moves; [Config](/reference/config) has them.
 
+With release units it needs the full history. In a shallow clone, such as the one GitHub Actions’ checkout makes by default, it first fetches every commit and tag from `origin`, and exits 2 when it can’t. In CI, check out with `fetch-depth: 0`.
+
 ## Arguments
 
 `chamoji next-version` takes no arguments.
@@ -52,8 +55,10 @@ In a repo with release units, it does this for each unit, with the unit’s own 
 		without release units; with units it’s ignored.
 	</Property>
 	<Property name="--config <file>" type="string · default chamoji.config.json">
-		Read this config file instead. The default is `chamoji.config.json` when the
-		repo has one. A file that doesn’t exist exits 1.
+		Read this config file instead, from a path relative to the current folder.
+		Without it, chamoji reads `chamoji.config.json` in the current folder, not
+		at the repo root, so run chamoji from the root. A file that doesn’t exist
+		exits 1.
 	</Property>
 	<Property name="--ai" type="boolean">
 		Sort the commits no rule can place with Jev first, so their bumps count. It
@@ -167,7 +172,9 @@ chamoji: this looks like a monorepo with several apps; run chamoji setup to vers
 		release.
 	</Property>
 	<Property name="2">
-		The config’s `release` section is from a newer chamoji.
+		In a monorepo, a shallow clone it couldn’t unshallow, or a version file it
+		can’t set, such as a `versionFiles` entry that is missing or a symlink. Also
+		for a `release` section from a newer chamoji.
 	</Property>
 	<Property name="1">
 		Anything else, such as `--unit` in a repo without release units, or a

@@ -14,6 +14,7 @@ export const metadata = {
 </p>
 
 <Tag variant="setup">SETUP</Tag>
+<Tag variant="setup">SINCE 0.14.0</Tag>
 <Tag variant="mono">MONOREPO-AWARE</Tag>
 <Tag variant="ci">--json FOR CI AND AGENTS</Tag>
 
@@ -88,19 +89,19 @@ The four steps:
 ## Flags {{ badge: '4', icon: 'flag' }}
 
 <Properties>
-	<Property name="--yes" type="boolean" since="0.14.0">
+	<Property name="--yes" type="boolean">
 		Take every recommended answer without asking. It runs the memory and Claude
 		Code steps when they’re offered and not done, and never installs the hook
 		unless you name it: `chamoji setup hook --yes`. With a step, it runs just
 		that step. Works with `--json` and `--explain`.
 	</Property>
-	<Property name="--json" type="boolean" since="0.14.0">
+	<Property name="--json" type="boolean">
 		Print what setup found and did as JSON on stdout, and nothing else. It never
 		opens the screen. Without `--yes` it writes nothing and reports what it
 		would do. With `--yes` it does it, then reports. The keys are `found`,
 		`answers`, `why`, `steps`, `wrote` and `squashMerge`.
 	</Property>
-	<Property name="--explain" type="boolean" since="0.14.0">
+	<Property name="--explain" type="boolean">
 		Print each value of the release section and where it came from: detected in
 		the repo, recommended for its shape, chosen on the screen, or kept from
 		`chamoji.config.json`. Works with or without `--yes`. Under `--json` it

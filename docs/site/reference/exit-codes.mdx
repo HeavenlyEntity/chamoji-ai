@@ -60,13 +60,17 @@ chamoji release --push || [ $? -eq 3 ]
 	</Property>
 	<Property name="next-version">
 		0 when it printed a version. 3 when no commit since the last tag implies a
-		bump. In a monorepo, 0 when any unit would release and 3 when none would.
+		bump. In a monorepo, 0 when any unit would release and 3 when none would,
+		and 2 for a shallow clone it couldn’t unshallow or a version file it can’t
+		set.
 	</Property>
 	<Property name="release">
 		0 when it released, or the dry run worked. 3 when there is nothing to
 		release. 2 when a check failed: a dirty working tree, the wrong branch, a
 		version that isn’t semver or isn’t newer, a first release with no version, a
-		tag that already exists. 1 for anything else, such as a failed push.
+		tag that already exists, or a shallow clone it couldn’t unshallow. In a
+		monorepo, also a version file it can’t set, or a version that differs from
+		its fixed group’s. 1 for anything else, such as a failed push.
 	</Property>
 	<Property name="setup">
 		0 when it saved, or nothing would change. 2 when something would change and

@@ -115,8 +115,10 @@ In a repo with release units, each unit with something to release gets its own v
 		`TYPESAFE_API_KEY`, or it exits 1.
 	</Property>
 	<Property name="--config <file>" type="string · default chamoji.config.json">
-		Read this config file instead. The default is `chamoji.config.json` when the
-		repo has one. A file that doesn’t exist exits 1.
+		Read this config file instead, from a path relative to the current folder.
+		Without it, chamoji reads `chamoji.config.json` in the current folder, not
+		at the repo root, so run chamoji from the root. A file that doesn’t exist
+		exits 1.
 	</Property>
 	<Property name="--no-update-check" type="boolean">
 		Don’t check npm for a newer chamoji. See [the update
@@ -313,7 +315,10 @@ chamoji: give --unit with a version, for example: chamoji release 2.0.0 --unit m
 	<Property name="2">
 		A check failed: a dirty working tree, the wrong branch, a shallow clone it
 		couldn’t unshallow, a version that isn’t semver or isn’t newer, a first
-		release with no version, or a tag that already exists. Also for a `release`
+		release with no version, or a tag that already exists. In a monorepo, also a
+		version file it can’t set: a `versionFiles` entry that is missing or a
+		symlink, a file it can’t set the version in, a dependency range it can’t
+		set, or a version that differs from its fixed group’s. Also for a `release`
 		section from a newer chamoji.
 	</Property>
 	<Property name="1">
