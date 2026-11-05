@@ -1,0 +1,23 @@
+[
+	{
+		"title": "Get started",
+		"links": [
+			{"title": "Introduction", "href": "/"},
+			{"title": "Install", "href": "/install"},
+			{"title": "Quickstart", "href": "/quickstart"},
+			{"title": "Set up a repo", "href": "/set-up-a-repo"}
+		]
+	},
+	{
+		"title": "Reference",
+		"links": [
+			{"title": "Config", "href": "/reference/config"},
+			{
+				"title": "How commits are read",
+				"href": "/reference/how-commits-are-read"
+			},
+			{"title": "Exit codes", "href": "/reference/exit-codes"},
+			{"title": "Environment", "href": "/reference/environment"}
+		]
+	}
+]

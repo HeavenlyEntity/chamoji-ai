@@ -1,0 +1,139 @@
+export const metadata = {
+	title: 'Environment',
+	description:
+		'Every environment variable chamoji reads: the face, colour, the update check, the TypeSafe key, config paths and git.',
+};
+
+# Environment
+
+<p className="lead">
+	chamoji reads a few environment variables: to turn the moving faces and the
+	update check off, to pick colours, to find its key and cache, and to keep git
+	from asking for a password mid-command. This page lists every one.
+</p>
+
+## The face {{ icon: 'sparkle' }}
+
+Commands that wait, such as `memory sync`, show a small face on stderr while they work, with the step’s name. They end with a line such as `( ■‿■ ) ✓ Synced memory with origin: 2 entries in 3s`. A bare `chamoji` plays a short intro. The faces use the logo’s foil colours on a dark terminal and plain text on a light one.
+
+- **Nothing moves,** and the output is exactly what it was before faces, when stderr isn’t a terminal, in CI, with `TERM=dumb`, with `--json`, or with `CHAMOJI_NO_ANIMATION=1`.
+- **It never touches stdout,** so pipes and `--json` are unaffected.
+- **Colour** follows `FORCE_COLOR`. `FORCE_COLOR=0` removes the colour, but the faces still move.
+
+## Faces and colour {{ badge: '7', icon: 'sun' }}
+
+<Properties>
+	<Property name="CHAMOJI_NO_ANIMATION=1" type="exactly 1">
+		Turn off the moving faces and the intro. Other values do nothing.
+	</Property>
+	<Property name="CHAMOJI_THEME" type="light | dark">
+		Skip asking the terminal for its background, which chamoji otherwise does
+		once. Light means no foil colours. Other values are ignored.
+	</Property>
+	<Property name="CHAMOJI_ASCII=1" type="exactly 1">
+		Draw the faces and the logo in plain ASCII. This is the default on the old
+		Windows console.
+	</Property>
+	<Property name="COLORFGBG" type="foreground;background">
+		The fallback for the theme, when `CHAMOJI_THEME` isn’t set and the terminal
+		doesn’t answer. A background of 7 or 15 is light; any other number is dark.
+		Without either, chamoji assumes dark.
+	</Property>
+	<Property name="FORCE_COLOR" type="0 to 3, true or false">
+		`0` or `false` turns colour off, and the faces still move. `1`, `2` or `3`
+		sets the colour level, whatever the terminal says. `true` turns colour on at
+		the level the terminal supports.
+	</Property>
+	<Property name="NO_COLOR" type="not read yet">
+		chamoji 0.14.0 doesn’t read it, so the colour stays. Use `FORCE_COLOR=0`
+		instead.
+	</Property>
+	<Property name="WT_SESSION" type="set by Windows Terminal">
+		On Windows, chamoji draws its usual faces when this is set, and ASCII when
+		it isn’t, as on the old console.
+	</Property>
+</Properties>
+
+## CI and terminals {{ badge: '2', icon: 'terminal-window' }}
+
+<Properties>
+	<Property name="CI" type="any value">
+		Set by most CI services. With it, nothing animates, there is no update
+		check, the commit composer hook doesn’t open, and the one-time hints after
+		`init` and in a monorepo without a `release` section don’t show.
+	</Property>
+	<Property name="TERM=dumb" type="exactly dumb">
+		Nothing animates.
+	</Property>
+</Properties>
+
+## The update check {{ badge: '4', icon: 'cloud-arrow-up' }}
+
+The check runs at most once a day and only when stderr is a terminal. [Install](/install#the-update-notice) says what it sends.
+
+<Properties>
+	<Property name="CHAMOJI_NO_UPDATE_CHECK=1" type="exactly 1">
+		Don’t check npm for a newer chamoji. The same as `--no-update-check`.
+	</Property>
+	<Property name="NO_UPDATE_NOTIFIER" type="any value">
+		The same, under the name other CLIs use.
+	</Property>
+	<Property name="XDG_CONFIG_HOME" type="absolute path">
+		Where the cache goes: `$XDG_CONFIG_HOME/chamoji/update-check.json`. A
+		relative path is ignored. Default: `~/.config`.
+	</Property>
+	<Property name="APPDATA" type="path · Windows">
+		Where the cache goes on Windows, when `XDG_CONFIG_HOME` isn’t set.
+	</Property>
+</Properties>
+
+## AI {{ badge: '1', icon: 'robot' }}
+
+<Properties>
+	<Property name="TYPESAFE_API_KEY" type="string">
+		The key for [Jev](https://typesafe.ai), which `--ai` and the composer’s
+		suggestions use. If it isn’t in the environment, chamoji reads that one line
+		from `.env.local`, then `.env`, in the current folder, and no other variable
+		in those files. For memory search, `mcp --ai` and the composer, a file git
+		tracks is skipped, so a repo you clone can’t send your work to someone
+		else’s account. Without `--ai`, nothing is sent.
+	</Property>
+</Properties>
+
+## git and your PATH {{ badge: '3', icon: 'git-commit' }}
+
+<Properties>
+	<Property name="GIT_SSH_COMMAND" type="command">
+		For git commands that reach the network, such as `memory sync`, chamoji sets
+		`GIT_TERMINAL_PROMPT=0`, and uses `ssh -o BatchMode=yes` unless you set an
+		ssh command, here or in `core.sshCommand`. A missing password then fails the
+		command instead of waiting for a prompt the face would draw over.
+	</Property>
+	<Property name="GIT_SSH" type="path">
+		The older way to name an ssh program. When it’s set, chamoji leaves ssh
+		alone, as with `GIT_SSH_COMMAND`.
+	</Property>
+	<Property name="PATH" type="path list">
+		`init --agents` checks whether `chamoji` is on it, and writes `npx --yes
+		@chamoji/cli mcp` into `.mcp.json` when it isn’t. `setup` offers the Claude
+		Code step when `claude` is on it.
+	</Property>
+</Properties>
+
+## Not a variable {{ anchor: false }}
+
+`CHAMOJI_NO_CARD=1` looks like one, but the Claude Code hook reads it from the text of the agent’s command: `CHAMOJI_NO_CARD=1 git commit -m "…"` lets a commit without a `Why:` line through. Use it when you’ve told the agent to skip cards.
+
+## Related {{ anchor: false }}
+
+<Guides>
+	<Guide href="/install" name="Install">
+		The update notice, and how to turn it off.
+	</Guide>
+	<Guide href="/guides/sorting-with-ai" name="Sorting with AI">
+		What --ai sends, and where the key comes from.
+	</Guide>
+	<Guide href="/reference/exit-codes" name="Exit codes">
+		What 0, 1, 2 and 3 mean for every command.
+	</Guide>
+</Guides>
