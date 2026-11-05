@@ -60,10 +60,15 @@ Commands that wait, such as `memory sync`, show a small face on stderr while the
 	<Property name="CI" type="any value">
 		Set by most CI services. With it, nothing animates, there is no update
 		check, the commit composer hook doesn’t open, and the one-time hints after
-		`init` and in a monorepo without a `release` section don’t show.
+		`init` and in a monorepo without a `release` section don’t show. It also
+		sets the colour level when the output is a terminal or `FORCE_COLOR=true` is
+		set: full colour on GitHub Actions, Gitea Actions and CircleCI; 16 colours
+		on Travis, AppVeyor, GitLab CI, Buildkite, Drone and Codeship. Other CI gets
+		no colour, or 16 colours with `FORCE_COLOR=true`. A number in `FORCE_COLOR`
+		always wins. On Windows, the Windows console’s level applies instead.
 	</Property>
 	<Property name="TERM=dumb" type="exactly dumb">
-		Nothing animates.
+		Nothing animates, and there is no colour unless `FORCE_COLOR` asks for it.
 	</Property>
 </Properties>
 
@@ -114,9 +119,9 @@ The check runs at most once a day and only when stderr is a terminal. [Install](
 		alone, as with `GIT_SSH_COMMAND`.
 	</Property>
 	<Property name="PATH" type="path list">
-		`init --agents` checks whether `chamoji` is on it, and writes `npx --yes
-		@chamoji/cli mcp` into `.mcp.json` when it isn’t. `setup` offers the Claude
-		Code step when `claude` is on it.
+		`init --agents` checks whether `chamoji` is on it. When it isn’t, the server
+		in `.mcp.json` starts with `npx --yes @chamoji/cli mcp` instead. `setup`
+		offers the Claude Code step when `claude` is on it.
 	</Property>
 </Properties>
 
