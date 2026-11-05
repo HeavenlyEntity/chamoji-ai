@@ -126,6 +126,11 @@ test('the components, attributes and heading annotations the docs use are fine',
 				'<Note>Careful.</Note>',
 				'<CodeGroup title="Install">\n\n```bash\nnpm i chamoji\n```\n\n</CodeGroup>',
 				'Code like `{x}` and `<b>` is only text.',
+				"```bash {{ title: 'Install' }}\nnpm i chamoji\n```",
+				"```js{{ title: 'x.js', tag: 'GET', label: '/v1' }}\nx\n```",
+				'```bash\ncurl -d \'{"a": {"b": 1}}\'\n```',
+				'[Release](/commands/release), [the repo](https://github.com/HeavenlyEntity/chamoji-ai), [flags](#flags), [mail](mailto:hi@chamoji.dev) and [notes][notes].',
+				'[notes]: ./guides/writing-commits',
 			].join('\n\n'),
 		),
 	).toEqual([]);
@@ -281,5 +286,66 @@ test('a page at /changelog, which the docs build writes itself', () => {
 	});
 	expect(checkDocsSite(dir)).toEqual([
 		'changelog.mdx is reserved: chamoji.dev/docs builds /changelog from CHANGELOG.md. Rename the page.',
+	]);
+});
+
+test('a code block annotation with a value that is not a string', () => {
+	expect(
+		onePage(
+			[
+				'```bash {{ title: globalThis.process.env.DATABASE_URL }}\necho hi\n```',
+				"```js{{ title: (() => { throw new Error('ran at build') })() }}\nx\n```",
+			].join('\n\n'),
+		),
+	).toEqual([
+		'index.mdx:5 annotates a code block with title: globalThis.process.env.DATABASE_URL; code block annotation values must be strings.',
+		"index.mdx:9 annotates a code block with title: (() => { throw new Error('ran at build') })(); code block annotation values must be strings.",
+	]);
+});
+
+test('a code block annotation with a key other than title, tag or label', () => {
+	expect(
+		onePage(
+			[
+				"```bash {{ title: 'x', dangerouslySetInnerHTML: {__html: '<img src=x onerror=alert(1)>'} }}\necho hi\n```",
+				'```bash {{ ...globalThis }}\necho hi\n```',
+			].join('\n\n'),
+		),
+	).toEqual([
+		'index.mdx:5 annotates a code block with dangerouslySetInnerHTML; the keys are title, tag and label.',
+		'index.mdx:9 annotates a code block with ...globalThis; the keys are title, tag and label.',
+	]);
+});
+
+test('a code block annotation that is not one object', () => {
+	expect(
+		onePage(
+			[
+				"```bash {{ title: 'a' }); globalThis.x = 1; ({ }}\necho hi\n```",
+				"```bash {{ title: 'a' }}, {{ title: 'b' }}\necho hi\n```",
+			].join('\n\n'),
+		),
+	).toEqual([
+		"index.mdx:5 has a code block annotation that isn't one object; write it like {{ title: 'Install' }}.",
+		"index.mdx:9 has a code block annotation that isn't one object; write it like {{ title: 'Install' }}.",
+	]);
+});
+
+test('a link that is not a path, a web address or a mail address', () => {
+	expect(
+		onePage(
+			[
+				'[a](javascript:alert(1)) and ![b](data:text/html,x) and [c][ref].',
+				'[ref]: VBScript:msgbox',
+				'<Button href=" java\tscript:alert(1)">Go</Button>',
+				'<Guides>\n\t<Guide href="//evil.example" name="X" description="Y" />\n</Guides>',
+			].join('\n\n'),
+		),
+	).toEqual([
+		'index.mdx:5 links to javascript:alert(1); a link is a path such as /commands/release, or an http, https or mailto address.',
+		'index.mdx:5 links to data:text/html,x; a link is a path such as /commands/release, or an http, https or mailto address.',
+		'index.mdx:7 links to VBScript:msgbox; a link is a path such as /commands/release, or an http, https or mailto address.',
+		'index.mdx:9 links to " java\\tscript:alert(1)"; a link is a path such as /commands/release, or an http, https or mailto address.',
+		'index.mdx:12 links to //evil.example; a link is a path such as /commands/release, or an http, https or mailto address.',
 	]);
 });

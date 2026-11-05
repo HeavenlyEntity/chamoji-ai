@@ -2,11 +2,13 @@
 // has a page, every page is in the nav and has its metadata, and the copy
 // keeps to the house style. chamoji.dev compiles each page as MDX, which is
 // code, so each page is also parsed and may only use the site's components,
-// literal attribute values and heading annotations. `pnpm check` runs it; it
-// prints each problem and exits 1 when there is one.
+// literal attribute values, heading and code block annotations, and links to
+// paths or web and mail addresses. `pnpm check` runs it; it prints each
+// problem and exits 1 when there is one.
 import {existsSync, readdirSync, readFileSync} from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import * as acorn from 'acorn';
 import remarkMdx from 'remark-mdx';
 import remarkParse from 'remark-parse';
 import {unified} from 'unified';
@@ -60,6 +62,12 @@ const ANNOTATION_KEYS = [
 	'anchor',
 	'className',
 ];
+
+/** The keys a code block annotation, ```bash {{ title: 'Install' }}, may set. */
+const CODE_ANNOTATION_KEYS = ['title', 'tag', 'label'];
+
+/** The schemes a link may use. A link with no scheme is a path on chamoji.dev. */
+const URL_SCHEMES = ['http', 'https', 'mailto'];
 
 /** The Tag tints. */
 const TAG_VARIANTS = ['changes', 'mono', 'ci', 'setup'];
@@ -311,6 +319,74 @@ function annotationProblems(page, text, line, object) {
 	return problems;
 }
 
+/**
+ * The annotation chamoji.dev's MDX build (mdx-annotations) reads from a code
+ * block, as in ```bash {{ title: 'Install' }}, or undefined when it reads none.
+ * The build runs the annotation as code, so this matches it the same way.
+ */
+function codeAnnotationOf(node) {
+	let meta = node.meta ?? '';
+	const index = node.lang?.match(/{\s*{/)?.index;
+	if (typeof index === 'number') meta = `${node.lang.slice(index)}${meta}`;
+	return /^{\s*{.*?}\s*}$/.test(meta) ? meta.slice(1, -1) : undefined;
+}
+
+/** Problems with a code block annotation: one object of title, tag and label strings. */
+function codeAnnotationProblems(page, line, annotation) {
+	// The build parses the annotation like this and spreads it into <pre>'s props.
+	const source = `(${annotation.trim()})`;
+	let program;
+	try {
+		program = acorn.parse(source, {ecmaVersion: 'latest'});
+	} catch {}
+
+	const object =
+		program?.body.length === 1 &&
+		program.body[0].type === 'ExpressionStatement' &&
+		program.body[0].expression.type === 'ObjectExpression'
+			? program.body[0].expression
+			: undefined;
+	if (!object) {
+		return [
+			`${page}:${line} has a code block annotation that isn't one object; write it like {{ title: 'Install' }}.`,
+		];
+	}
+
+	const problems = [];
+	for (const property of object.properties) {
+		const key = property.kind === 'init' ? propertyName(property) : undefined;
+		if (!key || !CODE_ANNOTATION_KEYS.includes(key)) {
+			problems.push(
+				`${page}:${line} annotates a code block with ${key ?? sourceOf(source, property)}; the keys are ${CODE_ANNOTATION_KEYS.slice(0, -1).join(', ')} and ${CODE_ANNOTATION_KEYS.at(-1)}.`,
+			);
+		} else if (typeof literalValue(property.value)?.value !== 'string') {
+			problems.push(
+				`${page}:${line} annotates a code block with ${key}: ${sourceOf(source, property.value)}; code block annotation values must be strings.`,
+			);
+		}
+	}
+
+	return problems;
+}
+
+/**
+ * A problem with a link to `url`, or undefined when it is a path on
+ * chamoji.dev or an http, https or mailto address. Browsers drop spaces and
+ * control characters around a scheme, so they are dropped here too.
+ */
+function urlProblem(page, line, url) {
+	const bare = String(url).replaceAll(/[\u0000-\u0020\u007F]/g, '');
+	const scheme = /^([a-z][a-z\d+.-]*):/i.exec(bare)?.[1];
+	const allowed = scheme
+		? URL_SCHEMES.includes(scheme.toLowerCase())
+		: !/^[/\\]{2}/.test(bare);
+	if (allowed) return [];
+	const shown = /[\u0000-\u0020\u007F]/.test(url) ? JSON.stringify(url) : url;
+	return [
+		`${page}:${line} links to ${shown}; a link is a path such as /commands/release, or an http, https or mailto address.`,
+	];
+}
+
 /** An unknown icon name, or an unknown Tag variant. */
 function valueProblems(page, line, key, value) {
 	if (key === 'icon' && !ICON_NAMES.has(value)) {
@@ -361,7 +437,9 @@ function elementProblems(page, node) {
 			value = literal.value;
 		}
 
-		if (attribute.name === 'icon') {
+		if (attribute.name === 'href' || attribute.name === 'src') {
+			problems.push(...urlProblem(page, at, value));
+		} else if (attribute.name === 'icon') {
 			problems.push(...valueProblems(page, at, 'icon', value));
 		} else if (attribute.name === 'variant' && name === 'Tag') {
 			problems.push(...valueProblems(page, at, 'variant', value));
@@ -398,6 +476,22 @@ function mdxProblems(page, text) {
 			case 'mdxJsxFlowElement':
 			case 'mdxJsxTextElement': {
 				problems.push(...elementProblems(page, node));
+				break;
+			}
+
+			case 'code': {
+				const annotation = codeAnnotationOf(node);
+				if (annotation !== undefined) {
+					problems.push(...codeAnnotationProblems(page, line, annotation));
+				}
+
+				break;
+			}
+
+			case 'link':
+			case 'image':
+			case 'definition': {
+				problems.push(...urlProblem(page, line, node.url));
 				break;
 			}
 
