@@ -100,7 +100,7 @@ The release plans again from the commits, so a commit that lands after the previ
 - **`--json` keeps stdout to the JSON.** The moving faces are off, and messages go to stderr.
 - **`status`** is `dry-run`, `released` or `nothing`.
 - **A release** adds `commit`, `pushed` and `githubRelease`. After a push, `memory` says how project memory was synced, when the repo has any, and `error` says why a push failed.
-- **With release units,** the same statuses come with a `units` list, one entry per released unit with its own `tag`, `bump` and `notes`, and `pending` for the units that wait. [Monorepos](/guides/monorepos) explains units.
+- **With release units,** `dry-run` and `released` carry `units`, one entry per released unit with its own `tag`, `bump` and `notes`, plus `files`, `warnings` and `pending`, the units that wait. `nothing` carries only `status` and `pending`. [Monorepos](/guides/monorepos) explains units.
 
 ## Branch on the exit code {{ icon: 'hash', badge: '4' }}
 

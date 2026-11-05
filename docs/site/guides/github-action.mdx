@@ -72,8 +72,8 @@ On a pushed tag, the Action writes that release’s notes and puts them on its G
 	</Step>
 	<Step title="Updates the GitHub release.">
 		If the tag already has a GitHub release, its notes are replaced. Otherwise
-		the Action creates one, titled with the tag, and marks it a prerelease when
-		the tag has a hyphen, such as `v2.0.0-rc.1`.
+		the Action creates one, titled with the tag. Without release units, it marks
+		it a prerelease when the tag has a hyphen anywhere, such as `v2.0.0-rc.1`.
 	</Step>
 </Steps>
 
@@ -147,7 +147,7 @@ jobs:
 The Action sets the commit author to `github-actions[bot]` and runs `chamoji release --push --json`, with the `release-version` and the `unit` when you give them. That makes the `CHANGELOG.md` section, the version bumps, the release commit and the tag, pushes them, and creates the GitHub release. [release](/commands/release) has every step.
 
 - **Nothing to release** (exit 3) passes, with “chamoji: nothing to release since the last tag” in the log and the job summary.
-- **Any other failure** fails the job. A failed check, such as being on a branch other than `origin`’s default, exits 2. The Action doesn’t pass `--any-branch`, so run the workflow on the default branch.
+- **Any other failure** fails the job. A failed check exits 2. The branch check only runs when the clone knows `origin`’s default branch, that is, when `refs/remotes/origin/HEAD` exists, which depends on how the job checks out. When it runs, a release from another branch can exit 2, and the Action doesn’t pass `--any-branch`, so run the workflow on the default branch.
 - **The notes** of each released tag go to the job summary, and the `version` output names the tag.
 - **The push uses the credential `actions/checkout` saved,** the job’s `GITHUB_TOKEN` unless you give checkout a `token`. `github-token` is only for the gh calls, such as creating the GitHub release.
 - **A protected default branch** refuses the bot’s push. Cut releases on your machine with `chamoji release --push`, or give `actions/checkout` a token that may push there.
@@ -174,8 +174,10 @@ Every input of `action.yml` at v0.14.0, with its default:
 	<Property name="cli" type="string · default empty">
 		A command that runs chamoji instead of npx. A repo that builds chamoji
 		itself can give `node packages/cli/dist/cli.js`. Its words are split on
-		spaces. With release units, the PR preview accepts only some commands:
-		see [With release units](#with-release-units).
+		spaces. Give chamoji itself by its full path, such as
+		`/usr/local/bin/chamoji`: a bare `chamoji` doesn’t work in the 0.14.0
+		Action, in any mode. With release units, the PR preview accepts only some
+		commands: see [With release units](#with-release-units).
 	</Property>
 	<Property name="release-version" type="string · default empty">
 		`release` mode only. The version to release, such as `2.0.0` or
@@ -189,8 +191,10 @@ Every input of `action.yml` at v0.14.0, with its default:
 	</Property>
 	<Property name="ai" type="boolean · default false">
 		`true` passes `--ai` to the CLI, so Jev sorts the commits no rule can place.
-		It needs `typesafe-api-key`: with `ai: true` and no key, the CLI exits 1 and
-		the job fails.
+		It needs `typesafe-api-key`. With `ai: true` and no key, the jobs that pass
+		`--ai` fail, since the CLI exits 1: `notes`, `release`, and the preview
+		without release units. `card` and the preview with release units never
+		pass `--ai`, so they still run.
 	</Property>
 	<Property name="typesafe-api-key" type="string · default empty">
 		The TypeSafe key for `ai`, such as `${{ secrets.TYPESAFE_API_KEY }}`. The
@@ -264,7 +268,7 @@ To have Jev sort vague commits in the notes, the preview and releases, add a rep
 In a repo with release units, each job works per unit. [Monorepos](/guides/monorepos) explains units.
 
 - **The CLI version.** When `chamoji.config.json` has any `release` section, the Action first checks that the CLI is 0.13.0 or newer, and otherwise fails with “this repo’s release settings need chamoji 0.13.0 or newer; set chamoji-version”.
-- **Release notes.** On a pushed tag, the Action finds the unit whose tag format the tag fits, and writes that release’s notes with `chamoji changelog --for-tag`. A tag that fits no unit fails the job. Unit tags such as `web/v1.3.0` don’t match `tags: ['v*']`, so list them in the trigger, for example `tags: ['v*', '*/v*']`.
+- **Release notes.** On a pushed tag, the Action finds the unit whose tag format the tag fits, and writes that release’s notes with `chamoji changelog --for-tag`. A tag that fits no unit fails the job. The release is a prerelease only when a hyphen follows the version’s `x.y.z`, as in `web/v2.0.0-rc.1`, so a hyphen in a unit’s name, as in `web-v1.0.0`, doesn’t count. Unit tags such as `web/v1.3.0` don’t match `tags: ['v*']`, so list them in the trigger, for example `tags: ['v*', '*/v*']`.
 - **Releases.** `unit` releases just that unit. Without it, every unit with something to release goes in one release commit, with the tags and GitHub releases that `chamoji release --push` makes.
 - **The preview** lists only the units the PR touches, with the release merging it would make.
 

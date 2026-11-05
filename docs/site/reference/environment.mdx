@@ -98,10 +98,13 @@ The check runs at most once a day and only when stderr is a terminal. [Install](
 	<Property name="TYPESAFE_API_KEY" type="string">
 		The key for [Jev](https://typesafe.ai), which `--ai` and the composer’s
 		suggestions use. If it isn’t in the environment, chamoji reads that one line
-		from `.env.local`, then `.env`, in the current folder, and no other variable
-		in those files. For memory search, `mcp --ai` and the composer, a file git
-		tracks is skipped, so a repo you clone can’t send your work to someone
-		else’s account. Without `--ai`, nothing is sent.
+		from `.env.local`, then `.env`, and no other variable in those files. For
+		`--ai` on `changelog`, `next-version` and `release`, it reads them in the
+		current folder, tracked files included. Memory search and the MCP server,
+		with `--ai`, read them in the current folder and skip a file git tracks. The
+		composer reads them at the repo root and skips a file git tracks. Skipping
+		tracked files means a repo you clone can’t send your work to someone else’s
+		account. Without `--ai` or the composer’s opt-in, nothing is sent.
 	</Property>
 </Properties>
 
