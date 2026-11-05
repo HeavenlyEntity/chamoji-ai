@@ -31,7 +31,14 @@
 			{"title": "Writing commits", "href": "/guides/writing-commits"},
 			{"title": "Workstreams", "href": "/guides/workstreams"},
 			{"title": "Project memory", "href": "/guides/project-memory"},
-			{"title": "Monorepos", "href": "/guides/monorepos"}
+			{"title": "Monorepos", "href": "/guides/monorepos"},
+			{"title": "GitHub Action", "href": "/guides/github-action"},
+			{"title": "Repo card", "href": "/guides/repo-card"},
+			{
+				"title": "Release from your agent",
+				"href": "/guides/release-from-your-agent"
+			},
+			{"title": "Sorting with AI", "href": "/guides/sorting-with-ai"}
 		]
 	},
 	{

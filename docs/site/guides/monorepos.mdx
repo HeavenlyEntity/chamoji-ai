@@ -541,7 +541,7 @@ $ chamoji next-version --json
 - **On a pushed tag,** the Action finds the unit the tag belongs to, and writes that tag’s notes to its GitHub release.
 - **On a pull request,** the preview comment lists only the units the PR touches, with the releases merging it would make.
 
-In a repo with release units, the preview runs the CLI with its working directory at the PR head, and never with your secrets. So the `cli` input must be unset, `node` with a built CLI file from the workspace, such as `node packages/cli/dist/cli.js`, or `chamoji` itself. Anything else, such as `npx`, a shell wrapper or `tsx`, is refused, and so are option words. [GitHub Action](/guides/github-action) has the rest.
+In a repo with release units, the preview runs the CLI with its working directory at the PR head, and never with your secrets. So the `cli` input must be unset, `node` with a built CLI file from the workspace, such as `node packages/cli/dist/cli.js`, or the chamoji command by its full path. A bare `chamoji` doesn’t work in the 0.14.0 Action. Anything else, such as `npx`, a shell wrapper or `tsx`, is refused, and so are option words. [GitHub Action](/guides/github-action) has the rest.
 
 ## Older versions of the CLI {{ icon: 'info' }}
 
