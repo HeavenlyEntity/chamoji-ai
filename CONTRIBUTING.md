@@ -54,6 +54,10 @@ pnpm build && node packages/cli/dist/cli.js changelog | head -40
 - If you change commit parsing, run chamoji on the benchmark repos listed in the roadmap, and put the before and after numbers in the PR.
 - Never commit secrets. `.env` and `.env.*` files are git-ignored; put `TYPESAFE_API_KEY` in `.env.local`.
 
+## Writing docs pages
+
+The pages in `docs/site/` are the docs at [chamoji.dev/docs](https://www.chamoji.dev/docs). The site compiles each one as MDX, which is code, so a docs PR is reviewed like code. `pnpm check` parses every page and allows only the site's components (`Note`, `Properties`, `Property`, `Steps`, `Step`, `CodeGroup`, `Row`, `Col`, `Guides`, `Guide`, `Resources`, `Resource`, `Tag`, `Button`, `p`), literal attribute values and heading annotations such as `{{ icon: 'flag' }}`: no imports, no exports other than `metadata`, and no other `{…}` expressions. To see a page as it will look, ask the chamoji-web maintainers for a preview.
+
 ## Releases (maintainers)
 
 ```bash
