@@ -70,9 +70,10 @@ chamoji release --push || [ $? -eq 3 ]
 	</Property>
 	<Property name="setup">
 		0 when it saved, or nothing would change. 2 when something would change and
-		there is no terminal and no `--yes`, or `--json` and no `--yes`, and for a
-		`release` section from a newer chamoji. 1 when you cancel, or for a step
-		name it doesn’t know.
+		there is no terminal and no `--yes`, or `--json` and no `--yes`, when the
+		hook step finds another tool’s hook, and for a `release` section from a
+		newer chamoji. 1 when you cancel, for a step name it doesn’t know, or when a
+		step fails.
 	</Property>
 	<Property name="commit">
 		0 when it committed. 2 when there is no terminal to ask on. 1 when you

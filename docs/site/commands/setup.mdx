@@ -1,0 +1,290 @@
+export const metadata = {
+	title: 'chamoji setup',
+	description:
+		'Set up releases, memory sharing, Claude Code and the commit composer in one command, and run it again to change them.',
+};
+
+# `chamoji setup`
+
+<p className="lead">
+	Set up a repo in one command: releases for each app or package, memory
+	sharing, Claude Code and the commit composer. On a terminal it shows what it
+	found and saves with Enter. Run it again to see where each step stands, or to
+	change something.
+</p>
+
+<Tag variant="setup">SETUP</Tag>
+<Tag variant="mono">MONOREPO-AWARE</Tag>
+<Tag variant="ci">--json FOR CI AND AGENTS</Tag>
+
+<Note>
+	Setup never commits. It writes only the `release` section of
+	`chamoji.config.json`, so review it and commit it yourself.
+</Note>
+
+## What it does, in order {{ tag: 'SETUP', variant: 'setup', label: 'chamoji setup', icon: 'gear' }}
+
+<Steps>
+	<Step title="Looks at the repo.">
+		Its apps and packages, version files, tags and remotes, from git and the
+		files, with no AI. With the `gh` CLI and a GitHub `origin`, it also reads
+		the repo’s squash-merge setting, and gives up on that after 5 seconds.
+	</Step>
+	<Step title="Says where each step stands.">
+		With no step named, a line for releases, memory sharing, Claude Code and the
+		hook: ✓ when it’s done, ○ when it isn’t, and – when it can’t run here. The
+		setup screen shows these itself.
+	</Step>
+	<Step title="Asks.">
+		On a terminal, the setup screen shows what it found and the questions the
+		repo can’t answer. Enter saves, c changes something, and Esc cancels.
+		Without a terminal and without `--yes`, it says what it would do and writes
+		nothing.
+	</Step>
+	<Step title="Writes the release section.">
+		Only the `release` section of `chamoji.config.json`. The file’s other keys
+		are kept, and a section with nothing new is left untouched.
+	</Step>
+	<Step title="Runs the per-clone steps.">
+		Memory sharing, Claude Code and the commit composer hook, the ones you
+		picked. The hook is offered, never assumed.
+	</Step>
+</Steps>
+
+[Set up a repo](/set-up-a-repo) walks through the screen, what setup looks for, and what each step writes.
+
+## Arguments
+
+<Properties>
+	<Property name="step" type="releases | memory | agents | hook · optional">
+		Run just this step, such as `chamoji setup releases`. Leave it out to run
+		them all. Any other word exits 1. On a terminal, a named `memory`, `agents`
+		or `hook` step runs without asking.
+	</Property>
+</Properties>
+
+The four steps:
+
+<Properties>
+	<Property name="releases">
+		Writes the `release` section. Named, it asks the release questions again,
+		even when the section exists.
+	</Property>
+	<Property name="memory">
+		Makes this clone share memory through `origin`, as `chamoji init` does. It’s
+		offered only when there is an `origin`.
+	</Property>
+	<Property name="agents">
+		Connects Claude Code: the MCP server in `.mcp.json` and a commit hook in
+		`.claude/settings.json`. It’s offered when the repo has a `.claude` folder
+		or `claude` is on your PATH.
+	</Property>
+	<Property name="hook">
+		Installs the commit composer hook in this clone, as `chamoji hook install`
+		does.
+	</Property>
+</Properties>
+
+## Flags {{ badge: '4', icon: 'flag' }}
+
+<Properties>
+	<Property name="--yes" type="boolean" since="0.14.0">
+		Take every recommended answer without asking. It runs the memory and Claude
+		Code steps when they’re offered and not done, and never installs the hook
+		unless you name it: `chamoji setup hook --yes`. With a step, it runs just
+		that step. Works with `--json` and `--explain`.
+	</Property>
+	<Property name="--json" type="boolean" since="0.14.0">
+		Print what setup found and did as JSON on stdout, and nothing else. It never
+		opens the screen. Without `--yes` it writes nothing and reports what it
+		would do. With `--yes` it does it, then reports. The keys are `found`,
+		`answers`, `why`, `steps`, `wrote` and `squashMerge`.
+	</Property>
+	<Property name="--explain" type="boolean" since="0.14.0">
+		Print each value of the release section and where it came from: detected in
+		the repo, recommended for its shape, chosen on the screen, or kept from
+		`chamoji.config.json`. Works with or without `--yes`. Under `--json` it
+		prints nothing more; the JSON’s `why` holds the same sources.
+	</Property>
+	<Property name="--no-update-check" type="boolean">
+		Don’t check npm for a newer chamoji. See [the update
+		notice](/install#the-update-notice).
+	</Property>
+</Properties>
+
+## Common combinations
+
+<Resources>
+	<Resource name="chamoji setup" icon="gear" code>
+		On a terminal: see what it found, change what you need, save with Enter.
+	</Resource>
+	<Resource name="chamoji setup --yes" icon="check-circle" code>
+		Take every recommended answer, as in a fresh clone or a script.
+	</Resource>
+	<Resource name="chamoji setup --json" icon="robot" code>
+		Let CI or an agent read what setup would do. Nothing is written.
+	</Resource>
+	<Resource
+		name="chamoji setup releases --yes --explain"
+		icon="tree-structure"
+		code
+	>
+		Write the release section, and say where each value came from.
+	</Resource>
+	<Resource name="chamoji setup hook --yes" icon="git-commit" code>
+		Install the commit composer hook in this clone.
+	</Resource>
+	<Resource name="chamoji setup memory" icon="cloud-arrow-up" code>
+		Share memory through `origin` in this clone, and nothing else.
+	</Resource>
+</Resources>
+
+## Output {{ icon: 'terminal-window' }}
+
+These are from real runs in two small repos: `widgets`, a single package, and `shop`, with two apps and a shared package. The first run in `shop`, without `--yes` and with `--explain`, is on [Set up a repo](/set-up-a-repo#what-it-found).
+
+In a single package there is nothing to set up for releases. Without a terminal, setup says what else it would do and exits 2:
+
+```txt {{ title: 'chamoji setup' }}
+✓ releases need no setup in a single package
+○ memory sharing is off in this clone
+○ Claude Code isn't connected here yet
+✓ the commit composer hook is installed in this clone
+
+One package, so chamoji release already knows what to do; there's nothing to set up for releases.
+Setup would also share memory through origin, as chamoji init does.
+Setup would also connect Claude Code here, as chamoji init --agents does.
+chamoji: setup needs a terminal to ask; run chamoji setup --yes to take every recommended answer
+```
+
+With `--json`, the report is JSON. This is `shop` before its first setup, trimmed in `why`. It exits 2, because something would change:
+
+```txt {{ title: 'chamoji setup --json' }}
+{
+  "found": {
+    "kind": "apps",
+    "units": [
+      "mobile",
+      "web"
+    ],
+    "excluded": [],
+    "inheritedTags": [],
+    "upstream": {
+      "remote": null,
+      "name": null,
+      "since": null,
+      "authors": []
+    }
+  },
+  "answers": {
+    "schema": 1,
+    "shape": "apps",
+    "units": {
+      "mobile": {
+        "path": "apps/mobile",
+        "tag": "mobile/v{version}"
+      },
+      "web": {
+        "path": "apps/web",
+        "tag": "web/v{version}"
+      }
+    },
+    "exclude": [],
+    "sharedChanges": "ride-along",
+    "rootFiles": "none"
+  },
+  "why": {
+    "shape": "detected",
+    "units": "detected",
+    …
+  },
+  "steps": [
+    {
+      "step": "releases",
+      "result": "written"
+    },
+    {
+      "step": "memory",
+      "result": "written"
+    },
+    {
+      "step": "agents",
+      "result": "written"
+    },
+    {
+      "step": "hook",
+      "result": "offered"
+    }
+  ],
+  "wrote": [],
+  "squashMerge": null
+}
+```
+
+Naming the hook step is how `--yes` installs it:
+
+```txt {{ title: 'chamoji setup hook --yes' }}
+Installed the hook: /private/tmp/shop/.git/hooks/prepare-commit-msg
+A plain `git commit` now opens the composer; -m, merges, amends and rebases are left alone.
+```
+
+Once everything is set up, a re-run only says so, and exits 0:
+
+```txt {{ title: 'chamoji setup' }}
+✓ releases are set up in chamoji.config.json
+✓ memory sharing is on in this clone
+✓ Claude Code is connected here
+✓ the commit composer hook is installed in this clone
+
+chamoji.config.json is already up to date.
+```
+
+With a section already there, `--explain` says each value was kept:
+
+```txt {{ title: 'chamoji setup releases --yes --explain' }}
+release.schema = 1 (the section's format)
+release.shape = "apps" (kept from chamoji.config.json)
+release.units.mobile.path = "apps/mobile" (kept from chamoji.config.json)
+release.units.mobile.tag = "mobile/v{version}" (kept from chamoji.config.json)
+release.units.web.path = "apps/web" (kept from chamoji.config.json)
+release.units.web.tag = "web/v{version}" (kept from chamoji.config.json)
+release.exclude = [] (kept from chamoji.config.json)
+release.sharedChanges = "ride-along" (kept from chamoji.config.json)
+release.rootFiles = "none" (kept from chamoji.config.json)
+
+chamoji.config.json is already up to date.
+```
+
+## Exit codes
+
+<Properties>
+	<Property name="0">Setup saved, or nothing would change.</Property>
+	<Property name="2">
+		Something would change, but there is no terminal and no `--yes`, or there is
+		`--json` and no `--yes`. Also when the hook step finds another tool’s hook
+		and leaves it alone, and for a `release` section from a newer chamoji.
+	</Property>
+	<Property name="1">
+		You cancelled, the step name is unknown, or a step failed, such as memory
+		sharing that can’t reach `origin`. Also outside a git repo.
+	</Property>
+</Properties>
+
+[Exit codes](/reference/exit-codes) has every command’s codes.
+
+## Related {{ anchor: false }}
+
+<Guides>
+	<Guide href="/set-up-a-repo" name="Set up a repo">
+		The setup screen, what it looks for, and what each step writes.
+	</Guide>
+	<Guide href="/reference/config" name="Config">
+		Every key of the release section setup writes.
+	</Guide>
+	<Guide href="/commands/init" name="init">
+		Memory sharing and Claude Code on their own.
+	</Guide>
+	<Guide href="/guides/monorepos" name="Monorepos">
+		Which commits belong to which unit, tags, and template history.
+	</Guide>
+</Guides>
