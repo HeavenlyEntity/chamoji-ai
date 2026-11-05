@@ -1,0 +1,294 @@
+export const metadata = {
+	title: 'chamoji init',
+	description:
+		'Set a clone up to share project memory through origin, and with --agents, connect Claude Code: the MCP server and the commit hook.',
+};
+
+# `chamoji init`
+
+<p className="lead">
+	Set this clone up to share project memory through `origin`, and take in what
+	origin already has. With `--agents`, also connect Claude Code in this repo:
+	the chamoji MCP server in `.mcp.json` and a commit hook in
+	`.claude/settings.json`.
+</p>
+
+<Tag variant="setup">SETUP</Tag>
+<Tag variant="setup">SINCE 0.11.0</Tag>
+<Tag variant="changes">CHANGES YOUR REPO</Tag>
+
+<Note>
+	Git doesn’t clone chamoji’s memory ref, or the setting that fetches it, so
+	every clone runs `chamoji init` once. It never pushes: `chamoji memory sync`
+	shares what you have.
+</Note>
+
+## What it does, in order {{ tag: 'SETUP', variant: 'setup', label: 'chamoji init', icon: 'gear' }}
+
+<Steps>
+	<Step title="With --agents, checks both files.">
+		`.mcp.json` and `.claude/settings.json` at the repo root, wherever you run
+		it. Both are read and checked before either is written. If chamoji can’t
+		safely change one, it changes neither, skips the memory step and exits 1.
+	</Step>
+	<Step title="With --agents, merges into them.">
+		The MCP server and the commit hook, unless they’re there already. Your other
+		entries are kept. Each file is replaced in one step, so a failure never
+		leaves half a file.
+	</Step>
+	<Step title="Makes origin fetch memory.">
+		Adds `+refs/chamoji/*:refs/chamoji/remotes/origin/*` to
+		`remote.origin.fetch`, once. It leaves `remote.origin.push` alone, so a
+		plain `git push` still pushes your branch. Without an `origin`, it says so
+		and changes nothing.
+	</Step>
+	<Step title="Takes in origin’s memory.">
+		Fetches it and merges it into yours, so a fresh clone needs nothing else. If
+		the fetch fails, it says why on stderr, and the setting stays for the next
+		`memory sync`.
+	</Step>
+</Steps>
+
+After `init`, a plain `git fetch` or `git pull` also downloads origin’s memory, to a side ref that `chamoji memory` doesn’t read. `chamoji memory sync` takes it in. `chamoji release --push` syncs memory too, but only in a clone that ran `init`. Once per clone, outside CI, `init` ends with a one-line hint about `chamoji setup` on stderr.
+
+[setup](/commands/setup) runs the same two steps as `setup memory` and `setup agents`, alongside the release settings and the commit composer hook.
+
+## What --agents writes {{ icon: 'robot', badge: '2' }}
+
+Both files are meant to be committed, so everyone who uses Claude Code in the repo gets the same setup. A changed file is written back as plain JSON with its indent kept, so other layout, such as blank lines, may differ.
+
+<CodeGroup title="chamoji on your PATH">
+
+```txt {{ title: '.mcp.json' }}
+{
+  "mcpServers": {
+    "chamoji": {
+      "command": "chamoji",
+      "args": [
+        "mcp"
+      ]
+    }
+  }
+}
+```
+
+```txt {{ title: '.claude/settings.json' }}
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git commit *)",
+            "command": "chamoji agent-hook || true"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+</CodeGroup>
+
+When `chamoji` isn’t on your PATH, the server starts with `npx --yes @chamoji/cli mcp` and the hook runs `npx --yes @chamoji/cli agent-hook || true`. A `node_modules/.bin` on the PATH doesn’t count, since npx and package scripts add one just for the run.
+
+<Properties>
+	<Property name=".mcp.json">
+		Gets `mcpServers.chamoji`, which runs [`chamoji mcp`](/commands/mcp). A
+		`chamoji` server that’s already there is yours to keep, whatever it runs.
+	</Property>
+	<Property name=".claude/settings.json">
+		Gets an entry in `hooks.PreToolUse` that runs `chamoji agent-hook` before
+		Claude Code’s Bash tool runs a `git commit`. Any entry whose command already
+		runs `chamoji agent-hook` counts as there. The `|| true` is for a chamoji
+		too old to know the hook: it would exit 2, which Claude Code reads as “block
+		this”, and the file is shared.
+	</Property>
+</Properties>
+
+Claude Code won’t start a server from a project’s `.mcp.json` until you approve it. Until then, `claude mcp list` shows it as pending approval.
+
+chamoji leaves a file alone, and changes nothing, when it is a symlink or in a symlinked folder, isn’t valid JSON or a JSON object, has an `mcpServers`, `hooks` or `hooks.PreToolUse` of the wrong type, or holds a number that can’t be written back exactly. Not verified: the `.mcp.json` it writes on native Windows, where `npx` and a `chamoji` shim may need a `cmd /c` wrapper.
+
+## The commit hook {{ icon: 'git-commit' }}
+
+`chamoji agent-hook` is the hook itself. Claude Code runs it before a Bash command and passes the command on stdin. When the command is a `git commit` whose message has no card line, it prints a denial, and the agent sees this reason:
+
+```txt
+Add why this change was made: put a "Why: <reason>" line at the end of the commit message, after a blank line. Constraint:, Gotcha: and Follow-up: lines are welcome too. Only if the user told you to skip this, prefix the command with CHAMOJI_NO_CARD=1.
+```
+
+- **What counts:** any of `Why:`, `Constraint:`, `Gotcha:` or `Follow-up:`, below the subject paragraph, in `-m`, `--trailer` or a heredoc. `-m "Why: because"` alone is a subject, not a card. A bare `git commit` has no message to read, so it’s denied too.
+- **What passes:** `CHAMOJI_NO_CARD=1` in front of the command, a message from a file or another commit (`-F`, `-C`), `--no-edit` with no new message, and commands that only look, such as `--dry-run` and `--help`. Every other command passes too.
+- **What it can’t see:** it reads the command text, so a commit inside `sh -c '…'`, `xargs` or a shell alias isn’t checked.
+- **It never blocks by failing:** whatever goes wrong, it prints nothing and exits 0, and the command goes through.
+
+The hook covers Claude Code only. Other agents can use the MCP server, and write their cards by hand.
+
+## Arguments
+
+`chamoji init` takes no arguments. Extra words are ignored.
+
+## Flags {{ badge: '2', icon: 'flag' }}
+
+<Properties>
+	<Property name="--agents" type="boolean">
+		Also connect Claude Code in this repo, before the memory step: the MCP
+		server in `.mcp.json` and the commit hook in `.claude/settings.json`, at the
+		repo root. Safe to run again: what’s there already is left as it is.
+	</Property>
+	<Property name="--no-update-check" type="boolean">
+		Don’t check npm for a newer chamoji. See [the update
+		notice](/install#the-update-notice).
+	</Property>
+</Properties>
+
+## Common combinations
+
+<Resources>
+	<Resource name="chamoji init" icon="cloud-arrow-up" code>
+		Once in each clone: share memory through origin, and take in what it has.
+	</Resource>
+	<Resource name="chamoji init --agents" icon="robot" code>
+		The same, and connect Claude Code. Commit the two files it writes.
+	</Resource>
+	<Resource name="chamoji memory sync" icon="arrow-counter-clockwise" code>
+		Afterwards, whenever you want to share what you remembered.
+	</Resource>
+</Resources>
+
+## Output {{ icon: 'terminal-window' }}
+
+These are from real runs in fresh clones of a small repo called widgets, whose `origin` had one workstream in memory:
+
+```txt {{ title: 'chamoji init' }}
+origin now fetches chamoji memory.
+A plain git fetch or git pull downloads origin's memory but doesn't change what chamoji memory shows. Run chamoji memory sync to take it in and share yours.
+Took in memory from origin: 1 entry.
+chamoji setup also sets up releases, AI agents and the commit composer.
+```
+
+```txt {{ title: 'chamoji init --agents' }}
+.mcp.json: added the chamoji MCP server
+.claude/settings.json: added the commit hook
+These files are meant to be committed, so everyone who uses Claude Code here gets the same setup. A changed file is written back as plain JSON with its indent kept, so other layout, such as blank lines or how short lists wrap, may differ.
+origin now fetches chamoji memory.
+A plain git fetch or git pull downloads origin's memory but doesn't change what chamoji memory shows. Run chamoji memory sync to take it in and share yours.
+Took in memory from origin: 1 entry.
+chamoji setup also sets up releases, AI agents and the commit composer.
+```
+
+Run again, it changes nothing:
+
+```txt {{ title: 'chamoji init --agents' }}
+.mcp.json: already has the chamoji MCP server
+.claude/settings.json: already has the commit hook
+origin already fetches chamoji memory.
+A plain git fetch or git pull downloads origin's memory but doesn't change what chamoji memory shows. Run chamoji memory sync to take it in and share yours.
+Took in memory from origin: 1 entry.
+```
+
+Run through npx, in a clone whose `.claude/settings.json` already allowed `npm test`. The file keeps its tabs and its entry:
+
+```txt {{ title: 'npx @chamoji/cli init --agents' }}
+.mcp.json: added the chamoji MCP server
+.claude/settings.json: added the commit hook
+These files are meant to be committed, so everyone who uses Claude Code here gets the same setup. A changed file is written back as plain JSON with its indent kept, so other layout, such as blank lines or how short lists wrap, may differ. chamoji is not on your PATH, so they start it with npx.
+…
+```
+
+```txt {{ title: '.claude/settings.json' }}
+{
+	"permissions": {
+		"allow": [
+			"Bash(npm test)"
+		]
+	},
+	"hooks": {
+		"PreToolUse": [
+			{
+				"matcher": "Bash",
+				"hooks": [
+					{
+						"type": "command",
+						"if": "Bash(git commit *)",
+						"command": "npx --yes @chamoji/cli agent-hook || true"
+					}
+				]
+			}
+		]
+	}
+}
+```
+
+What the hook prints when Claude Code hands it `git commit -m "✨ Add the date picker"`, which has no card. For a command it lets through, it prints nothing:
+
+```txt {{ title: 'chamoji agent-hook' }}
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Add why this change was made: put a \"Why: <reason>\" line at the end of the commit message, after a blank line. Constraint:, Gotcha: and Follow-up: lines are welcome too. Only if the user told you to skip this, prefix the command with CHAMOJI_NO_CARD=1."}}
+```
+
+<CodeGroup title="Problems">
+
+```txt {{ title: 'No origin' }}
+$ chamoji init
+No remote named origin, so there is nothing to share memory with. Add one and run chamoji init again.
+```
+
+```txt {{ title: 'Invalid JSON' }}
+$ chamoji init --agents
+chamoji: .mcp.json is not valid JSON, so chamoji left it alone. Fix it and run chamoji init --agents again. Nothing was changed.
+```
+
+```txt {{ title: 'Wrong shape' }}
+$ chamoji init --agents
+chamoji: .claude/settings.json has a "hooks.PreToolUse" that is not a list, so chamoji left it alone. Fix it and run chamoji init --agents again. Nothing was changed.
+```
+
+```txt {{ title: 'Fetch failed' }}
+$ chamoji init
+origin now fetches chamoji memory.
+A plain git fetch or git pull downloads origin's memory but doesn't change what chamoji memory shows. Run chamoji memory sync to take it in and share yours.
+chamoji: Could not fetch memory from origin: fatal: '/tmp/chamoji-docs-7b2/missing.git' does not appear to be a git repository
+fatal: Could not read from remote repository.
+
+Please make sure you have the correct access rights
+and the repository exists.
+chamoji setup also sets up releases, AI agents and the commit composer.
+```
+
+</CodeGroup>
+
+## Exit codes
+
+<Properties>
+	<Property name="0">
+		Memory sharing is set up. Also when there is no `origin` to share with, and
+		when the fetch from origin failed: the message says why.
+	</Property>
+	<Property name="1">
+		`--agents` can’t safely change `.mcp.json` or `.claude/settings.json`, or
+		can’t write one. Also outside a git repo, and anything else that fails.
+	</Property>
+</Properties>
+
+`chamoji agent-hook` always exits 0. Its answer is what it prints. [Exit codes](/reference/exit-codes) has every command’s codes.
+
+## Related {{ anchor: false }}
+
+<Guides>
+	<Guide href="/guides/release-from-your-agent" name="Release from your agent">
+		What your coding agent can do once it’s connected.
+	</Guide>
+	<Guide href="/commands/mcp" name="mcp">
+		The server init adds to .mcp.json, and its three tools.
+	</Guide>
+	<Guide href="/commands/memory" name="memory">
+		Sync, search and look after project memory.
+	</Guide>
+	<Guide href="/commands/setup" name="setup">
+		Releases, memory, Claude Code and the hook, in one command.
+	</Guide>
+</Guides>
