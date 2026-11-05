@@ -1,0 +1,211 @@
+export const metadata = {
+	title: 'chamoji hook',
+	description:
+		'Install or remove the git hook that opens the commit composer on a plain git commit and stamps the active workstream.',
+};
+
+# `chamoji hook`
+
+<p className="lead">
+	Install or remove chamoji’s `prepare-commit-msg` hook. With it, `git commit`
+	with no message opens the commit composer, and every commit made while a
+	workstream is active gets its `Workstream:` line. The hook never blocks a
+	commit.
+</p>
+
+<Tag variant="setup">SETUP</Tag>
+
+<Note>
+	The hook lives in `.git/hooks`, which git doesn’t clone, so install it once in
+	each clone. Its worktrees share it.
+</Note>
+
+## What it does, in order {{ tag: 'SETUP', variant: 'setup', label: 'chamoji hook install', icon: 'git-commit' }}
+
+<Steps>
+	<Step title="Finds the hooks folder.">
+		The one git runs hooks from: `.git/hooks`, or the folder `core.hooksPath`
+		names.
+	</Step>
+	<Step title="Hands over to your hook manager.">
+		When `core.hooksPath` is set, as husky sets it, it writes nothing and prints
+		the line to add to that folder’s `prepare-commit-msg` yourself.
+	</Step>
+	<Step title="Looks at the hook that’s there.">
+		chamoji’s own is updated, and gitmoji-cli’s is replaced. lefthook’s, or any
+		other, is left alone: it prints what to add instead and exits 2.
+	</Step>
+	<Step title="Writes the hook.">
+		A short script that runs `chamoji hook run`, or the same through npx when
+		chamoji isn’t on the PATH, and always exits 0.
+	</Step>
+</Steps>
+
+On each commit, the hook opens the composer only for a plain `git commit` on a terminal, and leaves everything else alone: `-m` and `-F`, merges, squashes, amends, rebases, a message that already has a gitmoji, CI, and commits with no terminal, such as an editor’s commit button. Ctrl-C in the composer keeps git’s own message. While a workstream is active, it adds the `Workstream:` line to `-m` and composer commits. [Writing commits](/guides/writing-commits) has the details.
+
+## The hook {{ icon: 'file-code' }}
+
+```bash {{ title: '.git/hooks/prepare-commit-msg' }}
+#!/bin/sh
+# chamoji: offers the commit composer on a plain `git commit`.
+# Remove it with `chamoji hook uninstall`.
+if command -v chamoji >/dev/null 2>&1; then
+	chamoji hook run "$@"
+else
+	npx --yes @chamoji/cli hook run "$@"
+fi
+exit 0
+```
+
+The `# chamoji` line marks it as chamoji’s, so `uninstall` never removes another tool’s hook.
+
+## Subcommands {{ icon: 'terminal', badge: '3' }}
+
+<Properties>
+	<Property name="chamoji hook install">
+		Install the hook in this clone, or update chamoji’s own. It replaces
+		gitmoji-cli’s hook, and leaves any other alone. With `core.hooksPath` set,
+		it changes nothing and prints the line to add.
+	</Property>
+	<Property name="chamoji hook uninstall">
+		Delete `prepare-commit-msg` when it’s chamoji’s. Any other hook, and a line
+		you added to a hook manager’s file, stay. With no chamoji hook, it changes
+		nothing and says so.
+	</Property>
+	<Property name="chamoji hook run <file> [source]">
+		What the installed hook runs, with the arguments git gives
+		`prepare-commit-msg`: the message file and where the message came from. You
+		don’t run it yourself. It always exits 0, and when anything goes wrong it
+		leaves the message as it was.
+	</Property>
+</Properties>
+
+## Arguments
+
+<Properties>
+	<Property name="action" type="install | uninstall | run · required">
+		What to do. None, or any other word, exits 2.
+	</Property>
+</Properties>
+
+## Flags
+
+`chamoji hook` takes no flags. It never checks npm for a newer chamoji, so `--no-update-check` changes nothing.
+
+## Common combinations
+
+<Resources>
+	<Resource name="chamoji hook install" icon="git-commit" code>
+		Open the composer on a plain `git commit` in this clone.
+	</Resource>
+	<Resource name="chamoji hook uninstall" icon="arrow-counter-clockwise" code>
+		Go back to git’s own editor.
+	</Resource>
+	<Resource name="chamoji setup hook --yes" icon="gear" code>
+		The same install, as a step of `chamoji setup`.
+	</Resource>
+</Resources>
+
+## Output {{ icon: 'terminal-window' }}
+
+These are from real runs in throwaway repos under `/tmp`:
+
+```txt {{ title: 'chamoji hook install' }}
+Installed the hook: /private/tmp/widgets/.git/hooks/prepare-commit-msg
+A plain `git commit` now opens the composer; -m, merges, amends and rebases are left alone.
+```
+
+<CodeGroup title="Other hooks">
+
+```txt {{ title: 'Again' }}
+$ chamoji hook install
+Updated the hook: /private/tmp/widgets/.git/hooks/prepare-commit-msg
+A plain `git commit` now opens the composer; -m, merges, amends and rebases are left alone.
+```
+
+```txt {{ title: 'gitmoji-cli' }}
+$ chamoji hook install
+Replaced gitmoji-cli's hook: /private/tmp/gm/.git/hooks/prepare-commit-msg
+A plain `git commit` now opens the composer; -m, merges, amends and rebases are left alone.
+```
+
+```txt {{ title: 'husky' }}
+$ chamoji hook install
+core.hooksPath is .husky/_, so chamoji didn't write a hook there. Add this line to .husky/prepare-commit-msg:
+
+  chamoji hook run "$@"
+```
+
+```txt {{ title: 'lefthook' }}
+$ chamoji hook install
+chamoji: /private/tmp/lh/.git/hooks/prepare-commit-msg is lefthook's. Add chamoji to lefthook.yml instead:
+
+prepare-commit-msg:
+  commands:
+    chamoji:
+      run: chamoji hook run {1} {2} {3}
+      interactive: true
+
+then run `lefthook install`.
+```
+
+```txt {{ title: 'Another hook' }}
+$ chamoji hook install
+chamoji: /private/tmp/other/.git/hooks/prepare-commit-msg already has a prepare-commit-msg hook that isn't chamoji's or gitmoji's, so it was left alone. Add this line to it instead:
+
+  chamoji hook run "$@"
+```
+
+</CodeGroup>
+
+<CodeGroup title="Uninstall">
+
+```txt {{ title: 'uninstall' }}
+$ chamoji hook uninstall
+Removed the chamoji hook.
+```
+
+```txt {{ title: 'Nothing to remove' }}
+$ chamoji hook uninstall
+There was no chamoji hook to remove.
+```
+
+```txt {{ title: 'No action' }}
+$ chamoji hook
+chamoji: hook needs install, uninstall or run
+```
+
+</CodeGroup>
+
+## Exit codes
+
+<Properties>
+	<Property name="0">
+		`install` installed or updated the hook, or printed the line for
+		`core.hooksPath`. `uninstall` removed it, or found none.
+	</Property>
+	<Property name="2">
+		`install` found lefthook’s hook or another tool’s, and left it alone. Also
+		no action, or an unknown one.
+	</Property>
+	<Property name="1">Outside a git repo, or anything else that fails.</Property>
+</Properties>
+
+`hook run` always exits 0, so the hook never blocks a commit. [Exit codes](/reference/exit-codes) has every command’s codes.
+
+## Related {{ anchor: false }}
+
+<Guides>
+	<Guide href="/guides/writing-commits" name="Writing commits">
+		The composer, the hook, hook managers and Jev’s suggestions.
+	</Guide>
+	<Guide href="/commands/commit" name="commit">
+		The composer the hook opens.
+	</Guide>
+	<Guide href="/commands/ws" name="ws">
+		Workstreams, whose line the hook adds to each commit.
+	</Guide>
+	<Guide href="/commands/init" name="init">
+		A different hook: the one Claude Code runs before a git commit.
+	</Guide>
+</Guides>

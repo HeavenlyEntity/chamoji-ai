@@ -16,7 +16,13 @@
 			{"title": "changelog", "href": "/commands/changelog"},
 			{"title": "next-version", "href": "/commands/next-version"},
 			{"title": "release", "href": "/commands/release"},
-			{"title": "ws", "href": "/commands/ws"}
+			{"title": "ws", "href": "/commands/ws"},
+			{"title": "why", "href": "/commands/why"},
+			{"title": "memory", "href": "/commands/memory"},
+			{"title": "card", "href": "/commands/card"},
+			{"title": "init", "href": "/commands/init"},
+			{"title": "mcp", "href": "/commands/mcp"},
+			{"title": "hook", "href": "/commands/hook"}
 		]
 	},
 	{

@@ -1,0 +1,220 @@
+export const metadata = {
+	title: 'chamoji card',
+	description:
+		'Print the URL of your repo card: an image of your latest release and a few counts from your history, to paste into your readme.',
+};
+
+# `chamoji card`
+
+<p className="lead">
+	Print the URL of your repo’s card: an image of your latest release, with how
+	many releases and commits you have and how many of them chamoji sorted. The
+	numbers come from your git history. The image is drawn by chamoji.dev when
+	something loads the URL.
+</p>
+
+<Tag variant="ci">--json FOR CI AND AGENTS</Tag>
+
+<Note>
+	`chamoji card` sends nothing: it only prints a URL. Loading that URL sends the
+	repo name, the latest tag, its date and the counts to chamoji.dev, and never
+	commit text. For a private repo, that includes its name.
+</Note>
+
+## What it does, in order {{ icon: 'list-numbers' }}
+
+<Steps>
+	<Step title="Finds the repo name.">
+		`owner/name`, from `--repo`, or else from `origin` when it’s on GitHub, over
+		https or ssh. Otherwise it exits 1 and asks for `--repo`.
+	</Step>
+	<Step title="Reads the history.">
+		As `chamoji changelog` does, with your `chamoji.config.json`, up to `--to`.
+	</Step>
+	<Step title="Counts.">
+		The latest release tag and its date, the number of releases and commits, the
+		share of commits sorted outside Miscellaneous, and the latest release’s
+		Added, Fixed and Changed commits.
+	</Step>
+	<Step title="Prints the URL.">
+		The card renderer’s address, with the counts in the query. `--json` prints
+		the counts instead.
+	</Step>
+</Steps>
+
+It reads the repo as one package. Only plain semver tags count as releases, such as `v1.2.0` or `1.2.0`, so in a monorepo whose units tag `web/v1.2.0`, the card has no version. [Repo card](/guides/repo-card) keeps the image up to date with the GitHub Action.
+
+## The card URL {{ icon: 'github-logo', badge: '9' }}
+
+<Properties>
+	<Property name="repo" type="owner/name">
+		The repo, from `--repo` or `origin`.
+	</Property>
+	<Property name="version" type="tag">
+		The latest release tag, such as `v0.2.0`. Left out, with `date`, when the
+		repo has no release tag yet.
+	</Property>
+	<Property name="date" type="YYYY-MM-DD">
+		The date of that release.
+	</Property>
+	<Property name="releases" type="number">
+		Release tags in the history.
+	</Property>
+	<Property name="commits" type="number">
+		Commits the changelog lists. Merge commits and the groups your config hides
+		don’t count.
+	</Property>
+	<Property name="sorted" type="percent">
+		The share of those commits that landed outside Miscellaneous, rounded down.
+	</Property>
+	<Property name="added" type="number">
+		Commits in the latest release’s Added group, Highlights included. With no
+		release tag yet, the unreleased commits’.
+	</Property>
+	<Property name="fixed" type="number">
+		The same, for Fixed.
+	</Property>
+	<Property name="changed" type="number">
+		The same, for Changed.
+	</Property>
+</Properties>
+
+## Arguments
+
+`chamoji card` takes no arguments.
+
+## Flags {{ badge: '6', icon: 'flag' }}
+
+<Properties>
+	<Property name="--repo <owner/name>" type="string · default from origin">
+		The repo to name on the card, such as `acme/widgets`. Needed when `origin`
+		isn’t on GitHub, or there is no `origin`.
+	</Property>
+	<Property
+		name="--endpoint <url>"
+		type="string · default https://chamoji.dev/api/card"
+	>
+		The card renderer the URL points to. Anything but an http or https URL exits
+		1, even with `--json`, which prints no URL.
+	</Property>
+	<Property name="--json" type="boolean">
+		Print the repo and the counts as JSON on stdout instead of the URL: `repo`,
+		`version`, `date`, `releases`, `commits`, `sorted`, `added`, `fixed` and
+		`changed`. `version` and `date` are `null` with no release tag.
+	</Property>
+	<Property name="--to <ref>" type="string · default HEAD">
+		Count the history up to this ref instead, such as `--to v0.1.0` for the card
+		as it was at that release. A ref that doesn’t exist exits 1.
+	</Property>
+	<Property name="--config <file>" type="string · default chamoji.config.json">
+		Read this config file instead, from the folder you run chamoji in. Its
+		groups decide what is Miscellaneous and what is hidden, and so the counts.
+	</Property>
+	<Property name="--no-update-check" type="boolean">
+		Don’t check npm for a newer chamoji. See [the update
+		notice](/install#the-update-notice).
+	</Property>
+</Properties>
+
+`card` ignores `--ai`: it counts what the rules sort, and sends nothing out.
+
+## Common combinations
+
+<Resources>
+	<Resource name="chamoji card" icon="github-logo" code>
+		The card URL for a GitHub repo, from its `origin`.
+	</Resource>
+	<Resource name="chamoji card --repo acme/widgets" icon="tag" code>
+		Name the repo yourself, when `origin` isn’t on GitHub.
+	</Resource>
+	<Resource name="chamoji card --json" icon="robot" code>
+		The numbers alone, for a script.
+	</Resource>
+	<Resource name="chamoji card --to v0.1.0" icon="arrow-counter-clockwise" code>
+		The card as it was at an earlier release.
+	</Resource>
+</Resources>
+
+## Output {{ icon: 'terminal-window' }}
+
+These are from real runs in a small repo called widgets, with two releases and `origin` at `https://github.com/acme/widgets.git`:
+
+```txt {{ title: 'chamoji card' }}
+https://chamoji.dev/api/card?repo=acme%2Fwidgets&version=v0.2.0&date=2026-11-05&releases=2&commits=9&sorted=100&added=1&fixed=2&changed=5
+```
+
+```txt {{ title: 'chamoji card --json' }}
+{
+  "repo": "acme/widgets",
+  "version": "v0.2.0",
+  "date": "2026-11-05",
+  "releases": 2,
+  "commits": 9,
+  "sorted": 100,
+  "added": 1,
+  "fixed": 2,
+  "changed": 5
+}
+```
+
+```txt {{ title: 'chamoji card --to v0.1.0' }}
+https://chamoji.dev/api/card?repo=acme%2Fwidgets&version=v0.1.0&date=2026-11-05&releases=1&commits=1&sorted=100&added=1&fixed=0&changed=0
+```
+
+In a monorepo whose apps have only their own tags, there is no version or date:
+
+```txt {{ title: 'chamoji card --repo acme/shop' }}
+https://chamoji.dev/api/card?repo=acme%2Fshop&releases=0&commits=10&sorted=100&added=3&fixed=3&changed=3
+```
+
+<CodeGroup title="Errors">
+
+```txt {{ title: 'No GitHub origin' }}
+$ chamoji card
+chamoji: can't tell the repo; pass --repo owner/name
+```
+
+```txt {{ title: 'Bad endpoint' }}
+$ chamoji card --repo acme/widgets --endpoint ftp://x
+chamoji: --endpoint "ftp://x" is not an http(s) URL
+```
+
+```txt {{ title: 'Unknown ref' }}
+$ chamoji card --to nope
+chamoji: Unknown revision: nope
+```
+
+</CodeGroup>
+
+## Exit codes
+
+<Properties>
+	<Property name="0">It printed the URL, or the numbers.</Property>
+	<Property name="2">
+		The `release` section of `chamoji.config.json` is from a newer chamoji.
+	</Property>
+	<Property name="1">
+		Anything else, such as a repo it can’t tell, an `--endpoint` that isn’t an
+		http(s) URL, a ref that doesn’t exist, an invalid config, or outside a git
+		repo.
+	</Property>
+</Properties>
+
+[Exit codes](/reference/exit-codes) has every command’s codes.
+
+## Related {{ anchor: false }}
+
+<Guides>
+	<Guide href="/guides/repo-card" name="Repo card">
+		Keep the card image up to date with the GitHub Action, and paste it in.
+	</Guide>
+	<Guide href="/guides/github-action" name="GitHub Action">
+		Release notes, previews and the card, from one Action.
+	</Guide>
+	<Guide href="/commands/changelog" name="changelog">
+		The history the card counts.
+	</Guide>
+	<Guide href="/reference/config" name="Config">
+		The groups that decide what counts as sorted.
+	</Guide>
+</Guides>

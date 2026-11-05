@@ -1,0 +1,351 @@
+export const metadata = {
+	title: 'chamoji memory',
+	description:
+		'List, show, search, archive and sync project memory: what shipped and dropped workstreams left behind, with their commits and intent cards.',
+};
+
+# `chamoji memory`
+
+<p className="lead">
+	Read and look after project memory. When a workstream ships or is dropped,
+	chamoji saves a summary of it on a git ref of its own: its title, status, and
+	its commits with their intent cards. It outlives the branch. This command
+	lists it, shows it, searches it and shares it.
+</p>
+
+<Tag variant="setup">SINCE 0.11.0</Tag>
+<Tag variant="changes">CHANGES YOUR REPO</Tag>
+<Tag variant="ci">--json FOR CI AND AGENTS</Tag>
+
+<Note>
+	`archive --purge` removes an entry only from your clone. Run `memory sync`
+	next: if origin still holds the entry, it prints the force-push that removes
+	it there. chamoji never force-pushes for you.
+</Note>
+
+## What it does, in order {{ tag: 'CHANGES YOUR REPO', variant: 'changes', label: 'chamoji memory', icon: 'notebook' }}
+
+<Steps>
+	<Step title="ws ship or ws drop saves an entry.">
+		On `refs/chamoji/memory`: the workstream’s title, emoji and status, and
+		every commit on HEAD that names it, with its card. It’s written with git
+		plumbing, so your working tree and index are never touched.
+	</Step>
+	<Step title="list, show and search read it.">
+		From the ref in this clone, with no network. Search also reads every commit
+		on HEAD, through an index kept in `.git/chamoji/memory-index.json`.
+	</Step>
+	<Step title="archive hides an entry.">
+		It leaves the list, and its summary leaves search. `memory show` still finds
+		it. `--purge` deletes it for good.
+	</Step>
+	<Step title="sync shares it.">
+		Fetches origin’s memory, merges it with yours, and pushes only the memory
+		ref. Two clones that remembered different workstreams keep both.
+	</Step>
+</Steps>
+
+Only `sync` touches the network, and `search --ai` the TypeSafe API. Git doesn’t clone the memory ref, so a fresh clone runs [init](/commands/init) once to take in origin’s. [Project memory](/guides/project-memory) has the whole picture.
+
+## Subcommands {{ icon: 'terminal', badge: '6' }}
+
+<Properties>
+	<Property name="chamoji memory list">
+		List the live entries: slug, status, commit count, emoji and title. A bare
+		`chamoji memory` is the same. It says so when an entry is there but can’t be
+		read, instead of calling memory empty.
+	</Property>
+	<Property name="chamoji memory show <slug>">
+		One entry, live or archived: its status, when it was last updated, and each
+		commit with its card.
+	</Property>
+	<Property name="chamoji memory search <query>">
+		Keyword search (BM25) over every commit on HEAD, with its subject, body and
+		card, and over the live entries. It prints up to ten matches, best first.
+		The index rebuilds itself when HEAD or memory moves. It needs no network and
+		no key.
+	</Property>
+	<Property name="chamoji memory reindex">
+		Rebuild the search index now, and say how many commits and entries, its
+		documents, it holds.
+	</Property>
+	<Property name="chamoji memory archive <slug>">
+		Move an entry out of the list, and its summary out of search. The commits on
+		HEAD still turn up in search. Its content and history stay, and it can still
+		be shown. An entry that is already archived exits 1.
+	</Property>
+	<Property name="chamoji memory sync">
+		Merge origin’s memory into yours, then push the result. The push runs your
+		pre-push hook like any other. It tries again only when it lost a race to
+		another clone, and never forces.
+	</Property>
+</Properties>
+
+## Arguments
+
+<Properties>
+	<Property name="slug" type="string · required by show and archive">
+		An entry’s id, as `chamoji memory list` shows it, such as
+		`keyboard-support`. Give exactly one.
+	</Property>
+	<Property name="query" type="string · required by search">
+		The words to look for. Several words need no quotes; a match can have any of
+		them.
+	</Property>
+</Properties>
+
+`reindex` and `sync` take no arguments, and a missing or extra argument exits 2.
+
+## Flags {{ badge: '5', icon: 'flag' }}
+
+<Properties>
+	<Property name="--json" type="boolean · list, show, search, sync">
+		Print the result as JSON on stdout. `list` prints an array of entries, and
+		`show` one entry: `version`, `slug`, `title`, `emoji`, `status`,
+		`updatedAt`, `archived` and `commits`. `search` prints the matches, each
+		with `kind` (`commit` or `workstream`), `id`, `title`, `card` and `score`.
+		`sync` prints `fetched`, `merged`, `needsForce`, `entries` and `pushed`.
+		`reindex` and `archive` ignore it.
+	</Property>
+	<Property name="--archived" type="boolean · list">
+		List the archived entries with the live ones. Their status says `archived`.
+	</Property>
+	<Property name="--purge" type="boolean · archive">
+		Delete the entry for good instead of archiving it, live or archived. It
+		removes the entry from your memory ref, deletes this worktree’s search
+		index, which held its text, and leaves a marker so a later sync can’t bring
+		it back. The slug can’t be saved to memory again, so start that workstream
+		again under a new name. Other clones that fetched the entry keep their copy.
+	</Property>
+	<Property name="--ai" type="boolean · search">
+		Let Jev reorder the ten best matches. Jev sees the query and, for each
+		match, up to 300 characters of its subject and card, with emails removed.
+		Needs `TYPESAFE_API_KEY`, from the environment or an untracked `.env.local`
+		or `.env`; without one it exits 2. See [Sorting with
+		AI](/guides/sorting-with-ai).
+	</Property>
+	<Property name="--no-update-check" type="boolean">
+		Don’t check npm for a newer chamoji. See [the update
+		notice](/install#the-update-notice).
+	</Property>
+</Properties>
+
+## Common combinations
+
+<Resources>
+	<Resource name="chamoji memory" icon="list-numbers" code>
+		What shipped and dropped workstreams left behind.
+	</Resource>
+	<Resource name="chamoji memory search focus" icon="magnifying-glass" code>
+		Find the commits and workstreams that mention it, cards included.
+	</Resource>
+	<Resource name="chamoji memory show keyboard-support" icon="notebook" code>
+		One workstream’s commits, with the reason behind each.
+	</Resource>
+	<Resource name="chamoji memory sync" icon="cloud-arrow-up" code>
+		Share what you remembered, and take in what your team did.
+	</Resource>
+	<Resource
+		name="chamoji memory archive dark-mode --purge"
+		icon="arrow-counter-clockwise"
+		code
+	>
+		Remove an entry for good, then run `memory sync`.
+	</Resource>
+</Resources>
+
+## Output {{ icon: 'terminal-window' }}
+
+These are from real runs in a small repo called widgets, with one workstream shipped and one dropped:
+
+```txt {{ title: 'chamoji memory' }}
+dark-mode         dropped  2 commits  🌙 Dark mode
+keyboard-support  shipped  3 commits  ⌨️ Keyboard support
+```
+
+```txt {{ title: 'chamoji memory show keyboard-support' }}
+⌨️ Keyboard support (keyboard-support)
+shipped, updated 2026-11-05, 3 commits
+
+7ab921a 🐛 Trap focus inside the dialog, 2026-11-05
+  Why: Tab moved focus to the page behind the open dialog
+  Constraint: the dialog must still close on Escape
+
+f8b510b ✨ Move between days with the arrow keys, 2026-11-05
+
+630bd60 🔧 Start keyboard support, 2026-11-05
+```
+
+Search finds the commit and the workstream that holds it:
+
+```txt {{ title: 'chamoji memory search escape dialog' }}
+7ab921a 🐛 Trap focus inside the dialog
+  Why: Tab moved focus to the page behind the open dialog
+  Constraint: the dialog must still close on Escape
+workstream keyboard-support Keyboard support
+  Why: Tab moved focus to the page behind the open dialog
+  Constraint: the dialog must still close on Escape
+a33fd19 💄 Add dark colours to the picker
+  Follow-up: the dialog still uses the light shadow
+workstream dark-mode Dark mode
+  Follow-up: the dialog still uses the light shadow
+```
+
+```txt {{ title: 'chamoji memory search shadow --json' }}
+[
+  {
+    "kind": "commit",
+    "id": "a33fd1915e9b4e419d0d3b3d379c723859f6b55e",
+    "title": "💄 Add dark colours to the picker",
+    "card": {
+      "why": [],
+      "constraint": [],
+      "gotcha": [],
+      "followUp": [
+        "the dialog still uses the light shadow"
+      ]
+    },
+    "score": 2.5064509441245146
+  },
+  …
+]
+```
+
+<CodeGroup title="Search and the index">
+
+```txt {{ title: 'No match' }}
+$ chamoji memory search zebra
+Nothing in memory matches "zebra".
+```
+
+```txt {{ title: 'reindex' }}
+$ chamoji memory reindex
+Indexed 11 documents.
+```
+
+</CodeGroup>
+
+Archiving hides an entry, and `--archived` brings it back into the list:
+
+<CodeGroup title="Archive">
+
+```txt {{ title: 'archive' }}
+$ chamoji memory archive dark-mode
+Archived dark-mode. It stays in memory, out of the list; chamoji memory show dark-mode still finds it.
+```
+
+```txt {{ title: 'list' }}
+$ chamoji memory
+keyboard-support  shipped  3 commits  ⌨️ Keyboard support
+```
+
+```txt {{ title: 'list --archived' }}
+$ chamoji memory list --archived
+dark-mode         dropped, archived  2 commits  🌙 Dark mode
+keyboard-support  shipped            3 commits  ⌨️ Keyboard support
+```
+
+</CodeGroup>
+
+<CodeGroup title="Sync">
+
+```txt {{ title: 'First sync' }}
+$ chamoji memory sync
+Synced memory with origin: 2 entries.
+```
+
+```txt {{ title: 'Nothing new' }}
+$ chamoji memory sync
+Memory already matches origin: 2 entries.
+```
+
+```txt {{ title: '--json' }}
+$ chamoji memory sync --json
+{
+  "fetched": true,
+  "merged": false,
+  "needsForce": false,
+  "entries": 2,
+  "pushed": false
+}
+```
+
+```txt {{ title: 'No memory yet' }}
+$ chamoji memory sync
+Nothing to sync: no memory here or on origin yet.
+```
+
+</CodeGroup>
+
+A purge, after `dark-mode` was synced. The sync merges origin’s memory first, then names the force-push that would remove the entry there:
+
+```txt {{ title: 'chamoji memory archive dark-mode --purge' }}
+Purged dark-mode from local memory. If it was ever synced, origin still has it. Run chamoji memory sync: it merges origin's memory into yours first, and says what to do if origin then needs replacing.
+```
+
+```txt {{ title: 'chamoji memory sync' }}
+Merged memory here: 1 entry. A purged entry is still on origin, so nothing was pushed. Origin's memory is merged into yours already. To remove the entry there, replace origin's memory with yours. This overwrites origin's history, and drops anything pushed there since this sync: git push --force origin refs/chamoji/memory
+```
+
+<CodeGroup title="Errors">
+
+```txt {{ title: 'Unknown subcommand' }}
+$ chamoji memory frob
+chamoji: memory needs list, show, search, reindex, archive or sync, not "frob"
+```
+
+```txt {{ title: 'No slug' }}
+$ chamoji memory show
+chamoji: memory show needs one slug: chamoji memory show <slug>
+```
+
+```txt {{ title: 'No such entry' }}
+$ chamoji memory show dark-mode
+chamoji: No memory for "dark-mode"
+```
+
+```txt {{ title: 'No key' }}
+$ chamoji memory search focus --ai
+chamoji: --ai needs a TypeSafe API key: set TYPESAFE_API_KEY in the environment or in .env.local (get one at https://typesafe.ai)
+```
+
+```txt {{ title: 'No origin' }}
+$ chamoji memory sync
+chamoji: No remote named origin
+```
+
+</CodeGroup>
+
+## Exit codes
+
+<Properties>
+	<Property name="0">It worked, including a search with no matches.</Property>
+	<Property name="2">
+		It was used wrongly: an unknown subcommand, a missing slug or query, more
+		than one slug, or an argument to `reindex` or `sync`. Also `search --ai`
+		with no TypeSafe key.
+	</Property>
+	<Property name="1">
+		Anything else, such as an entry that doesn’t exist or is already archived,
+		`sync` with no `origin` or a failed fetch or push, or outside a git repo.
+	</Property>
+</Properties>
+
+[Exit codes](/reference/exit-codes) has every command’s codes.
+
+## Related {{ anchor: false }}
+
+<Guides>
+	<Guide href="/guides/project-memory" name="Project memory">
+		Intent cards, the memory ref, and who can change it.
+	</Guide>
+	<Guide href="/commands/ws" name="ws">
+		Ship or drop a workstream, which saves it to memory.
+	</Guide>
+	<Guide href="/commands/init" name="init">
+		Share memory through origin in a fresh clone.
+	</Guide>
+	<Guide href="/commands/mcp" name="mcp">
+		Let your coding agent search memory.
+	</Guide>
+</Guides>

@@ -84,9 +84,11 @@ chamoji release --push || [ $? -eq 3 ]
 		cancel, or git refuses the commit.
 	</Property>
 	<Property name="hook">
-		0 for `install` and `uninstall`. 2 when `install` finds another tool’s hook
-		and leaves it alone, and with no action or an unknown one. The hook itself,
-		`hook run`, always exits 0, so it never blocks a commit.
+		0 for `install` and `uninstall`, including when `install` only prints the
+		line for `core.hooksPath` and when there was no hook to remove. 2 when
+		`install` finds another tool’s hook and leaves it alone, and with no action
+		or an unknown one. 1 outside a git repo, or when anything else fails. The
+		hook itself, `hook run`, always exits 0, so it never blocks a commit.
 	</Property>
 	<Property name="ws">
 		0 when it worked. 2 when it was used wrongly, such as an unknown subcommand.
@@ -94,22 +96,27 @@ chamoji release --push || [ $? -eq 3 ]
 	</Property>
 	<Property name="why">
 		0 when it found the commit, and for a line you haven’t committed yet. 2 with
-		no location, or more than one. 1 for a location that isn’t `file:line`, and
-		for a file or line that doesn’t exist.
+		no location, or more than one. 1 for anything else, such as a location that
+		isn’t `file:line`, a file or line that doesn’t exist, or a repo with no
+		commits yet.
 	</Property>
 	<Property name="memory">
-		0 when it worked. 2 when it was used wrongly, such as an unknown subcommand
-		or a missing slug, and for `search --ai` with no TypeSafe key. 1 for
-		anything else, such as an entry that doesn’t exist.
+		0 when it worked, including a search with no matches. 2 when it was used
+		wrongly, such as an unknown subcommand, a missing slug or query, or an extra
+		argument, and for `search --ai` with no TypeSafe key. 1 for anything else,
+		such as an entry that doesn’t exist or is already archived, or `sync` with
+		no `origin` or a failed push.
 	</Property>
 	<Property name="card">
-		0 when it printed the URL or the numbers. 1 when it can’t tell the repo, or
-		`--endpoint` isn’t an http(s) URL.
+		0 when it printed the URL or the numbers. 2 for a `release` section from a
+		newer chamoji. 1 for anything else, such as a repo it can’t tell, an
+		`--endpoint` that isn’t an http(s) URL, or a `--to` ref that doesn’t exist.
 	</Property>
 	<Property name="init">
-		0 when memory sharing is set up, and when there is no `origin` to share
-		with. 1 when `--agents` can’t safely change `.mcp.json` or
-		`.claude/settings.json`, or anything else fails.
+		0 when memory sharing is set up, when there is no `origin` to share with,
+		and when the fetch from origin fails, which it reports on stderr. 1 when
+		`--agents` can’t safely change or write `.mcp.json` or
+		`.claude/settings.json`, outside a git repo, or when anything else fails.
 	</Property>
 	<Property name="mcp">
 		0 when the agent closes the connection. 2 when it’s given arguments. 1 for
