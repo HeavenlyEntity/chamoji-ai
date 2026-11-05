@@ -8,9 +8,9 @@ export const metadata = {
 
 <p className="lead">
 	Install or remove chamoji’s `prepare-commit-msg` hook. With it, `git commit`
-	with no message opens the commit composer, and every commit made while a
-	workstream is active gets its `Workstream:` line. The hook never blocks a
-	commit.
+	with no message opens the commit composer. While a workstream is active, the
+	hook adds its `Workstream:` line to commits made with `-m`, `-F` or the
+	composer. The hook never blocks a commit.
 </p>
 
 <Tag variant="setup">SETUP</Tag>
@@ -41,7 +41,7 @@ export const metadata = {
 	</Step>
 </Steps>
 
-On each commit, the hook opens the composer only for a plain `git commit` on a terminal, and leaves everything else alone: `-m` and `-F`, merges, squashes, amends, rebases, a message that already has a gitmoji, CI, and commits with no terminal, such as an editor’s commit button. Ctrl-C in the composer keeps git’s own message. While a workstream is active, it adds the `Workstream:` line to `-m` and composer commits. [Writing commits](/guides/writing-commits) has the details.
+On each commit, the hook opens the composer only for a plain `git commit` on a terminal, and leaves everything else alone: `-m` and `-F`, merges, squashes, amends, rebases, a message that already has a gitmoji, CI, and commits with no terminal, such as an editor’s commit button. Ctrl-C in the composer keeps git’s own message. While a workstream is active, it adds the `Workstream:` line to `-m`, `-F` and composer commits. Editor commits, merges, squashes, amends without `-m`, rebases, cherry-picks, reverts and `commit.template` messages aren’t stamped. [Writing commits](/guides/writing-commits) has the details.
 
 ## The hook {{ icon: 'file-code' }}
 
