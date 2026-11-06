@@ -698,6 +698,15 @@ pnpm check    # build (type-check) + prettier
 
 `packages/core` is the engine: git reading, parsing, grouping and rendering, with no UI. `packages/cli` is the `chamoji` command. See `docs/research/` for where the project is heading.
 
+## Sponsors
+
+chamoji is free and MIT licensed. These teams help keep it that way.
+
+<!-- sponsors:start -->
+
+[Become a sponsor](https://www.chamoji.dev/sponsors)
+<!-- sponsors:end -->
+
 ## License
 
 MIT © AMWARE Technologies LLC. chamoji is a project of AMWARE Technologies LLC.
