@@ -705,6 +705,7 @@ chamoji is free and MIT licensed. These teams help keep it that way.
 <!-- sponsors:start -->
 
 [Become a sponsor](https://www.chamoji.dev/sponsors)
+
 <!-- sponsors:end -->
 
 ## License
