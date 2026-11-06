@@ -62,7 +62,7 @@ Use `background-size: 160% 100%`, and animate `background-position` slowly (abou
 
 ### The foil in apps: Iridescence
 
-GUI surfaces (the desktop app, Cloud pages and the website) render the foil live with **Iridescence**, a WebGL2 shader component from [React Bits](https://reactbits.dev). It's tuned to the logo's pastels.
+GUI surfaces (the desktop app, Cloud pages and the website) render the foil live with **Iridescence**, a WebGL2 shader component from [React Bits](https://pro.reactbits.dev/?atp=amware). It's tuned to the logo's pastels.
 
 - **Files:**
   - [`components/Iridescence.tsx`](components/Iridescence.tsx): the component, unchanged apart from a license header.
