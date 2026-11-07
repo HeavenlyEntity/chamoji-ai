@@ -6,7 +6,7 @@
 - **When a milestone ships:** update its status, its exit-criteria results and the dogfooding log below.
 - **Background only:** [`docs/research/2026-10-27-chamoji-direction.md`](research/2026-10-27-chamoji-direction.md) holds the research and reasoning. If it disagrees with this file, this file wins.
 - **Look and feel:** [`docs/brand/BRAND.md`](brand/BRAND.md) sets the colours, the holographic foil effect, the type and the rules for every visual surface.
-- **Last updated:** 2026-11-06
+- **Last updated:** 2026-11-07
 
 ## Vision
 
@@ -811,6 +811,7 @@ Fold these into a milestone's plan when they fit, or pull one into a sprint when
 - ~~**Noise prefixes:**~~ "Merge remote-tracking…", "Squashed commit of…" and jQuery's "Landing pull request…" are handled since the post-0.5.0 parsing pass.
 - **Cloud data store:** choose one for the Cloud tier when milestone 13 is planned.
 - **Brand assets** (see `docs/brand/BRAND.md`): the display font is Marow Block and the foil is Iridescence. Still to make: an SVG logo with the wordmark outlined, app icons, a favicon and a social preview image. Needed by milestone 2's readme and milestone 10.
+- **How merge styles affect project memory (chamoji.dev):** an illustration showing what chamoji can still read after each of a regular commit, a merge commit, a squash and merge, and a rebase: the commits, their `Why:` lines and their `Workstream:` trailers. Lead with squash and merge, the question we get most: the PR's separate commits become one, and the trailers survive only with some of GitHub's squash-message settings (see milestone 6's results). Show how to keep the context with each style.
 - **Windows:** the fixture repos and git argument handling haven't been tested there yet; milestone 2's CI will cover it.
 
 ## Open decisions
