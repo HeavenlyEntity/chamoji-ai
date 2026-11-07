@@ -32,7 +32,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: HeavenlyEntity/chamoji-ai@v0.5.0
+      - uses: HeavenlyEntity/chamoji-ai@v0.14.0
 ```
 
 On PRs from forks the token can't comment, so the preview goes to the job summary instead.
@@ -56,7 +56,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: HeavenlyEntity/chamoji-ai@v0.5.0
+      - uses: HeavenlyEntity/chamoji-ai@v0.14.0
         with:
           mode: release
           release-version: ${{ inputs.version }}
