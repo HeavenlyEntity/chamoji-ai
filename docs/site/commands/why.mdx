@@ -1,0 +1,209 @@
+export const metadata = {
+	title: 'chamoji why',
+	description:
+		'Ask why a line of code is there: the commit that wrote it, with the Why, Constraint, Gotcha and Follow-up lines it recorded.',
+};
+
+# `chamoji why`
+
+<p className="lead">
+	Ask why a line of code is there. chamoji blames the line in your working copy
+	and prints the commit that wrote it, with its author, date and intent card. It
+	only reads git: nothing is changed or sent anywhere.
+</p>
+
+<Tag variant="setup">SINCE 0.11.0</Tag>
+<Tag variant="ci">--json FOR CI AND AGENTS</Tag>
+
+<Note>
+	The file is relative to the folder you run chamoji in, as with `git blame`. In
+	`src/`, ask for `picker.js:2`, not `src/picker.js:2`.
+</Note>
+
+## What it does, in order {{ icon: 'magnifying-glass' }}
+
+<Steps>
+	<Step title="Blames the line.">
+		In your working copy, so the line numbers are the ones your editor shows. It
+		follows moved lines and renames, and skips changes that only touched
+		whitespace.
+	</Step>
+	<Step title="Reads the commit.">
+		Its short hash, subject, author and date, and its intent card: the `Why:`,
+		`Constraint:`, `Gotcha:` and `Follow-up:` lines in its message.
+	</Step>
+	<Step title="Adds the workstream.">
+		When the commit has no card but names a workstream, it shows that
+		workstream’s title and status, from project memory or, failing that,
+		`.chamoji/workstreams.yml`.
+	</Step>
+	<Step title="Prints it.">
+		A commit without a card says “This commit records no intent.” A line you
+		haven’t committed yet says so and exits 0.
+	</Step>
+</Steps>
+
+[Project memory](/guides/project-memory) explains intent cards, and how to write them.
+
+## Arguments
+
+<Properties>
+	<Property name="file:line" type="string · required">
+		The file and the line number, from 1, such as `src/auth.ts:42`. It splits at
+		the last colon, so a file name may hold colons. Give exactly one: none, or
+		more than one, exits 2. Anything that isn’t `file:line`, such as a missing
+		line number or line 0, exits 1.
+	</Property>
+</Properties>
+
+## Flags {{ badge: '2', icon: 'flag' }}
+
+<Properties>
+	<Property name="--json" type="boolean">
+		Print the blame result as JSON on stdout. It’s `{"kind": "uncommitted"}` for
+		a line you haven’t committed, or `kind: "commit"` with the whole commit as
+		chamoji reads it: hash, author name and email, date, subject, body, gitmoji,
+		trailers, `card` when there is one, and `workstream` as a slug. It doesn’t
+		look up the workstream’s title. The exit codes stay the same.
+	</Property>
+	<Property name="--no-update-check" type="boolean">
+		Don’t check npm for a newer chamoji. See [the update
+		notice](/install#the-update-notice).
+	</Property>
+</Properties>
+
+## Common combinations
+
+<Resources>
+	<Resource name="chamoji why src/auth.ts:42" icon="magnifying-glass" code>
+		The commit behind a line, and the reason it gave.
+	</Resource>
+	<Resource name="chamoji why src/auth.ts:42 --json" icon="robot" code>
+		The same, for a script or an agent.
+	</Resource>
+	<Resource name="chamoji memory search retry" icon="notebook" code>
+		Search every commit’s card instead, when you don’t know the line.
+	</Resource>
+</Resources>
+
+An agent can ask the same question through `chamoji mcp`’s `why` tool. See [mcp](/commands/mcp).
+
+## Output {{ icon: 'terminal-window' }}
+
+These are from real runs in a small repo called widgets. A commit with a card:
+
+```txt {{ title: 'chamoji why src/picker.js:2' }}
+39a81ce 🐛 Return null for an empty date
+Sam Rivera, 2026-11-05
+
+Why: the form crashed when the field was cleared
+Gotcha: callers still compare with undefined in two places
+```
+
+A commit with no card, made while a workstream was active:
+
+```txt {{ title: 'chamoji why src/picker.js:7' }}
+f8b510b ✨ Move between days with the arrow keys
+Sam Rivera, 2026-11-05
+
+This commit records no intent.
+Workstream: ⌨️ Keyboard support (shipped)
+```
+
+A line you’ve added but not committed:
+
+```txt {{ title: 'chamoji why src/picker.js:11' }}
+src/picker.js:11 is not committed yet.
+```
+
+With `--json`:
+
+```txt {{ title: 'chamoji why src/picker.js:2 --json' }}
+{
+  "kind": "commit",
+  "commit": {
+    "hash": "39a81ce2e6ccbf81d0a10631819841989b040e3a",
+    "shortHash": "39a81ce",
+    "authorName": "Sam Rivera",
+    "authorEmail": "sam@example.com",
+    "date": "2026-11-05T02:08:02-07:00",
+    "subject": "🐛 Return null for an empty date",
+    "body": "Why: the form crashed when the field was cleared\nGotcha: callers still compare with undefined in two places\n",
+    "gitmoji": "bug",
+    "gitmojiSource": "gitmoji",
+    "type": null,
+    "scope": null,
+    "description": "Return null for an empty date",
+    "breaking": false,
+    "trailers": [
+      …
+    ],
+    "card": {
+      "why": [
+        "the form crashed when the field was cleared"
+      ],
+      "constraint": [],
+      "gotcha": [
+        "callers still compare with undefined in two places"
+      ],
+      "followUp": []
+    }
+  }
+}
+```
+
+<CodeGroup title="Errors">
+
+```txt {{ title: 'No location' }}
+$ chamoji why
+chamoji: why needs one location: chamoji why <file:line>
+```
+
+```txt {{ title: 'Not a location' }}
+$ chamoji why src/picker.js
+chamoji: "src/picker.js" is not a location; use <file>:<line>, such as src/app.ts:12
+```
+
+```txt {{ title: 'No such file' }}
+$ chamoji why src/nope.js:3
+chamoji: No such file in HEAD: src/nope.js
+```
+
+```txt {{ title: 'No such line' }}
+$ chamoji why src/picker.js:99
+chamoji: src/picker.js has 10 lines
+```
+
+</CodeGroup>
+
+## Exit codes
+
+<Properties>
+	<Property name="0">
+		It found the commit, or the line isn’t committed yet.
+	</Property>
+	<Property name="2">No location, or more than one.</Property>
+	<Property name="1">
+		Anything else, such as a location that isn’t `file:line`, a file or line
+		that doesn’t exist, a repo with no commits yet, or outside a git repo.
+	</Property>
+</Properties>
+
+[Exit codes](/reference/exit-codes) has every command’s codes.
+
+## Related {{ anchor: false }}
+
+<Guides>
+	<Guide href="/guides/project-memory" name="Project memory">
+		Intent cards, the memory ref, and how to share it.
+	</Guide>
+	<Guide href="/commands/memory" name="memory">
+		Search every commit and workstream by what it says.
+	</Guide>
+	<Guide href="/commands/mcp" name="mcp">
+		The same question, asked by your coding agent.
+	</Guide>
+	<Guide href="/commands/commit" name="commit">
+		The composer’s Why? field writes the card.
+	</Guide>
+</Guides>

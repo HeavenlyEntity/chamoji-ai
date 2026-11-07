@@ -1,8 +1,9 @@
 {
 	"name": "@chamoji/cli",
-	"version": "0.4.0",
-	"description": "Changelogs from gitmoji and Conventional Commits",
+	"version": "0.14.0",
+	"description": "Changelogs, workstreams and project memory, all kept in your git history.",
 	"license": "MIT",
+	"author": "AMWARE Technologies LLC",
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/HeavenlyEntity/chamoji-ai.git",
@@ -30,7 +31,10 @@
 	"dependencies": {
 		"@chamoji/core": "workspace:*",
 		"@typesafe-ai/sdk": "^0.7.0",
+		"chalk": "^6.0.1",
+		"ink": "^8.0.0",
 		"meow": "^14.1.0",
+		"react": "^19.3.1",
 		"semver": "^7.8.5"
 	},
 	"keywords": [
@@ -45,6 +49,9 @@
 		"access": "public"
 	},
 	"devDependencies": {
-		"@types/semver": "^7.8.0"
+		"@types/react": "^19.3.0",
+		"@types/semver": "^7.8.0",
+		"ink-testing-library": "^4.0.0",
+		"string-width": "^8.3.0"
 	}
 }

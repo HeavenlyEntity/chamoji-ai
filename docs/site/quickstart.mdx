@@ -1,0 +1,195 @@
+export const metadata = {
+	title: 'Quickstart',
+	description:
+		'Write your first changelog and cut your first release with chamoji, with the real output of each step.',
+};
+
+# Quickstart
+
+<p className="lead">
+	Write your first changelog and cut your first two releases. Every output on
+	this page is from a real run of chamoji 0.14.0 in a small repo called widgets.
+</p>
+
+<Note>
+	The first release needs a version from you, such as `chamoji release 0.1.0`.
+	With no release tags yet, chamoji won’t guess one.
+</Note>
+
+## The repo
+
+Any git repo with a few commits will do. This one has five, in three styles of message chamoji understands:
+
+```txt {{ title: 'git log --oneline' }}
+dddcdbd ⬆️ Bump vite to 7.1.0
+a9ea95e 📝 Explain the picker's props in the readme
+909853f 🐛 Fix focus in the dialog
+9ccc036 ✨ Add the date picker
+b54bc16 🎉 Begin the widgets project
+```
+
+It has a `package.json` at version `0.1.0`, and an `origin` remote.
+
+## Your first changelog {{ icon: 'changelog' }}
+
+Run `chamoji changelog` in the repo. It prints Markdown to stdout and changes nothing:
+
+```txt {{ title: 'chamoji changelog' }}
+# Changelog
+
+## Unreleased
+
+### Added
+
+- ✨ Add the date picker (9ccc036)
+- 🎉 Begin the widgets project (b54bc16)
+
+### Fixed
+
+- 🐛 Fix focus in the dialog (909853f)
+
+### Documentation
+
+- 📝 Explain the picker's props in the readme (a9ea95e)
+
+### Dependencies
+
+- ⬆️ 1 dependency update: vite
+```
+
+Commits since the last release tag form the Unreleased section. There is no tag yet, so that's all of them. The dependency update is one line. With a hundred updates it would still be one line.
+
+To write it to a file, add `--output CHANGELOG.md`. You don't need to for a release: `chamoji release` writes the file itself.
+
+## Your first release {{ tag: 'CHANGES YOUR REPO', variant: 'changes', label: 'chamoji release', icon: 'rocket-launch' }}
+
+Preview it first. `--dry-run` changes nothing:
+
+```txt {{ title: 'chamoji release --dry-run' }}
+chamoji: no release tags yet, so this is the first release: give the version, for example the one in your manifest, or 0.1.0
+```
+
+It exits 2. Give the version, as it says:
+
+```txt {{ title: 'chamoji release 0.1.0 --dry-run' }}
+Would release v0.1.0 (first release).
+files: CHANGELOG.md
+
+## v0.1.0 - 2026-11-05
+
+### Added
+
+- ✨ Add the date picker (9ccc036)
+- 🎉 Begin the widgets project (b54bc16)
+
+### Fixed
+
+- 🐛 Fix focus in the dialog (909853f)
+
+### Documentation
+
+- 📝 Explain the picker's props in the readme (a9ea95e)
+
+### Dependencies
+
+- ⬆️ 1 dependency update: vite
+```
+
+That looks right, so cut it:
+
+```txt {{ title: 'chamoji release 0.1.0' }}
+Released v0.1.0 (first release).
+changelog: CHANGELOG.md, created from the full history
+bumped: no manifest carried the old version
+commit: 3a9992f 🔖 Release v0.1.0
+tag: v0.1.0 (annotated)
+pushed: no; to ship: git push origin HEAD v0.1.0
+undo before pushing: git tag -d v0.1.0 && git reset --hard dddcdbd
+
+## v0.1.0 - 2026-11-05
+
+…
+```
+
+chamoji wrote CHANGELOG.md, made the release commit `🔖 Release v0.1.0` and tagged it `v0.1.0`. Nothing was bumped, because `package.json` already says `0.1.0`. Nothing was pushed either. The output says how to push it, and how to undo it before you do.
+
+Push it:
+
+```bash
+git push origin HEAD v0.1.0
+```
+
+Or add `--push` next time: chamoji pushes the commit and the tag, then creates the GitHub release when the [GitHub CLI](https://cli.github.com) is installed.
+
+## Your next release {{ icon: 'tag' }}
+
+Two more commits land:
+
+```bash
+git commit -m "✨ Add a range mode to the date picker"
+git commit -m "🐛 Close the dialog on Escape"
+```
+
+Now there is a tag, so chamoji picks the version. A ✨ commit means a minor bump:
+
+```txt {{ title: 'chamoji next-version' }}
+0.2.0
+```
+
+Cut it, with no version this time:
+
+```txt {{ title: 'chamoji release' }}
+Released v0.2.0 (minor, from v0.1.0).
+changelog: CHANGELOG.md, new section added above the previous release; older entries untouched
+bumped: package.json
+commit: 5558fb2 🔖 Release v0.2.0
+tag: v0.2.0 (annotated)
+pushed: no; to ship: git push origin HEAD v0.2.0
+undo before pushing: git tag -d v0.2.0 && git reset --hard b6778d3
+
+## v0.2.0 - 2026-11-05
+
+### Added
+
+- ✨ Add a range mode to the date picker (6af3e28)
+
+### Fixed
+
+- 🐛 Close the dialog on Escape (b6778d3)
+```
+
+This time `package.json` went from `0.1.0` to `0.2.0`. The new section went above v0.1.0, and the v0.1.0 section stayed exactly as it was. chamoji never rewrites older entries, so you can edit them by hand.
+
+## When there's nothing to release
+
+Right after a release, nothing has changed since the tag:
+
+```txt {{ title: 'chamoji next-version' }}
+chamoji: no release needed (no commits since the last tag imply a version bump)
+```
+
+It exits 3 and prints nothing to stdout, so `$(chamoji next-version)` in a script stops instead of making a release called "none". `chamoji release` says so too, and also exits 3:
+
+```txt {{ title: 'chamoji release' }}
+Nothing to release: no commit since v0.2.0 implies a version bump.
+No commits since that tag.
+```
+
+Commits that change only docs, tests or refactors don't need a release either.
+
+## Next {{ anchor: false }}
+
+<Guides>
+	<Guide href="/set-up-a-repo" name="Set up a repo">
+		Versions for each app in a monorepo, shared memory and Claude Code.
+	</Guide>
+	<Guide href="/guides/writing-commits" name="Writing commits">
+		Commits that sort themselves, with the composer.
+	</Guide>
+	<Guide href="/guides/github-action" name="GitHub Action">
+		Release notes on every tag and a preview comment on every pull request.
+	</Guide>
+	<Guide href="/reference/exit-codes" name="Exit codes">
+		What 0, 1, 2 and 3 mean for every command.
+	</Guide>
+</Guides>

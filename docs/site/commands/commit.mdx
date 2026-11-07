@@ -1,0 +1,203 @@
+export const metadata = {
+	title: 'chamoji commit',
+	description:
+		'Write a commit with the composer: a gitmoji, a scope, a title, a body, why you made the change, and whether it breaks anything.',
+};
+
+# `chamoji commit`
+
+<p className="lead">
+	Write a commit with the composer. It asks for a gitmoji, a scope, a title, a
+	body, why you made the change and whether it breaks anything, then commits
+	what you staged. The changelog can sort a commit like this on its own.
+</p>
+
+<Tag variant="changes">CHANGES YOUR REPO</Tag>
+<Tag variant="mono">MONOREPO-AWARE</Tag>
+
+<Note>
+	The composer needs a terminal. In a script or CI, use `git commit -m`.
+</Note>
+
+## What it does, in order {{ tag: 'CHANGES YOUR REPO', variant: 'changes', label: 'chamoji commit', icon: 'git-commit' }}
+
+<Steps>
+	<Step title="Opens the composer.">
+		On the terminal, even when stdin isn’t one, as in a git hook. With no
+		terminal at all it stops and exits 2.
+	</Step>
+	<Step title="Asks.">
+		A gitmoji from a search list, then the scope, the title, a body, why, and
+		whether it breaks anything. Enter moves on, Esc goes back and Ctrl-C
+		cancels.
+	</Step>
+	<Step title="Stamps the workstream.">
+		When a workstream is active in this worktree, it adds its `Workstream:`
+		line.
+	</Step>
+	<Step title="Commits.">
+		With `git commit`, so your git hooks and settings apply. It prints what git
+		prints.
+	</Step>
+</Steps>
+
+## The questions {{ icon: 'list-numbers', badge: '6' }}
+
+<Properties>
+	<Property name="Gitmoji">
+		Type `bug`, `fix` or a few letters such as `spk`, and pick with the arrow
+		keys. With [Jev’s suggestions](/guides/writing-commits) turned on, its three
+		likeliest gitmojis show above the list, or at the top of it when Jev is very
+		sure.
+	</Property>
+	<Property name="Scope" type="optional">
+		Written as `(scope):` after the gitmoji. Skipped when `scopePrompt` is
+		false.
+	</Property>
+	<Property name="Title">
+		The rest of the subject line. Its first letter is capitalized unless
+		`capitalizeTitle` is false.
+	</Property>
+	<Property name="Body" type="optional">
+		More lines after the subject. Skipped when `messagePrompt` is false.
+	</Property>
+	<Property name="Why?" type="optional">
+		Kept as a `Why:` trailer, so `chamoji why` and project memory can find it
+		later.
+	</Property>
+	<Property name="Breaking change?" type="y/N">
+		No by default. Yes asks what breaks, and adds a `BREAKING CHANGE:` trailer
+		with your answer, or the title when you leave it empty.
+	</Property>
+</Properties>
+
+In a repo with release units, a line under the header says which units the staged change releases with, and which it only rides along to. When it releases none of its own, a last question offers to release those units now, with a `Release:` trailer for each.
+
+The settings come from `.gitmojirc.json`, or the `gitmoji` key in `package.json`, as gitmoji-cli reads them. `emojiFormat: "code"` writes `:sparkles:` instead of ✨, and `autoAdd` stages everything first. [Config](/reference/config#settings-kept-elsewhere) lists them with their defaults.
+
+## Arguments
+
+`chamoji commit` takes no arguments.
+
+## Flags {{ badge: '2', icon: 'flag' }}
+
+<Properties>
+	<Property name="--all, -a" type="boolean">
+		Commit every change to tracked files, as `git commit -a` does, not only what
+		you staged. New files still need `git add`. With `autoAdd` set, every change
+		is staged first either way.
+	</Property>
+	<Property name="--no-update-check" type="boolean">
+		Don’t check npm for a newer chamoji. See [the update
+		notice](/install#the-update-notice).
+	</Property>
+</Properties>
+
+## Common combinations
+
+<Resources>
+	<Resource name="chamoji commit" icon="git-commit" code>
+		Commit what you staged.
+	</Resource>
+	<Resource name="chamoji commit -a" icon="pencil-simple" code>
+		Commit every change to tracked files.
+	</Resource>
+	<Resource name="chamoji hook install" icon="terminal" code>
+		Open the same composer on a plain `git commit`.
+	</Resource>
+</Resources>
+
+## Output {{ icon: 'terminal-window' }}
+
+These are from real runs in a small repo called widgets. The composer draws in place; each block is one screen.
+
+Typing `bug` narrows the list:
+
+```txt {{ title: 'Gitmoji' }}
+ chamoji commit  Enter next · Esc back · Ctrl-C cancel
+
+ Gitmoji › bug
+ ❯ 🐛 bug                         Fix a bug.
+   🏗️ building_construction       Make architectural changes.
+```
+
+The subject line builds up under the header as you answer. On the last question, Enter takes the default, No, and git commits:
+
+```txt {{ title: 'Breaking change?' }}
+ chamoji commit  Enter next · Esc back · Ctrl-C cancel
+ 🐛 (picker): Keep the month when a range is cleared
+
+ Breaking change? (y/N) ›
+[main ed9b8a1] 🐛 (picker): Keep the month when a range is cleared
+ 1 file changed, 1 insertion(+)
+```
+
+The answer to “Why?” is a trailer:
+
+```txt {{ title: 'git log -1 --format=%B' }}
+🐛 (picker): Keep the month when a range is cleared
+
+Why: Clearing a range jumped back to today
+```
+
+In a repo with two apps, a fix to the shared `packages/ui` releases neither app on its own, so the composer offers to release both:
+
+```txt {{ title: 'Release mobile, web now?' }}
+ chamoji commit  Enter next · Esc back · Ctrl-C cancel
+ rides along to: mobile, web
+ 🐛 (ui): Keep the button label on one line
+
+ Release mobile, web now? (y/N) ›
+[main 1e23054] 🐛 (ui): Keep the button label on one line
+ 1 file changed, 1 insertion(+)
+```
+
+Yes adds the trailers:
+
+```txt {{ title: 'git log -1 --format=%B' }}
+🐛 (ui): Keep the button label on one line
+
+Release: mobile
+Release: web
+```
+
+Ctrl-C at any point commits nothing:
+
+```txt {{ title: 'Ctrl-C' }}
+Cancelled; nothing was committed.
+```
+
+Without a terminal:
+
+```txt {{ title: 'chamoji commit' }}
+chamoji: commit needs a terminal to ask on; in scripts, use git commit -m
+```
+
+## Exit codes
+
+<Properties>
+	<Property name="0">It committed.</Property>
+	<Property name="2">There is no terminal to ask on.</Property>
+	<Property name="1">
+		You cancelled, git refused the commit, or this isn’t a git repo.
+	</Property>
+</Properties>
+
+[Exit codes](/reference/exit-codes) has every command’s codes.
+
+## Related {{ anchor: false }}
+
+<Guides>
+	<Guide href="/guides/writing-commits" name="Writing commits">
+		The composer, the hook, and Jev’s suggestions.
+	</Guide>
+	<Guide href="/commands/hook" name="hook">
+		Open the composer on a plain git commit.
+	</Guide>
+	<Guide href="/commands/ws" name="ws">
+		Workstreams, and the line that stamps their commits.
+	</Guide>
+	<Guide href="/reference/how-commits-are-read" name="How commits are read">
+		How the changelog sorts what you wrote.
+	</Guide>
+</Guides>

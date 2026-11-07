@@ -1,0 +1,76 @@
+export const metadata = {
+	title: 'Install',
+	description:
+		'Install the chamoji CLI with npm, or run it with npx. It needs Node.js 22 or newer and git.',
+};
+
+# Install
+
+<p className="lead">
+	Install the CLI once with npm, or run it with npx when you need it. Either way
+	it needs Node.js 22 or newer and git.
+</p>
+
+## Install it {{ icon: 'package' }}
+
+<CodeGroup title="Install">
+
+```bash {{ title: 'npm' }}
+npm i -g @chamoji/cli
+```
+
+```bash {{ title: 'npx' }}
+npx @chamoji/cli changelog
+```
+
+</CodeGroup>
+
+With npm, the command is `chamoji`. With npx, put `npx @chamoji/cli` where these pages say `chamoji`.
+
+Check that it works:
+
+```txt {{ title: 'chamoji --version' }}
+0.14.0
+```
+
+## Requirements {{ icon: 'check-circle' }}
+
+- **Node.js 22 or newer.**
+- **git.** chamoji reads your history with the git on your PATH.
+- **The full history,** for releases. In CI, check out with `fetch-depth: 0`. `chamoji release` unshallows a shallow clone and fetches tags first.
+
+## The update notice {{ icon: 'sparkle' }}
+
+When a newer version is out, chamoji says so once, after your command finishes. This one is from 0.13.0, run with npx:
+
+```txt {{ title: 'stderr' }}
+chamoji 0.14.0 is available (you have 0.13.0): run npx @chamoji/cli@latest
+```
+
+The last part depends on how you installed chamoji. It tells you to:
+
+| Installed with                      | The notice ends with                  |
+| ----------------------------------- | ------------------------------------- |
+| `npm i -g`                          | `npm i -g @chamoji/cli@latest`        |
+| `pnpm add -g`                       | `pnpm add -g @chamoji/cli@latest`     |
+| `yarn global add`                   | `yarn global add @chamoji/cli@latest` |
+| `npx`                               | `run npx @chamoji/cli@latest`         |
+| `pnpm dlx`, `yarn dlx`, `bunx`      | `run it with @chamoji/cli@latest`     |
+| a dependency in your `package.json` | `update @chamoji/cli in package.json` |
+
+- **What it sends:** at most one request a day, to `registry.npmjs.org`, asking for the latest `@chamoji/cli` version. Nothing about you or your repo is sent.
+- **It never slows a command down.** The check runs in the background, and its answer shows on a later run.
+- **It never touches stdout,** so pipes, `--format json` and `$(chamoji next-version)` are unaffected.
+- **It's off in CI, and whenever stderr isn't a terminal.** To turn it off yourself, use `--no-update-check`, `NO_UPDATE_NOTIFIER=1` or `CHAMOJI_NO_UPDATE_CHECK=1`.
+- **The cache** lives in `~/.config/chamoji/update-check.json`, or under `$XDG_CONFIG_HOME` or `%APPDATA%`.
+
+## Next {{ anchor: false }}
+
+<Guides>
+	<Guide href="/quickstart" name="Quickstart">
+		Your first changelog and your first release.
+	</Guide>
+	<Guide href="/reference/environment" name="Environment">
+		Every environment variable chamoji reads.
+	</Guide>
+</Guides>

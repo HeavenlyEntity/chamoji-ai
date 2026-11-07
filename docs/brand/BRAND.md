@@ -62,7 +62,7 @@ Use `background-size: 160% 100%`, and animate `background-position` slowly (abou
 
 ### The foil in apps: Iridescence
 
-GUI surfaces (the desktop app, Cloud pages and the website) render the foil live with **Iridescence**, a WebGL2 shader component from [React Bits](https://reactbits.dev). It's tuned to the logo's pastels.
+GUI surfaces (the desktop app, Cloud pages and the website) render the foil live with **Iridescence**, a WebGL2 shader component from [React Bits](https://pro.reactbits.dev/?atp=amware). It's tuned to the logo's pastels.
 
 - **Files:**
   - [`components/Iridescence.tsx`](components/Iridescence.tsx): the component, unchanged apart from a license header.
@@ -245,10 +245,53 @@ GUI surfaces (the desktop app, Cloud pages and the website) render the foil live
 
 ## Terminal
 
-The CLI shows the same palette where the terminal supports it:
+The CLI wears the same palette, where the terminal can show it. The face is the logo's smile: it lives in the O of the wordmark and, in one line, next to every command that waits.
 
-- **Banner and headings:** a truecolor gradient across the foil stops, with `ink-gradient` / `gradient-string` given the custom stops above. The old chamoji used `ink-gradient`'s `retro` preset, which is a warmer sunset palette and doesn't match the logo.
-- **Fallbacks:** 256 colours, then plain text. Colour is turned off for `NO_COLOR`, non-terminal output and `--format json`.
+**The wordmark.** A bare `chamoji` draws `chamoji` in Marow Block, 68 columns by 8 rows, in quadrant characters only (space and `▗▖▄▝▐▞▟▘▚▌▙▀▜▛█`).
+
+- **The O is a hole,** and the face sits inside it. It looks left, then right, blinks and winks, one frame each. Then the sunglasses slide down over three drop frames and settle on `shades`.
+- **Where it plays:** only a bare `chamoji` on a terminal. Anywhere else the wordmark is written once, with the sunglasses on, and the short help follows it.
+- **Narrow terminals:** below 70 columns it becomes the one-line logo `( ■‿■ ) chamoji`. With the ASCII set it's `( ^_^ ) chamoji`.
+- **Where it comes from:** `pnpm logo:generate` runs `scripts/terminal-logo.mjs`, which reads Marow Block from `docs/brand/fonts/` and writes `packages/cli/src/logo-frames.ts`. The font stays local, as everywhere else (see [`fonts/README.md`](fonts/README.md)). Only the generated strings are committed. Never commit the `.ttf` or `.otf`.
+
+**The one-line faces.** Every frame is 7 columns wide, so the line never jumps.
+
+| Face       | Frames              | Means                                                             |
+| ---------- | ------------------- | ----------------------------------------------------------------- |
+| Rest       | `( •‿• )`           | Working. It looks left, looks right, blinks and winks as it waits |
+| Left/right | `(•‿•  )` `(  •‿•)` | The idle look around                                              |
+| Blink/wink | `( -‿- )` `( •‿- )` | The idle blink and wink                                           |
+| Done       | `( ■‿■ )`           | Finished. Sunglasses on, with `✓` and the time                    |
+| Warn       | `( •_• )`           | Finished, but something needs a look. Ends with `!`               |
+| Fail       | `( ;_; )`           | A step failed. Ends with `✗` and the step's name                  |
+
+- **It writes to stderr only,** so stdout, `--json` and pipes stay byte for byte what they were.
+- **Timing:** a face appears only after a step has run 200 ms, redraws every 100 ms and changes expression about every 700 ms. A step that finishes sooner leaves no line.
+- **Elapsed time** reads `3s`, `1m 4s` or `1h 2m 3s`.
+- **The ASCII set** replaces the faces with `( o_o )`, `( -_- )`, `( o_- )`, `( ^_^ )` and `( o_O )` (the fail face is already ASCII). It's the default on the old Windows console, which is any win32 terminal without `WT_SESSION`.
+
+**Foil on dark only.** The wordmark and the faces take the foil's seven stops, blended with `(1 − cos(π·f)) / 2`, so each stop holds before it turns into the next. On a light background there's no foil: they use the terminal's own text colour, because the stops are all light and would vanish. This is the terminal's form of the rule that foil never sits behind, or becomes, light text on white.
+
+**Theme detection,** first match wins:
+
+1. `CHAMOJI_THEME=light` or `dark`.
+2. The terminal's own answer to an OSC 11 background query, which gets 100 ms to reply. It's asked only when stdin is a terminal, something will animate, and chamoji runs in the foreground, never from a background job. A loading face asks on stderr, and only when a step first draws, so a fast command never asks; until the answer comes, the face has no colour. The intro asks on stdout, before it plays.
+3. `COLORFGBG`, where a background of `7` or `15` means light.
+4. Dark.
+
+The `--help` header asks nothing, so it gets foil only when `CHAMOJI_THEME` or `COLORFGBG` says dark.
+
+**Colour follows chalk.** `NO_COLOR` removes the colour, but the faces still animate. `FORCE_COLOR` forces it.
+
+**Nothing animates** when stderr isn't a terminal, `CI` is set, `TERM=dumb`, the command has `--json`, or `CHAMOJI_NO_ANIMATION=1`. The output is then exactly what it was before faces.
+
+**Environment variables:**
+
+| Variable                 | Effect                                                                                     |
+| ------------------------ | ------------------------------------------------------------------------------------------ |
+| `CHAMOJI_NO_ANIMATION=1` | Turn off the moving faces and the intro                                                    |
+| `CHAMOJI_THEME`          | `light` or `dark`. Skips the terminal query and the `COLORFGBG` check. Light means no foil |
+| `CHAMOJI_ASCII=1`        | Draw the faces and the logo in plain ASCII                                                 |
 
 ## Assets
 

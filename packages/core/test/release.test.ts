@@ -1,7 +1,7 @@
 import {chmod, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {afterEach, expect, test} from 'vitest';
+import {afterEach, expect, test, vi} from 'vitest';
 import {DEFAULT_GROUP_CONFIG} from '../src/config.js';
 import {
 	applyRelease,
@@ -19,6 +19,7 @@ import {
 	type FixtureRepo,
 	type RepoStep,
 } from './helpers/fixture-repo.js';
+import {fakeSsh} from './helpers/fake-ssh.js';
 
 const SECTION =
 	'## [v1.3.0](https://x/compare/v1.2.0...v1.3.0) - 2026-10-28\n\n### Added\n\n- ✨ Add export';
@@ -49,6 +50,18 @@ test('insertSection keeps an Unreleased section above the new release', () => {
 test('insertSection appends below the title when there is no release yet', () => {
 	expect(insertSection('# Changelog\n', SECTION)).toBe(
 		`# Changelog\n\n${SECTION}\n`,
+	);
+});
+
+test('insertSection keeps a Highlights section with the release it belongs to', () => {
+	const section =
+		'## [v1.3.0] - 2026-10-28\n\n### Highlights\n\n- 🔐 **Auth revamp**\n  - ✨ Add login (abc1234)\n\n### Fixed\n\n- 🐛 Fix a crash';
+	const old = '## [v1.2.0] - 2026-09-02\n\n- Old\n';
+	expect(insertSection(`# Changelog\n\n${old}`, section)).toBe(
+		`# Changelog\n\n${section}\n\n${old}`,
+	);
+	expect(insertSection('# Changelog\n', section)).toBe(
+		`# Changelog\n\n${section}\n`,
 	);
 });
 
@@ -223,6 +236,34 @@ test('planRelease picks a minor bump and chamoji notes for a gitmoji repo', asyn
 		'package.json',
 	]);
 	expect(result.changes[1]!.text).toContain('"version": "1.3.0"');
+});
+
+test('planRelease puts shipped workstreams under Highlights in the notes and the changelog', async () => {
+	const repo = await repoWith(
+		[
+			{commit: '🎉 Start widgets'},
+			{tag: 'v1.2.0', annotated: true},
+			{commit: '✨ Add passkey login', body: 'Workstream: auth-revamp'},
+			{commit: '🐛 Fix crash when a widget has no title'},
+			{
+				commit: '📝 Ship the auth revamp',
+				files: {
+					'.chamoji/workstreams.yml':
+						'workstreams:\n  auth-revamp:\n    title: Auth revamp\n    emoji: 🔐\n    status: shipped\n',
+				},
+			},
+		],
+		{'CHANGELOG.md': '# Changelog\n\n## v1.2.0 - 2026-01-02\n\n- Old\n'},
+	);
+	const result = await ready(repo.dir);
+	expect(result.notes).toMatch(
+		/^## v1\.3\.0 - 2026-10-28\n\n### Highlights\n\n- 🔐 \*\*Auth revamp\*\*\n {2}- ✨ Add passkey login \(\w{7}\)\n\n### Changed\n/,
+	);
+	expect(result.notes.match(/Add passkey login/g)).toHaveLength(1);
+	const changelog = result.changes.find(
+		change => change.file === 'CHANGELOG.md',
+	)!;
+	expect(changelog.text).toContain(`${result.notes}\n\n## v1.2.0`);
 });
 
 test('planRelease follows tags without a v and Conventional subjects', async () => {
@@ -402,4 +443,164 @@ test('pushRelease pushes HEAD and the tag, and a failed push keeps the release',
 	} finally {
 		await rm(remote, {recursive: true, force: true});
 	}
+});
+
+const cleanups: Array<() => Promise<void>> = [];
+afterEach(async () => {
+	await Promise.all(cleanups.splice(0).map(async cleanup => cleanup()));
+});
+
+async function withOrigin(repo: FixtureRepo): Promise<string> {
+	const remote = await mkdtemp(path.join(tmpdir(), 'chamoji-remote-'));
+	cleanups.push(async () => rm(remote, {recursive: true, force: true}));
+	await gitOutput(remote, ['init', '-q', '--bare', '-b', 'main']);
+	await gitOutput(repo.dir, ['remote', 'add', 'origin', remote]);
+	await gitOutput(repo.dir, ['push', '-q', 'origin', 'main', '--tags']);
+	return remote;
+}
+
+test('planRelease reports fetch-tags when origin exists', async () => {
+	const repo = await repoWith(widgets);
+	await withOrigin(repo);
+	const steps: string[] = [];
+	await ready(repo.dir, {fetch: true, onStep: step => steps.push(step)});
+	expect(steps).toEqual(['fetch-tags']);
+});
+
+test('planRelease reports no step without an origin or with fetch off', async () => {
+	const repo = await repoWith(widgets);
+	const steps: string[] = [];
+	const onStep = (step: string) => steps.push(step);
+	await ready(repo.dir, {fetch: true, onStep});
+	await withOrigin(repo);
+	await ready(repo.dir, {fetch: false, onStep});
+	expect(steps).toEqual([]);
+});
+
+test('planRelease reports fetch-tags before unshallowing a shallow clone', async () => {
+	const repo = await repoWith(widgets);
+	const remote = await withOrigin(repo);
+	const parent = await mkdtemp(path.join(tmpdir(), 'chamoji-shallow-'));
+	cleanups.push(async () => rm(parent, {recursive: true, force: true}));
+	const clone = path.join(parent, 'clone');
+	await gitOutput(parent, [
+		'clone',
+		'-q',
+		'--depth',
+		'1',
+		`file://${remote}`,
+		clone,
+	]);
+	const steps: string[] = [];
+	await ready(clone, {onStep: step => steps.push(step)});
+	expect(steps).toEqual(['fetch-tags']);
+});
+
+test('planRelease and pushRelease hand the env to git', async () => {
+	const repo = await repoWith(widgets);
+	const remote = await withOrigin(repo);
+	// Only the env knows that this address means the real remote.
+	const address = 'chamoji-test://nowhere/repo.git';
+	await gitOutput(repo.dir, ['remote', 'set-url', 'origin', address]);
+	const env = {
+		GIT_CONFIG_COUNT: '1',
+		GIT_CONFIG_KEY_0: `url.${remote}.insteadOf`,
+		GIT_CONFIG_VALUE_0: address,
+	};
+
+	const without = await ready(repo.dir, {fetch: true});
+	expect(without.warnings).toEqual([
+		'could not fetch tags from origin; used the local tags',
+	]);
+
+	const result = await ready(repo.dir, {fetch: true, env});
+	expect(result.warnings).toEqual([]);
+	await applyRelease(result);
+	await expect(pushRelease(result)).rejects.toThrow(/push failed/);
+	await pushRelease(result, env);
+	expect(await gitOutput(remote, ['tag', '--list', 'v1.3.0'])).toContain(
+		'v1.3.0',
+	);
+});
+
+/** Points origin at the fake ssh, which refuses only when prompts are off. */
+async function overFakeSsh(repo: FixtureRepo): Promise<string> {
+	const remote = await withOrigin(repo);
+	const ssh = await fakeSsh();
+	cleanups.push(ssh.cleanup);
+	for (const [key, value] of Object.entries(ssh.env)) vi.stubEnv(key, value);
+	cleanups.push(async () => {
+		vi.unstubAllEnvs();
+	});
+	await gitOutput(repo.dir, [
+		'remote',
+		'set-url',
+		'origin',
+		`ssh://localhost${remote}`,
+	]);
+	return remote;
+}
+
+test.skipIf(process.platform === 'win32')(
+	'a quiet tag fetch that needs credentials is tried again without the env',
+	async () => {
+		const repo = await repoWith(widgets);
+		const remote = await overFakeSsh(repo);
+		// A tag only origin has, so the result shows the second fetch happened.
+		await gitOutput(remote, ['tag', 'v1.2.5', 'main~2']);
+		let asked = 0;
+		const result = await ready(repo.dir, {
+			fetch: true,
+			env: {GIT_TERMINAL_PROMPT: '0'},
+			onCredentials() {
+				asked++;
+			},
+		});
+		expect(asked).toBe(1);
+		expect(result.warnings).toEqual([]);
+		expect(result.lastTag).toBe('v1.2.5');
+	},
+);
+
+test.skipIf(process.platform === 'win32')(
+	'a tag fetch with no env is not tried again',
+	async () => {
+		const repo = await repoWith(widgets);
+		await overFakeSsh(repo);
+		vi.stubEnv('GIT_TERMINAL_PROMPT', '0');
+		let asked = 0;
+		const result = await ready(repo.dir, {
+			fetch: true,
+			onCredentials() {
+				asked++;
+			},
+		});
+		expect(asked).toBe(0);
+		expect(result.warnings).toEqual([
+			'could not fetch tags from origin; used the local tags',
+		]);
+	},
+);
+
+test('a tag fetch that fails for another reason keeps the warning and asks for nothing', async () => {
+	const repo = await repoWith(widgets);
+	await withOrigin(repo);
+	await gitOutput(repo.dir, [
+		'remote',
+		'set-url',
+		'origin',
+		`${repo.dir}-missing`,
+	]);
+	let asked = 0;
+	const result = await ready(repo.dir, {
+		fetch: true,
+		env: {GIT_TERMINAL_PROMPT: '0'},
+		onCredentials() {
+			asked++;
+		},
+	});
+	expect(asked).toBe(0);
+	expect(result.warnings).toEqual([
+		'could not fetch tags from origin; used the local tags',
+	]);
 });

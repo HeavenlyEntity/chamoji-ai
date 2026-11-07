@@ -1,0 +1,105 @@
+export const metadata = {
+	title: 'Introduction',
+	description:
+		'chamoji writes changelogs and cuts releases from your git history, however your team writes commits.',
+};
+
+# Introduction
+
+<p className="lead">
+	chamoji writes changelogs from your git history, however your team writes
+	commits. It groups them into readable sections, suggests the next version and
+	cuts the release: the CHANGELOG.md section, the version bumps, the commit and
+	the tag.
+</p>
+
+## The commits it reads {{ icon: 'git-commit' }}
+
+You don't have to change how you write commits. chamoji reads three styles, and a repo can mix them:
+
+- emoji commits in the [gitmoji](https://gitmoji.dev) convention, such as `✨ Add login`;
+- [Conventional Commits](https://www.conventionalcommits.org), such as `feat: add login`;
+- plain messages, such as `Add login`.
+
+It has its own engine. It isn't a wrapper around gitmoji tools, and gitmoji is one of the styles it understands. [How commits are read](/reference/how-commits-are-read) has every rule.
+
+## What it does {{ icon: 'list-numbers' }}
+
+- **Changelogs.** Commits go into sections such as Added, Fixed and Documentation. Dependency updates become one line, and you can ask AI to sort the commits no rule can place.
+- **Versions.** `chamoji next-version` reads the commits since the last tag and prints the next semver version.
+- **Releases.** `chamoji release` writes the notes, bumps your version files, then makes the release commit and an annotated tag. In a monorepo, each app or package can have its own version.
+- **Better commits.** `chamoji commit` opens a composer that writes commits which sort themselves, and keeps the reason in a `Why:` line.
+- **Workstreams and memory.** Group a piece of work into one Highlight in the changelog, and ask `chamoji why` why a line of code is there.
+
+## The commands {{ icon: 'terminal-window' }}
+
+```bash
+chamoji changelog                          # Markdown to stdout
+chamoji changelog --output CHANGELOG.md    # write a file
+chamoji changelog --format html --output changelog.html
+chamoji changelog --format json            # machine-readable
+chamoji next-version                       # e.g. 1.3.0
+chamoji release                            # cut a release
+chamoji commit                             # write a commit
+chamoji ws                                 # list workstreams
+chamoji why src/auth.ts:42                 # why is this line here?
+chamoji setup                              # set up releases, memory and more
+```
+
+A bare `chamoji` draws the wordmark and a short help, then exits 0. In a repo with nothing set up yet, it ends by pointing you to `chamoji setup`:
+
+```txt {{ title: 'chamoji' }}
+…
+Changelogs, workstreams and project memory, all kept in your git history.
+
+Release       changelog              Write a changelog from git history
+              next-version           Print the next version
+              release                Cut a release: notes, bump, tag
+
+Workstreams   ws                     List workstreams
+              ws start <title>       Start one and make it active
+              ws switch <slug>       Make one active
+              ws ship [slug]         Mark one shipped
+              ws drop [slug]         Mark one dropped
+
+Memory        why <file:line>        Why a line is there
+              memory                 What past workstreams left behind
+              memory search <query>  Find commits and workstreams
+              memory sync            Merge memory with origin
+
+Commit        commit                 Write a commit with the composer
+              hook install           Offer the composer on git commit
+
+Setup         init                   Share memory in this clone
+              init --agents          The same, and set up Claude Code
+              card                   Print the URL of the repo's card
+              mcp                    Serve project memory to AI agents
+
+Every option: chamoji --help
+
+Run `chamoji setup` to get started.
+```
+
+`chamoji --help` lists every option.
+
+## Where to start {{ anchor: false }}
+
+<Guides>
+	<Guide href="/install" name="Install">
+		Install the CLI, or run it with npx.
+	</Guide>
+	<Guide href="/quickstart" name="Quickstart">
+		Your first changelog and your first release, in a few minutes.
+	</Guide>
+	<Guide href="/set-up-a-repo" name="Set up a repo">
+		Releases for a monorepo, shared memory and Claude Code, in one command.
+	</Guide>
+	<Guide href="/reference/config" name="Config">
+		Every key in chamoji.config.json, with its default.
+	</Guide>
+</Guides>
+
+<Note>
+	When you answer “Was this page helpful?”, we keep only the page, your answer,
+	the CLI version and the time.
+</Note>

@@ -1,3 +1,6 @@
+import type {Workstream} from './workstreams.js';
+import type {ReleaseSettings} from './units/settings.js';
+
 export type SemverBump = 'major' | 'minor' | 'patch';
 
 /** One commit as read from `git log`, before any interpretation. */
@@ -17,6 +20,17 @@ export type RawCommit = {
 export type Trailer = {key: string; value: string};
 
 /**
+ * What a commit says about its own intent, from `Why:`, `Constraint:`,
+ * `Gotcha:` and `Follow-up:` lines, in the order they were written.
+ */
+export type IntentCard = {
+	why: string[];
+	constraint: string[];
+	gotcha: string[];
+	followUp: string[];
+};
+
+/**
  * Where a commit's gitmoji came from: written in the message, implied by a
  * Conventional type, guessed from the wording, or picked by an AI classifier.
  */
@@ -33,6 +47,14 @@ export type ParsedCommit = Omit<RawCommit, 'trailers'> & {
 	description: string;
 	breaking: boolean;
 	trailers: Trailer[];
+	/** Slug from the `Workstream:` trailer. Absent when the commit has none. */
+	workstream?: string;
+	/** The commit's intent lines. Absent when it has none. */
+	card?: IntentCard;
+	/** For a commit shared with a unit: the internal package path it changed. */
+	via?: string;
+	/** Set on the one line a merge from the upstream remote becomes. */
+	sync?: {base: string; to: string};
 };
 
 export type GroupConfigItem = {
@@ -51,6 +73,7 @@ export type GroupConfig = GroupConfigItem[];
 export type ChamojiConfig = {
 	groups: GroupConfig;
 	repositoryUrl?: string;
+	release?: ReleaseSettings;
 };
 
 export type Group = {
@@ -59,6 +82,16 @@ export type Group = {
 	collapse?: boolean;
 	commits: ParsedCommit[];
 };
+
+/**
+ * A shipped workstream in a release: its commits, folded out of the
+ * release's own groups. `links` and the other fields come from the
+ * workstreams file and are data, not markup.
+ */
+export type Highlight = Pick<
+	Workstream,
+	'slug' | 'title' | 'emoji' | 'description' | 'links'
+> & {groups: Group[]};
 
 export type Release = {
 	/** Tag name, the `--release` version, or `Unreleased`. */
@@ -73,6 +106,11 @@ export type Release = {
 	date: string | null;
 	bump: SemverBump | null;
 	nextVersion: string | null;
+	/**
+	 * Shipped workstreams in this release, newest work first. Absent when
+	 * there are none. Their commits are not repeated in `groups`.
+	 */
+	highlights?: Highlight[];
 	groups: Group[];
 };
 

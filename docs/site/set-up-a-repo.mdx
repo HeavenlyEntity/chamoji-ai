@@ -1,0 +1,244 @@
+export const metadata = {
+	title: 'Set up a repo',
+	description:
+		'Run chamoji setup to version each app or package on its own, share project memory, connect Claude Code and offer the commit composer.',
+};
+
+# Set up a repo
+
+<p className="lead">
+	A repo that ships as one package needs no setup. When apps or packages ship on
+	their own, or you want to share project memory and connect Claude Code, run
+	`chamoji setup`. It looks at the repo, shows what it found, and saves with
+	Enter.
+</p>
+
+<Tag variant="setup">SETUP</Tag>
+<Tag variant="mono">MONOREPO-AWARE</Tag>
+
+<Note>
+	Setup never commits. Review `chamoji.config.json`, then commit it yourself.
+</Note>
+
+## Do you need it?
+
+By default chamoji treats a repo as one package: one version, one `v*` tag and one `CHANGELOG.md`. That's also right for a monorepo whose packages ship together.
+
+Run setup when:
+
+- **apps or packages ship on their own.** Each one then gets its own version, tag, changelog and GitHub release. Setup writes this in the `release` section of `chamoji.config.json`.
+- **you want to share project memory** with your team through `origin`, as `chamoji init` does.
+- **you use Claude Code,** and want it to search project memory and write a `Why:` line in its commits.
+- **you want the commit composer** to open on a plain `git commit`.
+
+## Run it {{ tag: 'SETUP', variant: 'setup', label: 'chamoji setup', icon: 'gear' }}
+
+<CodeGroup title="chamoji setup">
+
+```bash {{ title: 'On a terminal' }}
+chamoji setup
+```
+
+```bash {{ title: 'Recommended answers' }}
+chamoji setup --yes
+```
+
+```bash {{ title: 'Releases only' }}
+chamoji setup releases --yes --explain
+```
+
+</CodeGroup>
+
+Setup works out its answers from git and the files in the repo, with no AI and no network. Two things it does after that can reach the network: the squash-merge check asks GitHub through `gh`, and the memory step talks to `origin`, with `--yes` too.
+
+On a terminal, it opens with a summary of what it found and what it recommends. Under it are the questions the repo can’t answer, such as a unit’s first version when it has no tags yet, each with a recommended answer.
+
+- **Enter** saves every answer as shown.
+- **c** opens “Change something”, which lists every question with what chamoji found.
+- **Esc** on the summary, or **Ctrl-C**, cancels and saves nothing.
+
+Beside the questions, a preview shows each unit’s next release under the current answers: its version, its tag and the first lines of its notes. It changes as the answers change. On a narrow terminal it goes under the questions. When a unit has releases of its own, setup also applies the answers to up to five of them, and shows how each would have come out next to what was released.
+
+## What it found
+
+Without a terminal and without `--yes`, setup says what it would do, writes nothing and exits 2. This is a small repo with two apps, `apps/web` and `apps/mobile`, and one shared package, `packages/ui`:
+
+```txt {{ title: 'chamoji setup' }}
+○ releases aren't set up yet
+○ memory sharing is off in this clone
+○ Claude Code isn't connected here yet
+○ the commit composer hook isn't installed in this clone; chamoji setup hook --yes installs it
+
+Found 2 apps (mobile, web) and 1 internal package. mobile and web get their own versions. Shared changes ride along with each app's own releases.
+
+Setup would write this release section to chamoji.config.json:
+{
+  "schema": 1,
+  "shape": "apps",
+  "units": {
+    "mobile": {
+      "path": "apps/mobile",
+      "tag": "mobile/v{version}"
+    },
+    "web": {
+      "path": "apps/web",
+      "tag": "web/v{version}"
+    }
+  },
+  "exclude": [],
+  "sharedChanges": "ride-along",
+  "rootFiles": "none"
+}
+
+Setup would also share memory through origin, as chamoji init does.
+Setup would also connect Claude Code here, as chamoji init --agents does.
+Setup would also offer the commit composer hook for this clone.
+chamoji: setup needs a terminal to ask; run chamoji setup --yes to take every recommended answer
+```
+
+With `--explain`, it says where each value came from:
+
+```txt {{ title: 'chamoji setup releases --yes --explain' }}
+Found 2 apps (mobile, web) and 1 internal package. mobile and web get their own versions. Shared changes ride along with each app's own releases.
+
+release.schema = 1 (the section's format)
+release.shape = "apps" (detected in the repo)
+release.units.mobile.path = "apps/mobile" (detected in the repo)
+release.units.mobile.tag = "mobile/v{version}" (detected in the repo)
+release.units.web.path = "apps/web" (detected in the repo)
+release.units.web.tag = "web/v{version}" (detected in the repo)
+release.exclude = [] (detected in the repo)
+release.sharedChanges = "ride-along" (recommended for apps)
+release.rootFiles = "none" (recommended for apps)
+
+Wrote chamoji.config.json. Review it and commit it; git restore chamoji.config.json undoes this.
+```
+
+Each app now releases on its own. Neither has a tag yet, so each releases the version in its `package.json`, and the fix in `packages/ui` rides along with both:
+
+```txt {{ title: 'chamoji release --dry-run' }}
+Would release:
+mobile  1.0.0 → 1.0.0  first  2 own, 1 shared
+web  1.2.0 → 1.2.0  first  2 own, 1 shared
+files: apps/mobile/CHANGELOG.md, apps/mobile/package.json, apps/web/CHANGELOG.md, apps/web/package.json
+
+## mobile/v1.0.0
+
+## 1.0.0 - 2026-11-05
+
+### Added
+
+- ✨ Add the cart screen (a1b5c95)
+- 🎉 Begin the shop (826991b)
+
+### Fixed
+
+- 🐛 Fix the button's focus ring (e3740b6) (via `packages/ui`)
+
+## web/v1.2.0
+
+…
+```
+
+## What it looks for {{ icon: 'magnifying-glass' }}
+
+- **Units.** Apps are the packages under `apps/`, and private top-level packages that nothing depends on. Test and tool apps (`e2e`, `test`, `tests`, `playwright`, `cypress`, `storybook`, `docs`, `dev-tool`) and `tooling/*` are left out. In a repo with no apps, each published package is a unit. A repo with both apps and published packages is set up as `apps` for now, and its published packages aren’t units. Setup says so.
+- **Version files.** Other files that carry an app’s version, such as Expo’s `app.config.ts` or `app.json`, an `Info.plist` or an `android/app/build.gradle`, go in `versionFiles`. A unit with an EAS config gets `buildNumber`, left as `untouched`.
+- **Tags.** A unit keeps the tag format it already uses, and other formats it has used go in `read`. Tags that came with a template go in `tags.ignore`: the ones reachable from the template’s remote, and the ones reached only by commits from people who haven’t committed recently. Setup writes general patterns such as `^\d+\.\d+\.\d+$`. When such a pattern would also match tags of your own, it leaves just those out. Stray tags such as `wip/…` are ignored too.
+- **The template.** If the repo began as a template you started from, a remote named `upstream`, or else another remote besides `origin` that shares history with yours, becomes `upstream.remote`. The name in sync lines comes from the owner in the remote’s URL, and `since` is your first commit that isn’t the template’s. The template’s authors go in `upstream.authors` when some of their commits are ones the remote no longer reaches. The summary names them.
+- **Squash merges.** With the `gh` CLI and a GitHub `origin`, setup reads the repo’s merge settings. GitHub’s “Pull request title” and “Pull request title and description” drop the commits’ `Release:` and `Workstream:` lines and their intent cards, such as `Why:`, so setup recommends “Default message” or “Pull request title and commit details”, which keep them.
+
+## The four steps {{ icon: 'list-numbers' }}
+
+Each step can run on its own, with `chamoji setup releases`, `setup memory`, `setup agents` or `setup hook`.
+
+<Steps>
+	<Step title="Releases.">
+		The `release` section of `chamoji.config.json`. `chamoji setup releases`
+		asks the release questions again, even when the section exists.
+	</Step>
+	<Step title="Memory sharing.">
+		What `chamoji init` does. It’s offered when the repo has an `origin`.
+	</Step>
+	<Step title="Claude Code.">
+		What `chamoji init --agents` does. It’s offered when the repo has a
+		`.claude` folder or `claude` is on your PATH.
+	</Step>
+	<Step title="Commit composer.">
+		What `chamoji hook install` does. It’s offered, never assumed, and its
+		prompt defaults to No.
+	</Step>
+</Steps>
+
+After the summary, setup asks yes or no for each step that’s offered and not done yet.
+
+## In a fresh clone {{ icon: 'git-merge' }}
+
+The `release` section and `.mcp.json` are committed and shared. Memory sharing and the hook are per clone. So in a fresh clone of a repo that’s set up, `chamoji setup` asks only for those, and your readme can tell new contributors to run it.
+
+`--yes` runs the memory and Claude Code steps when they’re offered and not done. It never installs the hook; `chamoji setup hook --yes` does that.
+
+```txt {{ title: 'chamoji setup --yes' }}
+✓ releases are set up in chamoji.config.json
+○ memory sharing is off in this clone
+○ Claude Code isn't connected here yet
+○ the commit composer hook isn't installed in this clone; chamoji setup hook --yes installs it
+
+chamoji.config.json is already up to date.
+origin now fetches chamoji memory.
+A plain git fetch or git pull downloads origin's memory but doesn't change what chamoji memory shows. Run chamoji memory sync to take it in and share yours.
+No memory on origin yet.
+.mcp.json: added the chamoji MCP server
+.claude/settings.json: added the commit hook
+These files are meant to be committed, so everyone who uses Claude Code here gets the same setup. A changed file is written back as plain JSON with its indent kept, so other layout, such as blank lines or how short lists wrap, may differ.
+```
+
+## What it writes {{ icon: 'file-code' }}
+
+- **`chamoji.config.json`:** only the `release` section. The file’s other keys are kept, a re-run with nothing new leaves it untouched, and setup won’t write through a symlink. `git restore chamoji.config.json` undoes the releases step.
+- **`.mcp.json` and `.claude/settings.json`:** the Claude Code step adds chamoji to them and keeps what’s there. Both are meant to be committed.
+- **git config and `.git/`:** memory sharing and the hook live in the clone, so nothing there is committed.
+
+[Config](/reference/config) describes every key of the `release` section, for reading what setup wrote or for writing it by hand.
+
+## chamoji init {{ icon: 'terminal' }}
+
+`chamoji init` is the memory step on its own. It makes `origin` fetch chamoji’s memory, then takes in what `origin` already has. Run it once in each clone:
+
+```txt {{ title: 'chamoji init' }}
+origin now fetches chamoji memory.
+A plain git fetch or git pull downloads origin's memory but doesn't change what chamoji memory shows. Run chamoji memory sync to take it in and share yours.
+No memory on origin yet.
+chamoji setup also sets up releases, AI agents and the commit composer.
+```
+
+Without an `origin`, it says there is nothing to share memory with and changes nothing. `chamoji init --agents` also connects Claude Code: the MCP server in `.mcp.json`, and a hook in `.claude/settings.json` that sends back a `git commit` with no `Why:` line. Claude Code won’t run a server from a project’s `.mcp.json` until you approve it, so approve it when Claude Code asks.
+
+## Exit codes
+
+<Properties>
+	<Property name="0">Setup saved, or nothing would change.</Property>
+	<Property name="2">
+		Something would change, but there is no terminal and no `--yes`, or there is
+		`--json` and no `--yes`. Setup writes nothing and says what it would do.
+		Also for a `release` section from a newer chamoji.
+	</Property>
+	<Property name="1">You cancelled, or something else went wrong.</Property>
+</Properties>
+
+## Related {{ anchor: false }}
+
+<Guides>
+	<Guide href="/commands/setup" name="setup">
+		Every flag of chamoji setup.
+	</Guide>
+	<Guide href="/commands/init" name="init">
+		Share memory in a clone, and connect Claude Code.
+	</Guide>
+	<Guide href="/guides/monorepos" name="Monorepos">
+		Which commits belong to which unit, tags, and template history.
+	</Guide>
+	<Guide href="/reference/config" name="Config">
+		Every key in chamoji.config.json, with its default.
+	</Guide>
+</Guides>

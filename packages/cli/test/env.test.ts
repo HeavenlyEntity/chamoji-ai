@@ -1,3 +1,4 @@
+import {execFile} from 'node:child_process';
 import {mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
@@ -70,4 +71,21 @@ test('missing files and empty values give undefined', async () => {
 	expect(await readTypesafeKey(dir, {})).toBeUndefined();
 	await writeFile(path.join(dir, '.env.local'), 'TYPESAFE_API_KEY=\n');
 	expect(await readTypesafeKey(dir, {TYPESAFE_API_KEY: '  '})).toBeUndefined();
+});
+
+test('untrackedOnly skips a .env that git tracks', async () => {
+	const git = async (...args: string[]) =>
+		new Promise<void>((resolve, reject) => {
+			execFile('git', args, {cwd: dir}, error =>
+				error ? reject(error) : resolve(),
+			);
+		});
+	await git('init', '-q');
+	await writeFile(path.join(dir, '.env'), 'TYPESAFE_API_KEY=someone-elses\n');
+	await git('add', '.env');
+	expect(await readTypesafeKey(dir, {})).toBe('someone-elses');
+	expect(await readTypesafeKey(dir, {}, {untrackedOnly: true})).toBeUndefined();
+
+	await writeFile(path.join(dir, '.env.local'), 'TYPESAFE_API_KEY=mine\n');
+	expect(await readTypesafeKey(dir, {}, {untrackedOnly: true})).toBe('mine');
 });

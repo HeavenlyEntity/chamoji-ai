@@ -1,0 +1,12 @@
+{
+  "status": "dry-run",
+  "version": "2.0.0",
+  "tag": "2.0.0",
+  "bump": "major",
+  "from": "1.1.0",
+  "files": [
+    "CHANGELOG.md"
+  ],
+  "warnings": [],
+  "notes": "## 2.0.0 - <today>\n\n### Changed\n\n- 🔧 Update the lint config (a09e16c)\n\n### Breaking changes\n\n- 💥 Rename the widget id (147e020)\n\n### Fixed\n\n- 🐛 Fix the sort order (5d46e5b)"
+}

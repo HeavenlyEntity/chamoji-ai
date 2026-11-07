@@ -1,4 +1,4 @@
-import type {Changelog, ParsedCommit} from '../types.js';
+import type {Changelog, Group, ParsedCommit} from '../types.js';
 import {
 	commitLink,
 	DEPENDENCY_EMOJI,
@@ -42,16 +42,30 @@ export function renderMarkdown(changelog: Changelog): string {
 		const title = link ? `[${release.version}](${link})` : release.version;
 		lines.push(`## ${title}${release.date ? ` - ${release.date}` : ''}`, '');
 
+		if (release.highlights?.length) {
+			lines.push('### Highlights', '');
+			for (const highlight of release.highlights) {
+				const emoji = oneLine(highlight.emoji ?? '');
+				const description = oneLine(highlight.description ?? '');
+				const title = escapeMarkdown(oneLine(highlight.title));
+				const lead = `${emoji ? `${escapeMarkdown(emoji)} ` : ''}**${title}${description ? ':' : ''}**`;
+				lines.push(
+					`- ${description ? `${lead} ${escapeMarkdown(description)}` : lead}`,
+				);
+				for (const group of highlight.groups) {
+					for (const item of groupItems(group, url)) {
+						lines.push(`  - ${item}`);
+					}
+				}
+			}
+
+			lines.push('');
+		}
+
 		for (const group of release.groups) {
 			lines.push(`### ${group.label}`, '');
-			if (group.collapse) {
-				lines.push(
-					`- ${DEPENDENCY_EMOJI} ${escapeMarkdown(summarizeDependencies(group.commits))}`,
-				);
-			} else {
-				for (const commit of group.commits) {
-					lines.push(`- ${renderCommit(commit, url)}`);
-				}
+			for (const item of groupItems(group, url)) {
+				lines.push(`- ${item}`);
 			}
 
 			lines.push('');
@@ -59,6 +73,22 @@ export function renderMarkdown(changelog: Changelog): string {
 	}
 
 	return lines.join('\n').replace(/\n+$/, '\n');
+}
+
+/**
+ * Workstream text comes from a file anyone can edit and may span lines. On
+ * one line it cannot open a heading or list of its own, which would also
+ * confuse `insertSection`.
+ */
+const oneLine = (text: string) => text.replaceAll(/\s+/g, ' ').trim();
+
+/** A group as list items: one summary line when collapsed, else a line per commit. */
+function groupItems(group: Group, url: string | undefined): string[] {
+	return group.collapse
+		? [
+				`${DEPENDENCY_EMOJI} ${escapeMarkdown(summarizeDependencies(group.commits))}`,
+			]
+		: group.commits.map(commit => renderCommit(commit, url));
 }
 
 function renderCommit(commit: ParsedCommit, url: string | undefined): string {
@@ -77,8 +107,14 @@ function renderCommit(commit: ParsedCommit, url: string | undefined): string {
 						.join(''),
 		)
 		.join('');
-	const hash = url
+	const link = url
 		? `[${commit.shortHash}](${commitLink(commit, url)})`
 		: commit.shortHash;
-	return `${emoji ? `${emoji} ` : ''}${scope}${description} (${hash})`;
+	// A line chamoji writes itself, such as a Dependencies line, has no commit.
+	const hash = commit.shortHash ? ` (${link})` : '';
+	// A package path, as a code span: it can't hold a backtick or a line break.
+	const via = commit.via
+		? ` (via \`${commit.via.replaceAll(/[`\r\n]/g, '')}\`)`
+		: '';
+	return `${emoji ? `${emoji} ` : ''}${scope}${description}${hash}${via}`;
 }

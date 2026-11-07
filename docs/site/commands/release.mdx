@@ -1,0 +1,347 @@
+export const metadata = {
+	title: 'chamoji release',
+	description:
+		'Cut a release from your git history: the version, the CHANGELOG.md section, the version bumps, the commit and the tag.',
+};
+
+# `chamoji release`
+
+<p className="lead">
+	Cut a release from your git history. chamoji picks the version from your
+	commits, writes the CHANGELOG.md section, bumps your version files, then makes
+	the release commit and an annotated tag. Add `--push` to push it and create
+	the GitHub release.
+</p>
+
+<Tag variant="changes">CHANGES YOUR REPO</Tag>
+<Tag variant="mono">MONOREPO-AWARE</Tag>
+<Tag variant="ci">--json FOR CI AND AGENTS</Tag>
+
+<Note>
+	In a monorepo, a version argument needs exactly one `--unit`: chamoji has to
+	know which app or package the version is for.
+</Note>
+
+## What it does, in order {{ tag: 'CHANGES YOUR REPO', variant: 'changes', label: 'chamoji release', icon: 'rocket-launch' }}
+
+<Steps>
+	<Step title="Checks.">
+		A clean working tree, the default branch when git knows `origin`’s, and the
+		full history. A shallow clone is unshallowed, and tags are fetched from
+		`origin` first.
+	</Step>
+	<Step title="Version.">
+		The one next-version picks, or the one you give. The tag follows your tags’
+		style, `v1.4.0` or `1.4.0`.
+	</Step>
+	<Step title="CHANGELOG.md.">
+		The new section goes above the last release, below any Unreleased section,
+		and older entries stay exactly as they are. A repo without the file gets one
+		written from the whole history.
+	</Step>
+	<Step title="Version bumps.">
+		Every tracked package.json, package-lock.json, pyproject.toml or Cargo.toml
+		that carries the previous version. On a first release, every one that says
+		another version.
+	</Step>
+	<Step title="Commit and tag.">
+		A release commit in your repo’s style, such as `🔖 Release v1.4.0`, which
+		later changelogs leave out, and an annotated tag. If anything fails before
+		the tag exists, the repo is reset to where it started.
+	</Step>
+	<Step title="With --push.">
+		Pushes HEAD and the tag, syncs project memory if `chamoji init` ran in this
+		clone, then creates the GitHub release with the gh CLI. A failed push keeps
+		the local release.
+	</Step>
+</Steps>
+
+In a repo with release units, each unit with something to release gets its own version, tag and changelog, in one release commit. The units’ version files are bumped, and the others wait. [Monorepos](/guides/monorepos) explains which commits belong to which unit.
+
+## Arguments
+
+<Properties>
+	<Property name="version" type="semver · optional">
+		A version you choose, such as `2.0.0` or a prerelease like `2.0.0-rc.1`. It
+		must be newer than the last release. Leave it out and chamoji picks one from
+		the commits. Without release units, the first release needs one, since there
+		is no tag to count from. In a monorepo it needs exactly one `--unit`.
+	</Property>
+</Properties>
+
+## Flags {{ badge: '9', icon: 'flag' }}
+
+<Properties>
+	<Property name="--dry-run" type="boolean">
+		Print the version, the files and the notes it would release, and write
+		nothing. A dirty working tree is allowed; the other checks still run, and
+		tags are still fetched. Wins over `--push`: nothing is committed, tagged or
+		pushed.
+	</Property>
+	<Property name="--push" type="boolean">
+		After the commit and tag, push HEAD and the tag to `origin`, sync memory if
+		`chamoji init` ran here, and create the GitHub release with the gh CLI,
+		marked as a prerelease for a prerelease version. Without gh, the push still
+		happens and the output says the GitHub release was not created. In a
+		monorepo it creates one GitHub release per tag, or one for all of them with
+		`"githubReleases": "combined"`.
+	</Property>
+	<Property
+		name="--unit <name>"
+		type="string · repeatable · monorepos"
+		since="0.13.0"
+	>
+		Release only these units, even when others have changes; the others stay
+		waiting. Repeat it for several. A version argument needs exactly one. Only
+		in a repo with release units; elsewhere, and for an unknown unit, it exits
+		1.
+	</Property>
+	<Property name="--any-branch" type="boolean">
+		Skip the check that you are on `origin`’s default branch, for release
+		branches and hotfixes. The other checks still run.
+	</Property>
+	<Property name="--json" type="boolean">
+		Print the result as JSON on stdout, for scripts, CI and agents, with a
+		`status` of `dry-run`, `released` or `nothing`. Works with every other flag;
+		exit codes stay the same.
+	</Property>
+	<Property name={'--trailer "Key: value"'} type="string · repeatable">
+		Add a trailer line to the release commit. Repeat it for several lines.
+		Ignored with `--dry-run`, which makes no commit.
+	</Property>
+	<Property name="--ai" type="boolean">
+		Sort commits the rules can’t place with Jev, as `changelog --ai` does. Only
+		changes how unplaced commits are grouped, and so the bump. Needs
+		`TYPESAFE_API_KEY`, or it exits 1.
+	</Property>
+	<Property name="--config <file>" type="string · default chamoji.config.json">
+		Read this config file instead, from a path relative to the current folder.
+		Without it, chamoji reads `chamoji.config.json` in the current folder, not
+		at the repo root, so run chamoji from the root. A file that doesn’t exist
+		exits 1.
+	</Property>
+	<Property name="--no-update-check" type="boolean">
+		Don’t check npm for a newer chamoji. See [the update
+		notice](/install#the-update-notice).
+	</Property>
+</Properties>
+
+## Common combinations
+
+<Resources>
+	<Resource name="chamoji release --dry-run" icon="magnifying-glass" code>
+		See what the next release would be before you cut it.
+	</Resource>
+	<Resource name="chamoji release --dry-run --json" icon="robot" code>
+		Let CI or your agent read the next version and notes.
+	</Resource>
+	<Resource name="chamoji release --push" icon="cloud-arrow-up" code>
+		Cut and ship it in one step.
+	</Resource>
+	<Resource name="chamoji release 2.0.0-rc.1" icon="tag" code>
+		A prerelease, or any version you choose.
+	</Resource>
+	<Resource name="chamoji release --unit web --push" icon="tree-structure" code>
+		Ship one app in a monorepo now; the rest waits.
+	</Resource>
+	<Resource name="chamoji release --any-branch" icon="git-merge" code>
+		Release from a hotfix or release branch.
+	</Resource>
+</Resources>
+
+To treat “nothing to release” as success in CI:
+
+```bash
+chamoji release --push || [ $? -eq 3 ]
+```
+
+## Output {{ icon: 'terminal-window' }}
+
+These are from real runs in a small repo called widgets, at `v0.1.0`, with a ✨, a 🐛 and a ✅ commit since. Preview it first:
+
+```txt {{ title: 'chamoji release --dry-run' }}
+Would release v0.2.0 (minor, from v0.1.0).
+files: CHANGELOG.md, package.json
+
+## v0.2.0 - 2026-11-05
+
+### Added
+
+- ✨ Add a range mode to the date picker (3565b84)
+
+### Fixed
+
+- 🐛 Close the dialog on Escape (a13acb6)
+
+### Maintenance
+
+- ✅ Test the range mode (d6e8b65)
+```
+
+The same preview for a script:
+
+```txt {{ title: 'chamoji release --dry-run --json' }}
+{
+  "status": "dry-run",
+  "version": "0.2.0",
+  "tag": "v0.2.0",
+  "bump": "minor",
+  "from": "v0.1.0",
+  "files": [
+    "CHANGELOG.md",
+    "package.json"
+  ],
+  "warnings": [],
+  "notes": "## v0.2.0 - 2026-11-05\n\n### Added\n\n- ✨ Add a range mode to the date picker (3565b84)\n\n### Fixed\n\n- 🐛 Close the dialog on Escape (a13acb6)\n\n### Maintenance\n\n- ✅ Test the range mode (d6e8b65)"
+}
+```
+
+Without `--push`, the output says how to ship the release, and how to undo it before you do:
+
+```txt {{ title: 'chamoji release 0.1.0' }}
+Released v0.1.0 (first release).
+changelog: CHANGELOG.md, created from the full history
+bumped: no manifest carried the old version
+commit: ef90ddf 🔖 Release v0.1.0
+tag: v0.1.0 (annotated)
+pushed: no; to ship: git push origin HEAD v0.1.0
+undo before pushing: git tag -d v0.1.0 && git reset --hard 0f7511f
+
+## v0.1.0 - 2026-11-05
+
+…
+```
+
+With `--push`. This run had a stand-in `gh` on the PATH that records the call and succeeds. The repo had workstreams in memory, but `chamoji init` hadn’t run in this clone, so memory wasn’t synced:
+
+```txt {{ title: 'chamoji release --push' }}
+Released v0.3.0 (minor, from v0.2.1).
+changelog: CHANGELOG.md, new section added above the previous release; older entries untouched
+bumped: package.json
+commit: a8332d9 🔖 Release v0.3.0
+tag: v0.3.0 (annotated)
+pushed: yes (HEAD and v0.3.0); GitHub release created
+memory: not synced; run chamoji init to share it with origin
+
+## v0.3.0 - 2026-11-05
+
+…
+```
+
+The call it made was `gh release create v0.3.0 --title v0.3.0 --notes-file .git/chamoji-release-notes.md`, with the file’s full path. Without gh, the push still happens:
+
+```txt {{ title: 'chamoji release --push' }}
+Released v0.2.1 (patch, from v0.2.0).
+changelog: CHANGELOG.md, new section added above the previous release; older entries untouched
+bumped: package.json
+commit: 3feff78 🔖 Release v0.2.1
+tag: v0.2.1 (annotated)
+pushed: yes (HEAD and v0.2.1); GitHub release not created: no gh CLI, so no GitHub release
+
+…
+```
+
+When no commit since the last tag implies a bump, it lists what is waiting and exits 3:
+
+```txt {{ title: 'chamoji release' }}
+Nothing to release: no commit since v0.2.0 implies a version bump.
+Unreleased commits:
+- 📝 Add a usage example to the readme
+```
+
+In `shop`, whose two apps release on their own, `--unit web` releases web and says what mobile has waiting:
+
+```txt {{ title: 'chamoji release --unit web' }}
+Released web/v1.2.0.
+web  1.2.0 → 1.2.0  first  2 own, 1 shared
+files: apps/web/CHANGELOG.md, apps/web/package.json
+commit: b6d392c 🔖 Release web/v1.2.0
+tags: web/v1.2.0 (annotated)
+pushed: no; to ship: git push origin HEAD web/v1.2.0
+mobile: left out by --unit (2 changes of its own, 1 shared waiting)
+undo before pushing: git tag -d web/v1.2.0 && git reset --hard 31673c1
+
+## web/v1.2.0
+
+## 1.2.0 - 2026-11-05
+
+### Added
+
+- ✨ Add the checkout page (ab41693)
+- 🎉 Begin the shop (51bca17)
+
+### Fixed
+
+- 🐛 Fix the button's focus ring (ae44eff) (via `packages/ui`)
+```
+
+Each failed check says what to do:
+
+<CodeGroup title="Checks">
+
+```txt {{ title: 'Dirty tree' }}
+$ chamoji release
+chamoji: the working tree has uncommitted changes; commit or stash them first:
+M src/picker.js
+```
+
+```txt {{ title: 'Branch' }}
+$ chamoji release --dry-run
+chamoji: on fix/escape, not the default branch main; release from main, or pass --any-branch
+```
+
+```txt {{ title: 'Not newer' }}
+$ chamoji release 0.1.0 --dry-run
+chamoji: 0.1.0 is not newer than the last release, v0.1.0
+```
+
+```txt {{ title: 'Not semver' }}
+$ chamoji release two --dry-run
+chamoji: two is not a semver version
+```
+
+```txt {{ title: 'No --unit (shop)' }}
+$ chamoji release 2.0.0 --dry-run
+chamoji: give --unit with a version, for example: chamoji release 2.0.0 --unit mobile
+```
+
+</CodeGroup>
+
+## Exit codes
+
+<Properties>
+	<Property name="0">Released, or the dry run worked.</Property>
+	<Property name="3">Nothing to release since the last tag.</Property>
+	<Property name="2">
+		A check failed: a dirty working tree, the wrong branch, a shallow clone it
+		couldn’t unshallow, a version that isn’t semver or isn’t newer, a first
+		release with no version, or a tag that already exists. In a monorepo, also a
+		version file it can’t set: a `versionFiles` entry that is missing or a
+		symlink, a file it can’t set the version in, a dependency range it can’t
+		set, or a version that differs from its fixed group’s. Also for a `release`
+		section from a newer chamoji.
+	</Property>
+	<Property name="1">
+		Anything else, such as a failed push, an unknown unit, or a version without
+		`--unit` in a monorepo.
+	</Property>
+</Properties>
+
+[Exit codes](/reference/exit-codes) has every command’s codes.
+
+## Related {{ anchor: false }}
+
+<Guides>
+	<Guide href="/guides/monorepos" name="Monorepos">
+		Version each app or package on its own, with its own tags and changelog.
+	</Guide>
+	<Guide href="/guides/github-action" name="GitHub Action">
+		Release notes on every tag and a preview comment on every pull request.
+	</Guide>
+	<Guide href="/guides/release-from-your-agent" name="Release from your agent">
+		Let a coding agent preview and cut releases with --json.
+	</Guide>
+	<Guide href="/reference/config" name="Config">
+		Every key in chamoji.config.json, with its default.
+	</Guide>
+</Guides>

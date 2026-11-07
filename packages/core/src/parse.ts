@@ -1,6 +1,14 @@
 import {findGitmoji, normalizeEmoji} from './gitmojis.js';
 import {inferGitmoji} from './infer.js';
-import type {GitmojiSource, ParsedCommit, RawCommit, Trailer} from './types.js';
+import {readIntent} from './intent.js';
+import type {
+	GitmojiSource,
+	IntentCard,
+	ParsedCommit,
+	RawCommit,
+	Trailer,
+} from './types.js';
+import {isSlug} from './workstreams.js';
 
 /** Conventional Commits types we recognize, and the gitmoji each implies. */
 const TYPE_TO_GITMOJI: Record<string, string> = {
@@ -28,6 +36,49 @@ const CONVENTIONAL_PREFIX = /^(\w+)(?:\(([^)]+)\))?(!)?:\s*/;
 const GITMOJI_CLI_SCOPE = /^\(([^)]+)\):\s*/;
 const BREAKING_FOOTER = /^BREAKING[ -]CHANGE:/m;
 const GIT_REVERT = /^Revert "(.+)"$/;
+const WORKSTREAM_LINE = /^workstream:\s*(.*)$/i;
+
+/**
+ * `[tag] description`, as Moment writes them. Kind tags say what the change
+ * is; any other tag names an area, which becomes the scope.
+ */
+const TAG_PREFIX = /^\[([a-z][\w -]{0,20})\]\s*/i;
+const KIND_TAGS: Record<string, string> = {
+	bugfix: 'bug',
+	bug: 'bug',
+	fix: 'bug',
+	hotfix: 'bug',
+	feature: 'sparkles',
+	feat: 'sparkles',
+	new: 'sparkles',
+	enhancement: 'sparkles',
+	'new locale': 'sparkles',
+	tests: 'white_check_mark',
+	test: 'white_check_mark',
+	docs: 'memo',
+	doc: 'memo',
+	perf: 'zap',
+	security: 'lock',
+	ci: 'construction_worker',
+	deps: 'arrow_up',
+	breaking: 'boom',
+};
+/** Area tags with a fallback when the rest of the subject says nothing. */
+const AREA_FALLBACK: Record<string, string> = {
+	locale: 'globe_with_meridians',
+	i18n: 'globe_with_meridians',
+	l10n: 'globe_with_meridians',
+};
+/** Area tags that aren't worth keeping as a scope. */
+const EMPTY_AREAS = new Set(['misc', 'other', 'minor']);
+
+/**
+ * `Component: description`, as jQuery writes them ("Core: Fix …",
+ * "CSS:Tests: Add …"). Only used when the rest of the subject matches a
+ * rule, so prose like "Note: …" is left alone.
+ */
+const COMPONENT_PREFIX =
+	/^([A-Za-z][\w.$/ -]{0,30}?(?::[A-Za-z][\w.$/ -]{0,30}?)*):\s+(?=\S)/;
 
 export function parseCommit(raw: RawCommit): ParsedCommit {
 	const revert = GIT_REVERT.exec(raw.subject.trim());
@@ -43,6 +94,8 @@ export function parseCommit(raw: RawCommit): ParsedCommit {
 			type: null,
 			description: `Revert "${original.description}"`,
 			breaking: BREAKING_FOOTER.test(raw.body),
+			...withWorkstream(readWorkstream(original.trailers, raw.body)),
+			...withCard(readIntent(original.trailers, raw.body)),
 		};
 	}
 
@@ -86,12 +139,23 @@ export function parseCommit(raw: RawCommit): ParsedCommit {
 		gitmojiSource = gitmoji ? 'type' : null;
 	}
 
+	if (!gitmoji && !type) {
+		const area = readPrefix(text);
+		if (area) {
+			gitmoji = area.gitmoji;
+			gitmojiSource = 'rule';
+			scope ??= area.scope;
+			text = area.rest;
+		}
+	}
+
 	if (!gitmoji) {
 		gitmoji = inferGitmoji(text);
 		gitmojiSource = gitmoji ? 'rule' : null;
 	}
 
 	const {trailers: rawTrailers, ...rest} = raw;
+	const trailers = parseTrailers(rawTrailers);
 	return {
 		...rest,
 		gitmoji,
@@ -100,8 +164,81 @@ export function parseCommit(raw: RawCommit): ParsedCommit {
 		scope,
 		description: text.trim(),
 		breaking: gitmoji === 'boom' || bang || BREAKING_FOOTER.test(raw.body),
-		trailers: parseTrailers(rawTrailers),
+		trailers,
+		...withWorkstream(readWorkstream(trailers, raw.body)),
+		...withCard(readIntent(trailers, raw.body)),
 	};
+}
+
+/** The field only when there is one, so `--json` output has no `workstream: null`. */
+function withWorkstream(workstream: string | undefined): {workstream?: string} {
+	return workstream === undefined ? {} : {workstream};
+}
+
+/** The field only when there is one, like `withWorkstream`. */
+function withCard(card: IntentCard | undefined): {card?: IntentCard} {
+	return card === undefined ? {} : {card};
+}
+
+/**
+ * The workstream a commit names with a `Workstream: <slug>` trailer. Git's
+ * own trailer block comes first. GitHub's squash message puts trailers
+ * mid-body, where git doesn't parse them, so the body is scanned line by
+ * line after that. The first valid slug wins, and a line whose value isn't a
+ * slug is skipped.
+ */
+function readWorkstream(trailers: Trailer[], body: string): string | undefined {
+	const values = [
+		...trailers
+			.filter(trailer => trailer.key.toLowerCase() === 'workstream')
+			.map(trailer => trailer.value),
+		...body.split('\n').map(line => WORKSTREAM_LINE.exec(line.trim())?.[1]),
+	];
+	return values.find(value => value !== undefined && isSlug(value));
+}
+
+/**
+ * A `[tag]` or `Component:` prefix, the gitmoji it implies and the subject
+ * behind it, or null when the prefix doesn't help sort the commit.
+ */
+function readPrefix(
+	text: string,
+): {gitmoji: string; scope: string | null; rest: string} | null {
+	const tag = TAG_PREFIX.exec(text);
+	if (tag) {
+		const name = tag[1]!.toLowerCase();
+		const rest = text.slice(tag[0].length);
+		const kind = KIND_TAGS[name];
+		if (kind) {
+			return {
+				gitmoji: kind,
+				scope: name === 'new locale' ? tag[1]! : null,
+				rest,
+			};
+		}
+
+		// The area's own component can follow, as in "[locale] fil: Fix …".
+		const gitmoji =
+			inferGitmoji(rest) ?? inferComponent(rest) ?? AREA_FALLBACK[name];
+		return gitmoji
+			? {gitmoji, scope: EMPTY_AREAS.has(name) ? null : tag[1]!, rest}
+			: null;
+	}
+
+	const component = COMPONENT_PREFIX.exec(text);
+	if (component) {
+		const rest = text.slice(component[0].length);
+		const gitmoji = inferGitmoji(rest);
+		return gitmoji ? {gitmoji, scope: component[1]!, rest} : null;
+	}
+
+	return null;
+}
+
+/** The gitmoji the subject behind a `Component:` prefix implies. */
+function inferComponent(text: string): string | null {
+	const component = COMPONENT_PREFIX.exec(text);
+	return component ? inferGitmoji(text.slice(component[0].length)) : null;
 }
 
 function parseTrailers(text: string): Trailer[] {

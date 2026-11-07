@@ -3,6 +3,7 @@
 	"private": true,
 	"type": "module",
 	"license": "MIT",
+	"author": "AMWARE Technologies LLC",
 	"engines": {
 		"node": ">=22"
 	},
@@ -10,17 +11,23 @@
 	"scripts": {
 		"build": "pnpm -r build",
 		"test": "vitest run",
-		"check": "pnpm build && tsc -p tsconfig.test.json && prettier --check .",
+		"check": "pnpm build && tsc -p tsconfig.test.json && prettier --check . && node scripts/check-docs-site.mjs docs/site",
 		"format": "prettier --write .",
 		"release": "pnpm build && node packages/cli/dist/cli.js release",
 		"benchmark": "pnpm build && node scripts/benchmark.mjs",
-		"brand:preview": "node scripts/brand-preview.mjs"
+		"brand:preview": "node scripts/brand-preview.mjs",
+		"logo:generate": "node scripts/terminal-logo.mjs"
 	},
 	"devDependencies": {
+		"@napi-rs/canvas": "^1.1.0",
 		"@types/node": "^22.19.0",
 		"@vdemedes/prettier-config": "^2.0.1",
+		"acorn": "8.19.0",
 		"prettier": "^3.6.2",
+		"remark-mdx": "^3.1.0",
+		"remark-parse": "^11.0.0",
 		"typescript": "~6.0.3",
+		"unified": "^11.0.5",
 		"vitest": "^5.0.5"
 	},
 	"prettier": "@vdemedes/prettier-config"

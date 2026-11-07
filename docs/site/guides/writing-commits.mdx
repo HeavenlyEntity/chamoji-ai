@@ -1,0 +1,210 @@
+export const metadata = {
+	title: 'Writing commits',
+	description:
+		'Write commits that sort themselves in the changelog: the composer, the hook on git commit, intent cards, breaking changes, and suggestions from Jev.',
+};
+
+# Writing commits
+
+<p className="lead">
+	The changelog is only as good as the commits. A commit that starts with a
+	gitmoji sorts itself, and a `Why:` line tells the next person why you made it.
+	The composer helps you write both. Install the hook, and a plain `git commit`
+	opens it too.
+</p>
+
+## What chamoji reads {{ icon: 'git-commit' }}
+
+chamoji reads the subject line for the kind of change. In `✨ (picker): Move between months`, the gitmoji ✨ puts it under Added, `picker` is the scope, and the rest is what the changelog shows. Conventional Commits such as `feat(picker): …` and plain messages work too. [How commits are read](/reference/how-commits-are-read) has every rule.
+
+The lines at the end of the message carry the rest:
+
+- `Why:`, `Constraint:`, `Gotcha:` and `Follow-up:` make the commit’s intent card, which `chamoji why` and project memory show later.
+- `BREAKING CHANGE:` marks a breaking change.
+- `Workstream:` and `Release:` tie the commit to a workstream or a release unit.
+
+These are from a small repo called widgets. Two commits, one written with the composer and one with `git commit`:
+
+<CodeGroup title="Two commits">
+
+```txt {{ title: 'With the composer' }}
+$ git log -1 --format=%B f553368
+✨ (picker): Move between months with Page Up and Page Down
+
+Why: People asked for it on long date ranges
+```
+
+```txt {{ title: 'With git commit' }}
+$ git log -1 --format=%B 6f99029
+🐛 Return null for an empty date
+
+Why: the form crashed when the field was cleared
+Gotcha: callers still compare with undefined in two places
+```
+
+</CodeGroup>
+
+Each one lands in the right group with no extra work:
+
+```txt {{ title: 'chamoji changelog --since v0.1.0' }}
+# Changelog
+
+## Unreleased
+
+### Added
+
+- ✨ **picker:** Move between months with Page Up and Page Down (f553368)
+
+### Fixed
+
+- 🐛 Return null for an empty date (6f99029)
+```
+
+## The composer {{ tag: 'CHANGES YOUR REPO', variant: 'changes', label: 'chamoji commit', icon: 'pencil-simple' }}
+
+Stage your changes and run `chamoji commit`. With `-a` it also takes every change to tracked files, as `git commit -a` does. It asks, in order:
+
+1. **A gitmoji,** from a search list. Type `bug`, `fix` or a few letters such as `spk`, and pick with the arrow keys.
+2. **The scope,** such as `picker`. Leave it empty to skip it.
+3. **The title,** the rest of the subject line.
+4. **A body,** for more detail. Optional.
+5. **Why?** Your answer is kept as a `Why:` line.
+6. **Whether it breaks anything.** The default is No.
+7. **Whether to release units now,** only in a repo with release units, when the change has no unit of its own but rides along to some. It asks, for example, “Release mobile, web now? (y/N)”, and Yes adds a `Release:` line for each.
+
+Enter moves on, Esc goes back and Ctrl-C cancels without committing. The subject builds up under the header as you answer:
+
+<CodeGroup title="chamoji commit">
+
+```txt {{ title: 'Gitmoji' }}
+ chamoji commit  Enter next · Esc back · Ctrl-C cancel
+
+ Gitmoji › spark
+ ❯ ✨ sparkles                    Introduce new features.
+```
+
+```txt {{ title: 'Why?' }}
+ chamoji commit  Enter next · Esc back · Ctrl-C cancel
+ ✨ (picker): Move between months with Page Up and Page Down
+
+ Why? (optional, kept as a Why: trailer) ›
+```
+
+```txt {{ title: 'Breaking change?' }}
+ chamoji commit  Enter next · Esc back · Ctrl-C cancel
+ ✨ (picker): Move between months with Page Up and Page Down
+
+ Breaking change? (y/N) ›
+[main f553368] ✨ (picker): Move between months with Page Up and Page Down
+ 1 file changed, 1 insertion(+)
+ create mode 100644 src/keys.js
+```
+
+</CodeGroup>
+
+The title was typed as “move between months…”. The composer capitalizes its first letter, and commits with `git commit`, so your git hooks and settings still apply.
+
+**Settings.** The composer reads gitmoji-cli’s settings from `.gitmojirc.json`, or the `gitmoji` key in `package.json`, at the root of the repo:
+
+- `emojiFormat: "code"` writes `:sparkles:` instead of ✨.
+- `scopePrompt: false` skips the scope, and `messagePrompt: false` skips the body.
+- `capitalizeTitle: false` keeps the title as you typed it.
+- `autoAdd: true` stages every change first.
+
+With no settings, it writes the emoji character and asks for a scope. In a repo with release units, a line under the header also says which units the change releases with, and which it only rides along to. The [commit](/commands/commit) page shows both.
+
+## The hook {{ tag: 'SETUP', variant: 'setup', label: 'chamoji hook install', icon: 'terminal' }}
+
+The hook opens the same composer when you run `git commit` with no message. Install it once in each clone, since git doesn’t clone hooks:
+
+```txt {{ title: 'chamoji hook install' }}
+Installed the hook: /private/tmp/chamoji-docs-7c1/widgets/.git/hooks/prepare-commit-msg
+A plain `git commit` now opens the composer; -m, merges, amends and rebases are left alone.
+```
+
+It stays out of the way:
+
+- It never opens for `git commit -m` or `-F`, merges, squashes, amends or rebases.
+- It never opens when the message already has a gitmoji.
+- It never opens in CI, or without a terminal, as with an editor’s commit button.
+- Ctrl-C keeps git’s own message, so the hook never blocks a commit.
+
+**Hook managers.** With husky, `chamoji hook install` prints the line to add to `.husky/prepare-commit-msg`, which is `chamoji hook run "$@"`. With lefthook, add this to `lefthook.yml`:
+
+```yaml {{ title: 'lefthook.yml' }}
+prepare-commit-msg:
+  commands:
+    chamoji:
+      run: chamoji hook run {1} {2} {3}
+      interactive: true
+```
+
+**Coming from gitmoji-cli?** Run `chamoji hook install`. It replaces gitmoji-cli’s hook and leaves any other hook alone, and the composer reads your gitmoji-cli settings as they are.
+
+The hook also adds the `Workstream:` line while a workstream is active. [Workstreams](/guides/workstreams) explains it, and [hook](/commands/hook) has the subcommands and the script it writes.
+
+## Why, and the rest of the card {{ icon: 'notebook' }}
+
+The composer’s **Why?** answer becomes a `Why:` line. The other three card lines, `Constraint:`, `Gotcha:` and `Follow-up:`, go at the end of the message. Git’s own `--trailer` flag adds them from the command line:
+
+```bash {{ title: 'git commit' }}
+git commit -m "🐛 Return null for an empty date" \
+  --trailer "Why: the form crashed when the field was cleared" \
+  --trailer "Gotcha: callers still compare with undefined in two places"
+```
+
+[Project memory](/guides/project-memory) explains each line, and how chamoji reads them back.
+
+## Breaking changes {{ icon: 'flag' }}
+
+The composer’s breaking question asks whether the change breaks anything. Yes asks what breaks, and adds a `BREAKING CHANGE:` line with your answer, or with the title when you leave it empty. Writing by hand, use a `BREAKING CHANGE:` line, the 💥 gitmoji, or a `!` after the type, as in `feat!:`.
+
+A breaking change is listed under Breaking changes and gives a major bump. In a monorepo, a unit at 0.x with `"zeroMajor": "minor"` gets a minor bump instead. Only you declare one: no suggestion and no `--ai` run ever marks a commit as breaking.
+
+## Suggestions from Jev {{ icon: 'sparkle' }}
+
+With your opt-in, the composer asks [Jev](https://typesafe.ai), TypeSafe’s classification model, about the staged changes as it opens. The opt-in lives in git config:
+
+```bash {{ title: 'Turn it on' }}
+git config --global chamoji.composer true   # or without --global, for one repository
+git config --global chamoji.sendDiffs true  # optional: send the diff too
+```
+
+It needs a key: `TYPESAFE_API_KEY` in the environment, or a `TYPESAFE_API_KEY=…` line in an untracked `.env.local` or `.env` at the root of the repo. A file that git tracks is skipped, and the opt-in lives in git config, so a repository you clone can’t switch this on for you.
+
+What Jev can suggest:
+
+- **The gitmoji.** Its three likeliest gitmojis show as a hint above the list. When it’s very sure, 90% or more, they move to the top of the list instead, and the first is selected.
+- **Breaking.** When Jev thinks the change may break something, 70% or more, the breaking question says so. The default is still No.
+- **Split.** When the staged changes look like unrelated pieces of work, 70% or more, the title question suggests committing them separately.
+
+Its limits:
+
+- **It never makes you wait.** The composer opens at once. An answer that takes longer than 2 seconds is dropped, and so is any failure.
+- **It never moves the list under you.** If you’ve pressed a key before the answer arrives, the list stays as it was.
+- **It only suggests.** You pick the gitmoji and answer every question. Jev never declares a breaking change and never writes a card line.
+
+**What is sent:** the staged files’ paths, with each one’s status and the lines added and deleted, and the message’s first line when `git commit` already has one. With `chamoji.sendDiffs`, the staged diff goes too: at most 200 lines per file and 2,000 in all, with private keys and common token formats replaced by `<redacted>`.
+
+**What is never sent:** secrets files and lockfiles, not even their names. That covers `.env*`, `.envrc`, `.npmrc`, `.netrc`, `credentials*`, `id_*` keys, `*.pem`, `*.key`, `*.p12`, `*.tfvars` and similar, any path containing “secret”, and lockfiles. The request says only how many files were left out.
+
+## Commits no rule can sort {{ icon: 'magnifying-glass' }}
+
+Some subjects are too vague for any rule, such as “Accept camelCase flags”. They land under Miscellaneous. `chamoji changelog --ai` sends only those commits to Jev, which picks a gitmoji for each. It drops picks below 60% confidence, and never overrides a gitmoji or type you wrote. [Sorting with AI](/guides/sorting-with-ai) has what it sends and where the key comes from.
+
+## Related {{ anchor: false }}
+
+<Guides>
+	<Guide href="/commands/commit" name="commit">
+		Every question, flag and exit code of the composer.
+	</Guide>
+	<Guide href="/commands/hook" name="hook">
+		Install, run and remove the hook.
+	</Guide>
+	<Guide href="/guides/project-memory" name="Project memory">
+		Intent cards, and asking why a line is there.
+	</Guide>
+	<Guide href="/reference/how-commits-are-read" name="How commits are read">
+		Every form of message chamoji understands.
+	</Guide>
+</Guides>

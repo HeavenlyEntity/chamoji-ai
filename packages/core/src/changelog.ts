@@ -5,9 +5,11 @@ import {
 	getRemoteWebUrl,
 	listReleaseTags,
 	readCommits,
+	runGit,
 } from './git.js';
 import {getGitmoji} from './gitmojis.js';
 import {groupCommits} from './group.js';
+import {splitHighlights} from './highlights.js';
 import {parseCommit} from './parse.js';
 import type {
 	ChamojiConfig,
@@ -17,6 +19,11 @@ import type {
 	Release,
 } from './types.js';
 import {bumpFor, nextVersion} from './version.js';
+import {
+	WorkstreamError,
+	readWorkstreamsAt,
+	type Workstream,
+} from './workstreams.js';
 
 /** The tag a `--release` version will get, following the latest tag's `v` style. */
 function futureTag(release: string, latestTag: string | null): string {
@@ -88,6 +95,8 @@ export async function buildChangelog(
 		fields: Pick<Release, 'version' | 'tag' | 'previousTag' | 'date'>;
 		commits: ParsedCommit[];
 		isUnreleased: boolean;
+		/** The ref whose workstreams file applies: `to`, or the tag. */
+		ref: string;
 	};
 	const pending: Pending[] = [];
 	const latest = tags[0]?.name ?? null;
@@ -109,6 +118,7 @@ export async function buildChangelog(
 			},
 			commits: unreleased.map(parseCommit),
 			isUnreleased: true,
+			ref: to,
 		});
 	}
 
@@ -131,6 +141,7 @@ export async function buildChangelog(
 			},
 			commits: raw.map(parseCommit),
 			isUnreleased: false,
+			ref: tag.name,
 		});
 	}
 
@@ -145,18 +156,83 @@ export async function buildChangelog(
 		);
 	}
 
-	const releases = pending.map(({fields, commits, isUnreleased}): Release => {
-		const bump = bumpFor(commits);
-		return {
-			...fields,
-			bump,
-			nextVersion: isUnreleased ? nextVersion(fields.previousTag, bump) : null,
-			groups: groupCommits(commits, config.groups),
-		};
-	});
+	const releases: Release[] = [];
+	const tagsAtTo = new Set(
+		(await runGit(['tag', '--points-at', to], cwd)).split('\n'),
+	);
+	for (const {fields, commits, isUnreleased, ref} of pending) {
+		releases.push(
+			await buildRelease(
+				cwd,
+				config,
+				fields,
+				commits,
+				ref,
+				isUnreleased,
+				ref === to || tagsAtTo.has(ref),
+			),
+		);
+	}
 
 	const repositoryUrl = config.repositoryUrl ?? (await getRemoteWebUrl(cwd));
 	return {...(repositoryUrl ? {repositoryUrl} : {}), releases};
+}
+
+/**
+ * One release from its commits: the bump, the next version when unreleased,
+ * shipped workstreams folded into highlights, and the rest grouped.
+ *
+ * The workstreams file is read as of `ref`, so a workstream counts as shipped
+ * only in the release that marked it so. A bad file fails the build only when
+ * `strict` (the release is at the head of history, which an unreleased one
+ * always is); otherwise it is skipped, not fatal.
+ */
+export async function buildRelease(
+	cwd: string,
+	config: ChamojiConfig,
+	fields: Pick<Release, 'version' | 'tag' | 'previousTag' | 'date'>,
+	commits: ParsedCommit[],
+	ref: string,
+	isUnreleased: boolean,
+	strict: boolean = isUnreleased,
+): Promise<Release> {
+	const bump = bumpFor(commits);
+	const workstreams =
+		strict || commits.some(commit => commit.workstream !== undefined)
+			? await readWorkstreamsFor(cwd, ref, strict)
+			: [];
+	const {highlights, loose} = splitHighlights(
+		commits,
+		workstreams,
+		config.groups,
+	);
+	return {
+		...fields,
+		bump,
+		nextVersion: isUnreleased ? nextVersion(fields.previousTag, bump) : null,
+		...(highlights.length > 0 ? {highlights} : {}),
+		groups: groupCommits(loose, config.groups),
+	};
+}
+
+/**
+ * The workstreams file as of `ref`. An unreadable file throws when it is the
+ * one at `to` (`strict`), and counts as no workstreams otherwise.
+ */
+async function readWorkstreamsFor(
+	cwd: string,
+	ref: string,
+	strict: boolean,
+): Promise<Workstream[]> {
+	try {
+		return await readWorkstreamsAt(cwd, ref);
+	} catch (error) {
+		if (!strict && error instanceof WorkstreamError) {
+			return [];
+		}
+
+		throw error;
+	}
 }
 
 /**
@@ -164,7 +240,7 @@ export async function buildChangelog(
  * Unknown codes are ignored, and so is `boom`: only authors declare breaking
  * changes.
  */
-async function applyClassifier(
+export async function applyClassifier(
 	classify: CommitClassifier,
 	commits: ParsedCommit[],
 ): Promise<void> {

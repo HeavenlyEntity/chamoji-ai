@@ -1,8 +1,13 @@
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {parseEnv} from 'node:util';
+import {runGit} from '@chamoji/core';
 
 const KEY = 'TYPESAFE_API_KEY';
+
+/** What `--ai` says when it has no key. */
+export const MISSING_KEY =
+	'--ai needs a TypeSafe API key: set TYPESAFE_API_KEY in the environment or in .env.local (get one at https://typesafe.ai)';
 
 /** Checked in order; the first file that sets the key wins. */
 const ENV_FILES = ['.env.local', '.env'];
@@ -11,10 +16,15 @@ const ENV_FILES = ['.env.local', '.env'];
  * The TypeSafe API key: from the environment, else from `.env.local` or
  * `.env` in `cwd`. Only this one variable is read from the files; nothing
  * is loaded into `env` or `process.env`.
+ *
+ * With `untrackedOnly`, a file git tracks is skipped. A cloned repository
+ * could commit a `.env` holding someone else's key, and work sent with it
+ * would land in their account.
  */
 export async function readTypesafeKey(
 	cwd: string,
 	env: NodeJS.ProcessEnv,
+	options: {untrackedOnly?: boolean} = {},
 ): Promise<string | undefined> {
 	const fromEnv = env[KEY]?.trim();
 	if (fromEnv) {
@@ -22,6 +32,10 @@ export async function readTypesafeKey(
 	}
 
 	for (const file of ENV_FILES) {
+		if (options.untrackedOnly && (await isTracked(cwd, file))) {
+			continue;
+		}
+
 		let text: string;
 		try {
 			text = await readFile(path.join(cwd, file), 'utf8');
@@ -36,4 +50,13 @@ export async function readTypesafeKey(
 	}
 
 	return undefined;
+}
+
+async function isTracked(cwd: string, file: string): Promise<boolean> {
+	try {
+		await runGit(['ls-files', '--error-unmatch', '--', file], cwd);
+		return true;
+	} catch {
+		return false;
+	}
 }

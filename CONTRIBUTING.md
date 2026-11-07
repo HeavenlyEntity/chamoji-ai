@@ -7,7 +7,7 @@ Thanks for helping. Chamoji writes its own changelog from this repo's history, s
 ```bash
 pnpm install
 pnpm test     # vitest
-pnpm check    # build, type-check (including tests) and prettier
+pnpm check    # build, type-check (including tests), prettier and the docs check
 pnpm benchmark # Miscellaneous share on the benchmark repos
 ```
 
@@ -51,8 +51,13 @@ pnpm build && node packages/cli/dist/cli.js changelog | head -40
 ## Pull requests
 
 - Write tests first, then make them pass, and keep `pnpm check` green.
+- A PR that changes behaviour updates `docs/site/` in the same PR, as it does the readme.
 - If you change commit parsing, run `pnpm benchmark` before and after, and put both tables in the PR. It clones the benchmark repos listed in the roadmap and prints each one's Miscellaneous share.
 - Never commit secrets. `.env` and `.env.*` files are git-ignored; put `TYPESAFE_API_KEY` in `.env.local`.
+
+## Writing docs pages
+
+The pages in `docs/site/` are the docs at [chamoji.dev/docs](https://www.chamoji.dev/docs). The site compiles each one as MDX, which is code, so a docs PR is reviewed like code. `pnpm check` parses every page and allows only the site's components (`Note`, `Properties`, `Property`, `Steps`, `Step`, `CodeGroup`, `Row`, `Col`, `Guides`, `Guide`, `Resources`, `Resource`, `Tag`, `Button`, `p`), literal attribute values, heading annotations such as `{{ icon: 'flag' }}`, code block titles such as ` ```bash {{ title: 'Install' }} ` (a `title`, `tag` or `label` string), and links to a path or an `http`, `https` or `mailto` address: no imports, no exports other than `metadata`, and no other `{…}` expressions. To see a page as it will look, ask the chamoji-web maintainers for a preview.
 
 ## Releases (maintainers)
 

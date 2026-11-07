@@ -6,7 +6,7 @@
 - **When a milestone ships:** update its status, its exit-criteria results and the dogfooding log below.
 - **Background only:** [`docs/research/2026-10-27-chamoji-direction.md`](research/2026-10-27-chamoji-direction.md) holds the research and reasoning. If it disagrees with this file, this file wins.
 - **Look and feel:** [`docs/brand/BRAND.md`](brand/BRAND.md) sets the colours, the holographic foil effect, the type and the rules for every visual surface.
-- **Last updated:** 2026-10-28
+- **Last updated:** 2026-11-06
 
 ## Vision
 
@@ -27,25 +27,29 @@ These apply to every milestone. A plan that breaks one needs a written reason.
 
 ## Status
 
-| #   | Milestone                           | Phase                      | Lever       | Size | Status                                   | Plan                                                                   |
-| --- | ----------------------------------- | -------------------------- | ----------- | ---- | ---------------------------------------- | ---------------------------------------------------------------------- |
-| 1   | Changelog engine                    | 0 Foundation               | Activation  | M    | ✅ Shipped in 0.1.0                      | [plan](superpowers/plans/2026-10-27-milestone-1-changelog-engine.md)   |
-| 1.5 | Plain commits, Dependencies, `--ai` | 0 Foundation               | Activation  | M    | ✅ Shipped in 0.2.0                      | — (built from chat scope)                                              |
-| 1.6 | Use it ourselves                    | 0 Foundation               | Retention   | S    | ✅ Shipped in 0.3.0                      | [plan](superpowers/plans/2026-10-28-milestone-1.6-use-it-ourselves.md) |
-| 2   | Public launch kit                   | 1 Activation & acquisition | Acquisition | S    | ✅ Done (all items shipped)              | [plan](superpowers/plans/2026-10-28-milestone-2-public-launch-kit.md)  |
-| 3   | GitHub Action                       | 1 Activation & acquisition | Acquisition | M    | 🚧 In progress (`chamoji release` built) | [plan](superpowers/plans/2026-10-28-milestone-3a-release-command.md)   |
-| 4   | Commit composer and git hook        | 2 Retention                | Retention   | L    | Planned                                  | —                                                                      |
-| 5   | Jev in the composer                 | 2 Retention                | Retention   | M    | Planned                                  | —                                                                      |
-| 6   | Workstreams                         | 3 Differentiation          | Retention   | L    | Planned                                  | —                                                                      |
-| 7   | Project memory                      | 3 Differentiation          | Retention   | L    | Planned                                  | —                                                                      |
-| 8   | Review packets                      | 3 Differentiation          | Expansion   | L    | Planned                                  | —                                                                      |
-| 9   | Retroactive grouping                | 3 Differentiation          | Activation  | M    | Planned                                  | —                                                                      |
-| 10  | Editor extension                    | 4 Surfaces                 | Acquisition | L    | Planned                                  | —                                                                      |
-| 11  | Local daemon on iii                 | 4 Surfaces                 | Retention   | M    | Planned                                  | —                                                                      |
-| 12  | Desktop app (Tauri)                 | 4 Surfaces                 | Retention   | L    | Planned                                  | —                                                                      |
-| 13  | Cloud: hosted release notes         | 5 Expansion                | Expansion   | L    | Planned                                  | —                                                                      |
-| 14  | Cloud: team memory and review       | 5 Expansion                | Expansion   | L    | Planned                                  | —                                                                      |
-| 15  | Cloud: billing and organizations    | 5 Expansion                | Expansion   | M    | Planned                                  | —                                                                      |
+| #   | Milestone                           | Phase                      | Lever       | Size | Status                                     | Plan                                                                                                                                            |
+| --- | ----------------------------------- | -------------------------- | ----------- | ---- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Changelog engine                    | 0 Foundation               | Activation  | M    | ✅ Shipped in 0.1.0                        | [plan](superpowers/plans/2026-10-27-milestone-1-changelog-engine.md)                                                                            |
+| 1.5 | Plain commits, Dependencies, `--ai` | 0 Foundation               | Activation  | M    | ✅ Shipped in 0.2.0                        | — (built from chat scope)                                                                                                                       |
+| 1.6 | Use it ourselves                    | 0 Foundation               | Retention   | S    | ✅ Shipped in 0.3.0                        | [plan](superpowers/plans/2026-10-28-milestone-1.6-use-it-ourselves.md)                                                                          |
+| 2   | Public launch kit                   | 1 Activation & acquisition | Acquisition | S    | ✅ Done (all items shipped)                | [plan](superpowers/plans/2026-10-28-milestone-2-public-launch-kit.md)                                                                           |
+| 3   | GitHub Action                       | 1 Activation & acquisition | Acquisition | M    | ✅ Shipped in 0.5.0, on the Marketplace    | [plan](superpowers/plans/2026-10-28-milestone-3a-release-command.md)                                                                            |
+| 3.5 | Repo card                           | 1 Activation & acquisition | Acquisition | M    | ✅ Shipped in 0.9.0                        | [plan](superpowers/plans/2026-10-31-repo-card.md)                                                                                               |
+| 4   | Commit composer and git hook        | 2 Retention                | Retention   | L    | ✅ Shipped in 0.7.0                        | [plan](superpowers/plans/2026-10-28-milestone-4-commit-composer.md)                                                                             |
+| 5   | Jev in the composer                 | 2 Retention                | Retention   | M    | ✅ Shipped in 0.8.0                        | [plan](superpowers/plans/2026-10-28-milestone-5-jev-in-the-composer.md)                                                                         |
+| 5.5 | Terminal face                       | 2 Retention                | Activation  | S    | ✅ Shipped in 0.12.0 (real terminals left) | [plan](superpowers/plans/2026-11-03-terminal-face.md)                                                                                           |
+| 6   | Workstreams                         | 3 Differentiation          | Retention   | L    | ✅ Shipped in 0.10.0 (dogfooding left)     | [plan](superpowers/plans/2026-10-31-milestone-6-workstreams.md)                                                                                 |
+| 7   | Project memory                      | 3 Differentiation          | Retention   | L    | ✅ Shipped in 0.11.0 (dogfooding left)     | [plan](superpowers/plans/2026-11-01-milestone-7-project-memory.md)                                                                              |
+| 7.5 | Monorepo releases                   | 3 Differentiation          | Activation  | L    | ✅ Shipped in 0.14.0 (real use left)       | [engine](superpowers/plans/2026-11-03-milestone-7.5-monorepo-releases.md), [setup](superpowers/plans/2026-11-04-milestone-7.5-chamoji-setup.md) |
+| 7.6 | Publishing to npm                   | 3 Differentiation          | Activation  | M    | ⏭ Next                                     | —                                                                                                                                               |
+| 8   | Review packets                      | 3 Differentiation          | Expansion   | L    | Planned                                    | —                                                                                                                                               |
+| 9   | Retroactive grouping                | 3 Differentiation          | Activation  | M    | Planned                                    | —                                                                                                                                               |
+| 10  | Editor extension                    | 4 Surfaces                 | Acquisition | L    | Planned                                    | —                                                                                                                                               |
+| 11  | Local daemon on iii                 | 4 Surfaces                 | Retention   | M    | Planned                                    | —                                                                                                                                               |
+| 12  | Desktop app (Tauri)                 | 4 Surfaces                 | Retention   | L    | Planned                                    | —                                                                                                                                               |
+| 13  | Cloud: hosted release notes         | 5 Expansion                | Expansion   | L    | Planned                                    | —                                                                                                                                               |
+| 14  | Cloud: team memory and review       | 5 Expansion                | Expansion   | L    | Planned                                    | —                                                                                                                                               |
+| 15  | Cloud: billing and organizations    | 5 Expansion                | Expansion   | M    | Planned                                    | —                                                                                                                                               |
 
 **Statuses:** ✅ shipped · 🚧 in progress · ⏭ next · Planned · ⏸ parked.
 
@@ -66,9 +70,10 @@ We use every release on our own projects before anyone else does. If something a
 
 **Repos using it:**
 
-| Repo                          | Since | How                                                                                                                                                                                 | Friction found                |
-| ----------------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
-| chamoji-ai (our product repo) | 0.1.0 | Generates its own `CHANGELOG.md`; since 0.3.0, `pnpm release` picks the version, bumps both packages, writes the changelog, commits and tags; since 0.5.0 it runs `chamoji release` | See the milestone 1.6 results |
+| Repo                          | Since                        | How                                                                                                                                                                                                                                                                                                                                                                                                      | Friction found                |
+| ----------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| chamoji-ai (our product repo) | 0.1.0                        | Generates its own `CHANGELOG.md`; since 0.3.0, `pnpm release` picks the version, bumps both packages, writes the changelog, commits and tags; since 0.5.0 it runs `chamoji release`                                                                                                                                                                                                                      | See the milestone 1.6 results |
+| chamoji-ai, milestone 7 build | merged to `main`, unreleased | Every commit in [PR #5](https://github.com/HeavenlyEntity/chamoji-ai/pull/5) carries a `Why:` line and a `Workstream: project-memory` trailer. The workstream hook stamps the `Workstream:` line; the agents building it wrote the `Why:` lines by hand. The MCP server and the agent hook were run against real Claude Code on this repo and in a scratch repo. The sprint of real use hasn't happened. | See the milestone 7 results   |
 
 **What each upcoming milestone gives us:**
 
@@ -179,7 +184,7 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 - ✅ **v0.4.0** was published by `release.yml` through npm trusted publishing, with SLSA provenance on both packages. The npm pages link to GitHub.
 - ✅ **Old versions deprecated:** 0.1.0, 0.2.0 and npm's `0.0.0-stage` placeholder on both packages. Installing them prints an "update to the latest" warning.
 - ✅ **Readme demo GIF** (`docs/demo.gif`): a messy plain-message log, chamoji sorting it, then `chamoji release`. Re-render it with `vhs docs/demo/demo.tape` after `pnpm build`.
-- ✅ **Cloud waitlist page** is live at [chamoji-web.vercel.app](https://chamoji-web.vercel.app), built from the Claude Design [canvas](https://claude.ai/artifact/PZE5BypQRLgUjNH61ERMxc) (private) in the private `HeavenlyEntity/chamoji-web` repo. That repo holds the licensed fonts, art and React Bits Pro (agentframe) code, which can't live in this public repo. Emails go to Neon Postgres through the Vercel Marketplace, stored once each, whatever the capitalisation. Still to do: a custom domain, the Organization plan's contact email, and a Vercel Firewall rate limit if spam turns up.
+- ✅ **Cloud waitlist page** is live at [chamoji.dev](https://chamoji.dev), built from the Claude Design [canvas](https://claude.ai/artifact/PZE5BypQRLgUjNH61ERMxc) (private) in the private `HeavenlyEntity/chamoji-web` repo. That repo holds the licensed fonts, art and React Bits Pro (agentframe) code, which can't live in this public repo. Emails go to Neon Postgres through the Vercel Marketplace, stored once each, whatever the capitalisation. The custom domain, chamoji.dev, is live. Still to do: the Organization plan's contact email, and a Vercel Firewall rate limit if spam turns up.
 - ✅ **Two messy benchmark repos:** jquery/jquery and moment/moment, measured with `pnpm benchmark` on 2026-10-28, without `--ai`, over each repo's whole history:
 
   | Repo                     | Commits | Miscellaneous |
@@ -191,7 +196,18 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
   | jquery/jquery            | 6545    | 42%           |
   | moment/moment            | 3060    | 41%           |
 
-  The median is 10%, inside the 20% target. The two messy repos are the gap: jQuery's "Component: description" subjects and Moment's `[bugfix]` tags aren't read by any rule yet. That is the next parsing work, and the `--ai` comparison to make.
+  The median is 10%, inside the 20% target. The two messy repos were the gap, so a parsing pass after 0.5.0 targeted them:
+  - it reads `Component: description` and `[tag] description` prefixes through to the subject behind them
+  - it hides release chores and merge leftovers
+  - it adds the "Made"/"Makes" and hand-written "Revert …" verbs
+  - it moves ✏️ typo fixes to Documentation
+
+  | Repo          | Before | After |
+  | ------------- | ------ | ----- |
+  | jquery/jquery | 42%    | 31%   |
+  | moment/moment | 41%    | 28%   |
+
+  The other four didn't move. Both are still above the 25% "first run is useful" line. The rest is mostly subjects with no verb rule, such as "Don't …", "Only …" or "Bug 1234 …", and is the `--ai` comparison to make next.
 
 - ✅ **New About text** on the repo, matching the readme.
 
@@ -283,8 +299,12 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
   - built on a new `changelog --since <ref>`
   - tested against fixture repos with a fake `gh`
   - chamoji runs it on its own PRs and tags from the local build (`.github/workflows/chamoji.yml`)
-- ⬜ **Exit criteria still to see on GitHub:** a real PR comment updating in place, and notes on a real tag (v0.5.0).
-- ⬜ **After 0.5.0 is on npm:** point the skill at `npx @chamoji/cli release`, recommend `@v0.5.0` instead of `@main` in the readme, and list the Action on the Marketplace.
+- ✅ **A real PR comment, updating in place:** on [#1](https://github.com/HeavenlyEntity/chamoji-ai/pull/1) it posted one preview, then updated that same comment on the next push.
+- ✅ **Notes on a real tag:** the Action wrote the [v0.5.0 release notes](https://github.com/HeavenlyEntity/chamoji-ai/releases/tag/v0.5.0). 0.5.0 is on npm with provenance.
+- ✅ **0.5.0 published:**
+  - the skill runs `npx @chamoji/cli release`, with no bundled script, and its CI notes use the Action
+  - the readme pins the Action to `@v0.5.0`
+- ✅ **Marketplace listing:** [chamoji changelog](https://github.com/marketplace/actions/chamoji-changelog) is live, published from this repo at v0.12.0, in the Code review and Publishing categories.
 
 **Why:** distribution. Every repo that adds the Action shows chamoji in its workflows and release notes. gitmoji-changelog users asked for one (its issue #143).
 
@@ -304,6 +324,51 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 
 **Dependencies:** milestone 2.
 
+### 3.5. Repo card
+
+**Progress (2026-10-31):** shipped in 0.9.0.
+
+- ✅ **Built and tested locally.** The full suite passes (426 tests).
+  - `card` in `@chamoji/core`: works out the stats from local git history and builds the renderer URL. Tested for the counts, the share sorted without AI (never rounded up to 100%), a repo with no tags, an empty history, and that no commit text is ever in the URL.
+  - `chamoji card` in the CLI: prints the renderer URL, reads the repo from an HTTPS or SSH `origin` or from `--repo`, takes `--endpoint` and `--json`, and never calls the classifier.
+  - `mode: card` in the Action, with `card-endpoint`, `card-branch` and the `card-url` output. Tested against fixture repos with a fake renderer:
+    - the image alone on the branch, as one replaced commit
+    - nothing pushed when the image hasn't changed
+    - a branch holding anything else refused
+    - the last card kept when the renderer fails, refuses the card's details or doesn't send a PNG
+    - a refused first card reported as such, and a longer branch ending the same way ignored
+    - the checkout left alone
+    - a branch that changed during the run not overwritten
+    - the image stored byte for byte
+- ✅ **Wired up for chamoji's own repo:** `.github/workflows/card.yml` runs the local build on `v*` tags, daily and on request. The readme has a "Repo card" section.
+- ✅ **Deployed and run on GitHub.** The renderer is live at `chamoji.dev/api/card`, and a real run of `card.yml` saved the image to the `chamoji-card` branch as a single commit.
+- ✅ **Shown in chamoji's own readme**, in the "Repo card" section (2026-11-03).
+- ✅ **A daily run with no changes pushes nothing on GitHub:** the scheduled run on 2026-11-03 printed "the card on chamoji-card is already up to date" and left the branch alone.
+
+**Why:** distribution. A card in a readme shows a project's latest release and links back to chamoji, so every repo that uses it promotes chamoji. daily.dev's DevCard is the model: a hosted image that an Action saves into a repo on a schedule.
+
+**Scope:**
+
+- **A renderer at `chamoji.dev/api/card`,** in the private `chamoji-web` repo, because it uses the licensed fonts. It turns validated parameters into a PNG. It has no database and no GitHub token, and it stores nothing.
+- **`chamoji card`** works out the stats from local git history and prints the renderer URL:
+  - the latest version and its date
+  - the number of releases and commits
+  - the share of commits sorted without AI
+  - the latest release's Added, Fixed and Changed counts
+- **`mode: card` in the Action** saves the image to a separate `chamoji-card` branch on every release tag and once a day. The branch holds one commit, replaced on each change.
+
+**Out of scope:** a personal developer card for GitHub profiles, which needs stats from across a person's repos. Much of the renderer can be reused for it later.
+
+**Exit criteria:**
+
+- A release tag updates the card's version with no manual step.
+- A daily run with no changes pushes nothing.
+- A failing renderer never fails the job, and the last card stays.
+- `main` and the tags get no bot commits.
+- It works on a repo with no tags.
+
+**Dependencies:** milestone 3.
+
 ---
 
 ## Phase 2: Retention
@@ -311,6 +376,24 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 **Goal:** chamoji is in the path of every commit, not only every release.
 
 ### 4. Commit composer and git hook
+
+**Progress (2026-10-28):** ✅ shipped in 0.7.0. The Hook workflow passes in bash, zsh, fish and PowerShell on Linux and macOS, with husky and lefthook, and on Windows without a terminal.
+
+- ✅ **`chamoji commit`** with the Ink composer:
+  - gitmoji search, then scope, title, body, why and breaking
+  - Enter moves on, Esc goes back, Ctrl-C cancels
+  - `emojiFormat`
+  - a `Why:` trailer
+- ✅ **`chamoji hook install` / `uninstall`** for `prepare-commit-msg`, with gitmoji-cli's edge cases:
+  - it skips -m, merges, squashes, amends, rebases, CI, messages that already have a gitmoji, and anything without a terminal
+  - Ctrl-C never blocks the commit
+  - it opens `/dev/tty` itself (CONIN$ on Windows)
+- ✅ **One-command switch:** install replaces gitmoji-cli's hook and reads `.gitmojirc.json` and the `gitmoji` key in `package.json`.
+- ✅ **husky and lefthook:** install prints the line, or the `lefthook.yml` snippet, to add.
+- ✅ **Exit-criteria checks:** `scripts/hook-e2e.py` makes real commits through the hook. The Hook workflow runs it for bash, zsh, fish and PowerShell on Linux and macOS, for husky and lefthook, and on Windows without a terminal.
+  - Passed locally for bash, zsh, husky and lefthook.
+  - fish and PowerShell are checked by the workflow's first run.
+  - The interactive composer on Windows (CONIN$) isn't covered by a test yet.
 
 **Why:** running a changelog happens once per release, which is too rare to build a habit. Writing commits happens every day.
 
@@ -351,10 +434,10 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
   - "is this breaking?"
   - "should this be split?"
 - **Diff privacy:**
-  - diff content is sent only with a separate opt-in (`ai.sendDiffs`)
+  - diff content is sent only with a separate opt-in (`chamoji.sendDiffs`)
   - by default, only file paths and stats are sent
   - a path denylist (`.env*`, keys, lockfiles)
-- **A judgment cache** in `.git/chamoji/cache`, keyed by commit hash or diff hash. `changelog --ai` then stops re-asking about old commits.
+- **A judgment cache** in `.git/chamoji/cache.json`, keyed by commit hash. `changelog --ai` then stops re-asking about old commits.
 - **Tune the confidence cutoffs** on labelled history: the gitmoji repos' own emojis serve as the labels.
 - **Optional prose:** a pluggable LLM drafts the title, using Claude or a local model through Ollama.
 
@@ -365,6 +448,54 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 - A second `changelog --ai` run makes no requests for commits it already sorted.
 
 **Dependencies:** milestone 4.
+
+**Progress:** ✅ shipped in 0.8.0. Prose title drafts are left for later.
+
+- **End-to-end check:** `chamoji commit` in a real terminal with `chamoji.composer` on and the live API: for a staged docs-only change, Jev preselected 📝 and the commit read `📝 Document the setup`.
+
+- **The opt-in is git config,** `chamoji.composer` and `chamoji.sendDiffs`, not `chamoji.config.json`. A file in the repository would let a cloned repository send your staged changes on its own say.
+- **Measured** with `scripts/jev-eval.mjs` on 200 labelled commits from the gitmoji and gitmoji-cli repos. Latency was p50 about 100 ms, p95 120–150 ms with 4 requests in flight.
+
+  | Commits                      | Jev sees            | Top-1 | Top-3 |
+  | ---------------------------- | ------------------- | ----- | ----- |
+  | All (about 80% are ⬆️ bumps) | file list           | 80%   | 89%   |
+  | All                          | file list and title | 93%   | 96%   |
+  | Not ⬆️ bumps (`--no-bumps`)  | file list           | 26%   | 44%   |
+  | Not ⬆️ bumps                 | file list and title | 47%   | 72%   |
+
+- **Against the exit criteria:** latency and the cache pass. A second `changelog --ai` on meow sent no requests. Top-3 passes on the whole history, but not on commits other than dependency bumps: 44% from the file list, 72% with the title. Some of that is label noise, as "Add raycast to related tools page" is 📝 in that repo. Still, the gap is real.
+- **What the composer does with it:** the gitmoji step comes before the title, so Jev sees only the file list there. Its top pick is preselected only at 90% or more; on non-bump commits that was right 74% of the time, against 53% at 70%. Below that, the three suggestions show as a hint and the list keeps its order.
+- **Tuning so far:** the official 📦️ description, "Add or update compiled files or packages", drew most file-list-only commits to 📦️ (top-1 7%). A narrower description, plus guidance used only when there's no title, raised that to 80% without hurting the with-title numbers. The 60% cutoff for `--ai` is unchanged: the eval measures the advisor, which asks a different question from the changelog classifier.
+- **Open question:** asking for the title before the gitmoji would give Jev the title, and the 72% top-3 instead of 44%. That changes the order gitmoji-cli users know.
+
+### 5.5. Terminal face — ✅ shipped in 0.12.0
+
+**Why:** the CLI should feel like chamoji from the first run. A smile in the O of the wordmark, and the same face next to every command that makes you wait, so a slow `memory sync` or `--ai` run never looks stuck.
+
+**Scope:**
+
+- **An animated welcome:** a bare `chamoji` draws the Marow Block wordmark with the face in its O, then the short help, in five groups. It goes to stdout and exits 0. It used to print the help to stderr and exit 2.
+- **Faces in the commands that wait:** `memory sync`, `init`, `release`, `why`, `memory reindex`, `ws ship`, `ws drop` and the `--ai` runs show a one-line face, the step's name and, at the end, a done, warn or fail line with the time. They write to stderr only.
+- **Foil on dark only:** the wordmark and faces use the logo's foil on a dark background and the plain text colour on a light one. The theme comes from `CHAMOJI_THEME`, then the terminal's answer to OSC 11, then `COLORFGBG`.
+- **Three variables:** `CHAMOJI_NO_ANIMATION`, `CHAMOJI_THEME` and `CHAMOJI_ASCII`.
+- **Quiet git underneath:** network git calls report their steps and stay quiet themselves.
+- The design is in [`docs/superpowers/specs/2026-11-03-terminal-face-design.md`](superpowers/specs/2026-11-03-terminal-face-design.md) and the look in [`BRAND.md`](brand/BRAND.md#terminal).
+
+**Exit criteria:**
+
+- Nothing the commands print to stdout, and nothing under `--json`, changes: byte for byte the same as 0.11.0.
+- No animation when stderr isn't a terminal, in CI, with `TERM=dumb`, with `--json` or with `CHAMOJI_NO_ANIMATION=1`.
+- Ctrl-C mid-sync leaves a clean prompt.
+
+**Progress:** shipped in 0.12.0. The [plan's Results](superpowers/plans/2026-11-03-terminal-face.md#results) has the detail.
+
+- ✅ **Byte-identity:** `memory sync`, `memory sync --json`, `release --dry-run --json`, `changelog` and `next-version` print the same stdout, stderr and exit code as 0.11.0 when piped, and the same stdout when stderr is a terminal.
+- ⬜ **Real terminals:** checked in the Claude desktop app's Terminal panel on a dark background only. Terminal.app, iTerm2, Ghostty, the VS Code terminal, the light profiles, which terminals answer OSC 11 and Ctrl-C mid-sync are still to check before release.
+- ✅ **Tagline:** approved and shipped in 0.12.0, in `--help`, under the wordmark and as `packages/cli/package.json`'s description.
+- ✅ **Fixed after 0.12.0, not yet released:**
+  - Ctrl-Z during the intro left the cursor hidden. It's now shown before the stop and hidden again after `fg`, and the next frame starts on a fresh line. Checked in a real pseudo-terminal under zsh.
+  - A slow answer to the OSC 11 question could land in git's password prompt. Before git asks, the face now waits, for up to 500 ms, until the question is finished with the terminal.
+  - There's now a blank line between the wordmark and the tagline.
 
 ---
 
@@ -388,6 +519,13 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 - Trailers survive a GitHub squash merge, tested on a real repo.
 - A 40-commit release renders as 5 or fewer Highlights plus loose commits.
 
+**Results (2026-10-31):**
+
+- ✅ **A 40-commit release renders as 5 or fewer Highlights plus loose commits:** met. The test in `packages/core/test/highlights.test.ts` gives 4 Highlights and 6 loose commits.
+- ✅ **Trailers survive a GitHub squash merge, tested on a real repo (2026-11-01):** met for the settings that keep commit messages. Seven stamped PRs were squash-merged in a private throwaway repo, each using the message GitHub prefills, and the release was then rendered with chamoji. "Default message" (one and two commits) and "Pull request title and commit details" (one and two commits) kept the line, and those four PRs landed in Highlights. "Pull request title and description" dropped it unless the PR description had the line, and "Pull request title" dropped it; the commits that lost it landed outside Highlights. The readme gives the fix for each. An edited merge box wasn't tested.
+- ✅ **The hook stamps `git commit -m` in the real-git check:** `scripts/hook-e2e.py` has a fourth check. It passed locally on bash, zsh, husky and lefthook, and in the Hook workflow on all 11 CI jobs across Ubuntu, macOS and Windows, including fish and pwsh.
+- 🚧 **Dogfooding on milestone 7 is under way.** 0.10.0 shipped before this ran. Milestone 7 was built as the `project-memory` workstream, and all 26 commits in [PR #5](https://github.com/HeavenlyEntity/chamoji-ai/pull/5) were stamped. This finishes when `chamoji ws ship` gives 0.11.0 its first real Highlights entry, and anything that turns up goes into a later release.
+
 **Dependencies:** milestone 4.
 
 ### 7. Project memory
@@ -407,7 +545,114 @@ Live Jev run on meow: 9–10 of 28 leftover commits sorted, about 0.3 seconds, $
 - Claude Code can answer "why is this line like this?" through `chamoji mcp` on chamoji's own repo.
 - Memory survives deleting a branch and a fresh clone.
 
+**Results (2026-11-01):** merged in [PR #5](https://github.com/HeavenlyEntity/chamoji-ai/pull/5) and released in 0.11.0 on 2026-11-03. The [plan's Results](superpowers/plans/2026-11-01-milestone-7-project-memory.md#results) has the detail.
+
+- ✅ **Claude Code answers "why is this line like this?" through `chamoji mcp` on chamoji's own repo:** met. `claude -p` on haiku called `mcp__chamoji__why` on `packages/core/src/intent.ts:3` and quoted the card from commit 83329f3.
+- ✅ **Memory survives deleting a branch and a fresh clone:** met in `packages/cli/test/memory-e2e.test.ts`, through the built CLI against a local bare remote. It hasn't run against GitHub.
+- ✅ **Search is fast enough:** on Vite at 9,776 documents, whole CLI runs: index build 0.47 s against a 5 s target, search 228 ms (median of 5, about 170 ms of it Node start-up) against 300 ms, index 2.5 MB.
+- ✅ **The agent hook works in real Claude Code:** in a scratch repo, a plain commit and a compound `git add && git commit` were denied, the retry carried a `Why:` line, and the opt-out worked. The first denial text invited the opt-out and haiku took it, so the text now says to use it only when the user said to skip the card.
+- ✅ **CI passed on the merged code:** all 19 checks on PR #5. The test suite, which runs the new commands, passed on Ubuntu, macOS and Windows with Node 22 and 24. The Hook workflow passed in bash, zsh, fish and pwsh; it checks the commit hook, not the new commands. Windows needed test changes only: git there can't print dates past year 9999, and a command line stops at 32 KB.
+- **Departure: no `remote.origin.push`.** Setting it made a plain `git push` push only the memory ref and leave the branch behind, and an explicit `git push origin main` ignored it. `chamoji init` sets only a fetch line; `chamoji memory sync` and `chamoji release --push` push memory.
+- **Other departures:** `chamoji why` on an uncommitted line exits 0; embeddings are left out; `chamoji mcp` has no SDK; the hook covers Claude Code only.
+- **Known limits:** purge reaches a remote only through `chamoji memory sync`, which merges first and then prints a force-push for you to run, and other clones can still hold the text. Plain `git fetch` and `git pull` download memory but don't change what `chamoji memory` shows; `memory sync` brings it in. A purged slug stays purged, and its name is in the tombstone and the `Purge <slug>` commit message. A memory ref is shared with anyone who can push to the repo, and cards are never verified. A project `.mcp.json` server shows "Pending approval" in Claude Code until the user approves it.
+- ✅ **Checked on 2026-11-03:** the memory ref is on GitHub (`refs/chamoji/memory` on origin). `memory search --ai` against the real TypeSafe API reordered BM25's matches, with no fallback note.
+- ⬜ **Not verified:** the `.mcp.json` approval step in Claude Code, and the `.mcp.json` that `init --agents` writes on native Windows (where `npx` and a `chamoji` shim may need a `cmd /c` wrapper).
+- ⬜ **The sprint of real use is skipped for this release, and dogfooding stays open.** We decided on 2026-11-01 to release 0.11.0 on 2026-11-03 without it. Per the rule above, this milestone isn't done until we've used it on our own repos for a sprint, so anything that turns up goes into a later release. `chamoji ws ship` and `chamoji memory sync` for the `project-memory` workstream run just before the release.
+
 **Dependencies:** milestone 6.
+
+### 7.5. Monorepo releases — ✅ shipped in 0.14.0 (real use left)
+
+**Progress (2026-11-04):** the release engine shipped in [v0.13.0](https://github.com/HeavenlyEntity/chamoji-ai/releases/tag/v0.13.0) ([#8](https://github.com/HeavenlyEntity/chamoji-ai/pull/8)), after the 0.12.1 guard ([#9](https://github.com/HeavenlyEntity/chamoji-ai/pull/9)). It covers the `apps` and `libraries` shapes, tags and upstream history, version files, per-unit changelogs and GitHub releases, and the Action. A repo with no `release` section gets 0.12.0's versions, tags, changelog, release commit and `--json` output, proven byte for byte for `changelog`, `changelog --format json`, `next-version` and `release --dry-run --json` on two fixture repos. The only addition is a one-time stderr hint in monorepos with several apps, never under `--json` or in CI. `chamoji setup`, planned in [`2026-11-04-milestone-7.5-chamoji-setup.md`](superpowers/plans/2026-11-04-milestone-7.5-chamoji-setup.md), writes the `release` section. It shipped in [v0.14.0](https://github.com/HeavenlyEntity/chamoji-ai/releases/tag/v0.14.0) ([#11](https://github.com/HeavenlyEntity/chamoji-ai/pull/11)).
+
+**Results (2026-11-04, released 2026-11-04 in 0.14.0):** `chamoji setup` covers detection, the answers and the config section in core, the command with `--yes`, `--json` and `--explain`, the screen with its live preview and replay, and the links from `init`, the welcome screen and the composer. The readme's [Set up releases](../readme.md#set-up-releases) documents it.
+
+- ✅ **Setup, on a fixture shaped like gearz-deploy-40:** met in `packages/cli/test/setup-e2e.test.ts`, through `run` on a Makerkit fork with 33 template commits and one real sync. `setup --yes` finds web and mobile, leaves out e2e, dev-tool and `tooling/*`, ignores the template's tags 4.0.1, 4.0.2, 4.0.3 and v4.0.2-1 and the stray `wip/` tag, and writes a section that `release --dry-run` takes with no warnings. `chamoji setup releases` saves the same section with one Enter on the real screen, driven on a fake terminal. After setup, web's first release leaves every template commit out and has "Updated the Makerkit base to 4.0.3" once.
+- **One Enter, with a caveat:** a plain `chamoji setup` in a fresh clone also asks yes or no for each per-clone step that's offered, so it takes one Enter for the summary and one per prompt. The hook prompt defaults to No. `setup releases`, or a clone whose per-clone steps are done, saves with the one Enter.
+- ✅ **The engine's criteria** (byte-for-byte compatibility, ride-along, tags, upstream, libraries, mobile) are covered by 0.13.0's tests: `compat-0.12.test.ts` and core's `units/plan.test.ts`.
+- **Checked on a real repo:** a `git clone --no-hardlinks` copy of gearz-deploy-40 in a scratch folder, with the upstream refs and tags copied over, no network, and `origin` removed so nothing could reach the original. 2,343 commits, 162 tags, 62 upstream refs.
+  - ✅ **Time:** detection (`setup releases --json`, the whole CLI run) took 0.69–0.83 s, and `detect()` alone 0.46 s. In a pseudo-terminal the first screen drew in 0.74–1.1 s, or 1.08–1.12 s when it asked the terminal for its background and got no answer. The preview filled in at 1.55–1.9 s. `setup --yes --explain` took 1.05 s in all.
+  - ✅ **The summary was right:** "Found 4 apps (mobile, web, dev-tool, e2e) and 39 internal packages. mobile and web get their own versions; dev-tool, e2e and tooling are left out. 136 tags look like they came from Makerkit and will be ignored. Shared changes ride along with each app's own releases. 2 commits look like squash-merged Makerkit syncs; they count as ordinary commits." That's 135 before the final fix wave, which also flags `v4.0.0`. The ignore list is 5 patterns: `^(?!(?:5\.0\.0)$)\d+\.\d+\.\d+$`, `^\d+\.\d+\.\d+\.\d+$`, `^v\d+-final$`, `^v\d+\.\d+\.\d+$` and `^v4-step/` for the stray step tags. The lookahead keeps `5.0.0`, a tag of Alec's on an unmerged branch, out of the plain-version pattern; before the fix wave that one tag made setup list 133 template tags one by one, so the template's next tags would have counted as releases. No tag that reaches one of Alec's commits matches a pattern.
+  - ✅ **The preview matched `release --dry-run`** (measured before the final fix wave): after the section was committed, both units' old and new versions, tag, bump, own and shared counts and first six note lines were the same in both. Both are first releases at 0.1.0 (web: 703 own commits, 54 shared; mobile: 162 and 257), with no warnings. web's notes have one line for each of the two real syncs, to 3.7.8 and 4.0.2. There's no replay, since neither app has a release of its own yet. One Enter on the real screen saved a file identical to `--yes`'s.
+  - ✅ **Template commits that didn't come through the remote:** 27 commits by Makerkit's author are reachable from HEAD but from no `refs/remotes/upstream/*` branch. 9 came through `v4.0.0`, a Makerkit tag that setup didn't flag with a fetched remote, and 18 through Alec's `chore(makerkit): merge v3-step/*` merges of branches Makerkit has since deleted. Before the final fix wave, 20 of them showed in web's first notes and 7 in mobile's. Now (ruling R21) the engine's template history is what the remote's branches reach, plus what ignored version-like tags reach, plus commits by `upstream.authors`. Setup flags `v4.0.0` by the author rule and recommends `giancarlopsk@gmail.com` for `upstream.authors`, the one Makerkit author with commits the remote no longer reaches, and the summary names him. Before the fork-workflow fix it recommended three; the other two have only commits the remote and the ignored tags reach. On the copy, web's and mobile's first notes have 0 Makerkit commits. Instead, web's notes have 20 sync lines, one for each step merge, each naming the merged commit's short hash. The 27 commits are the only ones newly counted as the template's, and `since` is still Alec's first commit. Template commits on HEAD went from 1,117 to 1,144, and syncs from 4 to 23. This needs 0.14.0, since 0.13.0 ignores `upstream.authors`.
+  - ✅ **An Enter pressed the moment the screen appears:** the screen now takes a newline as Enter. Ink reads a key that arrives before raw mode as a newline. A screen test and an e2e test cover it, the e2e one typing the Enter before the first frame. It hasn't been re-run in a pseudo-terminal.
+- **Departures:** a repo with both apps and published packages is set up as `apps`. Its summary says the published packages stay internal until a `mixed` shape that versions them comes.
+- ⬜ **Real use:** Alec releases web and mobile separately from one of his app monorepos. Not done yet. A rehearsal on 2026-11-06 ran the published 0.14.0 from npm on an offline copy of that repo's `main` (191 commits newer than the 2026-11-04 check), with the template remote's branches and the repo's tags copied in:
+  - `setup releases --yes` found the same apps, recommended one template author and 5 ignore patterns, and took 2.7 s including `npx`.
+  - `release --dry-run` and then `release` made one release commit with the tags `mobile/v0.1.0` and `web/v0.1.0`, with no warnings. mobile has 176 own commits and 277 shared, and web 723 and 70. Not one line of either app's notes is a template commit, and web's notes have 20 sync lines. Both apps were already at 0.1.0, so no manifest changed.
+  - **Two things to settle before the real one:** mobile already has a hand-written `CHANGELOG.md` with its own `## 0.1.0` section, so the release adds a second `## 0.1.0` above it; rename or fold the old section first. And the changelog heading is dated in UTC, as every chamoji release has been since 0.1.0, so a release made on a US evening is dated the next day.
+  - Without an `upstream` remote configured (only its branches copied in), setup can't tell which template authors the remote already covers and recommends three instead of one. A real clone has the remote, so this only affects copies like this one.
+- ✅ **Platforms:** CI passed on Ubuntu, macOS and Windows (Node 22 and 24, and every hook shell) for both [#8](https://github.com/HeavenlyEntity/chamoji-ai/pull/8) and [#11](https://github.com/HeavenlyEntity/chamoji-ai/pull/11).
+
+**Design (2026-11-03):** [`docs/superpowers/specs/2026-11-03-monorepo-releases-and-setup-design.md`](superpowers/specs/2026-11-03-monorepo-releases-and-setup-design.md), approved. It adds `chamoji setup` and replaces the scope below where they differ: releases per app with shared changes riding along, upstream template history left out, and any existing tag format kept.
+
+**Why:** most of our own workspaces are monorepos, and today chamoji treats a repo as one package. `chamoji release` gives every manifest that carries the previous version the same new version and makes one `v*` tag. That's right for chamoji-ai, whose two packages ship together. It's wrong when packages ship on their own: a fix in one package bumps all of them, and every changelog lists every commit. Changesets, release-please and Lerna all handle this, so its absence is the first thing a monorepo user notices.
+
+**Today:** fixed (lockstep) versioning only. `release.ts` bumps every tracked `package.json`, `package-lock.json`, `pyproject.toml` and `Cargo.toml` whose version matches the last tag, writes one root `CHANGELOG.md` and makes one tag.
+
+**Scope, in order of importance:**
+
+_Must have. Without these, independent versions don't work:_
+
+1. **Find the packages.** Read `pnpm-workspace.yaml`, the `workspaces` field (npm, Yarn, Bun) and `[workspace] members` in `Cargo.toml`. List each package's name, path, version and `private` flag. `chamoji packages` (with `--json`) prints the list.
+2. **Choose a mode in config.** `versioning: fixed` (today's behaviour, and the default, so existing repos don't change) or `independent`. Fixed groups (`groups: [[core, cli]]`) let packages that must share a version share one inside an independent repo.
+3. **Map commits to packages.** A commit belongs to every package whose path it changes, from `git log --name-only`. Changes to shared root files (the lockfile, CI, root config) go to no package by default; `rootFiles: all` makes them go to every package. A Conventional scope (`feat(core):`) or a `Package:` trailer can be checked against the files but never overrides them.
+4. **One bump per package.** Each package's bump comes from its own commits since its own last tag, and a package with no commits isn't released. The same bump rules apply: breaking, feature, fix.
+5. **Tags per package.** Use `<name>@<version>` (`@chamoji/core@1.2.0`, the changesets style) by default, with `tagFormat` for release-please's `<name>-v<version>`. The last-tag lookup and `next-version` read the same format. One release commit carries all the tags.
+6. **Bump internal dependencies.** When `core` is released, every package that depends on it gets the new range and a patch release, listed in its Dependencies section. Leave `workspace:*` and `workspace:^` alone, since pnpm rewrites them at publish time. Releases go out in dependency order.
+7. **Changelogs per package.** Each package gets a `CHANGELOG.md` in its own folder with only its own commits. An optional root changelog lists every package released, with links.
+
+_Should have:_
+
+8. **Better plan output.** `release --dry-run` shows a table of package, old version, new version, bump and commit count. `--package <name>` (repeatable) releases a subset, and `--json` gives agents the same table.
+9. **GitHub releases and the Action.** One GitHub release per package tag. The PR comment lists the packages the PR would release and their next versions.
+10. **Workstreams and memory across packages.** A shipped workstream shows as a Highlight in every package it touched.
+
+_Could have, later:_
+
+11. Prerelease channels per package (`--preid beta` for one package).
+12. Other workspace kinds: uv or Poetry for Python, Go modules.
+13. A repo card per package.
+
+**Exit criteria:**
+
+- On a fixture monorepo with 3 packages, where only one has commits since its tag, only that package is released, with its own tag and changelog.
+- A release of `core` patch-bumps a package that depends on it and updates its dependency range. With `workspace:^` the range is left alone.
+- `versioning: fixed` produces byte-for-byte the same release as 0.12.0 on chamoji-ai.
+- Used for a real release on one of our own independent monorepos.
+
+**Dependencies:** milestone 3 (the `release` command and the Action).
+
+### 7.6. Publishing to npm — ⏭ next
+
+**Why:** after `chamoji release` you still need your own publish script or workflow. chamoji-ai's `release.yml` holds a lot of hard-won detail: trusted publishing, a tag-to-version check and the `registry-url` trap. Every user has to learn that again. With `release --publish`, one command takes a repo from commits to a package on npm.
+
+**Scope, in order of importance:**
+
+_Must have:_
+
+1. **`chamoji publish`.** It publishes every package whose version isn't on the registry yet, so a run that fails partway is safe to run again. It skips `private` packages and goes in dependency order. With pnpm it uses `pnpm publish` so `workspace:` ranges are rewritten; plain `npm publish` would publish them as written.
+2. **A check before publishing.** The tag must match each manifest's version, the tree must be clean, and the build and `npm pack --dry-run` must pass. If any of these fails, nothing is published.
+3. **Dist-tags.** A prerelease goes to `next` (or `--tag`), so `latest` never gets a beta.
+4. **Trusted publishing in CI.** The Action gets `mode: publish`, with OIDC and provenance and no stored token. The docs cover npm 11.5.1 or newer, leaving `registry-url` out, and the trusted-publisher settings on npmjs.com.
+5. **`release --publish`.** It runs the release and then the publish, and stops with a clear message if the publish fails after the tag was pushed.
+
+_Should have:_
+
+6. **Credentials stay out of sight.** Locally, publishing uses the user's own npm login, and 2FA one-time codes are prompted for, never taken as a flag. Tokens are never printed.
+7. **`--dry-run` and `--json`** list what would be published and where.
+
+_Could have, later:_
+
+8. Other registries: JSR, crates.io and PyPI.
+
+**Exit criteria:**
+
+- chamoji-ai's own `release.yml` is replaced by the Action's `mode: publish`, and a real release reaches npm with provenance.
+- Running it again after a publish that failed partway publishes only what's missing.
+- On a pnpm monorepo, no published `package.json` contains `workspace:`.
+
+**Dependencies:** milestone 7.5 for the list of packages and their order. Single-package publishing doesn't need 7.5 and could ship first.
 
 ### 8. Review packets
 
@@ -563,7 +808,7 @@ Fold these into a milestone's plan when they fit, or pull one into a sprint when
 - **Downloads badge:** add the npm downloads badge back to the readme once shields.io has data for `@chamoji/cli`. It shows "package not found or too new" until then.
 - **Emoji variants:** accept variant forms of official gitmojis, such as 👨‍💻 for 🧑‍💻. Found on gitmoji-cli.
 - **Confidence cutoff:** 60% held up on meow. Re-check it with the milestone 5 tuning data.
-- **Noise prefixes:** more wording-rule coverage for noisy prefixes, such as "Merge remote-tracking…" and "Squashed commit of…".
+- ~~**Noise prefixes:**~~ "Merge remote-tracking…", "Squashed commit of…" and jQuery's "Landing pull request…" are handled since the post-0.5.0 parsing pass.
 - **Cloud data store:** choose one for the Cloud tier when milestone 13 is planned.
 - **Brand assets** (see `docs/brand/BRAND.md`): the display font is Marow Block and the foil is Iridescence. Still to make: an SVG logo with the wordmark outlined, app icons, a favicon and a social preview image. Needed by milestone 2's readme and milestone 10.
 - **Windows:** the fixture repos and git argument handling haven't been tested there yet; milestone 2's CI will cover it.

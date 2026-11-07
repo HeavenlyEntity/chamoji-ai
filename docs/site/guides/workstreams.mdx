@@ -1,0 +1,229 @@
+export const metadata = {
+	title: 'Workstreams',
+	description:
+		'Group the commits of a piece of work that takes many commits, so the changelog shows it as one Highlight once it ships.',
+};
+
+# Workstreams
+
+<p className="lead">
+	A workstream is a piece of work that takes more than one commit, such as
+	“Keyboard support”. Start it, and your commits carry its name. Ship it, and
+	the changelog shows them as one Highlight, with the commits folded underneath,
+	instead of a flat list.
+</p>
+
+<Note>
+	`git commit` adds the workstream’s line only through chamoji’s hook, and git
+	doesn’t clone hooks. Run `chamoji hook install` once in each clone, or commit
+	with `chamoji commit`.
+</Note>
+
+## Start, commit, ship {{ tag: 'CHANGES YOUR REPO', variant: 'changes', label: 'chamoji ws', icon: 'stack' }}
+
+<Steps>
+	<Step title="Start it.">
+		`chamoji ws start "Keyboard support" ⌨️` adds the workstream to
+		`.chamoji/workstreams.yml`, stages the file, and makes it active in this
+		worktree.
+	</Step>
+	<Step title="Commit as usual.">
+		While it’s active, each commit made with `git commit -m` or `-F`, or with
+		`chamoji commit`, gets a `Workstream: keyboard-support` line.
+	</Step>
+	<Step title="Ship it.">
+		`chamoji ws ship` marks it shipped in the file, stages the file, and stops
+		adding the line. `chamoji ws drop` marks it dropped instead.
+	</Step>
+	<Step title="Commit the file.">
+		`ws start`, `ws ship` and `ws drop` never commit. Your next commit records
+		the change.
+	</Step>
+	<Step title="Release.">
+		The next release shows the shipped workstream as one Highlight.
+	</Step>
+</Steps>
+
+These are real runs in a small repo called widgets, which already has a `v0.1.0` release and the hook installed:
+
+<CodeGroup title="Start and commit">
+
+```txt {{ title: 'ws start' }}
+$ chamoji ws start "Keyboard support" ⌨️
+Started keyboard-support. Staged .chamoji/workstreams.yml; your next commit records it.
+New commits in this worktree get "Workstream: keyboard-support".
+```
+
+```txt {{ title: 'git commit -m' }}
+$ git commit -m "✨ Move between days with the arrow keys"
+[main 73c619f] ✨ Move between days with the arrow keys
+ 2 files changed, 8 insertions(+)
+ create mode 100644 .chamoji/workstreams.yml
+ create mode 100644 src/days.js
+$ git log -1 --format=%B
+✨ Move between days with the arrow keys
+
+Workstream: keyboard-support
+```
+
+```txt {{ title: 'ws' }}
+$ chamoji ws
+* keyboard-support  active  ⌨️ Keyboard support  3 commits
+```
+
+</CodeGroup>
+
+`*` marks the active workstream. Three commits since the last tag carry its line. Now ship it:
+
+```txt {{ title: 'chamoji ws ship' }}
+Shipped keyboard-support. Staged .chamoji/workstreams.yml; your next commit records it.
+Saved 3 commits to memory.
+```
+
+The changelog reads the committed file, so until you commit the ship, the commits are still listed loose:
+
+```txt {{ title: 'chamoji changelog --since v0.1.0' }}
+# Changelog
+
+## Unreleased
+
+### Added
+
+- ✨ Jump to the first day with Home (360d510)
+- ✨ Move between days with the arrow keys (73c619f)
+…
+```
+
+Commit it with `git commit -m "🔧 Ship keyboard support"`, and run `chamoji release`. The release’s section in `CHANGELOG.md` opens with the Highlight:
+
+```txt {{ title: 'CHANGELOG.md' }}
+## v0.2.0 - 2026-11-05
+
+### Highlights
+
+- ⌨️ **Keyboard support**
+  - ✨ Jump to the first day with Home (360d510)
+  - ✨ Move between days with the arrow keys (73c619f)
+  - 🐛 Trap focus inside the dialog (ec02bc2)
+
+### Added
+
+- ✨ **picker:** Move between months with Page Up and Page Down (f553368)
+
+### Changed
+
+- 🔧 Ship keyboard support (8e496c1)
+- ♿️ Label the day buttons (0792561)
+
+### Fixed
+
+- 🐛 Return null for an empty date (6f99029)
+```
+
+“Label the day buttons” was written in the editor during the workstream, so it has no `Workstream:` line and stays loose. [What gets stamped](#what-gets-stamped) explains why.
+
+## When it becomes a Highlight {{ icon: 'changelog' }}
+
+- **Only shipped workstreams fold.** Commits of a workstream that is still active, or dropped, are listed as usual.
+- **As of that release.** chamoji reads `.chamoji/workstreams.yml` as it was at each release’s tag, and for Unreleased at `HEAD`. So a workstream folds from the release that marked it shipped. Earlier releases don’t change, and its commits in an earlier release stay loose.
+- **Breaking commits stay out.** A breaking commit stays under Breaking changes, so it can’t be missed.
+- **The committed file counts.** A ship that is only staged doesn’t show yet. Commit it before you preview the changelog.
+
+A `description` in the file shows after the title:
+
+```txt {{ title: 'chamoji changelog --since v0.1.0' }}
+…
+### Highlights
+
+- ⌨️ **Keyboard support:** Use the whole picker without a mouse.
+  - ✨ Jump to the first day with Home (360d510)
+  - ✨ Move between days with the arrow keys (73c619f)
+  - 🐛 Trap focus inside the dialog (ec02bc2)
+…
+```
+
+## What’s shared and what’s local {{ icon: 'folder' }}
+
+`.chamoji/workstreams.yml` is committed, so the team shares each workstream’s title, emoji, description, status and links. `ws start` writes the title, emoji and status, and `ws ship` and `ws drop` change the status. With a description and a link added by hand, it looks like this:
+
+```txt {{ title: '.chamoji/workstreams.yml' }}
+workstreams:
+  keyboard-support:
+    title: Keyboard support
+    emoji: ⌨️
+    status: shipped
+    description: Use the whole picker without a mouse.
+    links:
+      - https://github.com/acme/widgets/issues/12
+```
+
+The links appear in `chamoji ws --json` and in the JSON changelog, not in the Markdown or HTML one.
+
+Which workstream is active is local. It lives in `.git/chamoji/active`, one per worktree, so two worktrees can work on two workstreams at once. Change it with `chamoji ws switch <slug>`, or clear it with `chamoji ws switch --none` to commit something unrelated.
+
+## What gets stamped {{ icon: 'git-commit' }}
+
+**Stamped:** commits made with `git commit -m` or `-F`, an amend with `-m` (the hook can’t tell it apart), and `chamoji commit`, including a message the composer writes through the hook.
+
+```txt {{ title: 'git commit -F msg.txt' }}
+$ git log -1 --format=%B
+✨ Jump to the first day with Home
+
+Workstream: keyboard-support
+```
+
+**Not stamped:** merges, squashes, amends without `-m`, rebases, cherry-picks and reverts. A `-m` subject that starts `Revert "` or `Reapply "` isn’t stamped either, because a clean `git revert` looks the same to the hook.
+
+**Editor commits aren’t stamped.** The hook runs before the editor opens, and adding a line to an empty message would stop git from aborting when you quit the editor. So for a plain `git commit` whose message you write in the editor, the hook prints a notice:
+
+```txt {{ title: 'git commit' }}
+chamoji: editor commits aren't stamped; add "Workstream: keyboard-support" to the message, or use -m or chamoji commit.
+[main 0792561] ♿️ Label the day buttons
+ 1 file changed, 1 insertion(+)
+ create mode 100644 src/label.js
+```
+
+Add the `Workstream:` line yourself, or use `-m` or `chamoji commit`. A message from a `commit.template` works the same way.
+
+**In a fresh clone,** no hook runs chamoji until you install it. `ws start` and `ws switch` read the hook git would run, including one set up through husky or lefthook, and say so:
+
+```txt {{ title: 'chamoji ws start "Time zones" 🌍' }}
+Started time-zones. Staged .chamoji/workstreams.yml; your next commit records it.
+chamoji: no hook runs chamoji here, so `git commit` won't add "Workstream: time-zones". Run `chamoji hook install`, or commit with `chamoji commit`.
+```
+
+They never install a hook for you.
+
+## Squash merges {{ icon: 'git-merge' }}
+
+chamoji reads `Workstream:` lines anywhere in a commit’s body. A squash that mixes workstreams gets the first one it finds. Whether the line survives a squash on GitHub depends on the repo’s squash message setting:
+
+| GitHub’s squash message               | The `Workstream:` line                      |
+| ------------------------------------- | ------------------------------------------- |
+| Default message                       | Kept                                        |
+| Pull request title and commit details | Kept                                        |
+| Pull request title and description    | Kept only if you add it to the description  |
+| Pull request title                    | Dropped, unless you add it in the merge box |
+
+Commits that lose the line land outside their Highlight. `chamoji setup` checks this setting when it can, and recommends one of the first two.
+
+## What it leaves behind {{ icon: 'notebook' }}
+
+`ws ship` and `ws drop` also save a summary of the workstream to project memory: its title, status, and its commits with their intent cards. It survives deleting the branch and a squash merge. The summary comes from the commits on `HEAD`, so run them on the branch that holds the work. [Project memory](/guides/project-memory) shows how to read it back.
+
+## Related {{ anchor: false }}
+
+<Guides>
+	<Guide href="/commands/ws" name="ws">
+		Every subcommand, flag and exit code.
+	</Guide>
+	<Guide href="/commands/hook" name="hook">
+		The hook that adds the Workstream line.
+	</Guide>
+	<Guide href="/guides/project-memory" name="Project memory">
+		What shipped and dropped workstreams leave behind.
+	</Guide>
+	<Guide href="/commands/changelog" name="changelog">
+		Preview the changelog, Highlights included.
+	</Guide>
+</Guides>

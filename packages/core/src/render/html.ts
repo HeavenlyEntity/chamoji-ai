@@ -1,4 +1,4 @@
-import type {Changelog, ParsedCommit} from '../types.js';
+import type {Changelog, Group, ParsedCommit} from '../types.js';
 import {
 	commitLink,
 	DEPENDENCY_EMOJI,
@@ -54,18 +54,29 @@ export function renderHtml(changelog: Changelog): string {
 			`<h2>${link ? anchor(link, version) : version}${date}</h2>`,
 		);
 
+		if (release.highlights?.length) {
+			out.push('<h3>Highlights</h3>');
+			for (const highlight of release.highlights) {
+				out.push(
+					'<details>',
+					`<summary>${highlight.emoji ? `${escapeHtml(highlight.emoji)} ` : ''}<strong>${escapeHtml(highlight.title)}</strong></summary>`,
+				);
+				if (highlight.description) {
+					out.push(`<p>${escapeHtml(highlight.description)}</p>`);
+				}
+
+				out.push('<ul>');
+				for (const group of highlight.groups) {
+					out.push(...groupItems(group, url));
+				}
+
+				out.push('</ul>', '</details>');
+			}
+		}
+
 		for (const group of release.groups) {
 			out.push(`<h3>${escapeHtml(group.label)}</h3>`, '<ul>');
-			if (group.collapse) {
-				out.push(
-					`<li>${DEPENDENCY_EMOJI} ${escapeHtml(summarizeDependencies(group.commits))}</li>`,
-				);
-			} else {
-				for (const commit of group.commits) {
-					out.push(`<li>${renderCommit(commit, url)}</li>`);
-				}
-			}
-
+			out.push(...groupItems(group, url));
 			out.push('</ul>');
 		}
 
@@ -74,6 +85,15 @@ export function renderHtml(changelog: Changelog): string {
 
 	out.push('</body>', '</html>', '');
 	return out.join('\n');
+}
+
+/** A group as `<li>` lines: one summary when collapsed, else a line per commit. */
+function groupItems(group: Group, url: string | undefined): string[] {
+	return group.collapse
+		? [
+				`<li>${DEPENDENCY_EMOJI} ${escapeHtml(summarizeDependencies(group.commits))}</li>`,
+			]
+		: group.commits.map(commit => `<li>${renderCommit(commit, url)}</li>`);
 }
 
 function renderCommit(commit: ParsedCommit, url: string | undefined): string {
@@ -88,8 +108,12 @@ function renderCommit(commit: ParsedCommit, url: string | undefined): string {
 				: escapeHtml(part.text),
 		)
 		.join('');
-	const hash = `<code>${escapeHtml(commit.shortHash)}</code>`;
-	return `${emoji ? `${escapeHtml(emoji)} ` : ''}${scope}${description} (${
-		url ? anchor(commitLink(commit, url), hash) : hash
-	})`;
+	const code = `<code>${escapeHtml(commit.shortHash)}</code>`;
+	// A line chamoji writes itself, such as a Dependencies line, has no commit.
+	const hash = commit.shortHash
+		? ` (${url ? anchor(commitLink(commit, url), code) : code})`
+		: '';
+	return `${emoji ? `${escapeHtml(emoji)} ` : ''}${scope}${description}${hash}${
+		commit.via ? ` (via <code>${escapeHtml(commit.via)}</code>)` : ''
+	}`;
 }

@@ -1,0 +1,14 @@
+{
+  "status": "dry-run",
+  "version": "0.2.0",
+  "tag": "v0.2.0",
+  "bump": "minor",
+  "from": "v0.1.0",
+  "files": [
+    "CHANGELOG.md",
+    "packages/cli/package.json",
+    "packages/core/package.json"
+  ],
+  "warnings": [],
+  "notes": "## v0.2.0 - <today>\n\n### Added\n\n- ✨ Render the changelog (10dd5b0)\n- ✨ Read commits from git (d10979d)\n\n### Changed\n\n- ♻️ Split the runner (75d81db)\n\n### Fixed\n\n- 🐛 Fix the empty range crash (#4) (7aea4c2)\n\n### Documentation\n\n- 📝 Write the usage section (6feb5f3)\n\n### Miscellaneous\n\n- Tidy things up (3da99cb)"
+}

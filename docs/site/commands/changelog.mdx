@@ -1,0 +1,337 @@
+export const metadata = {
+	title: 'chamoji changelog',
+	description:
+		'Write a changelog from your git history, as Markdown, JSON or HTML, for the whole history, one branch or one release.',
+};
+
+# `chamoji changelog`
+
+<p className="lead">
+	Write a changelog from your git history. Each release tag becomes a section,
+	and the commits since the last one become Unreleased. It prints Markdown to
+	stdout, or JSON or HTML. It never commits or tags anything.
+</p>
+
+<Tag variant="mono">MONOREPO-AWARE</Tag>
+<Tag variant="ci">--format json FOR CI AND AGENTS</Tag>
+
+<Note>
+	`--output` replaces the whole file. To add one release’s section to an
+	existing CHANGELOG.md and leave older entries alone, use `chamoji release`.
+</Note>
+
+## What it does, in order {{ icon: 'list-numbers' }}
+
+<Steps>
+	<Step title="Finds the releases.">
+		The release tags in the history of `HEAD`, or of the ref you give with
+		`--to`, newest first.
+	</Step>
+	<Step title="Collects the commits.">
+		Each release gets the commits since the tag before it. The commits since the
+		last tag form the Unreleased section.
+	</Step>
+	<Step title="Sorts them.">
+		Into sections such as Added, Fixed and Documentation, from the gitmoji, the
+		Conventional type or the wording. A shipped workstream becomes one
+		Highlight, and dependency updates become one line.
+	</Step>
+	<Step title="Prints it.">
+		Markdown to stdout, unless `--format` or `--output` say otherwise.
+	</Step>
+</Steps>
+
+[How commits are read](/reference/how-commits-are-read) has the rules for each step.
+
+## Arguments
+
+`chamoji changelog` takes no arguments.
+
+## Flags {{ badge: '11', icon: 'flag' }}
+
+<Properties>
+	<Property name="--format <name>" type="string · default markdown">
+		`markdown`, `md` (the same), `json` or `html`. Anything else exits 1. Works
+		with every other flag. With `--for-tag`, `json` and `html` are built from
+		the history, and Markdown is the notes as the release committed them.
+	</Property>
+	<Property name="--output <file>, -o" type="string">
+		Write to this file instead of stdout, and say `Wrote <file>` on stderr. The
+		path is from the current folder, and the file is replaced. Works with every
+		other flag.
+	</Property>
+	<Property name="--from <tag>" type="string">
+		Leave out this release and everything older. The tag must be a release in
+		the history, or it exits 1. Combines with `--to` and `--release`. Not with
+		`--since`, `--unit` or `--for-tag`.
+	</Property>
+	<Property name="--to <ref>" type="string · default HEAD">
+		Treat this ref as the head of history. Commits and tags after it are left
+		out. Combines with `--from`, `--release` and `--since`. With `--unit` or
+		`--for-tag`, any ref other than `HEAD` exits 1.
+	</Property>
+	<Property name="--release <version>" type="semver">
+		Name and date the Unreleased section with this version, as when you cut a
+		release. Its compare link points at the tag it will get, `v<version>` when
+		your tags use a `v`. A version that isn’t semver exits 1. Not with
+		`--since`, `--unit` or `--for-tag`.
+	</Property>
+	<Property name="--since <ref>" type="string">
+		Only the commits after this ref, as one Unreleased section, with no older
+		releases. For previewing a branch: `--since origin/main`. Combines with
+		`--to`. Not with `--from`, `--release`, `--unit` or `--for-tag`.
+	</Property>
+	<Property name="--config <file>" type="string · default chamoji.config.json">
+		Read this config file instead, from a path relative to the current folder.
+		Without it, chamoji reads `chamoji.config.json` in the current folder, not
+		at the repo root, so run chamoji from the root. A file that doesn’t exist
+		exits 1.
+	</Property>
+	<Property name="--ai" type="boolean">
+		Sort the commits no rule can place with Jev, TypeSafe’s classification
+		model. Needs `TYPESAFE_API_KEY`, or it exits 1. Works with every other flag.
+		[Sorting with AI](/guides/sorting-with-ai) says what is sent.
+	</Property>
+	<Property name="--unit <name>" type="string · monorepos" since="0.13.0">
+		This unit’s releases, read from its own tags. Only in a repo with release
+		units, where `changelog` needs this or `--for-tag`. It takes one unit. Not
+		with `--for-tag`, `--from`, `--to`, `--release` or `--since`.
+	</Property>
+	<Property name="--for-tag <tag>" type="string · monorepos" since="0.13.0">
+		Only the release with this tag, from the unit whose tag format fits it. In
+		Markdown, the notes are the ones the release committed. Units in a fixed
+		group that share the tag get a section each. Only in a repo with release
+		units. Not with `--unit`, `--from`, `--to`, `--release` or `--since`.
+	</Property>
+	<Property name="--no-update-check" type="boolean">
+		Don’t check npm for a newer chamoji. See [the update
+		notice](/install#the-update-notice).
+	</Property>
+</Properties>
+
+## Common combinations
+
+<Resources>
+	<Resource name="chamoji changelog --output CHANGELOG.md" icon="file-md" code>
+		Write the whole history to a file.
+	</Resource>
+	<Resource name="chamoji changelog --since origin/main" icon="git-merge" code>
+		Preview what this branch adds.
+	</Resource>
+	<Resource name="chamoji changelog --release 1.4.0" icon="tag" code>
+		Name and date the next section before you tag it.
+	</Resource>
+	<Resource name="chamoji changelog --format json" icon="robot" code>
+		Every release and commit, for a script or an agent.
+	</Resource>
+	<Resource
+		name="chamoji changelog --format html --output changelog.html"
+		icon="file-code"
+		code
+	>
+		A page you can publish as it is.
+	</Resource>
+	<Resource
+		name="chamoji changelog --for-tag web/v1.4.0"
+		icon="tree-structure"
+		code
+	>
+		One unit’s release notes, as the release wrote them.
+	</Resource>
+</Resources>
+
+To name the next section with the version chamoji picks:
+
+```bash
+version=$(chamoji next-version) && chamoji changelog --release "$version" -o CHANGELOG.md
+```
+
+## Output {{ icon: 'terminal-window' }}
+
+These are from real runs in a small repo called widgets, with one release, `v0.1.0`, and three commits since:
+
+```txt {{ title: 'chamoji changelog' }}
+# Changelog
+
+## Unreleased
+
+### Added
+
+- ✨ Add a range mode to the date picker (3565b84)
+
+### Fixed
+
+- 🐛 Close the dialog on Escape (a13acb6)
+
+### Maintenance
+
+- ✅ Test the range mode (d6e8b65)
+
+## v0.1.0 - 2026-11-05
+
+### Added
+
+- ✨ Add the date picker (937b3c6)
+- 🎉 Begin the widgets project (aabb7e9)
+
+### Fixed
+
+- 🐛 Fix focus in the dialog (7776906)
+
+### Documentation
+
+- 📝 Explain the picker's props in the readme (0f7511f)
+```
+
+`--release` names the Unreleased section and dates it today:
+
+```txt {{ title: 'chamoji changelog --release 0.2.0' }}
+# Changelog
+
+## 0.2.0 - 2026-11-05
+
+### Added
+
+- ✨ Add a range mode to the date picker (3565b84)
+
+…
+```
+
+`--format json` gives every release, with each commit’s parsed parts:
+
+```txt {{ title: 'chamoji changelog --format json' }}
+{
+  "releases": [
+    {
+      "version": "Unreleased",
+      "tag": null,
+      "previousTag": "v0.1.0",
+      "date": null,
+      "bump": "minor",
+      "nextVersion": "0.2.0",
+      "groups": [
+        {
+          "group": "added",
+          "label": "Added",
+          "commits": [
+            {
+              "hash": "3565b847f8828bc2c23612d842e359e58b137630",
+              "shortHash": "3565b84",
+              "authorName": "Robin Lane",
+              "authorEmail": "robin@example.com",
+              "date": "2026-11-05T01:27:34-07:00",
+              "subject": "✨ Add a range mode to the date picker",
+              "body": "",
+              "gitmoji": "sparkles",
+              "gitmojiSource": "gitmoji",
+              "type": null,
+              "scope": null,
+              "description": "Add a range mode to the date picker",
+              "breaking": false,
+              "trailers": []
+            }
+          ]
+        },
+…
+```
+
+In `shop`, a repo whose two apps release on their own, a bare `changelog` asks which unit:
+
+```txt {{ title: 'chamoji changelog' }}
+chamoji: this repo releases units (mobile, web); pass --unit <name> or --for-tag <tag>
+```
+
+`--unit` gives that unit’s releases. A fix in the shared `packages/ui` is listed with each app it rides along with:
+
+```txt {{ title: 'chamoji changelog --unit web' }}
+# Changelog
+
+## 1.2.1 - 2026-11-05
+
+### Changed
+
+- 💄 Round the button corners (11fba80) (via `packages/ui`)
+
+### Fixed
+
+- 🐛 Keep the coupon after a page reload (7175e94)
+
+## 1.2.0 - 2026-11-05
+
+### Added
+
+- ✨ Add the checkout page (ab41693)
+- 🎉 Begin the shop (51bca17)
+
+### Fixed
+
+- 🐛 Fix the button's focus ring (ae44eff) (via `packages/ui`)
+```
+
+`--for-tag` gives one release’s notes, as for its GitHub release:
+
+```txt {{ title: 'chamoji changelog --for-tag web/v1.2.1' }}
+## 1.2.1 - 2026-11-05
+
+### Changed
+
+- 💄 Round the button corners (11fba80) (via `packages/ui`)
+
+### Fixed
+
+- 🐛 Keep the coupon after a page reload (7175e94)
+```
+
+Flags that don’t combine say so:
+
+<CodeGroup title="Errors">
+
+```txt {{ title: '--since and --from' }}
+$ chamoji changelog --since v0.1.0 --from v0.1.0
+chamoji: --since can't be combined with --from or --release
+```
+
+```txt {{ title: '--format' }}
+$ chamoji changelog --format yaml
+chamoji: Unknown format "yaml" (use markdown, json or html)
+```
+
+```txt {{ title: '--unit (shop)' }}
+$ chamoji changelog --unit web --since HEAD~2
+chamoji: --from, --to, --release and --since don't work with --unit or --for-tag
+```
+
+</CodeGroup>
+
+## Exit codes
+
+<Properties>
+	<Property name="0">It printed or wrote the changelog.</Property>
+	<Property name="2">
+		The config’s `release` section is from a newer chamoji.
+	</Property>
+	<Property name="1">
+		Anything else, such as an unknown `--format`, a `--from` tag that isn’t a
+		release, flags that don’t combine, or `--unit` in a repo without release
+		units.
+	</Property>
+</Properties>
+
+[Exit codes](/reference/exit-codes) has every command’s codes.
+
+## Related {{ anchor: false }}
+
+<Guides>
+	<Guide href="/reference/how-commits-are-read" name="How commits are read">
+		How tags become releases and commits become sections.
+	</Guide>
+	<Guide href="/commands/release" name="release">
+		Add the next section to CHANGELOG.md, then commit and tag it.
+	</Guide>
+	<Guide href="/guides/github-action" name="GitHub Action">
+		Release notes on every tag and a preview on every pull request.
+	</Guide>
+	<Guide href="/reference/config" name="Config">
+		Rename sections, or set the repository URL for links.
+	</Guide>
+</Guides>

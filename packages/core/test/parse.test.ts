@@ -128,3 +128,273 @@ test('bang marks breaking for any conventional type', () => {
 		description: 'Note: keep this text',
 	});
 });
+
+test('a Component: prefix becomes the scope, and the rest picks the section', () => {
+	expect(
+		parseCommit(raw('Core: Refactor loops to avoid going behind array bounds')),
+	).toMatchObject({
+		gitmoji: 'recycle',
+		gitmojiSource: 'rule',
+		scope: 'Core',
+		description: 'Refactor loops to avoid going behind array bounds',
+		type: null,
+	});
+	expect(parseCommit(raw('CSS:Tests: Fix tests under CSS Zoom'))).toMatchObject(
+		{
+			gitmoji: 'white_check_mark',
+			scope: 'CSS:Tests',
+			description: 'Fix tests under CSS Zoom',
+		},
+	);
+	expect(parseCommit(raw('No ticket: Fix a crash in .ready()'))).toMatchObject({
+		gitmoji: 'bug',
+		scope: 'No ticket',
+	});
+});
+
+test('a Component: prefix is left alone when the rest says nothing', () => {
+	expect(parseCommit(raw('Note: this is how it works'))).toMatchObject({
+		gitmoji: null,
+		scope: null,
+		description: 'Note: this is how it works',
+	});
+});
+
+test('a kind [tag] picks the section on its own', () => {
+	expect(
+		parseCommit(raw('[bugfix] Validate timezone offset range (#6446)')),
+	).toMatchObject({
+		gitmoji: 'bug',
+		scope: null,
+		description: 'Validate timezone offset range (#6446)',
+	});
+	expect(
+		parseCommit(raw('[feature] Add internal date-default hook')),
+	).toMatchObject({gitmoji: 'sparkles'});
+	expect(parseCommit(raw('[tests] Fix format test date input'))).toMatchObject({
+		gitmoji: 'white_check_mark',
+	});
+	expect(parseCommit(raw('[new locale] ps: Pashto (#6000)'))).toMatchObject({
+		gitmoji: 'sparkles',
+		scope: 'new locale',
+		description: 'ps: Pashto (#6000)',
+	});
+});
+
+test('an area [tag] becomes the scope, and the rest picks the section', () => {
+	expect(
+		parseCommit(raw('[locale] Fix Uzbek past relative time')),
+	).toMatchObject({
+		gitmoji: 'bug',
+		scope: 'locale',
+		description: 'Fix Uzbek past relative time',
+	});
+	expect(parseCommit(raw('[locale] fil: Fix metadata comment'))).toMatchObject({
+		gitmoji: 'bug',
+		scope: 'locale',
+		description: 'fil: Fix metadata comment',
+	});
+	expect(parseCommit(raw('[locale] Uzbek month names'))).toMatchObject({
+		gitmoji: 'globe_with_meridians',
+		scope: 'locale',
+	});
+});
+
+test('another [tag] is read through to the subject behind it', () => {
+	expect(
+		parseCommit(raw('[misc] Clarify locale and format identifiers')),
+	).toMatchObject({
+		gitmoji: null,
+		description: '[misc] Clarify locale and format identifiers',
+	});
+	expect(parseCommit(raw('[pkg] Build 2.31.0 (#6452)'))).toMatchObject({
+		gitmoji: 'bookmark',
+		scope: 'pkg',
+	});
+	expect(parseCommit(raw('[breaking] Drop IE support'))).toMatchObject({
+		gitmoji: 'boom',
+		breaking: true,
+	});
+});
+
+test('Conventional types and gitmojis still win over the new prefixes', () => {
+	expect(parseCommit(raw('fix(core): Refactor loops'))).toMatchObject({
+		gitmoji: 'bug',
+		gitmojiSource: 'type',
+		scope: 'core',
+	});
+	expect(parseCommit(raw('✨ [bugfix] Add a thing'))).toMatchObject({
+		gitmoji: 'sparkles',
+		gitmojiSource: 'gitmoji',
+	});
+});
+
+test('the Workstream trailer names the workstream, whatever its case', () => {
+	expect(
+		parseCommit(raw('✨ Add login', {trailers: 'Workstream: auth-revamp\n'}))
+			.workstream,
+	).toBe('auth-revamp');
+	expect(
+		parseCommit(raw('✨ Add login', {trailers: 'workstream: auth-revamp\n'}))
+			.workstream,
+	).toBe('auth-revamp');
+	expect(
+		parseCommit(raw('✨ Add login', {trailers: 'WORKSTREAM: auth-revamp\n'}))
+			.workstream,
+	).toBe('auth-revamp');
+});
+
+test('a squash body with the trailer mid-body still gives the workstream', () => {
+	// The shape of a real GitHub squash with the default message setting.
+	// Git's own trailer parsing only reads the last paragraph, so it misses
+	// the line.
+	const body = [
+		'* Add login',
+		'',
+		'Workstream: auth-revamp',
+		'',
+		'* Fix the redirect',
+		'',
+		'Workstream: auth-revamp',
+		'',
+		'---------',
+		'',
+		'Co-authored-by: Dev <dev@example.com>',
+	].join('\n');
+	expect(
+		parseCommit(raw('✨ Add login (#12)', {body, trailers: ''})).workstream,
+	).toBe('auth-revamp');
+});
+
+test('a squash that mixes workstreams gets the first one found', () => {
+	const body = 'Workstream: auth-revamp\n\nWorkstream: billing\n';
+	expect(parseCommit(raw('✨ Add login (#12)', {body})).workstream).toBe(
+		'auth-revamp',
+	);
+});
+
+test('the trailer wins over the body', () => {
+	expect(
+		parseCommit(
+			raw('✨ Add login', {
+				trailers: 'Workstream: billing\n',
+				body: 'Workstream: auth-revamp\n',
+			}),
+		).workstream,
+	).toBe('billing');
+});
+
+test('a Workstream line that is not a slug is skipped', () => {
+	expect(
+		parseCommit(raw('✨ Add login', {trailers: 'Workstream: Not A Slug\n'}))
+			.workstream,
+	).toBeUndefined();
+	expect(
+		parseCommit(raw('✨ Add login', {trailers: 'Workstream: \n'})).workstream,
+	).toBeUndefined();
+	expect(
+		parseCommit(
+			raw('✨ Add login', {
+				trailers: 'Workstream: Not A Slug\n',
+				body: 'Workstream: auth-revamp\n',
+			}),
+		).workstream,
+	).toBe('auth-revamp');
+	expect(
+		parseCommit(
+			raw('✨ Add login', {
+				body: 'Workstream: Not A Slug\nWorkstream: billing\n',
+			}),
+		).workstream,
+	).toBe('billing');
+	expect(
+		parseCommit(
+			raw('✨ Add login', {trailers: `Workstream: ${'a'.repeat(65)}\n`}),
+		).workstream,
+	).toBeUndefined();
+});
+
+test('a commit without the trailer has no workstream', () => {
+	expect(parseCommit(raw('✨ Add login')).workstream).toBeUndefined();
+	expect(parseCommit(raw('✨ Add login'))).not.toHaveProperty('workstream');
+	expect(parseCommit(raw('Revert "✨ Add login"'))).not.toHaveProperty(
+		'workstream',
+	);
+	expect(
+		parseCommit(
+			raw('✨ Add login', {
+				body: 'Mentions Workstream: in prose\nNot a Workstream: line.',
+				trailers: 'Refs: #4\n',
+			}),
+		).workstream,
+	).toBeUndefined();
+});
+
+test('a revert keeps the workstream of its own body', () => {
+	expect(
+		parseCommit(
+			raw('Revert "✨ Add login"', {
+				body: 'This reverts commit abc.\n\nWorkstream: auth-revamp\n',
+			}),
+		).workstream,
+	).toBe('auth-revamp');
+});
+
+test('a commit with no card has no card key', () => {
+	expect('card' in parseCommit(raw('✨ Add login'))).toBe(false);
+	expect(
+		'card' in
+			parseCommit(
+				raw('✨ Add login', {
+					body: 'Why this works: prose\n',
+					trailers: 'Refs: #4\n',
+				}),
+			),
+	).toBe(false);
+});
+
+test('a commit with intent lines gets a card', () => {
+	expect(
+		parseCommit(
+			raw('✨ Add login', {
+				trailers: 'Why: users asked\nGotcha: needs a restart\n',
+			}),
+		).card,
+	).toEqual({
+		why: ['users asked'],
+		constraint: [],
+		gotcha: ['needs a restart'],
+		followUp: [],
+	});
+	expect(
+		parseCommit(raw('✨ Add login (#12)', {body: 'Constraint: no new deps\n'}))
+			.card?.constraint,
+	).toEqual(['no new deps']);
+});
+
+test('a revert keeps no card from the commit it reverts', () => {
+	expect('card' in parseCommit(raw('Revert "✨ Add login"'))).toBe(false);
+	expect(
+		'card' in
+			parseCommit(
+				raw('Revert "✨ Add login"', {body: 'This reverts commit abc.\n'}),
+			),
+	).toBe(false);
+});
+
+test('a revert keeps the card of its own body', () => {
+	expect(
+		parseCommit(
+			raw('Revert "✨ Add login"', {
+				body: 'This reverts commit abc.\n\nWhy: it broke sign-in\n',
+			}),
+		).card?.why,
+	).toEqual(['it broke sign-in']);
+});
+
+test('trailers named like inherited properties do not break parsing', () => {
+	const commit = parseCommit(
+		raw('✨ Add login', {trailers: 'constructor: x\n__proto__: x\n'}),
+	);
+	expect('card' in commit).toBe(false);
+});

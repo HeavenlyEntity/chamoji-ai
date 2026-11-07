@@ -1,8 +1,16 @@
 import {
 	GITMOJIS,
 	type CommitClassifier,
+	type JudgmentCache,
 	type ParsedCommit,
 } from '@chamoji/core';
+import {runStep, type Face, type Step} from './face.js';
+
+/**
+ * Names the question and options below. Change it whenever they change, so
+ * cached judgments from the old question are never reused.
+ */
+export const JUDGMENT_VERSION = 'jev-latest:gitmoji-v1';
 
 /** The slice of the TypeSafe client this classifier uses (easy to fake in tests). */
 export type JevClient = {
@@ -26,6 +34,14 @@ export type JevClassifierOptions = {
 	minConfidence?: number;
 	/** Receives one-line progress notes: failures and a final summary. */
 	report?: (line: string) => void;
+	/** Judgments from earlier runs; commits found here aren't sent again. */
+	cache?: JudgmentCache;
+	/**
+	 * Called once with 0 before the first batch, then after each finished
+	 * batch, with the commits sent so far and the number to send, which leaves
+	 * out the ones the cache already knew. Not called when nothing is sent.
+	 */
+	progress?: (done: number, total: number) => void;
 };
 
 /** Characters of each subject and body sent. */
@@ -72,6 +88,8 @@ export function createJevClassifier(
 		// A starting point; tune it against labelled history.
 		minConfidence = 0.6,
 		report,
+		cache,
+		progress,
 	} = options;
 	if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > MAX_BATCH) {
 		throw new RangeError(`batchSize must be an integer from 1 to ${MAX_BATCH}`);
@@ -104,12 +122,11 @@ export function createJevClassifier(
 		const picks: Array<[string, string]> = [];
 		for (const [index, commit] of batch.entries()) {
 			const answer = answers[`commit_${index}`];
-			if (
-				answer &&
-				answer.choice !== NONE &&
-				answer.confidence >= minConfidence
-			) {
-				picks.push([commit.hash, answer.choice]);
+			if (!answer) continue;
+			const gitmoji = answer.choice === NONE ? null : answer.choice;
+			cache?.set(commit.hash, {gitmoji, confidence: answer.confidence});
+			if (gitmoji && answer.confidence >= minConfidence) {
+				picks.push([commit.hash, gitmoji]);
 			}
 		}
 
@@ -117,14 +134,26 @@ export function createJevClassifier(
 	};
 
 	return async commits => {
-		const batches: ParsedCommit[][] = [];
-		for (let start = 0; start < commits.length; start += batchSize) {
-			batches.push(commits.slice(start, start + batchSize));
+		const result = new Map<string, string>();
+		const unknown: ParsedCommit[] = [];
+		for (const commit of commits) {
+			const known = cache?.get(commit.hash);
+			if (!known) {
+				unknown.push(commit);
+			} else if (known.gitmoji && known.confidence >= minConfidence) {
+				result.set(commit.hash, known.gitmoji);
+			}
 		}
 
-		const result = new Map<string, string>();
+		const cached = commits.length - unknown.length;
+		const batches: ParsedCommit[][] = [];
+		for (let start = 0; start < unknown.length; start += batchSize) {
+			batches.push(unknown.slice(start, start + batchSize));
+		}
+
 		let next = 0;
 		let sent = 0;
+		if (unknown.length > 0) progress?.(0, unknown.length);
 		let failure: Error | undefined;
 		// `--ai` only improves the output, so a failed request stops further
 		// requests but keeps what earlier ones returned.
@@ -137,6 +166,7 @@ export function createJevClassifier(
 					}
 
 					sent += batch.length;
+					progress?.(sent, unknown.length);
 				} catch (error) {
 					failure ??= error as Error;
 				}
@@ -148,27 +178,112 @@ export function createJevClassifier(
 		);
 		if (failure) {
 			report?.(
-				`Jev request failed (${failure.message}); ${commits.length - sent} commits left unsorted`,
+				`Jev request failed (${failure.message}); ${unknown.length - sent} commits left unsorted`,
 			);
 		}
 
+		await cache?.save().catch(() => undefined);
 		report?.(
-			`Jev sorted ${result.size} of ${commits.length} commits no rule could place`,
+			`Jev sorted ${result.size} of ${commits.length} commits no rule could place${cached ? ` (${cached} from the cache, not asked again)` : ''}`,
 		);
 		return result;
 	};
 }
 
-const EMAIL = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
+const SORTING = 'Jev is sorting commits';
+
+/**
+ * Shows Jev's work on the face, counting commits as batches come back. Pass
+ * `progress` to createJevClassifier, and `wrap` the classifier it makes.
+ * `host` gives a step the command is already running, such as release's;
+ * Jev then relabels that one and leaves it running, and the host ends it,
+ * with `unsorted` as its warning when there is one. Without one, Jev gets a
+ * step of its own, which ends with a warning when a failed request left
+ * commits unsorted.
+ */
+export function jevFace(
+	face: Face,
+	host: () => Step | undefined = () => undefined,
+): {
+	progress: (done: number, total: number) => void;
+	wrap: (classify: CommitClassifier) => CommitClassifier;
+	/**
+	 * What the last run left unsorted, as a warning, or undefined when it left
+	 * nothing. A host step ends with it, the way Jev's own step does.
+	 */
+	unsorted: () => string | undefined;
+} {
+	let target: Step | undefined;
+	let done = 0;
+	let total = 0;
+	const unsorted = () =>
+		done < total
+			? `Jev left ${total - done} of ${total} commits unsorted`
+			: undefined;
+	return {
+		unsorted,
+		progress(sent, of) {
+			done = sent;
+			total = of;
+			target?.update(`Jev is sorting ${sent} of ${of} commits`);
+		},
+		wrap: classify => async commits => {
+			done = 0;
+			total = 0;
+			const own = host();
+			if (own) {
+				target = own;
+				own.update(SORTING);
+				try {
+					return await classify(commits);
+				} finally {
+					target = undefined;
+				}
+			}
+
+			return runStep(
+				face,
+				SORTING,
+				async step => {
+					target = step;
+					try {
+						return await classify(commits);
+					} finally {
+						target = undefined;
+					}
+				},
+				() => {
+					const left = unsorted();
+					if (left) return {outcome: 'warn', text: left};
+					return {
+						outcome: 'ok',
+						text:
+							total === 0
+								? 'Jev had nothing new to sort'
+								: `Jev sorted ${total} ${total === 1 ? 'commit' : 'commits'}`,
+					};
+				},
+			);
+		},
+	};
+}
+
+/**
+ * A match may only start where a run of address characters starts. Without
+ * the lookbehind the pattern is quadratic on a long run of word characters,
+ * and commit text can hold one. A length cap would do too, but it leaves the
+ * start of a longer address behind.
+ */
+const EMAIL = /(?<![\w.+-])[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
 const TRAILER_LINE = /^[\w-]+:\s/;
 
 /** Replaces email addresses, which often appear in commit text. */
-function redact(text: string): string {
+export function redact(text: string): string {
 	return text.replaceAll(EMAIL, '<email>');
 }
 
 /** Drops the final paragraph when it is all `Key: value` trailer lines. */
-function withoutTrailers(body: string): string {
+export function withoutTrailers(body: string): string {
 	const paragraphs = body.trim().split(/\n\s*\n/);
 	const last = paragraphs.at(-1)?.split('\n') ?? [];
 	if (last.length > 0 && last.every(line => TRAILER_LINE.test(line.trim()))) {

@@ -1,0 +1,330 @@
+export const metadata = {
+	title: 'GitHub Action',
+	description:
+		'Run chamoji in GitHub Actions: release notes on every tag, a changelog preview on every pull request, and releases at the press of a button. Every input, its default and the permissions each job needs.',
+};
+
+# GitHub Action
+
+<p className="lead">
+	The chamoji Action runs the CLI in your workflows. It does three jobs: it
+	writes each pushed tag’s notes to its GitHub release, keeps one changelog
+	preview comment up to date on every pull request, and, when you ask, cuts the
+	whole release. It can also keep your [repo card](/guides/repo-card) up to
+	date.
+</p>
+
+<Tag variant="ci">GITHUB ACTIONS</Tag>
+
+<Note>
+	The Action needs the whole history. Check out with `fetch-depth: 0`. On a
+	shallow clone it stops at once, in every mode, and says so.
+</Note>
+
+## Add it {{ tag: 'CI', variant: 'ci', label: 'changelog.yml', icon: 'github-logo' }}
+
+This workflow gives you release notes and the PR preview. Commit it as `.github/workflows/changelog.yml`:
+
+```yaml {{ title: '.github/workflows/changelog.yml' }}
+name: changelog
+on:
+  pull_request:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write # release notes
+  pull-requests: write # the preview comment
+jobs:
+  chamoji:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # chamoji reads every commit and tag
+      - uses: HeavenlyEntity/chamoji-ai@v0.14.0
+        with:
+          chamoji-version: '0.14.0'
+```
+
+`@v0.14.0` pins the Action itself. The CLI it runs is a separate pin: without `chamoji-version`, the Action runs `npx --yes @chamoji/cli@latest`. The Action sets up Node 22 for the job.
+
+## Which job runs {{ icon: 'sliders' }}
+
+The `mode` input picks the job. The default, `auto`, picks from the event:
+
+- **A pushed tag** runs `notes`.
+- **A pull request** (`pull_request` or `pull_request_target`) runs `comment`.
+- **Any other event** fails with “can’t pick a mode for the … event; set mode to notes, comment, release or card”. A `workflow_dispatch` or `schedule` workflow needs `mode: release` or `mode: card`.
+
+## Release notes {{ tag: 'CI', variant: 'ci', label: 'mode: notes', icon: 'tag' }}
+
+On a pushed tag, the Action writes that release’s notes and puts them on its GitHub release:
+
+<Steps>
+	<Step title="Checks the tag.">
+		Without release units, only a tag that starts with a version, such as
+		`v1.2.3` or `1.2.3`, gets notes. For any other tag it says “isn’t a
+		whole-repo version tag; leaving its release alone” and passes.
+	</Step>
+	<Step title="Writes the notes.">
+		`chamoji changelog` from the previous version tag to this one, without the
+		`# Changelog` title. The first tag gets the whole history.
+	</Step>
+	<Step title="Updates the GitHub release.">
+		If the tag already has a GitHub release, its notes are replaced. Otherwise
+		the Action creates one, titled with the tag. Without release units, it marks
+		it a prerelease when the tag has a hyphen anywhere, such as `v2.0.0-rc.1`.
+	</Step>
+</Steps>
+
+The notes also go to the job summary, and the `version` and `notes-file` outputs name the tag and the file. The job needs `contents: write`.
+
+GitHub doesn’t start workflows for a tag pushed with the job’s own `GITHUB_TOKEN`. So a tag that `mode: release` pushes doesn’t run this job, and doesn’t need to: the release job creates the GitHub release itself.
+
+## The PR preview {{ tag: 'CI', variant: 'ci', label: 'mode: comment', icon: 'git-merge' }}
+
+On every pull request, the Action keeps one comment up to date. It holds the changelog lines the PR’s own commits add, and the version that merging it would make.
+
+This is an example. It’s the text the Action’s script wrote when run on a branch of a small repo called widgets, with three commits on top of `main`:
+
+```txt {{ title: 'The preview comment' }}
+<!-- chamoji-changelog -->
+### Changelog preview
+
+Merging this makes the next release **v0.3.0** (minor).
+
+#### Added
+
+- ✨ Add presets for the last 7 and 30 days (c0f4b6a)
+
+#### Fixed
+
+- 🐛 Clear the range when the dialog closes (5e736fc)
+
+#### Maintenance
+
+- ✅ Test the range presets (53f014d)
+
+<sub>From [chamoji](https://github.com/HeavenlyEntity/chamoji-ai), updated on every push.</sub>
+```
+
+- **The hidden first line** marks the comment, so the next push updates it instead of adding another. The Action only takes over a comment with that line that `comment-author` posted, so a comment that quotes the line is left alone.
+- **The headline** is one of three. With no release tag yet: “There are no release tags yet, so this is part of the first release.” When nothing would release: “Nothing here needs a release on its own: only docs, tests, refactors or similar.” Otherwise: the next version and its bump, as above.
+- **The version** is the one `chamoji next-version` gives at the PR’s head. So it counts the commits already on the base branch that haven’t been released yet, not just the PR’s.
+- **The lines** are only the PR’s own commits, grouped as in the changelog, with each heading one level down. A PR whose commits add no lines says “_No commits in this PR add changelog lines._”
+- **The job summary** always gets the preview too.
+
+The job needs `pull-requests: write`. On a pull request from a fork, the token can’t comment. The Action then warns “couldn’t post the PR comment (a fork PR’s token can’t), so the preview is in the job summary”, and the job passes.
+
+## Releases {{ tag: 'CHANGES YOUR REPO', variant: 'changes', label: 'mode: release', icon: 'rocket-launch' }}
+
+To release at the press of a button, add a second workflow with `mode: release`. This one asks for an optional version:
+
+```yaml {{ title: '.github/workflows/release.yml' }}
+name: release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: The version to release; leave it empty to pick it from the commits
+        required: false
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: HeavenlyEntity/chamoji-ai@v0.14.0
+        with:
+          mode: release
+          release-version: ${{ inputs.version }}
+          chamoji-version: '0.14.0'
+```
+
+The Action sets the commit author to `github-actions[bot]` and runs `chamoji release --push --json`, with the `release-version` and the `unit` when you give them. That makes the `CHANGELOG.md` section, the version bumps, the release commit and the tag, pushes them, and creates the GitHub release. [release](/commands/release) has every step.
+
+- **Nothing to release** (exit 3) passes, with “chamoji: nothing to release since the last tag” in the log and the job summary.
+- **Any other failure** fails the job. A failed check exits 2. The branch check only runs when the clone knows `origin`’s default branch, that is, when `refs/remotes/origin/HEAD` exists, which depends on how the job checks out. When it runs, a release from another branch can exit 2, and the Action doesn’t pass `--any-branch`, so run the workflow on the default branch.
+- **The notes** of each released tag go to the job summary, and the `version` output names the tag.
+- **The push uses the credential `actions/checkout` saved,** the job’s `GITHUB_TOKEN` unless you give checkout a `token`. `github-token` is only for the gh calls, such as creating the GitHub release.
+- **A protected default branch** refuses the bot’s push. Cut releases on your machine with `chamoji release --push`, or give `actions/checkout` a token that may push there.
+- **Other workflows don’t start** for a tag pushed with `GITHUB_TOKEN`. If a separate workflow publishes your package on a tag, publish in this job instead, or give `actions/checkout` a GitHub App or fine-grained token.
+
+## The repo card {{ tag: 'CI', variant: 'ci', label: 'mode: card', icon: 'github-logo' }}
+
+`mode: card` saves an image of your latest release on a branch of its own, for your readme. `auto` never picks it, so give it a workflow of its own, or a step after the release step. [Repo card](/guides/repo-card) has the workflow and what it sends.
+
+## Inputs {{ icon: 'sliders', badge: '11' }}
+
+Every input of `action.yml` at v0.14.0, with its default:
+
+<Properties>
+	<Property name="mode" type="string · default auto">
+		`auto`, `notes`, `comment`, `release` or `card`. `auto` picks `notes` for a
+		pushed tag and `comment` for a pull request, and fails for other events.
+	</Property>
+	<Property name="chamoji-version" type="string · default latest">
+		The `@chamoji/cli` version to run with npx. Pin it, such as `'0.14.0'`, so a
+		new release of the CLI can’t change your notes unannounced. Ignored when
+		`cli` is set.
+	</Property>
+	<Property name="cli" type="string · default empty">
+		A command that runs chamoji instead of npx. A repo that builds chamoji
+		itself can give `node packages/cli/dist/cli.js`. Its words are split on
+		spaces. Give chamoji itself by its full path, such as
+		`/usr/local/bin/chamoji`: a bare `chamoji` doesn’t work in the 0.14.0
+		Action, in any mode. With release units, the PR preview accepts only some
+		commands: see [With release units](#with-release-units).
+	</Property>
+	<Property name="release-version" type="string · default empty">
+		`release` mode only. The version to release, such as `2.0.0` or
+		`2.0.0-rc.1`. Empty lets chamoji pick it from the commits. With release
+		units, it needs `unit`.
+	</Property>
+	<Property name="unit" type="string · default empty" since="0.13.0">
+		`release` mode only, in a repo with release units. Release just this unit.
+		Empty releases every unit that has something to release, as
+		`chamoji release` does. It takes one unit.
+	</Property>
+	<Property name="ai" type="boolean · default false">
+		`true` passes `--ai` to the CLI, so Jev sorts the commits no rule can place.
+		It needs `typesafe-api-key`. With `ai: true` and no key, the jobs that pass
+		`--ai` fail, since the CLI exits 1: `notes`, `release`, and the preview
+		without release units. `card` and the preview with release units never
+		pass `--ai`, so they still run.
+	</Property>
+	<Property name="typesafe-api-key" type="string · default empty">
+		The TypeSafe key for `ai`, such as `${{ secrets.TYPESAFE_API_KEY }}`. The
+		Action passes it to the CLI as `TYPESAFE_API_KEY`.
+	</Property>
+	<Property name="comment-author" type="string · default github-actions[bot]">
+		`comment` mode only. The login that `github-token` acts as, so the Action
+		only updates its own preview comment. Set it when `github-token` is a
+		personal token. It must look like a GitHub login, such as `octocat` or
+		`my-app[bot]`, or the job fails.
+	</Property>
+	<Property name="card-endpoint" type="url · default https://chamoji.dev/api/card">
+		`card` mode only. The renderer that draws the card image.
+	</Property>
+	<Property name="card-branch" type="string · default chamoji-card">
+		`card` mode only. The branch that holds nothing but `card.png`. The Action
+		force-pushes it, so it refuses a branch that holds anything else.
+	</Property>
+	<Property name="github-token" type="string · default the job’s GITHUB_TOKEN">
+		The token for the gh CLI, as `${{ github.token }}` by default. `notes` and
+		`release` need `contents: write` on it. `comment` needs
+		`pull-requests: write`. `card` doesn’t use it: it pushes with the credential
+		that `actions/checkout` saved.
+	</Property>
+</Properties>
+
+## Outputs {{ icon: 'brackets-curly', badge: '3' }}
+
+<Properties>
+	<Property name="version" type="string">
+		The tag that was released or given notes. With release units, every tag
+		released, separated by commas.
+	</Property>
+	<Property name="notes-file" type="path">
+		`notes` mode only. The file that holds the release notes.
+	</Property>
+	<Property name="card-url" type="url">
+		`card` mode only. The image’s raw GitHub address,
+		`https://raw.githubusercontent.com/<owner>/<repo>/<card-branch>/card.png`.
+	</Property>
+</Properties>
+
+## Permissions {{ icon: 'shield' }}
+
+Each job needs `fetch-depth: 0` on `actions/checkout`, and one permission:
+
+| Job       | Permission             | What uses it                                |
+| --------- | ---------------------- | ------------------------------------------- |
+| `notes`   | `contents: write`      | Creating or editing the GitHub release      |
+| `comment` | `pull-requests: write` | Posting and updating the preview comment    |
+| `release` | `contents: write`      | Pushing the commit and tag, and the release |
+| `card`    | `contents: write`      | Pushing the card branch                     |
+
+`card` pushes with the credential `actions/checkout` leaves behind, so `persist-credentials: false` breaks it.
+
+## Sorting with AI in CI {{ icon: 'sparkle' }}
+
+To have Jev sort vague commits in the notes, the preview and releases, add a repository secret and two inputs:
+
+```yaml {{ title: 'with' }}
+- uses: HeavenlyEntity/chamoji-ai@v0.14.0
+  with:
+    ai: true
+    typesafe-api-key: ${{ secrets.TYPESAFE_API_KEY }}
+```
+
+`ai` applies to `notes`, `release`, and the preview in a repo without release units. It doesn’t apply to `card`, which counts what the rules sort, or to the preview in a repo with release units, which never gets your secrets. [Sorting with AI](/guides/sorting-with-ai) says what is sent.
+
+## With release units {{ tag: 'MONOREPOS', variant: 'mono', label: 'unit', icon: 'tree-structure' }}
+
+In a repo with release units, each job works per unit. [Monorepos](/guides/monorepos) explains units.
+
+- **The CLI version.** When `chamoji.config.json` has any `release` section, the Action first checks that the CLI is 0.13.0 or newer, and otherwise fails with “this repo’s release settings need chamoji 0.13.0 or newer; set chamoji-version”.
+- **Release notes.** On a pushed tag, the Action finds the unit whose tag format the tag fits, and writes that release’s notes with `chamoji changelog --for-tag`. A tag that fits no unit fails the job. The release is a prerelease only when a hyphen follows the version’s `x.y.z`, as in `web/v2.0.0-rc.1`, so a hyphen in a unit’s name, as in `web-v1.0.0`, doesn’t count. Unit tags such as `web/v1.3.0` don’t match `tags: ['v*']`, so list them in the trigger, for example `tags: ['v*', '*/v*']`.
+- **Releases.** `unit` releases just that unit. Without it, every unit with something to release goes in one release commit, with the tags and GitHub releases that `chamoji release --push` makes.
+- **The preview** lists only the units the PR touches, with the release merging it would make.
+
+This is an example of the preview, from the Action’s script run on a branch of a shop with two apps. The branch adds a mobile feature and a fix in a shared package:
+
+```txt {{ title: 'The preview comment' }}
+<!-- chamoji-changelog -->
+### Changelog preview
+
+After merging, the next releases would be:
+
+- mobile → 1.2.0
+- web → 1.4.0 (rides along with its next release)
+
+#### mobile 1.2.0
+
+##### Added
+
+- ✨ Add the wishlist screen (f3ec8f7)
+
+##### Fixed
+
+- 🐛 Keep the button label on one line (d9cadbf) (via `packages/ui`)
+
+#### web 1.4.0
+
+##### Fixed
+
+- 🐛 Keep the button label on one line (d9cadbf) (via `packages/ui`)
+
+<sub>From [chamoji](https://github.com/HeavenlyEntity/chamoji-ai), updated on every push.</sub>
+```
+
+“Rides along” means the PR adds only shared lines to that unit. Web’s next version is 1.4.0 because `main` already has a web feature waiting. A PR that adds nothing to any unit says “This PR adds nothing to any unit’s release notes.”
+
+**The preview runs safely on untrusted code.** It runs the CLI in a separate checkout of the PR’s head, with a short list of environment variables and none of your secrets, and without `--ai`. So the `cli` input must be one of these:
+
+- unset, so the Action installs `@chamoji/cli` at `chamoji-version` without running its install scripts;
+- `node` with a built CLI file in your workspace, such as `node packages/cli/dist/cli.js`;
+- the chamoji command by its full path, such as `/usr/local/bin/chamoji`. A bare `chamoji` doesn’t work in the 0.14.0 Action.
+
+Anything else, such as `npx`, a shell wrapper or `tsx`, is refused, and so is an option word such as `--require`.
+
+## Related {{ anchor: false }}
+
+<Guides>
+	<Guide href="/guides/repo-card" name="Repo card">
+		Keep an image of your latest release in your readme.
+	</Guide>
+	<Guide href="/commands/release" name="release">
+		What the release job runs, step by step.
+	</Guide>
+	<Guide href="/guides/monorepos" name="Monorepos">
+		Units, their tags, and which commits belong to each.
+	</Guide>
+	<Guide href="/guides/sorting-with-ai" name="Sorting with AI">
+		What `ai: true` sends, and what it never changes.
+	</Guide>
+</Guides>

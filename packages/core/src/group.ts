@@ -2,6 +2,7 @@ import type {Group, GroupConfig, ParsedCommit} from './types.js';
 
 const BREAKING_GROUP = 'breaking_changes';
 const FALLBACK_GROUP = 'misc';
+const SYNC_GROUP = 'changed';
 
 /**
  * Sorts commits into the configured sections. Breaking commits go to
@@ -24,11 +25,20 @@ export function groupCommits(
 		}
 	}
 
+	// Where a sync goes: Changed, else the first group that is shown and not collapsed.
+	const syncGroup = buckets.has(SYNC_GROUP)
+		? SYNC_GROUP
+		: config.find(item => !item.hidden && !item.collapse)?.group;
+
 	for (const commit of commits) {
+		// A sync is its own line, never part of a collapsed group.
 		const target =
-			commit.breaking && buckets.has(BREAKING_GROUP)
-				? BREAKING_GROUP
-				: (commit.gitmoji && groupByCode.get(commit.gitmoji)) || FALLBACK_GROUP;
+			commit.sync && syncGroup !== undefined
+				? syncGroup
+				: commit.breaking && buckets.has(BREAKING_GROUP)
+					? BREAKING_GROUP
+					: (commit.gitmoji && groupByCode.get(commit.gitmoji)) ||
+						FALLBACK_GROUP;
 		buckets.get(target)?.push(commit);
 	}
 

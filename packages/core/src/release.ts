@@ -2,7 +2,13 @@ import {readFile, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import semver from 'semver';
 import {buildChangelog} from './changelog.js';
-import {assertGitRepo, assertRevision, listReleaseTags, runGit} from './git.js';
+import {
+	assertGitRepo,
+	assertRevision,
+	isAuthFailure,
+	listReleaseTags,
+	runGit,
+} from './git.js';
 import {renderMarkdown} from './render/markdown.js';
 import type {
 	ChamojiConfig,
@@ -51,6 +57,16 @@ export type ReleaseOptions = {
 	/** `YYYY-MM-DD` for the new section; defaults to the current UTC date. */
 	today?: string;
 	classify?: CommitClassifier;
+	/** Called just before the tags are fetched from origin. */
+	onStep?: (step: 'fetch-tags') => void;
+	/** Added to the environment of the tag fetches, nothing else. */
+	env?: Record<string, string>;
+	/**
+	 * Called when a tag fetch run with `env` failed for lack of credentials,
+	 * just before it is tried once more without `env`, where git may ask. The
+	 * retry waits for it.
+	 */
+	onCredentials?: () => void | Promise<void>;
 };
 
 export type FileChange = {file: string; text: string; how: string};
@@ -77,13 +93,13 @@ export type ReleasePlan =
 	{status: 'nothing'; lastTag: string; unreleased: string[]} | ReadyPlan;
 
 /**
- * Works out a release without changing anything: checks the repository,
- * picks the version, renders the notes and computes every file change.
+ * The checks every release makes before it plans anything: a git repo with a
+ * commit, a clean working tree, the default branch, full history, and tags
+ * fetched from origin. Returns the repository root and any warnings.
  */
-export async function planRelease(
+export async function preflight(
 	options: ReleaseOptions,
-): Promise<ReleasePlan> {
-	const {config} = options;
+): Promise<{root: string; warnings: string[]}> {
 	await assertGitRepo(options.cwd);
 	await assertRevision(options.cwd, 'HEAD');
 	const root = (
@@ -91,6 +107,19 @@ export async function planRelease(
 	).trim();
 	const git = async (...args: string[]) => (await runGit(args, root)).trim();
 	const tryGit = async (...args: string[]) => git(...args).catch(() => null);
+	const fetchTags = async (...args: string[]) => {
+		options.onStep?.('fetch-tags');
+		const fetch = async (env?: Record<string, string>) =>
+			(await runGit(['fetch', '--quiet', ...args], root, env)).trim();
+		try {
+			return await fetch(options.env);
+		} catch (error) {
+			if (!options.env || !isAuthFailure(error)) throw error;
+			// Nothing was fetched, so trying again is safe.
+			await options.onCredentials?.();
+			return fetch();
+		}
+	};
 	const warnings: string[] = [];
 
 	const dirty = await git('status', '--porcelain');
@@ -116,7 +145,7 @@ export async function planRelease(
 	}
 
 	if ((await git('rev-parse', '--is-shallow-repository')) === 'true') {
-		if ((await tryGit('fetch', '--quiet', '--unshallow', '--tags')) === null) {
+		if ((await fetchTags('--unshallow', '--tags').catch(() => null)) === null) {
 			throw new ReleaseError(
 				'shallow',
 				'this is a shallow clone and fetching the full history failed; chamoji needs every commit and tag (in CI, check out with fetch-depth: 0)',
@@ -125,10 +154,24 @@ export async function planRelease(
 	} else if (
 		options.fetch !== false &&
 		(await tryGit('remote', 'get-url', 'origin')) !== null &&
-		(await tryGit('fetch', '--quiet', '--tags')) === null
+		(await fetchTags('--tags').catch(() => null)) === null
 	) {
 		warnings.push('could not fetch tags from origin; used the local tags');
 	}
+
+	return {root, warnings};
+}
+
+/**
+ * Works out a release without changing anything: checks the repository,
+ * picks the version, renders the notes and computes every file change.
+ */
+export async function planRelease(
+	options: ReleaseOptions,
+): Promise<ReleasePlan> {
+	const {config} = options;
+	const {root, warnings} = await preflight(options);
+	const git = async (...args: string[]) => (await runGit(args, root)).trim();
 
 	const tags = await listReleaseTags(root, 'HEAD');
 	const lastTag = tags[0]?.name ?? null;
@@ -199,6 +242,7 @@ export async function planRelease(
 		date: today,
 		bump: unreleased?.bump ?? null,
 		nextVersion: null,
+		...(unreleased?.highlights ? {highlights: unreleased.highlights} : {}),
 		groups: unreleased?.groups ?? [],
 	};
 	const notes = stripTitle(renderMarkdown({...changelog, releases: [section]}));
@@ -303,9 +347,16 @@ export async function applyRelease(
 }
 
 /** Pushes HEAD and the release tag, by name, to origin. A failure keeps the local release. */
-export async function pushRelease(plan: ReadyPlan): Promise<void> {
+export async function pushRelease(
+	plan: ReadyPlan,
+	env?: Record<string, string>,
+): Promise<void> {
 	try {
-		await runGit(['push', '--quiet', 'origin', 'HEAD', plan.tag], plan.root);
+		await runGit(
+			['push', '--quiet', 'origin', 'HEAD', plan.tag],
+			plan.root,
+			env,
+		);
 	} catch (error) {
 		throw new Error(
 			`released ${plan.tag} locally, but the push failed; the release commit and tag are kept:\n${gitMessage(error)}`,
@@ -313,12 +364,14 @@ export async function pushRelease(plan: ReadyPlan): Promise<void> {
 	}
 }
 
-function gitMessage(error: unknown): string {
+/** What git printed on stderr, else the error's message. */
+export function gitMessage(error: unknown): string {
 	const {stderr, message} = error as Error & {stderr?: string};
 	return stderr?.trim() || message;
 }
 
-function stripTitle(markdown: string): string {
+/** A rendered changelog without its `# Changelog` title, trimmed. */
+export function stripTitle(markdown: string): string {
 	return markdown.replace(/^# Changelog\s*\n/, '').trim();
 }
 

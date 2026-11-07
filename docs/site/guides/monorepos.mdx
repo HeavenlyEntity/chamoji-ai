@@ -1,0 +1,569 @@
+export const metadata = {
+	title: 'Monorepos',
+	description:
+		'Give each app or package in a monorepo its own version, tag, changelog and GitHub release: which commits belong where, shared changes, tags, version files and template history.',
+};
+
+# Monorepos
+
+<p className="lead">
+	By default chamoji treats a repo as one package. When the apps or packages in
+	a monorepo ship on their own, add a `release` section to
+	`chamoji.config.json`. Each app or package then becomes a unit, with its own
+	version, tag, changelog and GitHub release. This guide shows how the pieces
+	fit, with real runs in three small repos.
+</p>
+
+<Tag variant="mono">MONOREPOS</Tag>
+<Tag variant="setup">SINCE 0.13.0</Tag>
+
+<Note>
+	chamoji reads `chamoji.config.json` in the current folder, not at the repo
+	root, so run chamoji from the root. From `apps/web`, `next-version` gives a
+	single-package answer.
+</Note>
+
+A `release` section needs chamoji 0.13.0 or newer. See [Older versions of the CLI](#older-versions-of-the-cli).
+
+## One package, or many {{ icon: 'package' }}
+
+Without a `release` section, a repo has one version, one `v*` tag and one `CHANGELOG.md`. That is also right for a monorepo whose packages ship together. Such a repo gets the same versions, tags, changelog and release commit as with chamoji 0.12.0. The only addition is a note, once per clone, from `next-version` or `release` in a repo with two or more packages under `apps/`:
+
+```txt {{ title: 'chamoji release --dry-run' }}
+chamoji: this looks like a monorepo with several apps; run chamoji setup to version each one
+…
+```
+
+It never shows under `--json` or in CI.
+
+With a `release` section, each unit releases on its own. A unit releases when:
+
+- it has an own commit that implies a version bump;
+- you name it with `--unit`, or give it a version;
+- a commit since its last tag has a `Release:` line that names it;
+- under `release-dependents`, it has a shared commit that implies a bump;
+- another unit in its `fixed` group releases;
+- under `release-dependents`, a unit it depends on releases.
+
+Otherwise it isn’t released, and its waiting changes go in its next release. `--unit` limits every case but a `fixed` group.
+
+`chamoji setup` writes the section for you, as [Set up a repo](/set-up-a-repo) shows. This guide explains what it writes, for reading it or writing it by hand. [Config](/reference/config#the-release-section) lists every key.
+
+## An app monorepo {{ tag: 'MONOREPOS', variant: 'mono', label: 'shape: apps', icon: 'tree-structure' }}
+
+The first example is a shop with two apps, `apps/web` and `apps/mobile`, an end-to-end test app in `apps/e2e`, and a shared package in `packages/ui`. The mobile app is an Expo app with an `app.config.ts`. This is what `chamoji setup releases --yes` wrote:
+
+```txt {{ title: 'chamoji.config.json' }}
+{
+  "release": {
+    "schema": 1,
+    "shape": "apps",
+    "units": {
+      "mobile": {
+        "path": "apps/mobile",
+        "tag": "mobile/v{version}",
+        "versionFiles": [
+          "apps/mobile/app.config.ts"
+        ]
+      },
+      "web": {
+        "path": "apps/web",
+        "tag": "web/v{version}"
+      }
+    },
+    "exclude": [
+      "apps/e2e"
+    ],
+    "sharedChanges": "ride-along",
+    "rootFiles": "none"
+  }
+}
+```
+
+Each app gets its own tag, such as `web/v1.3.0`, and a `CHANGELOG.md` in its folder. Since the last tags, there is one commit in each app, a fix in `packages/ui`, two commits at the root (the config and a CI change), and a new test in `apps/e2e`:
+
+```txt {{ title: 'chamoji release --dry-run' }}
+Would release:
+mobile  1.0.0 → 1.1.0  minor  1 own, 1 shared
+web  1.2.0 → 1.3.0  minor  1 own, 1 shared
+files: apps/mobile/CHANGELOG.md, apps/mobile/package.json, apps/mobile/app.config.ts, apps/web/CHANGELOG.md, apps/web/package.json
+apps/e2e: 1 commit not released (excluded)
+
+## mobile/v1.1.0
+
+## 1.1.0 - 2026-11-05
+
+### Added
+
+- ✨ Add the cart screen (c9949b2)
+
+### Fixed
+
+- 🐛 Fix the button's focus ring (a089b0b) (via `packages/ui`)
+
+## web/v1.3.0
+
+## 1.3.0 - 2026-11-05
+
+### Added
+
+- ✨ Add the search page (ad8e540)
+
+### Fixed
+
+- 🐛 Fix the button's focus ring (a089b0b) (via `packages/ui`)
+```
+
+The `packages/ui` fix rides along with both apps. The root commits are left out, because `rootFiles` is `none`. The next sections explain both.
+
+## A library monorepo {{ tag: 'MONOREPOS', variant: 'mono', label: 'shape: libraries', icon: 'package' }}
+
+The second example is a kit of three published packages: `@acme/core`, and `@acme/cli` and `@acme/ui`, which both depend on core. This section was written by hand:
+
+```json {{ title: 'chamoji.config.json' }}
+{
+	"release": {
+		"schema": 1,
+		"shape": "libraries",
+		"units": {
+			"core": {"path": "packages/core"},
+			"cli": {"path": "packages/cli"},
+			"ui": {"path": "packages/ui"}
+		},
+		"fixed": [["core", "cli"]]
+	}
+}
+```
+
+Each package gets a tag such as `@acme/ui@1.2.1`, the default for libraries, and a `CHANGELOG.md` in its folder.
+
+- **A `fixed` group** always shares one version, the largest bump of any of its units. When one of them releases, they all do.
+- **Under `release-dependents`,** the default for libraries, a package that releases also releases the packages that depend on it, by at least a patch. They get the new range and a Dependencies line.
+
+<CodeGroup title="chamoji release --dry-run">
+
+```txt {{ title: 'A feature in core, a fix in ui' }}
+Would release:
+core  1.2.0 → 1.3.0  minor  1 own, 0 shared
+cli  1.2.0 → 1.3.0  fixed  0 own, 0 shared
+ui  1.2.0 → 1.2.1  patch  1 own, 0 shared
+files: packages/core/CHANGELOG.md, packages/core/package.json, packages/cli/CHANGELOG.md, packages/cli/package.json, packages/ui/CHANGELOG.md, packages/ui/package.json
+
+## @acme/core@1.3.0
+
+## 1.3.0 - 2026-11-05
+
+### Added
+
+- ✨ Add a retry option (cdadc1f)
+
+## @acme/cli@1.3.0
+
+## 1.3.0 - 2026-11-05
+
+### Changed
+
+- Released with core at the group's version
+
+### Dependencies
+
+- ⬆️ 1 dependency update: @acme/core
+
+## @acme/ui@1.2.1
+
+## 1.2.1 - 2026-11-05
+
+### Fixed
+
+- 🐛 Fix the dark theme (7a5ab4b)
+
+### Dependencies
+
+- ⬆️ 1 dependency update: @acme/core
+```
+
+```txt {{ title: 'A fix in core alone' }}
+Would release:
+core  1.3.0 → 1.3.1  patch  1 own, 0 shared
+cli  1.3.0 → 1.3.1  patch  0 own, 0 shared
+ui  1.2.1 → 1.2.2  patch  0 own, 0 shared
+files: packages/core/CHANGELOG.md, packages/core/package.json, packages/cli/CHANGELOG.md, packages/cli/package.json, packages/ui/CHANGELOG.md, packages/ui/package.json
+…
+## @acme/ui@1.2.2
+
+## 1.2.2 - 2026-11-05
+
+### Dependencies
+
+- ⬆️ 1 dependency update: @acme/core
+```
+
+</CodeGroup>
+
+The release rewrites the range in each dependent’s `package.json`:
+
+```txt {{ title: 'git show HEAD -- packages/ui/package.json' }}
+…
+ {
+   "name": "@acme/ui",
+-  "version": "1.2.0",
+-  "dependencies": {"@acme/core": "^1.2.0"}
++  "version": "1.2.1",
++  "dependencies": {"@acme/core": "^1.3.0"}
+ }
+```
+
+Ranges are rewritten in `dependencies` only. Peer ranges stay as written, and so do `workspace:` ranges, since pnpm rewrites those when you publish.
+
+`shape` can be `apps` or `libraries` for now. `single` is the default behaviour, one release for the whole repo, and takes no other settings.
+
+## Which commits belong to which unit {{ icon: 'git-commit' }}
+
+The files a commit changes decide it. A scope such as `feat(web):` or an emoji never overrides them. Paths match on whole folder names, so `apps/web` doesn’t match `apps/web-admin`.
+
+<Properties>
+	<Property name="Own">
+		It changes a file under the unit’s `path`. A commit that changes several
+		units is an own commit for each.
+	</Property>
+	<Property name="Shared">
+		It changes a file in an internal package the unit uses, one that isn’t a
+		unit itself, and nothing under the unit’s own path. It’s marked “via
+		`packages/ui`” in the notes.
+	</Property>
+	<Property name="Root-only">
+		It changes only files outside every package, such as the lockfile or CI.
+		`rootFiles` decides what happens to it.
+	</Property>
+	<Property name="Excluded">
+		It changes only paths in `exclude`. It’s left out, and the dry run says how
+		many.
+	</Property>
+</Properties>
+
+A unit’s commits are the ones since its own last tag.
+
+**Root-only commits.** `rootFiles` is `none` by default, which leaves them out. `note` adds one line to each unit’s notes, and `all` counts each one as an own commit for every unit. In the shop, the root-only commits are the CI change and the commit that added `chamoji.config.json`. This is the same dry run with `rootFiles` set each way:
+
+<CodeGroup title="chamoji release --dry-run --unit web">
+
+```txt {{ title: 'rootFiles: note' }}
+Would release:
+web  1.2.0 → 1.3.0  minor  1 own, 1 shared
+files: apps/web/CHANGELOG.md, apps/web/package.json
+apps/e2e: 1 commit not released (excluded)
+mobile: left out by --unit (1 change of its own, 1 shared waiting)
+
+## web/v1.3.0
+
+## 1.3.0 - 2026-11-05
+
+### Added
+
+- ✨ Add the search page (ad8e540)
+
+### Changed
+
+- Tooling and CI: 2 changes
+
+### Fixed
+
+- 🐛 Fix the button's focus ring (a089b0b) (via `packages/ui`)
+```
+
+```txt {{ title: 'rootFiles: all' }}
+Would release:
+web  1.2.0 → 1.3.0  minor  3 own, 1 shared
+files: apps/web/CHANGELOG.md, apps/web/package.json
+apps/e2e: 1 commit not released (excluded)
+mobile: left out by --unit (3 changes of its own, 1 shared waiting)
+
+## web/v1.3.0
+
+## 1.3.0 - 2026-11-05
+
+### Added
+
+- ✨ Add the search page (ad8e540)
+
+### Changed
+
+- 🔧 Version the apps on their own (cdf9a70)
+
+### Fixed
+
+- 🐛 Fix the button's focus ring (a089b0b) (via `packages/ui`)
+
+### Maintenance
+
+- 👷 Run CI on pull requests (b338fdf)
+```
+
+</CodeGroup>
+
+## Shared changes ride along {{ icon: 'git-merge' }}
+
+For `apps`, a shared commit never releases an app on its own, without a `Release:` line or `--unit`. An app releases when it has an own commit that implies a version bump, and its notes then carry every shared commit since its last release.
+
+After both apps released, the shop got one more commit, a fix in `packages/ui`. On its own, it releases nothing:
+
+```txt {{ title: 'chamoji release --dry-run' }}
+Nothing to release: no unit has a commit of its own that implies a version bump.
+mobile: no changes of its own; 1 shared change rides along with its next release
+web: no changes of its own; 1 shared change rides along with its next release
+```
+
+It exits 3, as `next-version` does when nothing would release. When a shared fix has to ship now, add a `Release:` line to the commit:
+
+```txt {{ title: 'git log -1 --format=%B' }}
+🔒 Fix the session refresh
+
+Release: mobile
+```
+
+```txt {{ title: 'chamoji release --dry-run' }}
+Would release:
+mobile  1.1.0 → 1.1.1  patch  0 own, 1 shared
+files: apps/mobile/CHANGELOG.md, apps/mobile/package.json, apps/mobile/app.config.ts
+web: no changes of its own; 1 shared change rides along with its next release
+
+## mobile/v1.1.1
+
+## 1.1.1 - 2026-11-05
+
+### Security
+
+- 🔒️ Fix the session refresh (ba4115d) (via `packages/ui`)
+```
+
+`Release: web, mobile` names several units, and `Release: all` names every unit. `chamoji release --unit mobile` does the same from the command line.
+
+Web still has the fix waiting. A docs commit to web doesn’t release it, because a docs change implies no version bump:
+
+```txt {{ title: 'chamoji release --dry-run' }}
+Nothing to release: no unit has a commit of its own that implies a version bump.
+web: no release needed (1 change of its own doesn't need one); 1 shared change rides along with its next release
+```
+
+It exits 3. A feature in web instead releases both:
+
+```txt {{ title: 'chamoji release --dry-run --unit web' }}
+Would release:
+web  1.3.0 → 1.4.0  minor  1 own, 1 shared
+files: apps/web/CHANGELOG.md, apps/web/package.json
+
+## web/v1.4.0
+
+## 1.4.0 - 2026-11-05
+
+### Added
+
+- ✨ Sort search results by price (d1561df)
+
+### Security
+
+- 🔒️ Fix the session refresh (ba4115d) (via `packages/ui`)
+```
+
+For libraries, the default is the other way round: under `"sharedChanges": "release-dependents"`, a shared change releases every unit that uses it. Either shape accepts either value.
+
+Two more settings change what a release makes:
+
+- `"githubReleases": "combined"` makes one GitHub release per release commit, instead of one per unit.
+- `"rootChangelog": true` adds a root `CHANGELOG.md` that lists every release, with links to the units’ changelogs.
+
+## Tags {{ icon: 'tag' }}
+
+A unit’s `tag` is a template. `{unit}` is the unit’s name in `units`, `{name}` its package name and `{version}` the version. The default is `{unit}/v{version}` for apps and `{name}@{version}` for libraries.
+
+chamoji finds a unit’s last release by reading the tags that fit its template, and the older formats you list in `read`. So a repo can keep the tags it already has:
+
+```json {{ title: 'release.units' }}
+"web": {"path": "apps/web", "tag": "web/v{version}", "read": ["web-v{version}"]}
+```
+
+- **A tag that doesn’t parse** but is a real release gets a version in `tags.aliases`.
+- **Tags that aren’t releases,** such as ones that came with a template, go in `tags.ignore` as regular expressions. They are not globs: `^wip/` matches tags that start with `wip/`, and `wip/*` doesn’t mean that.
+- **Two units can share a template** without `{unit}` or `{name}`, such as `v{version}`, only when they are in one `fixed` group. They then share one tag and one GitHub release, with a section for each.
+
+Tags that match nothing stay in git, untouched. chamoji never moves, deletes or renames a tag. [Config](/reference/config#tags) has both keys.
+
+## Versions and version files {{ icon: 'file-code' }}
+
+- **The first release.** A unit with no tag of its own releases `firstVersion` when you set it. Otherwise it releases the version already in its manifest.
+- **Date versions.** `"versioning": "calver"` gives a unit versions such as `2026.11.0`: the year, the month and a count of that unit’s releases in the month, with no zero padding so the version stays valid semver. Its manifest version is ignored, and its first release is a date version too, unless `firstVersion` says otherwise.
+- **While at 0.x.** `"zeroMajor": "minor"` makes a breaking change raise the minor version instead of the major.
+
+Each unit’s `package.json` is bumped, with its formatting kept. List any other file that carries the version in `versionFiles`, by its path from the repo root. chamoji edits Expo’s `app.json` and `app.config.ts` or `.js`, an `Info.plist`, an `android/app/build.gradle`, and any other text file where it finds the current version. In the shop, the release bumped mobile’s `app.config.ts` to `version: '1.1.0'`.
+
+If it can’t find the version in a listed file, it stops before changing anything, even in a dry run:
+
+```txt {{ title: 'chamoji release --dry-run --unit mobile' }}
+chamoji: can't set the version in apps/mobile/app.config.ts: it has no top-level version: "…" property to set
+```
+
+That was an `app.config.ts` with `version: pkg.version`. It exits 2. The rules for Expo and native files:
+
+- **Expo’s `app.config`** can be an object, an arrow function, `defineConfig(…)` or `export default config`, and its `version` must be a plain string such as `"1.2.0"`. Any other shape stops the release instead of guessing. That includes `version: pkg.version`, a call with more than one argument, a template string with `${…}`, or a second `version` key.
+- **An `Info.plist` that uses `$(MARKETING_VERSION)`** isn’t supported yet, since chamoji doesn’t bump the marketing version in the Xcode project. Bump it in Xcode yourself. If you list that `Info.plist` in `versionFiles`, the release stops and tells you to remove it.
+- **Build numbers** (`CFBundleVersion`, `versionCode`, Expo’s `ios.buildNumber` and `android.versionCode`) are left alone unless the unit sets `"buildNumber": "increment"`, which raises them by one. That does nothing when the app uses EAS remote versioning, with `appVersionSource` set to `remote`.
+
+## Template history {{ icon: 'git-merge' }}
+
+If the repo began as a clone of a template you started from, and keeps pulling from it, chamoji can keep the template’s history out of your notes. The third example is a storefront that began as a clone of a made-up Acme Starter template, at its tag `4.0.0`. The template’s remote is `upstream`, and the storefront then made two commits of its own. Setup found the template:
+
+```txt {{ title: 'chamoji setup releases --yes --explain' }}
+Found 1 app (web) and 1 internal package. web gets its own version. 1 tag looks like it came from Acme Starter and will be ignored. Shared changes ride along with each app's own releases.
+
+release.schema = 1 (the section's format)
+release.shape = "apps" (detected in the repo)
+release.units.web.path = "apps/web" (detected in the repo)
+release.units.web.tag = "web/v{version}" (detected in the repo)
+release.exclude = [] (detected in the repo)
+release.sharedChanges = "ride-along" (recommended for apps)
+release.rootFiles = "none" (recommended for apps)
+release.zeroMajor = "minor" (recommended for apps)
+release.upstream.remote = "upstream" (detected in the repo)
+release.upstream.name = "Acme Starter" (recommended for apps)
+release.upstream.since = "9f865558fe4b1874e321759d3561580b8bfdad1b" (detected in the repo)
+release.tags.ignore = ["^\\d+\\.\\d+\\.\\d+$"] (detected in the repo)
+
+Wrote chamoji.config.json. Review it and commit it; git restore chamoji.config.json undoes this.
+```
+
+- **`remote`** is the template’s remote, which must be fetched.
+- **`name`** comes from the owner in the remote’s URL. It names the template in your notes.
+- **`since`** is your first commit that isn’t the template’s, as a hash or ref.
+- **`tags.ignore`** keeps the template’s version tags from reading as your releases.
+
+The template’s history is every commit that one of these reaches:
+
+- the upstream remote’s fetched branches;
+- a tag in `tags.ignore` whose name reads as a version, such as `4.0.2` or `v4.0.0`, with or without a remote. Other ignored tags, such as `wip/…`, are your own and don’t count;
+- `upstream.authors`, a list of emails: a commit on `HEAD` by one of them, compared ignoring case, counts as the template’s.
+
+The last two cover template work that came in through a branch the template has since deleted. `upstream.authors` needs chamoji 0.14.0. Setup lists authors only when some of their commits are ones the remote no longer reaches.
+
+Those commits are left out of every unit’s notes and never release anything. Each merge that brings them in becomes one line, naming the newest template tag it brings, or the merged commit’s short hash when it brings none. Here the template shipped `4.0.2`, and the storefront merged it:
+
+```txt {{ title: 'chamoji release --dry-run' }}
+Would release:
+web  0.1.0 → 0.2.0  minor  2 own, 0 shared
+files: apps/web/CHANGELOG.md, apps/web/package.json
+
+## web/v0.2.0
+
+## 0.2.0 - 2026-11-05
+
+### Added
+
+- ✨ Add the checkout page (104cecc)
+
+### Changed
+
+- ⬆️ Updated the Acme Starter base to 4.0.2 (62d42cf)
+```
+
+The merge counts as one own commit for the units it changed. The template’s login fix and password reset page don’t appear.
+
+**In CI,** the checkout usually has only `origin`. Run `git remote add upstream <url> && git fetch upstream` before chamoji. Without it, chamoji warns, and falls back on the ignored version tags. This is a fresh clone with only `origin`:
+
+```txt {{ title: 'chamoji release --dry-run' }}
+Would release:
+web  0.1.0 → 0.2.0  minor  2 own, 0 shared
+files: apps/web/CHANGELOG.md, apps/web/package.json
+warning: upstream remote "upstream" has no fetched branches here, so template history is recognised only by ignored version tags; run git remote add upstream <url> && git fetch upstream before chamoji
+…
+```
+
+## Commands {{ icon: 'terminal' }}
+
+```bash {{ title: 'In a repo with release units' }}
+chamoji release --dry-run              # every unit that would release, with versions, tags and notes
+chamoji release --unit web             # only web
+chamoji release 2.0.0 --unit mobile    # a version you choose, for one unit
+chamoji next-version --json            # what each unit would release, and what is waiting
+chamoji changelog --unit web           # web's releases
+chamoji changelog --for-tag web/v1.4.0 # the notes as that release committed them
+```
+
+A bare `chamoji changelog` needs `--unit` or `--for-tag` here:
+
+<CodeGroup title="Per unit">
+
+```txt {{ title: 'changelog' }}
+$ chamoji changelog
+chamoji: this repo releases units (mobile, web); pass --unit <name> or --for-tag <tag>
+```
+
+```txt {{ title: 'changelog --for-tag' }}
+$ chamoji changelog --for-tag mobile/v1.1.1
+## 1.1.1 - 2026-11-05
+
+### Security
+
+- 🔒️ Fix the session refresh (ba4115d) (via `packages/ui`)
+```
+
+```txt {{ title: 'next-version' }}
+$ chamoji next-version
+mobile: nothing to release
+web: 1.4.0
+```
+
+```txt {{ title: 'next-version --json' }}
+$ chamoji next-version --json
+{
+  "units": [
+    {
+      "unit": "mobile",
+      "version": null,
+      "own": 0,
+      "shared": 0
+    },
+    {
+      "unit": "web",
+      "version": "1.4.0",
+      "own": 1,
+      "shared": 1
+    }
+  ]
+}
+```
+
+</CodeGroup>
+
+[release](/commands/release), [next-version](/commands/next-version) and [changelog](/commands/changelog) have every flag.
+
+## Using the Action {{ icon: 'github-logo' }}
+
+- **Release mode:** set the `unit` input to release a single unit.
+- **On a pushed tag,** the Action finds the unit the tag belongs to, and writes that tag’s notes to its GitHub release.
+- **On a pull request,** the preview comment lists only the units the PR touches, with the releases merging it would make.
+
+In a repo with release units, the preview runs the CLI with its working directory at the PR head, and never with your secrets. So the `cli` input must be unset, `node` with a built CLI file from the workspace, such as `node packages/cli/dist/cli.js`, or the chamoji command by its full path. A bare `chamoji` doesn’t work in the 0.14.0 Action. Anything else, such as `npx`, a shell wrapper or `tsx`, is refused, and so are option words. [GitHub Action](/guides/github-action) has the rest.
+
+## Older versions of the CLI {{ icon: 'info' }}
+
+A `release` section needs chamoji 0.13.0 or newer:
+
+- **0.12.1** refuses the section with “this repo’s release settings need chamoji 0.13.0 or newer”.
+- **0.12.0** knows nothing about it. It would ignore the section and cut one release for the whole repo.
+- **The Action** refuses to run an older CLI when the section exists.
+
+## Related {{ anchor: false }}
+
+<Guides>
+	<Guide href="/set-up-a-repo" name="Set up a repo">
+		Let chamoji setup write the release section.
+	</Guide>
+	<Guide href="/reference/config" name="Config">
+		Every key of the release section, with its default.
+	</Guide>
+	<Guide href="/commands/release" name="release">
+		Cut a release, for one unit or all of them.
+	</Guide>
+	<Guide href="/guides/github-action" name="GitHub Action">
+		Release notes and PR previews in CI.
+	</Guide>
+</Guides>

@@ -1,0 +1,56 @@
+[
+	{
+		"title": "Get started",
+		"links": [
+			{"title": "Introduction", "href": "/"},
+			{"title": "Install", "href": "/install"},
+			{"title": "Quickstart", "href": "/quickstart"},
+			{"title": "Set up a repo", "href": "/set-up-a-repo"}
+		]
+	},
+	{
+		"title": "Commands",
+		"links": [
+			{"title": "setup", "href": "/commands/setup"},
+			{"title": "commit", "href": "/commands/commit"},
+			{"title": "changelog", "href": "/commands/changelog"},
+			{"title": "next-version", "href": "/commands/next-version"},
+			{"title": "release", "href": "/commands/release"},
+			{"title": "ws", "href": "/commands/ws"},
+			{"title": "why", "href": "/commands/why"},
+			{"title": "memory", "href": "/commands/memory"},
+			{"title": "card", "href": "/commands/card"},
+			{"title": "init", "href": "/commands/init"},
+			{"title": "mcp", "href": "/commands/mcp"},
+			{"title": "hook", "href": "/commands/hook"}
+		]
+	},
+	{
+		"title": "Guides",
+		"links": [
+			{"title": "Writing commits", "href": "/guides/writing-commits"},
+			{"title": "Workstreams", "href": "/guides/workstreams"},
+			{"title": "Project memory", "href": "/guides/project-memory"},
+			{"title": "Monorepos", "href": "/guides/monorepos"},
+			{"title": "GitHub Action", "href": "/guides/github-action"},
+			{"title": "Repo card", "href": "/guides/repo-card"},
+			{
+				"title": "Release from your agent",
+				"href": "/guides/release-from-your-agent"
+			},
+			{"title": "Sorting with AI", "href": "/guides/sorting-with-ai"}
+		]
+	},
+	{
+		"title": "Reference",
+		"links": [
+			{"title": "Config", "href": "/reference/config"},
+			{
+				"title": "How commits are read",
+				"href": "/reference/how-commits-are-read"
+			},
+			{"title": "Exit codes", "href": "/reference/exit-codes"},
+			{"title": "Environment", "href": "/reference/environment"}
+		]
+	}
+]

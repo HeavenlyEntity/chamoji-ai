@@ -120,3 +120,29 @@ test('more conventional types and dependency scopes', () => {
 	);
 	expect(parseCommit(raw('fix(css): handle urls')).gitmoji).toBe('bug');
 });
+
+test.each([
+	// Release chores, hidden like other release commits (from jQuery and Moment).
+	['Tagging the 3.7.1 release.', 'bookmark'],
+	['Updating the source version to 3.7.2-pre', 'bookmark'],
+	['Build 2.29.4', 'bookmark'],
+	['Bumping version to 2.0.0', 'bookmark'],
+	// Merge noise, hidden.
+	['Merge commit from fork', 'twisted_rightwards_arrows'],
+	['Merge branch "develop"', 'twisted_rightwards_arrows'],
+	['Squashed commit of the following:', 'twisted_rightwards_arrows'],
+	// Verbs the rules missed.
+	['Made the parser stricter about whitespace', 'wrench'],
+	['Makes jQuery.cleanData skip text nodes', 'wrench'],
+	['Revert the dimension changes for now', 'rewind'],
+	// A noise prefix in front of the real subject.
+	['Landing pull request 512. Fix the offset of fixed elements', 'bug'],
+])('%s → %s', (subject, code) => {
+	expect(inferGitmoji(subject)).toBe(code);
+});
+
+test('the new rules stay narrow', () => {
+	expect(inferGitmoji('Building blocks for plugins')).toBeNull();
+	expect(inferGitmoji('Merge sort for large lists')).toBeNull();
+	expect(inferGitmoji('Tagged unions in the parser')).toBeNull();
+});

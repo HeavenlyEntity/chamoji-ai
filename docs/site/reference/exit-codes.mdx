@@ -1,0 +1,176 @@
+export const metadata = {
+	title: 'Exit codes',
+	description:
+		'What chamoji’s exit codes 0, 1, 2 and 3 mean, for every command, so scripts and CI can tell the cases apart.',
+};
+
+# Exit codes
+
+<p className="lead">
+	Every chamoji command exits with one of four codes, so a script or CI job can
+	tell “nothing to release” from a failed check. The codes are the same with
+	`--json`.
+</p>
+
+## The four codes {{ icon: 'hash', badge: '4' }}
+
+<Properties>
+	<Property name="0">It worked, or there was nothing to change.</Property>
+	<Property name="1">
+		Something went wrong: git failed, a file or line doesn’t exist, the config
+		is invalid, or you cancelled.
+	</Property>
+	<Property name="2">
+		The command can’t go on as asked: it was used wrongly, a check failed, or it
+		needs a terminal. The message says which. Every command that reads
+		`chamoji.config.json` also exits 2 when its `release` section is from a
+		newer chamoji.
+	</Property>
+	<Property name="3">
+		Nothing to release. Only `next-version` and `release` use it.
+	</Property>
+</Properties>
+
+Error messages go to stderr, and most start with `chamoji:`. stdout keeps the command’s result, so `$(chamoji next-version)` and `--json` stay clean.
+
+## In a script {{ icon: 'terminal' }}
+
+`next-version` prints nothing to stdout when it exits 3, so a release script stops instead of making a release called “none”:
+
+```bash
+version=$(chamoji next-version) && chamoji changelog --release "$version" -o CHANGELOG.md
+```
+
+To treat “nothing to release” as success in CI:
+
+```bash
+chamoji release --push || [ $? -eq 3 ]
+```
+
+## Every command {{ icon: 'list-numbers', badge: '13' }}
+
+<Properties>
+	<Property name="chamoji">
+		0. A bare `chamoji`, `--help` and `--version` always exit 0. An unknown
+		command exits 2.
+	</Property>
+	<Property name="changelog">
+		0 when it printed or wrote the changelog. 1 for anything else, such as an
+		unknown `--format`, or `--unit` in a repo without release units.
+	</Property>
+	<Property name="next-version">
+		0 when it printed a version. 3 when no commit since the last tag implies a
+		bump. In a monorepo, 0 when any unit would release and 3 when none would,
+		and 2 for a shallow clone it couldn’t unshallow or a version file it can’t
+		set.
+	</Property>
+	<Property name="release">
+		0 when it released, or the dry run worked. 3 when there is nothing to
+		release. 2 when a check failed: a dirty working tree, the wrong branch, a
+		version that isn’t semver or isn’t newer, a first release with no version, a
+		tag that already exists, or a shallow clone it couldn’t unshallow. In a
+		monorepo, also a version file it can’t set, or a version that differs from
+		its fixed group’s. 1 for anything else, such as a failed push.
+	</Property>
+	<Property name="setup">
+		0 when it saved, or nothing would change. 2 when something would change and
+		there is no terminal and no `--yes`, or `--json` and no `--yes`, when the
+		hook step finds another tool’s hook, and for a `release` section from a
+		newer chamoji. 1 when you cancel, for a step name it doesn’t know, or when a
+		step fails.
+	</Property>
+	<Property name="commit">
+		0 when it committed. 2 when there is no terminal to ask on. 1 when you
+		cancel, or git refuses the commit.
+	</Property>
+	<Property name="hook">
+		0 for `install` and `uninstall`, including when `install` only prints the
+		line for `core.hooksPath` and when there was no hook to remove. 2 when
+		`install` finds another tool’s hook and leaves it alone, and with no action
+		or an unknown one. 1 outside a git repo, or when anything else fails. The
+		hook itself, `hook run`, always exits 0, so it never blocks a commit.
+	</Property>
+	<Property name="ws">
+		0 when it worked. 2 when it was used wrongly, such as an unknown subcommand.
+		1 for anything else, such as a workstream that doesn’t exist.
+	</Property>
+	<Property name="why">
+		0 when it found the commit, and for a line you haven’t committed yet. 2 with
+		no location, or more than one. 1 for anything else, such as a location that
+		isn’t `file:line`, a file or line that doesn’t exist, or a repo with no
+		commits yet.
+	</Property>
+	<Property name="memory">
+		0 when it worked, including a search with no matches. 2 when it was used
+		wrongly, such as an unknown subcommand, a missing slug or query, or an extra
+		argument, and for `search --ai` with no TypeSafe key. 1 for anything else,
+		such as an entry that doesn’t exist or is already archived, or `sync` with
+		no `origin` or a failed fetch or push.
+	</Property>
+	<Property name="card">
+		0 when it printed the URL or the numbers. 2 for a `release` section from a
+		newer chamoji. 1 for anything else, such as a repo it can’t tell, an
+		`--endpoint` that isn’t an http(s) URL, or a `--to` ref that doesn’t exist.
+	</Property>
+	<Property name="init">
+		0 when memory sharing is set up, when there is no `origin` to share with,
+		and when the fetch from origin fails, which it reports on stderr. 1 when
+		`--agents` can’t safely change or write `.mcp.json` or
+		`.claude/settings.json`, outside a git repo, or when anything else fails.
+	</Property>
+	<Property name="mcp">
+		0 when the agent closes the connection. 2 when it’s given arguments. 1 for
+		anything else.
+	</Property>
+</Properties>
+
+`chamoji agent-hook`, the hook Claude Code runs before a Bash command, always exits 0. Its answer is what it prints.
+
+## Examples {{ icon: 'play-circle' }}
+
+These are from real runs. Each one prints to stderr.
+
+<CodeGroup title="Exit codes">
+
+```txt {{ title: '3' }}
+$ chamoji next-version
+chamoji: no release needed (no commits since the last tag imply a version bump)
+```
+
+```txt {{ title: '2: a check' }}
+$ chamoji release
+chamoji: the working tree has uncommitted changes; commit or stash them first:
+M src/range.js
+```
+
+```txt {{ title: '2: not newer' }}
+$ chamoji release 0.1.5 --dry-run
+chamoji: 0.1.5 is not newer than the last release, v0.2.0
+```
+
+```txt {{ title: '2: misuse' }}
+$ chamoji relase
+chamoji: unknown command "relase"
+Run chamoji for the commands, or chamoji --help for every option.
+```
+
+```txt {{ title: '1' }}
+$ chamoji why src/nope.js:3
+chamoji: No such file in HEAD: src/nope.js
+```
+
+</CodeGroup>
+
+## Related {{ anchor: false }}
+
+<Guides>
+	<Guide href="/commands/release" name="release">
+		Every check release runs, and its flags.
+	</Guide>
+	<Guide href="/guides/release-from-your-agent" name="Release from your agent">
+		Let a coding agent read these codes with --json.
+	</Guide>
+	<Guide href="/reference/environment" name="Environment">
+		Every environment variable chamoji reads.
+	</Guide>
+</Guides>

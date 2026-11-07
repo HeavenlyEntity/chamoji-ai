@@ -1,5 +1,5 @@
 import {execFile} from 'node:child_process';
-import {mkdtemp, rm, writeFile} from 'node:fs/promises';
+import {mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {promisify} from 'node:util';
@@ -7,11 +7,26 @@ import {promisify} from 'node:util';
 const execFileAsync = promisify(execFile);
 
 export type RepoStep =
-	| {commit: string; body?: string; date?: string}
+	| {
+			commit: string;
+			body?: string;
+			date?: string;
+			/** Files (path relative to the repo, `/`-separated) to write and stage. */
+			files?: Record<string, string>;
+	  }
 	| {tag: string; annotated?: boolean}
 	| {mergeBranch: string; commits: string[]};
 
 export type FixtureRepo = {dir: string; cleanup(): Promise<void>};
+
+export type RepoOptions = {
+	/** Make the repo in this folder instead of a fresh temp one. */
+	dir?: string;
+	/** Clone this repo instead of starting an empty one. Commit dates carry on after its commits. */
+	clone?: string;
+	/** Who writes every commit; Fixture Bot by default. */
+	author?: {name: string; email: string};
+};
 
 const BASE_DATE = Date.parse('2026-01-01T00:00:00Z');
 const DAY = 24 * 60 * 60 * 1000;
@@ -20,8 +35,18 @@ const DAY = 24 * 60 * 60 * 1000;
  * Creates a throwaway git repository in the OS temp dir and replays `steps`.
  * Commit dates advance one day per commit so output is deterministic.
  */
-export async function createRepo(steps: RepoStep[]): Promise<FixtureRepo> {
-	const dir = await mkdtemp(path.join(tmpdir(), 'chamoji-fixture-'));
+export async function createRepo(
+	steps: RepoStep[],
+	options: RepoOptions = {},
+): Promise<FixtureRepo> {
+	let dir: string;
+	if (options.dir) {
+		dir = options.dir;
+		await mkdir(dir, {recursive: true});
+	} else {
+		dir = await mkdtemp(path.join(tmpdir(), 'chamoji-fixture-'));
+	}
+
 	// An empty config file isolates the fixture from the developer's git
 	// config on every OS (/dev/null doesn't exist on Windows).
 	const emptyConfig = `${dir}.gitconfig`;
@@ -42,7 +67,19 @@ export async function createRepo(steps: RepoStep[]): Promise<FixtureRepo> {
 		});
 	};
 
-	const commit = async (message: string, body?: string, date?: string) => {
+	const commit = async (
+		message: string,
+		body?: string,
+		date?: string,
+		files: Record<string, string> = {},
+	) => {
+		for (const [name, text] of Object.entries(files)) {
+			const file = path.join(dir, ...name.split('/'));
+			await mkdir(path.dirname(file), {recursive: true});
+			await writeFile(file, text);
+			await git(['add', '--', name]);
+		}
+
 		const args = ['commit', '--allow-empty', '-q', '-m', message];
 		if (body) {
 			args.push('-m', body);
@@ -52,15 +89,27 @@ export async function createRepo(steps: RepoStep[]): Promise<FixtureRepo> {
 		commitCount++;
 	};
 
-	await git(['init', '-q', '-b', 'main']);
-	await git(['config', 'user.name', 'Fixture Bot']);
-	await git(['config', 'user.email', 'fixture@example.com']);
+	if (options.clone) {
+		await git(['clone', '-q', '--', options.clone, '.']);
+		commitCount = Number(
+			(await gitOutput(dir, ['rev-list', '--count', 'HEAD'])).trim(),
+		);
+	} else {
+		await git(['init', '-q', '-b', 'main']);
+	}
+
+	const author = options.author ?? {
+		name: 'Fixture Bot',
+		email: 'fixture@example.com',
+	};
+	await git(['config', 'user.name', author.name]);
+	await git(['config', 'user.email', author.email]);
 	await git(['config', 'commit.gpgsign', 'false']);
 	await git(['config', 'tag.gpgsign', 'false']);
 
 	for (const step of steps) {
 		if ('commit' in step) {
-			await commit(step.commit, step.body, step.date);
+			await commit(step.commit, step.body, step.date, step.files);
 		} else if ('tag' in step) {
 			await git(
 				step.annotated

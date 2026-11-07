@@ -1,8 +1,14 @@
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
 import type {ChamojiConfig, GroupConfig} from './types.js';
+import {parseReleaseSettings} from './units/settings.js';
 
 export const CONFIG_FILE = 'chamoji.config.json';
+
+/** The config asks for something this version of chamoji can't follow. */
+export class ConfigVersionError extends Error {
+	override name = 'ConfigVersionError';
+}
 
 /**
  * Keep a Changelog style sections, plus Documentation, Maintenance (CI and
@@ -78,7 +84,7 @@ export const DEFAULT_GROUP_CONFIG: GroupConfig = [
 		emojis: [
 			'bug',
 			'ambulance',
-			'pencil2',
+
 			'adhesive_bandage',
 			'apple',
 			'penguin',
@@ -92,7 +98,11 @@ export const DEFAULT_GROUP_CONFIG: GroupConfig = [
 		label: 'Security',
 		emojis: ['lock', 'closed_lock_with_key', 'passport_control'],
 	},
-	{group: 'documentation', label: 'Documentation', emojis: ['memo']},
+	{
+		group: 'documentation',
+		label: 'Documentation',
+		emojis: ['memo', 'pencil2'],
+	},
 	{
 		group: 'maintenance',
 		label: 'Maintenance',
@@ -178,7 +188,7 @@ export async function loadConfig(
 		throw new Error(`Invalid config ${file}: expected an object or an array`);
 	}
 
-	const {groups, repositoryUrl} = data as Record<string, unknown>;
+	const {groups, repositoryUrl, release} = data as Record<string, unknown>;
 	if (repositoryUrl !== undefined && typeof repositoryUrl !== 'string') {
 		throw new Error(`Invalid config ${file}: repositoryUrl must be a string`);
 	}
@@ -189,6 +199,9 @@ export async function loadConfig(
 				? DEFAULT_GROUP_CONFIG
 				: validateGroups(groups, file),
 		...(repositoryUrl ? {repositoryUrl} : {}),
+		...(release === undefined
+			? {}
+			: {release: parseReleaseSettings(release, file)}),
 	};
 }
 

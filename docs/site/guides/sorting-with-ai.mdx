@@ -1,0 +1,172 @@
+export const metadata = {
+	title: 'Sorting with AI',
+	description:
+		'What --ai does on changelog, next-version and release: which commits it sends to Jev, what is sent, where the key comes from, its limits, and what happens with no key or when a request fails.',
+};
+
+# Sorting with AI
+
+<p className="lead">
+	Some commit messages are too vague for any rule, such as “Picker tweaks”, so
+	they land under Miscellaneous. With `--ai`, chamoji sends just those commits
+	to [Jev](https://typesafe.ai), TypeSafe’s classification model, which picks a
+	gitmoji for each one. Everything else stays as the rules sorted it.
+</p>
+
+<Note>
+	Without `--ai`, these commands send nothing to TypeSafe. With it, chamoji
+	never sends diffs, code or who wrote a commit.
+</Note>
+
+## What --ai does {{ icon: 'sparkle' }}
+
+`--ai` works on `changelog`, `next-version` and `release`, and the GitHub Action’s `ai` input passes it for you. It only touches commits that no gitmoji, Conventional type or wording rule could sort. This is widgets’ changelog without it, in a real run:
+
+```txt {{ title: 'chamoji changelog --since v0.1.0' }}
+# Changelog
+
+## Unreleased
+
+### Added
+
+- ✨ Add a range mode to the date picker (9ab8547)
+
+### Fixed
+
+- 🐛 Close the dialog on Escape (c8fad0f)
+
+### Miscellaneous
+
+- Handle two-digit years (5d8b4e9)
+- Picker tweaks (c172e2c)
+- Accept lowercase month names (6b7105d)
+```
+
+With `--ai`, the three Miscellaneous commits go to Jev, and nothing else does. For each one, Jev picks one gitmoji from chamoji’s list, or none when the message is too vague to tell:
+
+- **A pick of 60% confidence or more** moves the commit to that gitmoji’s group, such as Added. The line stays as the author wrote it: chamoji adds no emoji to it. In `--format json`, the commit’s `gitmojiSource` is `"ai"`.
+- **A lower pick, or none,** leaves the commit in Miscellaneous.
+- **On `next-version` and `release`,** a pick can change the bump. A vague commit picked as a feature can make the next release a minor one.
+
+What it never does:
+
+- **Override the author.** A commit with a gitmoji or a Conventional type is never sent, so its group never changes.
+- **Mark a change as breaking.** 💥 isn’t one of the choices, and a breaking pick would be ignored. Only authors declare breaking changes.
+- **Hide a commit.** 🔖 and 🔀, which the default config hides, aren’t choices either, so a wrong pick can’t make a commit vanish.
+
+The examples on this page are from runs without a key, so none shows Jev’s picks.
+
+## Which commits are sent {{ icon: 'list-numbers' }}
+
+- **`changelog --ai`:** the commits no rule could sort, in every release it reads. `--from`, `--to` and `--since` narrow what it reads.
+- **`next-version --ai` and `release --ai`:** only the unreleased ones. When `release` writes `CHANGELOG.md` for the first time from the whole history, it sends the unsorted commits of every release.
+- **With release units:** the unsorted commits each unit’s changelog or release reads.
+- **Each commit once.** Jev’s answers are kept in `.git/chamoji/cache.json`, keyed by commit, and a commit found there isn’t sent again. See [The cache](#the-cache).
+
+## What is sent {{ icon: 'cloud-arrow-up' }}
+
+For each commit, only its subject and body:
+
+- **At most 300 characters** of each.
+- **Email addresses** replaced by `<email>`.
+- **Trailer lines removed:** the last paragraph of the body is left out when every line in it is a `Key: value` trailer, such as `Signed-off-by:` or `Co-Authored-By:`.
+
+Never diffs, code, the files a commit changed, or author details. chamoji asks about 25 commits per request, with up to 4 requests at once. Each question gives Jev every gitmoji it may pick with its description.
+
+## The key {{ tag: 'SETUP', variant: 'setup', label: 'TYPESAFE_API_KEY', icon: 'gear' }}
+
+`--ai` needs a TypeSafe API key, from [typesafe.ai](https://typesafe.ai):
+
+```bash {{ title: 'Set the key' }}
+export TYPESAFE_API_KEY=...   # or put the line in .env.local
+chamoji changelog --ai
+```
+
+chamoji reads the key from the `TYPESAFE_API_KEY` environment variable. Without it, chamoji reads that one line from `.env.local`, then `.env`, in the folder you run chamoji in. No other variable in those files is read, and nothing is loaded into the environment.
+
+- **Run from the repo root** when the key is in a file there. From `src/`, `chamoji changelog --ai` doesn’t find a root `.env.local`, as the run below shows.
+- **For `changelog`, `next-version` and `release`,** a `.env` that git tracks counts too, so keep the key in an untracked `.env.local`, or in the environment.
+- **For `memory search --ai` and `mcp --ai`,** a file git tracks is skipped. A repo you clone can’t send your work to someone else’s account this way. The composer’s suggestions read the key the same way, from the repo root. See [Writing commits](/guides/writing-commits#suggestions-from-jev).
+- **A cut-off key is refused.** A key copied from a dashboard that ends in “…”, or holds any character that isn’t plain ASCII, is refused before anything is sent.
+
+[Environment](/reference/environment#ai) lists the variable.
+
+## With no key {{ icon: 'info' }}
+
+Without a key, `changelog`, `next-version` and `release` stop before they read any history, and exit 1. These are real runs in widgets:
+
+<CodeGroup title="No key">
+
+```txt {{ title: 'changelog' }}
+$ chamoji changelog --ai
+chamoji: --ai needs a TypeSafe API key: set TYPESAFE_API_KEY in the environment or in .env.local (get one at https://typesafe.ai)
+```
+
+```txt {{ title: 'release' }}
+$ chamoji release --dry-run --ai
+chamoji: --ai needs a TypeSafe API key: set TYPESAFE_API_KEY in the environment or in .env.local (get one at https://typesafe.ai)
+```
+
+```txt {{ title: 'From src/' }}
+$ cat ../.env.local
+TYPESAFE_API_KEY=ts_example
+$ chamoji changelog --ai
+chamoji: --ai needs a TypeSafe API key: set TYPESAFE_API_KEY in the environment or in .env.local (get one at https://typesafe.ai)
+```
+
+```txt {{ title: 'A cut-off key' }}
+$ TYPESAFE_API_KEY='ts_abc…' chamoji changelog --ai
+chamoji: TYPESAFE_API_KEY contains "…", so it looks truncated; copy the full key again
+```
+
+</CodeGroup>
+
+The other commands handle a missing key in their own way:
+
+- **`memory search --ai`** prints the same message and exits 2, also when the only key is in a tracked file.
+- **`mcp --ai`** says on stderr that `search_memory` stays on keyword order, and the server runs.
+- **`card`** ignores `--ai`: it counts what the rules sort.
+- **The Action** with `ai: true` and no `typesafe-api-key` fails the jobs that pass `--ai`, since the CLI exits 1: `notes`, `release`, and the PR preview without release units. `card` and the preview with release units don’t pass it, and still run.
+
+## When a request fails {{ icon: 'shield' }}
+
+`--ai` only improves the output, so a failure never fails the command:
+
+- **The first failed request stops the rest.** The picks that already came back are kept, and the other commits stay in Miscellaneous. The exit code is the same as without `--ai`.
+- **It says so on stderr:** `Jev request failed (<reason>); 25 commits left unsorted`, with the reason and the count.
+- **Every run with commits to sort ends with a count** on stderr, such as `Jev sorted 2 of 3 commits no rule could place`, plus `(1 from the cache, not asked again)` when the cache answered some.
+- **In a terminal,** the face shows “Jev is sorting 25 of 50 commits” while it works, and ends with a warning when commits were left unsorted.
+
+chamoji sets no time limit of its own. Each request uses the TypeSafe SDK’s defaults. In version 0.7.0 of the SDK, each try gives up after 10 seconds. A timeout, a lost connection, a rate limit or a server error is retried up to twice, after a short wait.
+
+## The cache {{ icon: 'folder' }}
+
+`.git/chamoji/cache.json` holds each commit’s pick, or none, and its confidence, keyed by the commit’s hash. It holds no commit text, and stays in your clone: git doesn’t push it.
+
+- **A commit is asked about once.** Low-confidence and “none” answers are kept too, so a vague commit isn’t sent on every run.
+- **A new question starts afresh.** The cache records which question it answers. When a chamoji version changes the question or the choices, the old answers aren’t used.
+- **A failed request’s commits aren’t kept,** so the next run asks about them again.
+- **To ask again** about every commit, delete the file.
+
+## Memory search {{ icon: 'magnifying-glass' }}
+
+`chamoji memory search --ai` and `chamoji mcp --ai` use Jev differently: to reorder the ten best keyword matches, best answer first. They send the query and, for each of those ten matches, at most 300 characters of its subject and card text, with email addresses replaced by `<email>`. Never diffs, code or authors.
+
+Jev only reorders what keyword search found. It doesn’t add, drop or change a match, and with more than ten, the rest follow in keyword order. On any failure, chamoji keeps the keyword order and says `Jev rerank failed (<reason>); showing the keyword search order` on stderr. [memory](/commands/memory) and [mcp](/commands/mcp) have the details.
+
+## Related {{ anchor: false }}
+
+<Guides>
+	<Guide href="/reference/how-commits-are-read" name="How commits are read">
+		The rules that sort commits before Jev sees any.
+	</Guide>
+	<Guide href="/commands/changelog" name="changelog">
+		Every flag, `--ai` included.
+	</Guide>
+	<Guide href="/guides/writing-commits" name="Writing commits">
+		Write commits that need no help, and the composer’s suggestions.
+	</Guide>
+	<Guide href="/guides/github-action" name="GitHub Action">
+		`ai: true` in CI.
+	</Guide>
+</Guides>
