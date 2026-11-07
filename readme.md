@@ -303,7 +303,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # chamoji reads every commit and tag
-      - uses: HeavenlyEntity/chamoji-ai@v0.5.0
+      - uses: HeavenlyEntity/chamoji-ai@v0.14.0
 ```
 
 To release at the press of a button, add a `workflow_dispatch` workflow with `with: {mode: release}`. It takes an optional `release-version`. It commits `CHANGELOG.md` and the version bumps, then pushes the tag and creates the GitHub Release. Other inputs:
@@ -533,7 +533,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # chamoji reads every commit and tag
-      - uses: HeavenlyEntity/chamoji-ai@v0.9.0
+      - uses: HeavenlyEntity/chamoji-ai@v0.14.0
         with:
           mode: card
 ```
@@ -562,10 +562,10 @@ The raw image address only renders for public repositories: a private repo's car
 - **Releases from `mode: release`:** tags pushed with `GITHUB_TOKEN` don't start workflows, so add a `mode: card` step after the release step. Otherwise the daily run catches up. Mark the card step `continue-on-error: true`, so a card problem never fails a release job:
 
   ```yaml
-  - uses: HeavenlyEntity/chamoji-ai@v0.9.0
+  - uses: HeavenlyEntity/chamoji-ai@v0.14.0
     with:
       mode: release
-  - uses: HeavenlyEntity/chamoji-ai@v0.9.0
+  - uses: HeavenlyEntity/chamoji-ai@v0.14.0
     continue-on-error: true
     with:
       mode: card
