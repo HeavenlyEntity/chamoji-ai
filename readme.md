@@ -286,6 +286,8 @@ The Action does three jobs:
 - **PR preview:** on every pull request, it keeps one comment up to date with the changelog lines the PR adds and the version merging it would make.
 - **Releases:** on request, it cuts the whole release with `chamoji release`.
 
+Pin the Action to a release tag, ideally the latest: [![latest release](https://img.shields.io/npm/v/@chamoji/cli?color=bbbff2&label=latest)](https://github.com/HeavenlyEntity/chamoji-ai/releases/latest). The Action's tags match the CLI's versions on npm, so if the examples below are older than the badge, use the badge's version.
+
 ```yaml
 # .github/workflows/changelog.yml
 name: changelog
