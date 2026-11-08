@@ -166,7 +166,11 @@ Without a `release` section, the repo is one package: one version, one `v*` tag 
 	</Property>
 	<Property name="majors" type="'auto' | 'manual'" since="0.15.0">
 		Whether a breaking change raises the major version on its own. `manual`
-		leaves a major release to you. Needs `"schema": 2`. Default: `auto`.
+		leaves a major release to you: when the GitHub Action releases on a merge
+		(`chamoji release --on-merge`), a breaking change is held back, and it says
+		so and names what it held. In a monorepo the other units still release, and
+		a fixed group is held whole when any member is. A release you run yourself
+		is never held. Needs `"schema": 2`. Default: `auto`.
 	</Property>
 	<Property name="publish" type="boolean | object" since="0.15.0">
 		Publish the release to npm. `true` uses the defaults, `false` publishes

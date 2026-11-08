@@ -647,3 +647,22 @@ test('a tag fetch that fails for another reason keeps the warning and asks for n
 		'could not fetch tags from origin; used the local tags',
 	]);
 });
+
+test('holdMajors turns a major release into a nothing plan naming the package', async () => {
+	const repo = await repoWith(
+		[
+			{commit: '🎉 Init'},
+			{tag: 'v1.0.0', annotated: true},
+			{commit: '💥 Drop the old API'},
+		],
+		{'package.json': '{"name": "acme-lib", "version": "1.0.0"}\n'},
+	);
+	const held = await plan(repo.dir, {holdMajors: true});
+	expect(held).toMatchObject({
+		status: 'nothing',
+		lastTag: 'v1.0.0',
+		held: ['acme-lib'],
+	});
+	const free = await ready(repo.dir);
+	expect(free.bump).toBe('major');
+});

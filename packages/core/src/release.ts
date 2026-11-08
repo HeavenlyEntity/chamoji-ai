@@ -68,6 +68,12 @@ export type ReleaseOptions = {
 	 * retry waits for it.
 	 */
 	onCredentials?: () => void | Promise<void>;
+	/**
+	 * Don't plan a major bump: the plan is `nothing` and names what was held (the
+	 * root package, or `the repo`). For unit repos: units with a major bump, and
+	 * their fixed groups, are left out.
+	 */
+	holdMajors?: boolean;
 };
 
 export type FileChange = {file: string; text: string; how: string};
@@ -91,7 +97,14 @@ export type ReadyPlan = {
 };
 
 export type ReleasePlan =
-	{status: 'nothing'; lastTag: string; unreleased: string[]} | ReadyPlan;
+	| {
+			status: 'nothing';
+			lastTag: string;
+			unreleased: string[];
+			/** Held back by `holdMajors`. */
+			held?: string[];
+	  }
+	| ReadyPlan;
 
 /**
  * The checks every release makes before it plans anything: a git repo with a
@@ -236,6 +249,26 @@ export async function planRelease(
 		};
 	}
 
+	const bump: ReadyPlan['bump'] = !previous
+		? 'first'
+		: semver.prerelease(version)
+			? 'prerelease'
+			: ((semver.diff(previous, version) as SemverBump | null) ?? 'patch');
+	if (options.holdMajors && bump === 'major') {
+		const subjects = await git(
+			'log',
+			'--no-merges',
+			'--format=%s',
+			`${lastTag}..HEAD`,
+		);
+		return {
+			status: 'nothing',
+			lastTag: lastTag!,
+			unreleased: subjects ? subjects.split('\n') : [],
+			held: [await rootName(root)],
+		};
+	}
+
 	const tag = `${tagPrefix(tags.map(item => item.name))}${version}`;
 	if (await git('tag', '--list', tag)) {
 		throw new ReleaseError(
@@ -304,11 +337,7 @@ export async function planRelease(
 		version,
 		tag,
 		lastTag,
-		bump: !previous
-			? 'first'
-			: semver.prerelease(version)
-				? 'prerelease'
-				: ((semver.diff(previous, version) as SemverBump | null) ?? 'patch'),
+		bump,
 		notes,
 		changes,
 		subject: releaseSubject(
@@ -318,6 +347,20 @@ export async function planRelease(
 		start: await git('rev-parse', 'HEAD'),
 		warnings,
 	};
+}
+
+/** The root package's name, or `the repo` when there is none. */
+async function rootName(root: string): Promise<string> {
+	try {
+		const manifest = JSON.parse(
+			await readFile(path.join(root, 'package.json'), 'utf8'),
+		) as {name?: unknown};
+		return typeof manifest.name === 'string' && manifest.name
+			? manifest.name
+			: 'the repo';
+	} catch {
+		return 'the repo';
+	}
 }
 
 /**

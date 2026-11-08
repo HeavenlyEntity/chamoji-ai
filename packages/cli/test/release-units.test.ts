@@ -979,3 +979,129 @@ test('--push with publish configured defers every GitHub release', async () => {
 	});
 	expect(tools.log).toEqual([]);
 });
+
+describe('release --on-merge with units', () => {
+	const merge = (majors: 'auto' | 'manual', extra: object = {}) => ({
+		schema: 2,
+		shape: 'libraries',
+		units: {core: {path: 'packages/core'}, util: {path: 'packages/util'}},
+		trigger: 'merge',
+		majors,
+		...extra,
+	});
+	const libs = {
+		core: {name: '@acme/core', version: '1.0.0'},
+		util: {name: '@acme/util', version: '1.0.0'},
+	};
+	const BREAKING: RepoStep = {
+		commit: '💥 Drop the old parser',
+		files: {'packages/core/index.js': 'export const parse = 2;\n'},
+	};
+	const UTIL_FIX: RepoStep = {
+		commit: '🐛 Fix the util export',
+		files: {'packages/util/index.js': 'export const util = 1;\n'},
+	};
+	const tagged: RepoStep[] = [
+		{tag: '@acme/core@1.0.0', annotated: true},
+		{tag: '@acme/util@1.0.0', annotated: true},
+	];
+
+	test('holds a major unit and releases a patch unit', async () => {
+		const dir = await libraryRepo(merge('manual'), libs, [
+			...tagged,
+			BREAKING,
+			UTIL_FIX,
+		]);
+		const {code, stdout, stderr} = await chamoji(
+			['release', '--on-merge', '--json'],
+			dir,
+		);
+		expect(code).toBe(0);
+		expect(stderr).toContain(
+			'core has a breaking change and waits for a manual release (release.majors)',
+		);
+		const result = JSON.parse(stdout) as {
+			status: string;
+			held: string[];
+			units: Array<{unit: string; version: string}>;
+		};
+		expect(result.status).toBe('released');
+		expect(result.held).toEqual(['core']);
+		expect(result.units.map(unit => [unit.unit, unit.version])).toEqual([
+			['util', '1.0.1'],
+		]);
+		const tags = (await gitOutput(dir, ['tag', '--list'])).trim().split('\n');
+		expect(tags).toContain('@acme/util@1.0.1');
+		expect(tags).not.toContain('@acme/core@2.0.0');
+	});
+
+	test('with every unit held it exits 3 and names them', async () => {
+		const dir = await libraryRepo(merge('manual'), libs, [...tagged, BREAKING]);
+		const {code, stdout, stderr} = await chamoji(
+			['release', '--on-merge', '--json'],
+			dir,
+		);
+		expect(code).toBe(3);
+		expect(stderr).toContain('core has a breaking change');
+		expect(JSON.parse(stdout)).toMatchObject({
+			status: 'nothing',
+			held: ['core'],
+		});
+	});
+
+	test('holds a whole fixed group when one member is major', async () => {
+		const dir = await libraryRepo(
+			merge('manual', {fixed: [['core', 'util']]}),
+			libs,
+			[...tagged, BREAKING, UTIL_FIX],
+		);
+		const {code, stdout} = await chamoji(
+			['release', '--on-merge', '--json'],
+			dir,
+		);
+		expect(code).toBe(3);
+		expect(JSON.parse(stdout)).toMatchObject({
+			status: 'nothing',
+			held: ['core', 'util'],
+		});
+	});
+
+	test('without --on-merge, majors manual changes nothing', async () => {
+		const dir = await libraryRepo(merge('manual'), libs, [
+			...tagged,
+			BREAKING,
+			UTIL_FIX,
+		]);
+		const {code, stdout} = await chamoji(['release', '--json'], dir);
+		expect(code).toBe(0);
+		const result = JSON.parse(stdout) as {
+			held?: string[];
+			units: Array<{unit: string; version: string}>;
+		};
+		expect(result.held).toBeUndefined();
+		expect(result.units.map(unit => [unit.unit, unit.version])).toEqual([
+			['core', '2.0.0'],
+			['util', '1.0.1'],
+		]);
+	});
+
+	test('majors auto releases the major under --on-merge', async () => {
+		const dir = await libraryRepo(merge('auto'), libs, [...tagged, BREAKING]);
+		const {code, stdout} = await chamoji(
+			['release', '--on-merge', '--json'],
+			dir,
+		);
+		expect(code).toBe(0);
+		expect(JSON.parse(stdout).held).toBeUndefined();
+	});
+
+	test('trigger manual exits 3 with the message', async () => {
+		const dir = await libraryRepo(merge('auto', {trigger: 'manual'}), libs, [
+			...tagged,
+			UTIL_FIX,
+		]);
+		const {code, stderr} = await chamoji(['release', '--on-merge'], dir);
+		expect(code).toBe(3);
+		expect(stderr).toContain('releases are manual here (release.trigger)');
+	});
+});

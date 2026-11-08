@@ -77,7 +77,7 @@ export type UnitPlan = {
 export type UnitPending = {unit: string; own: number; shared: number};
 
 export type UnitReleasePlan =
-	| {status: 'nothing'; pending: UnitPending[]}
+	| {status: 'nothing'; pending: UnitPending[]; held?: string[]}
 	| {
 			status: 'ready';
 			/** Repository root; `changes` paths are relative to it. */
@@ -93,6 +93,8 @@ export type UnitReleasePlan =
 			warnings: string[];
 			/** One line per excluded path whose commits are left out. */
 			excludedNote?: string;
+			/** Units held back by `holdMajors`, for a breaking change. */
+			held?: string[];
 	  };
 
 export type ReadyUnitPlan = Extract<UnitReleasePlan, {status: 'ready'}>;
@@ -188,7 +190,56 @@ export async function planUnitReleases(
 		});
 	}
 
-	const reasons = decide(windows, settings, options);
+	// With holdMajors, a unit whose next bump is major (and its whole fixed
+	// group) is left out, and everything that depended on it is worked out
+	// again without it: the commit subject, notes, changes and ranges all follow
+	// from what is left.
+	const held = new Set<string>();
+	// The held units that would have released, for the report.
+	const named = new Set<string>();
+	let reasons = decide(windows, settings, options, held);
+	let releasing = windows.filter(window => reasons.has(window.unit.name));
+	const current = new Map(
+		windows.map(window => [
+			window.unit.name,
+			window.last?.version ?? window.unit.pkg?.version ?? null,
+		]),
+	);
+	let versions = new Map<string, Exclude<NextVersion, null>>();
+	for (;;) {
+		if (reasons.size === 0) break;
+		versions = workOutVersions(
+			releasing,
+			reasons,
+			units,
+			current,
+			settings,
+			options,
+			today,
+		);
+		if (!options.holdMajors) break;
+		const before = held.size;
+		for (const [name, next] of versions) {
+			if (next.bump !== 'major') continue;
+			held.add(name);
+			named.add(name);
+			for (const group of settings.fixed) {
+				if (!group.includes(name)) continue;
+				for (const member of group) {
+					held.add(member);
+					if (reasons.has(member)) named.add(member);
+				}
+			}
+		}
+
+		if (held.size === before) break;
+		reasons = decide(windows, settings, options, held);
+		releasing = windows.filter(window => reasons.has(window.unit.name));
+	}
+
+	const heldNames = units
+		.filter(unit => named.has(unit.name))
+		.map(unit => unit.name);
 	const pending = windows
 		.filter(window => !reasons.has(window.unit.name))
 		.filter(window => window.own.length + window.shared.length > 0)
@@ -198,25 +249,12 @@ export async function planUnitReleases(
 			shared: window.shared.length,
 		}));
 	if (reasons.size === 0) {
-		return {status: 'nothing', pending};
+		return {
+			status: 'nothing',
+			pending,
+			...(heldNames.length > 0 ? {held: heldNames} : {}),
+		};
 	}
-
-	const releasing = windows.filter(window => reasons.has(window.unit.name));
-	const current = new Map(
-		windows.map(window => [
-			window.unit.name,
-			window.last?.version ?? window.unit.pkg?.version ?? null,
-		]),
-	);
-	const versions = workOutVersions(
-		releasing,
-		reasons,
-		units,
-		current,
-		settings,
-		options,
-		today,
-	);
 
 	const tagOf = new Map<string, string>();
 	const taggedBy = new Map<string, string>();
@@ -325,6 +363,7 @@ export async function planUnitReleases(
 		start,
 		warnings,
 		...(excludedNote ? {excludedNote} : {}),
+		...(heldNames.length > 0 ? {held: heldNames} : {}),
 	};
 }
 
@@ -613,6 +652,7 @@ function decide(
 	windows: Window[],
 	settings: ReleaseSettings,
 	options: UnitReleaseOptions,
+	held: Set<string> = new Set(),
 ): Map<string, Reason> {
 	const only = options.units?.length ? new Set(options.units) : null;
 	const named = new Set([
@@ -622,7 +662,7 @@ function decide(
 	const dependents = settings.sharedChanges === 'release-dependents';
 	const reasons = new Map<string, Reason>();
 	for (const {unit, own, shared, targeted} of windows) {
-		if (only && !only.has(unit.name)) continue;
+		if ((only && !only.has(unit.name)) || held.has(unit.name)) continue;
 		if (bumpFor(own)) reasons.set(unit.name, 'own');
 		else if (named.has(unit.name) || targeted) reasons.set(unit.name, 'forced');
 		else if (dependents && bumpFor(shared)) reasons.set(unit.name, 'shared');
@@ -634,7 +674,7 @@ function decide(
 		for (const group of settings.fixed) {
 			if (!group.some(name => reasons.has(name))) continue;
 			for (const name of group) {
-				if (!reasons.has(name)) {
+				if (!reasons.has(name) && !held.has(name)) {
 					reasons.set(name, 'fixed');
 					changed = true;
 				}
@@ -643,7 +683,14 @@ function decide(
 
 		if (!dependents) continue;
 		for (const unit of units) {
-			if (reasons.has(unit.name) || (only && !only.has(unit.name))) continue;
+			if (
+				reasons.has(unit.name) ||
+				held.has(unit.name) ||
+				(only && !only.has(unit.name))
+			) {
+				continue;
+			}
+
 			if (dependencyUnits(unit, units).some(dep => reasons.has(dep.name))) {
 				reasons.set(unit.name, 'dependency');
 				changed = true;
