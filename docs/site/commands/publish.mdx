@@ -94,7 +94,9 @@ One summary line per tag goes on stdout, with a line under it for each package t
 
 A tag that couldn't be planned or checked reads `<tag>: error: <why>`. A GitHub release that can't be created is a note on its line, not a failure.
 
-It exits 0 when no tag failed, including when nothing was missing, and 1 when any tag has an error or a failed publish. With `--json` it prints `status` and a `tags` list. `status` is `caught-up` when something was published, `nothing` when nothing was missing, and `failed` when any tag failed. Each tag has its `tag`, its `outcomes` (as in `packages`), an `error` when there is one, and a `githubRelease` of `created`, `exists` or why it wasn't created.
+It exits 0 when no tag failed, including when nothing was missing, and 1 when any tag has an error or a failed publish. With `--json` it prints `status` and a `tags` list. `status` is `caught-up` when something was published, `nothing` when nothing was missing, and `failed` when any tag failed. Each tag has its `tag`, its `outcomes` (as in `packages`), an `error` when there is one, a `skipped` list when packages such as an app were left out, and a `githubRelease` of `created`, `exists` or why it wasn't created.
+
+An app is never published, and catch-up skips it with its reason on stderr rather than failing its tag. Its tag can't be confirmed as on npm, though, so catch-up plans it in full on every run; mark the app `"private": true` or exclude it to keep the catch-up fast.
 
 ## Flags {{ badge: '7', icon: 'flag' }}
 
@@ -107,6 +109,12 @@ It exits 0 when no tag failed, including when nothing was missing, and 1 when an
 	<Property name="--from <tag>" type="string · repeatable">
 		Publish what this tag released, instead of the tags at HEAD. Repeat it for
 		several. A tag that isn’t at HEAD is checked out in a temporary worktree.
+		Once every package of a tag is on npm, chamoji creates the tag’s GitHub
+		release if it is missing, with the tag’s notes, so a release whose publish
+		failed after the push gets its release too. Without `gh`, a note says the
+		release wasn’t checked, and the exit code doesn’t change. In `--json`,
+		`githubReleases` maps each tag to `created`, `exists` or why it wasn’t
+		created.
 	</Property>
 	<Property name="--catch-up" type="boolean">
 		Finish releases that were tagged but never published; see [Catching

@@ -293,7 +293,8 @@ const HELP = `
 	  --format   markdown (default), md, json or html
 	  --output   Write to this file instead of stdout
 	  --from     changelog: leave out this release tag and everything older.
-	             publish: publish what this tag released (repeatable)
+	             publish: publish what this tag released (repeatable), and
+	             create its missing GitHub release once it is all on npm
 	  --to       Ref to treat as the head of history (default: HEAD)
 	  --release  Name the unreleased section with this version
 	  --since    Only the commits after this ref, as one section (for
@@ -327,8 +328,8 @@ const HELP = `
 	  --unit     release, next-version and publish: only this release unit
 	             (repeatable; release 2.0.0 needs exactly one); changelog:
 	             this unit's releases
-	  --tag      publish: the npm dist-tag to publish under, instead of the
-	             one the version implies
+	  --tag      publish and release --publish: the npm dist-tag to publish
+	             under, instead of the one the version implies
 	  --catch-up publish: publish what each unit's latest tag released and
 	             npm lacks, and create its missing GitHub release
 	  --for-tag  changelog: only the release with this tag, from the unit
@@ -403,9 +404,19 @@ const outcomeLine = (outcome: PublishOutcome): string =>
 const dryRunLine = (target: PublishTarget): string =>
 	`${targetLine(target)}: ${target.published ? 'already on npm' : 'would publish'}`;
 
-/** What a failed publish after the push says, and how to finish it. */
-const unpublished = (tag: string, name: string, version: string): string =>
-	`${tag} is tagged and pushed; ${name} ${version} isn't on npm. Re-run this job, or run \`chamoji publish --from ${tag}\`.`;
+/**
+ * What a publish after the push that left a package off npm says, and how to
+ * finish it. A first version that trusted publishing skipped needs a person.
+ */
+const unpublished = (
+	tag: string,
+	name: string,
+	version: string,
+	firstVersion = false,
+): string =>
+	firstVersion
+		? `${tag} is tagged and pushed; ${name} ${version} isn't on npm: trusted publishing can't publish a package's first version. Publish it from your machine with \`chamoji publish --from ${tag}\`, or with an npm token, then add the trusted publisher on npmjs.com.`
+		: `${tag} is tagged and pushed; ${name} ${version} isn't on npm. Run \`chamoji publish --from ${tag}\` to publish it.`;
 
 const nothingToPublish = (count: number): string =>
 	count === 0
@@ -989,6 +1000,42 @@ export async function run(argv: string[], given: Io): Promise<number> {
 		return stripTitle(render({...changelog, releases: [release]}, 'markdown'));
 	}
 
+	/**
+	 * `publish --from`: the GitHub release of each tag whose packages are now
+	 * all on npm, made when it is missing, as catch-up makes it. A tag with a
+	 * package not on npm gets none. Without gh, a note says it wasn't checked.
+	 */
+	async function fromReleases(
+		config: ChamojiConfig,
+		targets: PublishTarget[],
+		outcomes: PublishOutcome[],
+	): Promise<Record<string, string>> {
+		const releases: Record<string, string> = {};
+		for (const tag of froms) {
+			const own = targets.filter(target => target.tag === tag);
+			const onNpm = own.every(target =>
+				outcomes.some(
+					outcome =>
+						outcome.name === target.name &&
+						outcome.version === target.version &&
+						(outcome.status === 'published' || outcome.status === 'already'),
+				),
+			);
+			if (own.length === 0 || !onNpm) continue;
+			// eslint-disable-next-line no-await-in-loop
+			const release = await catchUpRelease(config, tag);
+			if (release === undefined) {
+				io.stderr(
+					`chamoji: note: no gh CLI, so ${tag}'s GitHub release wasn't checked\n`,
+				);
+			} else {
+				releases[tag] = release;
+			}
+		}
+
+		return releases;
+	}
+
 	/** What `chamoji publish` and the Action's publish step run. */
 	async function publish(): Promise<number> {
 		if (flags.catchUp) return publishCatchUp();
@@ -1034,14 +1081,30 @@ export async function run(argv: string[], given: Io): Promise<number> {
 		const outcomes = await publishPlan(plan, method, tools);
 		for (const text of skippedLines(plan)) io.stderr(text);
 		reportOutcomes(outcomes);
+		const releases = await fromReleases(config, plan.targets, outcomes);
 
 		const failed = outcomes.some(outcome => outcome.status === 'failed');
 		const published = outcomes.some(outcome => outcome.status === 'published');
 		const status = failed ? 'failed' : published ? 'published' : 'nothing';
-		if (flags.json || outcomes.length > 0) {
+		const releaseLines = Object.entries(releases).flatMap(([tag, result]) =>
+			result === 'exists'
+				? []
+				: [
+						`${tag}: ${result === 'created' ? 'GitHub release created' : `GitHub release not created: ${result}`}`,
+					],
+		);
+		if (flags.json || outcomes.length > 0 || releaseLines.length > 0) {
 			printResult(
-				outcomes.map(outcome => outcomeLine(outcome)),
-				{status, method, packages: outcomes, skipped},
+				[...outcomes.map(outcome => outcomeLine(outcome)), ...releaseLines],
+				{
+					status,
+					method,
+					packages: outcomes,
+					skipped,
+					...(Object.keys(releases).length > 0
+						? {githubReleases: releases}
+						: {}),
+				},
 			);
 		}
 
@@ -1498,6 +1561,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 						env: tools.env,
 						method: tools.method,
 						registries: tools.registries,
+						...(flags.tag === undefined ? {} : {tag: flags.tag}),
 						versions,
 						skipTagCheck: true,
 					});
@@ -1528,9 +1592,20 @@ export async function run(argv: string[], given: Io): Promise<number> {
 	/**
 	 * Whether a plain --push leaves the GitHub release to the publish: with
 	 * `release.publish` set, the release isn't announced before it is on npm.
+	 * `CHAMOJI_PUBLISH=false` (the Action's `publish: false`) says no publish
+	 * follows, so the release is made at once.
 	 */
 	function defersGithubRelease(config: ChamojiConfig): boolean {
-		return !flags.publish && Boolean(config.release?.publish);
+		return (
+			!flags.publish &&
+			Boolean(config.release?.publish) &&
+			envValue('CHAMOJI_PUBLISH') !== 'false'
+		);
+	}
+
+	/** A variable of the environment, as io.env overrides process.env. */
+	function envValue(name: string): string | undefined {
+		return io.env && name in io.env ? io.env[name] : process.env[name];
 	}
 
 	/** A failed release commit after `checkRelease`: the tree and the tarballs go. */
@@ -1570,18 +1645,28 @@ export async function run(argv: string[], given: Io): Promise<number> {
 
 	/**
 	 * Publishes the checked tarballs after the push. Returns the outcomes,
-	 * and the error to exit 1 with when a package isn't on npm: the tag is
-	 * pushed by then, so the error says how to finish.
+	 * and the error to exit 1 with when a package isn't on npm (it failed, or
+	 * trusted publishing skipped its first version): the tag is pushed by
+	 * then, so the error says how to finish.
 	 */
 	async function publishAfterPush(
 		checked: CheckedRelease,
 	): Promise<{outcomes: PublishOutcome[]; error?: string}> {
 		const {plan, method, tools} = checked;
-		const failure = (name: string, version: string): string => {
+		const failure = (outcome: {
+			name: string;
+			version: string;
+			status?: PublishOutcome['status'];
+		}): string => {
 			const target = plan.targets.find(
-				item => item.name === name && item.version === version,
+				item => item.name === outcome.name && item.version === outcome.version,
 			);
-			return unpublished(target?.tag ?? '', name, version);
+			return unpublished(
+				target?.tag ?? '',
+				outcome.name,
+				outcome.version,
+				outcome.status === 'skipped',
+			);
 		};
 
 		let outcomes: PublishOutcome[];
@@ -1611,17 +1696,18 @@ export async function run(argv: string[], given: Io): Promise<number> {
 			io.stderr(`chamoji: ${message}\n`);
 			return {
 				outcomes: [],
-				...(first ? {error: failure(first.name, first.version)} : {}),
+				...(first ? {error: failure(first)} : {}),
 			};
 		}
 
 		for (const text of skippedLines(plan)) io.stderr(text);
 		reportOutcomes(outcomes);
-		const failed = outcomes.find(outcome => outcome.status === 'failed');
-		return {
-			outcomes,
-			...(failed ? {error: failure(failed.name, failed.version)} : {}),
-		};
+		// A first version that trusted publishing skipped isn't on npm either,
+		// so it gets no GitHub release.
+		const missing =
+			outcomes.find(outcome => outcome.status === 'failed') ??
+			outcomes.find(outcome => outcome.status === 'skipped');
+		return {outcomes, ...(missing ? {error: failure(missing)} : {})};
 	}
 
 	/** The npm lines of a release's summary. */
@@ -1739,7 +1825,9 @@ export async function run(argv: string[], given: Io): Promise<number> {
 				}
 
 				if (publishError) {
-					pushed += '; no GitHub release, since the publish failed';
+					pushed += published.some(outcome => outcome.status === 'failed')
+						? '; no GitHub release, since the publish failed'
+						: "; no GitHub release, since a package isn't on npm";
 				} else if (defersGithubRelease(config)) {
 					githubRelease = 'deferred';
 					pushed += `; ${DEFERRED}`;
@@ -1957,7 +2045,9 @@ export async function run(argv: string[], given: Io): Promise<number> {
 				}
 
 				if (publishError) {
-					pushed += '; no GitHub release, since the publish failed';
+					pushed += published.some(outcome => outcome.status === 'failed')
+						? '; no GitHub release, since the publish failed'
+						: "; no GitHub release, since a package isn't on npm";
 				} else if (defersGithubRelease(config)) {
 					githubRelease = 'deferred';
 					pushed += `; ${DEFERRED}`;

@@ -181,6 +181,9 @@ publish_flag=
 if [ "$publishing" = true ] && [ "${CHAMOJI_PUBLISH:-auto}" != false ]; then
 	publish_flag=--publish
 fi
+# With publish false nothing follows a release to publish it, so the CLI makes
+# the GitHub release at once instead of leaving it to the publish.
+[ "${CHAMOJI_PUBLISH:-auto}" != false ] || export CHAMOJI_PUBLISH=false
 
 # Trusted publishing needs npm 11.5.1 or newer; older runners get the latest.
 prepare_npm() {
@@ -235,6 +238,46 @@ release_run() {
 	echo "version=$version" >>"$output"
 }
 
+# When publishing is on, publishes what an earlier run tagged and npm lacks
+# (publish --catch-up), before a release. A failure doesn't stop the release:
+# it leaves the exit code in catch_up_status and the tags it couldn't finish
+# in behind, for finish_release.
+catch_up_status=0
+behind=
+catch_up_first() {
+	[ -n "$publish_flag" ] || return 0
+	prepare_npm
+	set +e
+	caught=$(chamoji_publishing publish --catch-up --json 2>"$work/chamoji-catch-up.err")
+	catch_up_status=$?
+	set -e
+	show_problems "$work/chamoji-catch-up.err"
+	if [ "$catch_up_status" -ne 0 ]; then
+		behind=$(printf '%s' "$caught" | node -e 'let s = ""; process.stdin.on("data", d => (s += d)).on("end", () => { try { const j = JSON.parse(s); process.stdout.write(j.tags.filter(t => t.error !== undefined || t.outcomes.some(o => o.status === "failed")).map(t => t.tag).join(", ")) } catch {} })' || true)
+	fi
+}
+
+# After release_run: says how to finish a catch-up that failed, then fails the
+# job if the release or the catch-up did.
+finish_release() {
+	local advice=
+	if [ "$catch_up_status" -ne 0 ]; then
+		# Catch-up looks only at the latest tags, so once this run has made a
+		# newer one, a re-run would pass and leave these tags off npm. A re-run
+		# helps only when the release made nothing (exit 3).
+		local rerun=
+		[ "$release_status" -ne 3 ] || rerun='re-run this job, '
+		case "$behind" in
+			'') advice="chamoji publish --catch-up failed with exit code $catch_up_status; ${rerun}run chamoji publish --from with each tag its output names, or start a workflow with mode: publish on each" ;;
+			*,*) advice="catching up didn't finish for $behind; ${rerun}run chamoji publish --from with each tag, or start a workflow with mode: publish on each" ;;
+			*) advice="catching up didn't finish for $behind; ${rerun}run chamoji publish --from $behind, or start a workflow with mode: publish on $behind" ;;
+		esac
+		printf 'chamoji: %s\n\n' "$(scrub "$advice")" | tee -a "$summary"
+	fi
+	[ -z "$release_failed" ] || fail "$release_failed"
+	[ "$catch_up_status" -eq 0 ] || fail "$advice"
+}
+
 if [ "$mode" = auto ]; then
 	case "${GITHUB_EVENT_NAME:-}:${GITHUB_REF:-}" in
 		push:refs/tags/*) mode=notes ;;
@@ -278,7 +321,7 @@ notes)
 	fi
 	if gh release view "$tag" >/dev/null 2>&1; then
 		gh release edit "$tag" --notes-file "$notes"
-	elif [ "$publishing" = true ]; then
+	elif [ -n "$publish_flag" ]; then
 		# The release job publishes to npm first and creates the GitHub release
 		# after, so a release made here would announce packages npm lacks.
 		echo 'chamoji: the GitHub release is created when the publish finishes'
@@ -485,45 +528,21 @@ comment)
 	;;
 
 release)
-	[ -z "$publish_flag" ] || prepare_npm
+	# A release from the Actions tab: like merge mode, it first publishes what
+	# an earlier run tagged and npm lacks, and a catch-up that fails still lets
+	# the release run, and fails the job after.
+	catch_up_first
 	release_run
-	[ -z "$release_failed" ] || fail "$release_failed"
+	finish_release
 	;;
 
 merge)
 	# A push to the default branch: first publish what an earlier run tagged and
 	# npm lacks, then release what this push merged, if release.trigger says so.
-	# A catch-up that fails still lets the release run, and fails the job after.
 	cli_at_least 0.15.0 || fail 'releasing on merge needs chamoji 0.15.0 or newer; set chamoji-version'
-	catch_up_status=0
-	behind=
-	if [ -n "$publish_flag" ]; then
-		prepare_npm
-		set +e
-		caught=$(chamoji_publishing publish --catch-up --json 2>"$work/chamoji-catch-up.err")
-		catch_up_status=$?
-		set -e
-		show_problems "$work/chamoji-catch-up.err"
-		if [ "$catch_up_status" -ne 0 ]; then
-			behind=$(printf '%s' "$caught" | node -e 'let s = ""; process.stdin.on("data", d => (s += d)).on("end", () => { try { const j = JSON.parse(s); process.stdout.write(j.tags.filter(t => t.error !== undefined || t.outcomes.some(o => o.status === "failed")).map(t => t.tag).join(", ")) } catch {} })' || true)
-		fi
-	fi
+	catch_up_first
 	release_run --on-merge
-	if [ "$catch_up_status" -ne 0 ]; then
-		# Catch-up looks only at the latest tags, so once this run has made a
-		# newer one, a re-run would pass and leave these tags off npm. A re-run
-		# helps only when the release made nothing (exit 3).
-		rerun=
-		[ "$release_status" -ne 3 ] || rerun='re-run this job, '
-		case "$behind" in
-			'') advice="chamoji publish --catch-up failed with exit code $catch_up_status; ${rerun}run chamoji publish --from with each tag its output names, or start a workflow with mode: publish on each" ;;
-			*,*) advice="catching up didn't finish for $behind; ${rerun}run chamoji publish --from with each tag, or start a workflow with mode: publish on each" ;;
-			*) advice="catching up didn't finish for $behind; ${rerun}run chamoji publish --from $behind, or start a workflow with mode: publish on $behind" ;;
-		esac
-		printf 'chamoji: %s\n\n' "$(scrub "$advice")" | tee -a "$summary"
-	fi
-	[ -z "$release_failed" ] || fail "$release_failed"
-	[ "$catch_up_status" -eq 0 ] || fail "$advice"
+	finish_release
 	;;
 
 publish)

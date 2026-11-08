@@ -522,6 +522,87 @@ describe.skipIf(!has('npm'))('chamoji publish', () => {
 		expect(gh.created().map(c => c[2])).toEqual(['@acme/core@1.0.0']);
 	});
 
+	it('--from creates the GitHub release once the tag is on npm', async () => {
+		const dir = await repoWith(MONOREPO, ['v1.0.0']);
+		const gh = fakeGh();
+		const {code, stdout} = await chamoji(
+			['publish', '--from', 'v1.0.0'],
+			dir,
+			fakeNpm({'@acme/core': ['1.0.0']}).npm,
+			undefined,
+			gh.gh,
+		);
+
+		expect(code).toBe(0);
+		expect(stdout).toContain('@acme/util 1.0.0 → latest: published');
+		expect(stdout).toContain('v1.0.0: GitHub release created');
+		expect(gh.created().map(c => c.slice(0, 3))).toEqual([
+			['release', 'create', 'v1.0.0'],
+		]);
+
+		const json = await chamoji(
+			['publish', '--from', 'v1.0.0', '--json'],
+			dir,
+			fakeNpm({'@acme/core': ['1.0.0'], '@acme/util': ['1.0.0']}).npm,
+			undefined,
+			fakeGh().gh,
+		);
+		expect(json.code).toBe(3);
+		expect(JSON.parse(json.stdout)).toMatchObject({
+			status: 'nothing',
+			githubReleases: {'v1.0.0': 'created'},
+		});
+	});
+
+	it('--from leaves an existing GitHub release alone, and makes none after a failure', async () => {
+		const dir = await repoWith(MONOREPO, ['v1.0.0']);
+		const existing = fakeGh(['v1.0.0']);
+		const done = await chamoji(
+			['publish', '--from', 'v1.0.0'],
+			dir,
+			fakeNpm().npm,
+			undefined,
+			existing.gh,
+		);
+		expect(done.code).toBe(0);
+		expect(done.stdout).not.toContain('GitHub release');
+		expect(existing.created()).toEqual([]);
+
+		const base = fakeNpm();
+		const npm: NpmRunner = async (args, options) =>
+			args[0] === 'publish' && args[1]!.includes('acme-util')
+				? {ok: false, stdout: '', stderr: 'E403'}
+				: base.npm(args, options);
+		const gh = fakeGh();
+		const failed = await chamoji(
+			['publish', '--from', 'v1.0.0'],
+			dir,
+			npm,
+			undefined,
+			gh.gh,
+		);
+		expect(failed.code).toBe(1);
+		expect(gh.calls).toEqual([]);
+	});
+
+	it('--from without gh notes that no GitHub release was checked, and passes', async () => {
+		const dir = await repoWith(MONOREPO, ['v1.0.0']);
+		const gh = fakeGh([], false);
+		const {code, stderr} = await chamoji(
+			['publish', '--from', 'v1.0.0'],
+			dir,
+			fakeNpm().npm,
+			undefined,
+			gh.gh,
+		);
+
+		expect(code).toBe(0);
+		expect(stderr).toContain(
+			"chamoji: note: no gh CLI, so v1.0.0's GitHub release wasn't checked",
+		);
+		expect(gh.created()).toEqual([]);
+	});
+
 	it('--catch-up skips a public app unit and exits 0', async () => {
 		const config = json({
 			release: {

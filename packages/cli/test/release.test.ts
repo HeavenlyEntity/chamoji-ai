@@ -649,7 +649,7 @@ describe.skipIf(!has('npm'))('release --publish', () => {
 
 		expect(code).toBe(1);
 		expect(stderr).toContain(
-			"chamoji: v1.1.0 is tagged and pushed; acme-lib 1.1.0 isn't on npm. Re-run this job, or run `chamoji publish --from v1.1.0`.\n",
+			"chamoji: v1.1.0 is tagged and pushed; acme-lib 1.1.0 isn't on npm. Run `chamoji publish --from v1.1.0` to publish it.\n",
 		);
 		expect(stdout).toContain(
 			'pushed: yes (HEAD and v1.1.0); no GitHub release, since the publish failed\nnpm: acme-lib 1.1.0 → latest: failed\n',
@@ -720,6 +720,88 @@ describe.skipIf(!has('npm'))('release --publish', () => {
 			githubRelease: 'deferred',
 		});
 		expect(tools.releases()).toEqual([]);
+	});
+
+	test('--push with publishing turned off makes the GitHub release at once', async () => {
+		const {dir} = await libraryOnOrigin();
+		const tools = fakeTools();
+		const {code, stdout} = await chamojiPublishing(
+			['release', '--push', '--json'],
+			dir,
+			tools,
+			undefined,
+			{CHAMOJI_PUBLISH: 'false'},
+		);
+
+		expect(code).toBe(0);
+		expect(JSON.parse(stdout)).toMatchObject({
+			pushed: true,
+			githubRelease: true,
+		});
+		expect(tools.releases()).toEqual(['gh release create v1.1.0']);
+		expect(tools.published()).toEqual([]);
+	});
+
+	test('a first version that trusted publishing skips gets no GitHub release, and exits 1', async () => {
+		const {dir, remote} = await libraryOnOrigin();
+		const tools = fakeTools();
+		const {code, stdout, stderr} = await chamojiPublishing(
+			['release', '--publish', '--json'],
+			dir,
+			tools,
+			undefined,
+			{
+				CI: 'true',
+				CHAMOJI_NPM_TOKEN: undefined,
+				ACTIONS_ID_TOKEN_REQUEST_URL: 'https://actions.test/token?x=1',
+				ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'request-secret',
+			},
+		);
+
+		expect(code).toBe(1);
+		const result = JSON.parse(stdout) as Record<string, unknown>;
+		expect(result).toMatchObject({
+			pushed: true,
+			githubRelease: false,
+			published: [{name: 'acme-lib', status: 'skipped'}],
+		});
+		expect(result['error']).toBe(
+			"v1.1.0 is tagged and pushed; acme-lib 1.1.0 isn't on npm: trusted publishing can't publish a package's first version. Publish it from your machine with `chamoji publish --from v1.1.0`, or with an npm token, then add the trusted publisher on npmjs.com.",
+		);
+		expect(stderr).toContain(String(result['error']));
+		expect(tools.published()).toEqual([]);
+		expect(tools.releases()).toEqual([]);
+		expect(await gitOutput(remote, ['tag', '--list'])).toContain('v1.1.0');
+		expect(stdout + stderr).not.toContain('request-secret');
+	});
+
+	test('--publish --tag publishes a hotfix below latest under that dist-tag', async () => {
+		const below = await libraryOnOrigin();
+		const refused = await chamojiPublishing(
+			['release', '--publish'],
+			below.dir,
+			fakeTools({versions: ['1.0.0', '2.0.0']}),
+		);
+		expect(refused.code).toBe(2);
+		expect(refused.stderr).toContain('is lower than latest (2.0.0)');
+		expect(await tagsOf(below.dir)).toEqual(['v1.0.0']);
+
+		const {dir} = await libraryOnOrigin();
+		const tools = fakeTools({versions: ['1.0.0', '2.0.0']});
+		const {code, stdout} = await chamojiPublishing(
+			['release', '--publish', '--tag', 'release-1', '--json'],
+			dir,
+			tools,
+		);
+
+		expect(code).toBe(0);
+		expect(JSON.parse(stdout)).toMatchObject({
+			tag: 'v1.1.0',
+			published: [
+				{name: 'acme-lib', distTag: 'release-1', status: 'published'},
+			],
+		});
+		expect(tools.published()[0]).toContain('--tag=release-1');
 	});
 
 	test('--dry-run --publish shows the release and what it would publish, and changes nothing', async () => {
