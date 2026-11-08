@@ -1,4 +1,4 @@
-import {execFile} from 'node:child_process';
+import {execFile, execFileSync} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 import {existsSync} from 'node:fs';
 import {chmod, mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
@@ -23,8 +23,10 @@ const cli = `${process.execPath} ${path.join(root, 'packages/cli/dist/cli.js')}`
 
 // The real CLI, except that --version answers FAKE_CLI_VERSION (default
 // 0.13.0): the build in this checkout still says 0.12.0, which the Action
-// refuses for repos with release settings.
+// refuses for repos with release settings. A call that has CHAMOJI_NPM_TOKEN
+// in its environment is listed in token-calls.
 const FAKE_CLI = `#!/usr/bin/env bash
+[ -z "\${CHAMOJI_NPM_TOKEN:-}" ] || printf '%s\\n' "$*" >> "$(dirname "$0")/token-calls"
 if [ "$1" = --version ]; then echo "\${FAKE_CLI_VERSION:-0.13.0}"; exit 0; fi
 case "$(pwd)" in *chamoji-head) { pwd; env; } >> "$(dirname "$0")/worktree-env" ;; esac
 exec "${process.execPath}" "${path.join(root, 'packages/cli/dist/cli.js')}" "$@"
@@ -82,6 +84,45 @@ fi
 exit "$code"
 `;
 
+// The real npm, which the fake below runs to pack a tarball. Windows skips
+// these tests and may have no sh, so the lookup can't throw at import.
+const realNpm = (() => {
+	try {
+		return execFileSync('sh', ['-c', 'command -v npm'], {
+			encoding: 'utf8',
+		}).trim();
+	} catch {
+		return 'npm';
+	}
+})();
+
+// Records its argv to npm-calls in its own folder. --version answers the
+// version file there (an `install -g npm@latest` writes 11.6.0 to it), else
+// FAKE_NPM_VERSION (default 11.6.0). pack runs the real npm. view says the
+// registry has FAKE_NPM_PUBLISHED, or E404 without it. publish fails for a
+// tarball of version FAKE_NPM_FAIL. Everything else passes.
+const fakeNpm = (dir: string) => `#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "${dir}/npm-calls"
+case "$1" in
+	--version)
+		if [ -f "${dir}/npm-version" ]; then cat "${dir}/npm-version"; else echo "\${FAKE_NPM_VERSION:-11.6.0}"; fi
+		;;
+	install) [ "$2" = -g ] && echo 11.6.0 > "${dir}/npm-version" ;;
+	pack) exec "${realNpm}" "$@" ;;
+	view)
+		if [ -z "\${FAKE_NPM_PUBLISHED:-}" ]; then echo 'npm error code E404' >&2; exit 1; fi
+		printf '{"versions":["%s"],"dist-tags":{"latest":"%s"}}\\n' "$FAKE_NPM_PUBLISHED" "$FAKE_NPM_PUBLISHED"
+		;;
+	publish)
+		for arg in "$@"; do
+			case "$arg" in *-"\${FAKE_NPM_FAIL:-none}".tgz) echo 'npm error code E403' >&2; exit 1 ;; esac
+		done
+		;;
+	whoami) echo dev ;;
+esac
+exit 0
+`;
+
 // A small buffer that starts with the PNG signature.
 const PNG = Buffer.concat([
 	Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
@@ -105,11 +146,25 @@ async function setup(steps: RepoStep[]) {
 	await writeFile(path.join(fake, 'chamoji'), FAKE_CLI);
 	await chmod(path.join(fake, 'chamoji'), 0o755);
 	// A package runner that would answer --version; the unit preview refuses it.
+	// It lists its calls in npx-calls, and those with the token in token-calls.
 	await writeFile(
 		path.join(fake, 'npx'),
-		'#!/usr/bin/env bash\necho "${FAKE_CLI_VERSION:-0.13.0}"\n',
+		[
+			'#!/usr/bin/env bash',
+			`printf '%s\\n' "$*" >> '${fake}/npx-calls'`,
+			`[ -z "\${CHAMOJI_NPM_TOKEN:-}" ] || printf '%s\\n' "$*" >> '${fake}/token-calls'`,
+			'echo "${FAKE_CLI_VERSION:-0.13.0}"',
+			'',
+		].join('\n'),
 	);
 	await chmod(path.join(fake, 'npx'), 0o755);
+	await writeFile(path.join(fake, 'npm'), fakeNpm(fake));
+	await chmod(path.join(fake, 'npm'), 0o755);
+	// The webhook payload, which names the default branch.
+	await writeFile(
+		path.join(fake, 'event.json'),
+		JSON.stringify({repository: {default_branch: 'main'}}),
+	);
 	await writeFile(path.join(fake, 'curl'), FAKE_CURL);
 	await chmod(path.join(fake, 'curl'), 0o755);
 	await writeFile(path.join(fake, 'card.png'), PNG);
@@ -140,6 +195,7 @@ async function setup(steps: RepoStep[]) {
 					GITHUB_OUTPUT: path.join(fake, 'output'),
 					RUNNER_TEMP: fake,
 					GH_REPO: 'acme/widgets',
+					GITHUB_EVENT_PATH: path.join(fake, 'event.json'),
 					...env,
 				},
 			});
@@ -1102,5 +1158,342 @@ process.exit(spawnSync(process.execPath, [${JSON.stringify(real)}, ...process.ar
 		expect(result.code).not.toBe(0);
 		expect(await read('body')).toBe('');
 		expect(await read('calls')).toBe('');
+	});
+	describe('release on merge', () => {
+		// A public library, released as v1.0.0, with a feature since.
+		const library = (release: object): RepoStep[] => [
+			{
+				commit: '🎉 Init',
+				files: {
+					'package.json': json({
+						name: 'acme-lib',
+						version: '1.0.0',
+						main: 'index.js',
+					}),
+					'index.js': 'export {};\n',
+					'chamoji.config.json': json({
+						release: {schema: 2, shape: 'single', ...release},
+					}),
+				},
+			},
+			{tag: 'v1.0.0', annotated: true},
+			{commit: '✨ Add search', files: {'search.js': 'export {};\n'}},
+		];
+		const TOKEN = 'npm_actionSecretToken456';
+		const merged = {
+			FAKE_CLI_VERSION: '0.15.0',
+			GITHUB_EVENT_NAME: 'push',
+			GITHUB_REF: 'refs/heads/main',
+		};
+
+		test('auto mode on a push to the default branch releases when trigger is merge', async () => {
+			const {action, unitCli, read, originGit} = await setup(
+				library({trigger: 'merge'}),
+			);
+			const result = await action({CHAMOJI_CLI: unitCli, ...merged});
+			expect(result.code).toBe(0);
+			expect(await originGit('tag', '--list')).toContain('v1.1.0');
+			expect(await read('output')).toBe('version=v1.1.0\n');
+			expect(await read('summary')).toContain('Add search');
+			// Nothing is published without release.publish.
+			expect(await read('npm-calls')).toBe('');
+		});
+
+		test('auto mode on a push to the default branch passes when releases are manual', async () => {
+			const {action, unitCli, read, git} = await setup(
+				library({trigger: 'manual'}),
+			);
+			const result = await action({CHAMOJI_CLI: unitCli, ...merged});
+			expect(result.code).toBe(0);
+			expect(await read('summary')).toContain(
+				'chamoji: releases are manual here (release.trigger)',
+			);
+			expect(await git('tag', '--list')).toBe('v1.0.0');
+		});
+
+		test('auto mode on a push to another branch still fails', async () => {
+			const {action, unitCli, git} = await setup(library({trigger: 'merge'}));
+			const result = await action({
+				CHAMOJI_CLI: unitCli,
+				...merged,
+				GITHUB_REF: 'refs/heads/feature',
+			});
+			expect(result.code).toBe(1);
+			expect(result.stderr).toContain(
+				"can't pick a mode for the push event; set mode to notes, comment, release or card",
+			);
+			expect(await git('tag', '--list')).toBe('v1.0.0');
+		});
+
+		test('merge mode needs a CLI that knows --on-merge', async () => {
+			const {action, unitCli, git} = await setup(tagged);
+			const result = await action({
+				CHAMOJI_CLI: unitCli,
+				...merged,
+				FAKE_CLI_VERSION: '0.14.0',
+			});
+			expect(result.code).toBe(1);
+			expect(result.stderr).toContain(
+				'releasing on merge needs chamoji 0.15.0 or newer; set chamoji-version',
+			);
+			expect(await git('tag', '--list')).toBe('v1.0.0\nv1.1.0');
+		});
+
+		test('auto mode on workflow_dispatch releases', async () => {
+			const {action, unitCli, read, originGit} = await setup(
+				library({trigger: 'manual'}),
+			);
+			const result = await action({
+				CHAMOJI_CLI: unitCli,
+				FAKE_CLI_VERSION: '0.15.0',
+				GITHUB_EVENT_NAME: 'workflow_dispatch',
+				GITHUB_REF: 'refs/heads/main',
+			});
+			expect(result.code).toBe(0);
+			expect(await originGit('tag', '--list')).toContain('v1.1.0');
+			expect(await read('output')).toBe('version=v1.1.0\n');
+		});
+
+		test('merge mode publishes when release.publish is set', async () => {
+			const {action, unitCli, read, originGit} = await setup(
+				library({trigger: 'merge', publish: true}),
+			);
+			const result = await action({
+				CHAMOJI_CLI: unitCli,
+				...merged,
+				CHAMOJI_NPM_TOKEN: TOKEN,
+				FAKE_NPM_PUBLISHED: '1.0.0',
+			});
+			expect(result.code).toBe(0);
+			const npm = await read('npm-calls');
+			expect(npm).toMatch(/^publish \.\/acme-lib-1\.1\.0\.tgz /m);
+			expect(npm).not.toContain('install -g');
+			expect(result.stdout).toContain('npm 11.6.0');
+			expect(await originGit('tag', '--list')).toContain('v1.1.0');
+			expect(await read('calls')).toContain('release create v1.1.0');
+		});
+
+		test('an old npm is replaced before publishing', async () => {
+			const {action, unitCli, read} = await setup(
+				library({trigger: 'merge', publish: true}),
+			);
+			const result = await action({
+				CHAMOJI_CLI: unitCli,
+				...merged,
+				CHAMOJI_NPM_TOKEN: TOKEN,
+				FAKE_NPM_PUBLISHED: '1.0.0',
+				FAKE_NPM_VERSION: '10.9.0',
+			});
+			expect(result.code).toBe(0);
+			const npm = await read('npm-calls');
+			expect(npm).toContain('install -g npm@latest');
+			expect(npm).toMatch(/^publish \.\/acme-lib-1\.1\.0\.tgz /m);
+			expect(result.stdout).toContain('npm 11.6.0');
+		});
+
+		test('publish input false skips publishing', async () => {
+			const {action, unitCli, read, originGit} = await setup(
+				library({trigger: 'merge', publish: true}),
+			);
+			const result = await action({
+				CHAMOJI_CLI: unitCli,
+				...merged,
+				CHAMOJI_PUBLISH: 'false',
+			});
+			expect(result.code).toBe(0);
+			expect(await originGit('tag', '--list')).toContain('v1.1.0');
+			expect(await read('npm-calls')).toBe('');
+		});
+
+		test('the npm token is masked and never printed', async () => {
+			const {action, unitCli, read} = await setup(
+				library({trigger: 'merge', publish: true}),
+			);
+			const result = await action({
+				CHAMOJI_CLI: unitCli,
+				...merged,
+				CHAMOJI_NPM_TOKEN: TOKEN,
+				// The catch-up fails, so there is error output too.
+				FAKE_NPM_FAIL: '1.0.0',
+			});
+			expect(result.code).toBe(1);
+			expect(result.stdout.startsWith(`::add-mask::${TOKEN}\n`)).toBe(true);
+			const printed = result.stdout + result.stderr;
+			expect(printed.split('::add-mask::').length).toBe(2);
+			expect(printed.split(TOKEN).length).toBe(2);
+			for (const file of ['summary', 'output', 'npm-calls', 'calls']) {
+				// eslint-disable-next-line no-await-in-loop
+				expect(await read(file)).not.toContain(TOKEN);
+			}
+		});
+
+		test('notes mode leaves release creation to the publish', async () => {
+			const {action, unitCli, read} = await setup([
+				...library({trigger: 'merge', publish: true}),
+				{tag: 'v1.1.0', annotated: true},
+			]);
+			const result = await action({
+				CHAMOJI_CLI: unitCli,
+				FAKE_CLI_VERSION: '0.15.0',
+				GITHUB_EVENT_NAME: 'push',
+				GITHUB_REF: 'refs/tags/v1.1.0',
+			});
+			expect(result.code).toBe(0);
+			expect(result.stdout).toContain(
+				'the GitHub release is created when the publish finishes',
+			);
+			expect(await read('calls')).not.toContain('release create');
+
+			const existing = await action({
+				CHAMOJI_CLI: unitCli,
+				FAKE_CLI_VERSION: '0.15.0',
+				GITHUB_EVENT_NAME: 'push',
+				GITHUB_REF: 'refs/tags/v1.1.0',
+				FAKE_RELEASE_EXISTS: '1',
+			});
+			expect(existing.code).toBe(0);
+			expect(await read('calls')).toContain('release edit v1.1.0 --notes-file');
+			expect(await read('calls')).not.toContain('release create');
+		});
+
+		test('catch-up failure fails the job after the release', async () => {
+			const {action, unitCli, read, originGit} = await setup(
+				library({trigger: 'merge', publish: true}),
+			);
+			const result = await action({
+				CHAMOJI_CLI: unitCli,
+				...merged,
+				CHAMOJI_NPM_TOKEN: TOKEN,
+				FAKE_NPM_FAIL: '1.0.0',
+			});
+			expect(result.code).toBe(1);
+			const npm = await read('npm-calls');
+			expect(npm).toMatch(/^publish \.\/acme-lib-1\.0\.0\.tgz /m);
+			expect(npm).toMatch(/^publish \.\/acme-lib-1\.1\.0\.tgz /m);
+			expect(await originGit('tag', '--list')).toContain('v1.1.0');
+			// v1.1.0 is now the latest tag, so a re-run's catch-up wouldn't see
+			// v1.0.0: the advice leaves the re-run out.
+			const advice =
+				"catching up didn't finish for v1.0.0; run chamoji publish --from v1.0.0, or start a workflow with mode: publish on v1.0.0";
+			expect(result.stderr).toContain(advice);
+			expect(await read('summary')).toContain(advice);
+			expect(result.stdout + result.stderr).not.toContain('re-run');
+		});
+
+		test('catch-up failure suggests a re-run when nothing was released', async () => {
+			const {action, unitCli, read, git} = await setup(
+				library({trigger: 'manual', publish: true}),
+			);
+			const result = await action({
+				CHAMOJI_CLI: unitCli,
+				...merged,
+				CHAMOJI_NPM_TOKEN: TOKEN,
+				FAKE_NPM_FAIL: '1.0.0',
+			});
+			expect(result.code).toBe(1);
+			expect(await git('tag', '--list')).toBe('v1.0.0');
+			const advice =
+				"catching up didn't finish for v1.0.0; re-run this job, run chamoji publish --from v1.0.0, or start a workflow with mode: publish on v1.0.0";
+			expect(result.stderr).toContain(advice);
+			expect(await read('summary')).toContain(advice);
+		});
+
+		test('in merge mode only the publishing calls get the npm token', async () => {
+			const {action, unitCli, read} = await setup(
+				library({trigger: 'merge', publish: true}),
+			);
+			const result = await action({
+				CHAMOJI_CLI: unitCli,
+				...merged,
+				CHAMOJI_NPM_TOKEN: TOKEN,
+				FAKE_NPM_PUBLISHED: '1.0.0',
+			});
+			expect(result.code).toBe(0);
+			const calls = (await read('token-calls')).split('\n').filter(Boolean);
+			expect(calls).toHaveLength(2);
+			expect(calls[0]).toMatch(/^publish --catch-up --json /);
+			expect(calls[1]).toMatch(/^release --on-merge --push --publish --json /);
+			expect(calls.join('\n')).not.toContain(TOKEN);
+		});
+
+		test('a pull request never hands the npm token to chamoji', async () => {
+			const units = await setup([
+				...unitStart,
+				{
+					commit: '✨ Add the dashboard',
+					files: {'apps/web/src/dashboard.ts': 'dashboard\n'},
+				},
+			]);
+			const preview = await units.action({
+				CHAMOJI_CLI: units.unitCli,
+				GITHUB_EVENT_NAME: 'pull_request',
+				CHAMOJI_PR: '7',
+				CHAMOJI_BASE_SHA: await units.rev('HEAD~1'),
+				CHAMOJI_HEAD_SHA: await units.rev('HEAD'),
+				CHAMOJI_NPM_TOKEN: TOKEN,
+			});
+			expect(preview.code).toBe(0);
+			expect(await units.read('body')).toContain('Add the dashboard');
+			expect(await units.read('token-calls')).toBe('');
+
+			// Without release units the preview runs the CLI with npx.
+			const plain = await setup(pr);
+			const viaNpx = await plain.action({
+				CHAMOJI_CLI: '',
+				GITHUB_EVENT_NAME: 'pull_request_target',
+				CHAMOJI_PR: '7',
+				CHAMOJI_BASE_SHA: await plain.rev('HEAD~2'),
+				CHAMOJI_HEAD_SHA: await plain.rev('HEAD'),
+				CHAMOJI_NPM_TOKEN: TOKEN,
+			});
+			expect(viaNpx.stdout.startsWith(`::add-mask::${TOKEN}\n`)).toBe(true);
+			expect(await plain.read('npx-calls')).toContain('changelog');
+			expect(await plain.read('token-calls')).toBe('');
+		});
+
+		test('publish mode publishes the tag', async () => {
+			const {action, unitCli, read} = await setup(
+				library({publish: true}).slice(0, 2),
+			);
+			const result = await action({
+				CHAMOJI_CLI: unitCli,
+				FAKE_CLI_VERSION: '0.15.0',
+				CHAMOJI_MODE: 'publish',
+				GITHUB_REF: 'refs/tags/v1.0.0',
+				CHAMOJI_NPM_TOKEN: TOKEN,
+			});
+			expect(result.code).toBe(0);
+			expect(await read('npm-calls')).toMatch(
+				/^publish \.\/acme-lib-1\.0\.0\.tgz /m,
+			);
+
+			const again = await action({
+				CHAMOJI_CLI: unitCli,
+				FAKE_CLI_VERSION: '0.15.0',
+				CHAMOJI_MODE: 'publish',
+				GITHUB_REF: 'refs/tags/v1.0.0',
+				CHAMOJI_NPM_TOKEN: TOKEN,
+				FAKE_NPM_PUBLISHED: '1.0.0',
+			});
+			expect(again.code).toBe(0);
+			expect(await read('summary')).toContain('nothing to publish for v1.0.0');
+		});
+
+		test('the version gate asks for 0.15.0 when publish is set', async () => {
+			const {action, unitCli, read} = await setup(
+				library({trigger: 'merge', publish: true}),
+			);
+			const result = await action({
+				CHAMOJI_CLI: unitCli,
+				...merged,
+				FAKE_CLI_VERSION: '0.14.0',
+			});
+			expect(result.code).toBe(1);
+			expect(result.stderr).toContain(
+				"this repo's release settings need chamoji 0.15.0 or newer; set chamoji-version",
+			);
+			expect(await read('calls')).toBe('');
+			expect(await read('npm-calls')).toBe('');
+		});
 	});
 });

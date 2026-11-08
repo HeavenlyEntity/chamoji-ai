@@ -9,9 +9,9 @@ export const metadata = {
 <p className="lead">
 	The chamoji Action runs the CLI in your workflows. It does three jobs: it
 	writes each pushed tag’s notes to its GitHub release, keeps one changelog
-	preview comment up to date on every pull request, and, when you ask, cuts the
-	whole release. It can also keep your [repo card](/guides/repo-card) up to
-	date.
+	preview comment up to date on every pull request, and cuts the whole release,
+	when you ask or on every merge, publishing it to npm if you like. It can also
+	keep your [repo card](/guides/repo-card) up to date.
 </p>
 
 <Tag variant="ci">GITHUB ACTIONS</Tag>
@@ -54,7 +54,11 @@ The `mode` input picks the job. The default, `auto`, picks from the event:
 
 - **A pushed tag** runs `notes`.
 - **A pull request** (`pull_request` or `pull_request_target`) runs `comment`.
-- **Any other event** fails with “can’t pick a mode for the … event; set mode to notes, comment, release or card”. A `workflow_dispatch` or `schedule` workflow needs `mode: release` or `mode: card`.
+- **A push to the default branch** runs `merge`: see [Release on merge](#release-on-merge). The default branch is the one the event’s payload names.
+- **A `workflow_dispatch` run** runs `release`.
+- **Any other event**, a push to any other branch included, fails with “can’t pick a mode for the … event; set mode to notes, comment, release or card”. A `schedule` workflow needs `mode: card`.
+
+`merge` and `publish` need chamoji 0.15.0 or newer; with an older CLI they fail and say so.
 
 ## Release notes {{ tag: 'CI', variant: 'ci', label: 'mode: notes', icon: 'tag' }}
 
@@ -74,6 +78,9 @@ On a pushed tag, the Action writes that release’s notes and puts them on its G
 		If the tag already has a GitHub release, its notes are replaced. Otherwise
 		the Action creates one, titled with the tag. Without release units, it marks
 		it a prerelease when the tag has a hyphen anywhere, such as `v2.0.0-rc.1`.
+		When `chamoji.config.json` sets `release.publish`, it never creates one: it
+		says “the GitHub release is created when the publish finishes” and passes,
+		since the release job creates it once npm has the packages.
 	</Step>
 </Steps>
 
@@ -118,7 +125,7 @@ The job needs `pull-requests: write`. On a pull request from a fork, the token c
 
 ## Releases {{ tag: 'CHANGES YOUR REPO', variant: 'changes', label: 'mode: release', icon: 'rocket-launch' }}
 
-To release at the press of a button, add a second workflow with `mode: release`. This one asks for an optional version:
+To release at the press of a button, add a second workflow with `mode: release`. On `workflow_dispatch`, `auto` picks `release` too. This one asks for an optional version:
 
 ```yaml {{ title: '.github/workflows/release.yml' }}
 name: release
@@ -152,19 +159,126 @@ The Action sets the commit author to `github-actions[bot]` and runs `chamoji rel
 - **The push uses the credential `actions/checkout` saved,** the job’s `GITHUB_TOKEN` unless you give checkout a `token`. `github-token` is only for the gh calls, such as creating the GitHub release.
 - **A protected default branch** refuses the bot’s push. Cut releases on your machine with `chamoji release --push`, or give `actions/checkout` a token that may push there.
 - **Other workflows don’t start** for a tag pushed with `GITHUB_TOKEN`. If a separate workflow publishes your package on a tag, publish in this job instead, or give `actions/checkout` a GitHub App or fine-grained token.
+- **With `release.publish` set,** and `publish` not `false`, the Action passes `--publish` too, so the job publishes to npm before it creates the GitHub release. [Release on merge](#release-on-merge) has the credentials it needs.
+
+## Release on merge {{ tag: 'PUBLISHES TO NPM', variant: 'changes', label: 'mode: merge', icon: 'git-merge' }}
+
+With `release.trigger` set to `merge`, every push to the default branch releases what it merged, and with `release.publish` set, publishes it to npm. Both need `"schema": 2`:
+
+```json {{ title: 'chamoji.config.json' }}
+{
+	"release": {
+		"schema": 2,
+		"shape": "single",
+		"trigger": "merge",
+		"publish": true
+	}
+}
+```
+
+One workflow does both jobs: releases on merge, and releases by hand for a version you pick or a breaking change held back. Commit it as `.github/workflows/release.yml`:
+
+```yaml {{ title: '.github/workflows/release.yml' }}
+name: release
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: The version to release; leave it empty to pick it from the commits
+        required: false
+concurrency:
+  group: chamoji-release
+  cancel-in-progress: false
+permissions:
+  contents: write # the release commit, the tag and the GitHub release
+  id-token: write # trusted publishing to npm
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+      - uses: HeavenlyEntity/chamoji-ai@v0.15.0
+        with:
+          release-version: ${{ inputs.version }}
+          chamoji-version: '0.15.0'
+```
+
+- **`concurrency`** runs one release at a time, and `cancel-in-progress: false` lets a queued run wait instead of cancelling one halfway through a publish.
+- **`ref`** checks out the tip of the default branch, not the pushed commit, so a queued run starts from the release commit the run before it pushed.
+- **No loop.** The release commit is pushed with the job’s `GITHUB_TOKEN`, and GitHub doesn’t start workflows for that push.
+
+On a push to the default branch, the Action:
+
+<Steps>
+	<Step title="Catches up.">
+		When it publishes, it first runs `chamoji publish --catch-up`, which
+		publishes what each latest tag released and npm lacks, and creates its
+		missing GitHub release. A failure here doesn’t stop the release: the job
+		fails at the end, and the summary names the tag and how to finish it, as in
+		“catching up didn’t finish for v1.2.0; run chamoji publish --from v1.2.0, or
+		start a workflow with mode: publish on v1.2.0”. Catch-up only looks at the
+		latest tags, so once the release step has made a newer one, a re-run would
+		pass and leave v1.2.0 off npm. The summary suggests re-running the job only
+		when the release step made nothing.
+	</Step>
+	<Step title="Releases.">
+		`chamoji release --on-merge --push --publish --json`. With `release.trigger`
+		not set to `merge`, nothing happens and the job passes, with “chamoji:
+		releases are manual here (release.trigger)” in the summary. With
+		`release.majors` set to `manual`, a breaking change waits for a release run
+		by hand, and the summary says so. Otherwise it releases, pushes, publishes,
+		and then creates the GitHub release.
+	</Step>
+</Steps>
+
+A run from the Actions tab (`workflow_dispatch`) runs `release`, with `--publish` when publishing is on, so this is how a held breaking change ships.
+
+### Credentials {{ anchor: false }}
+
+The job publishes with one of two credentials:
+
+- **Trusted publishing**, with no secret. The job needs `id-token: write`, and npm adds provenance. On npmjs.com, open each package’s settings and add a trusted publisher for GitHub Actions: the organization or user that owns the repository, the repository’s name, and the workflow’s file name, such as `release.yml`.
+- **A token**, from a repository secret. It wins when both are there:
+
+```yaml {{ title: 'with' }}
+- uses: HeavenlyEntity/chamoji-ai@v0.15.0
+  with:
+    npm-token: ${{ secrets.NPM_TOKEN }}
+```
+
+The Action masks the token before it prints anything, then takes it out of the environment. Only the calls that publish get it, as `CHAMOJI_NPM_TOKEN`, and a job on a pull request never passes it on.
+
+npm can’t trust a package that doesn’t exist yet, so trusted publishing skips a package’s first version. Publish the first version from your machine with `chamoji publish`, or with a token, then add the trusted publisher.
+
+Trusted publishing needs npm 11.5.1 or newer. When the runner’s npm is older, the Action installs `npm@latest` first, and it prints the npm version it publishes with.
+
+### Keeping the catch-up fast {{ anchor: false }}
+
+The catch-up looks at every package in the latest tags. Mark each app `"private": true` in its `package.json`, or list it in `release.exclude`, so it isn’t packed and checked on every merge.
+
+### Publishing a tag again {{ anchor: false }}
+
+`mode: publish` runs `chamoji publish --from` for the pushed tag, or the tag a run from the Actions tab was started on, such as after a publish that failed. When npm already has everything, it passes with “nothing to publish for” and the tag. It doesn’t create the GitHub release; the next merge’s catch-up does, for the latest tags.
 
 ## The repo card {{ tag: 'CI', variant: 'ci', label: 'mode: card', icon: 'github-logo' }}
 
 `mode: card` saves an image of your latest release on a branch of its own, for your readme. `auto` never picks it, so give it a workflow of its own, or a step after the release step. [Repo card](/guides/repo-card) has the workflow and what it sends.
 
-## Inputs {{ icon: 'sliders', badge: '11' }}
+## Inputs {{ icon: 'sliders', badge: '13' }}
 
 Every input of `action.yml` at v0.14.0, with its default:
 
 <Properties>
 	<Property name="mode" type="string · default auto">
-		`auto`, `notes`, `comment`, `release` or `card`. `auto` picks `notes` for a
-		pushed tag and `comment` for a pull request, and fails for other events.
+		`auto`, `notes`, `comment`, `release`, `merge`, `publish` or `card`. `auto`
+		picks `notes` for a pushed tag, `comment` for a pull request, `merge` for a
+		push to the default branch and `release` for `workflow_dispatch`, and fails
+		for other events.
 	</Property>
 	<Property name="chamoji-version" type="string · default latest">
 		The `@chamoji/cli` version to run with npx. Pin it, such as `'0.14.0'`, so a
@@ -188,6 +302,18 @@ Every input of `action.yml` at v0.14.0, with its default:
 		`release` mode only, in a repo with release units. Release just this unit.
 		Empty releases every unit that has something to release, as
 		`chamoji release` does. It takes one unit.
+	</Property>
+	<Property name="publish" type="string · default auto" since="0.15.0">
+		`auto` publishes to npm in `release` and `merge` mode when
+		`chamoji.config.json` sets `release.publish`. `false` never publishes: the
+		release is tagged and pushed, and its GitHub release waits for the next run
+		that publishes. Anything else fails the job.
+	</Property>
+	<Property name="npm-token" type="string · default empty" since="0.15.0">
+		An npm token to publish with instead of trusted publishing, such as
+		`${{ secrets.NPM_TOKEN }}`. The Action masks it first, and passes it to the
+		CLI as `CHAMOJI_NPM_TOKEN` only for the calls that publish, never on a pull
+		request.
 	</Property>
 	<Property name="ai" type="boolean · default false">
 		`true` passes `--ai` to the CLI, so Jev sorts the commits no rule can place.
@@ -246,7 +372,10 @@ Each job needs `fetch-depth: 0` on `actions/checkout`, and one permission:
 | `notes`   | `contents: write`      | Creating or editing the GitHub release      |
 | `comment` | `pull-requests: write` | Posting and updating the preview comment    |
 | `release` | `contents: write`      | Pushing the commit and tag, and the release |
+| `merge`   | `contents: write`      | Pushing the commit and tag, and the release |
 | `card`    | `contents: write`      | Pushing the card branch                     |
+
+Publishing from `release`, `merge` or `publish` with trusted publishing also needs `id-token: write`.
 
 `card` pushes with the credential `actions/checkout` leaves behind, so `persist-credentials: false` breaks it.
 
@@ -267,7 +396,7 @@ To have Jev sort vague commits in the notes, the preview and releases, add a rep
 
 In a repo with release units, each job works per unit. [Monorepos](/guides/monorepos) explains units.
 
-- **The CLI version.** When `chamoji.config.json` has any `release` section, the Action first checks that the CLI is 0.13.0 or newer, and otherwise fails with “this repo’s release settings need chamoji 0.13.0 or newer; set chamoji-version”.
+- **The CLI version.** When `chamoji.config.json` has any `release` section, the Action first checks that the CLI is 0.13.0 or newer, and otherwise fails with “this repo’s release settings need chamoji 0.13.0 or newer; set chamoji-version”. When the section sets `trigger`, `majors` or `publish`, it needs 0.15.0, with the same message.
 - **Release notes.** On a pushed tag, the Action finds the unit whose tag format the tag fits, and writes that release’s notes with `chamoji changelog --for-tag`. A tag that fits no unit fails the job. The release is a prerelease only when a hyphen follows the version’s `x.y.z`, as in `web/v2.0.0-rc.1`, so a hyphen in a unit’s name, as in `web-v1.0.0`, doesn’t count. Unit tags such as `web/v1.3.0` don’t match `tags: ['v*']`, so list them in the trigger, for example `tags: ['v*', '*/v*']`.
 - **Releases.** `unit` releases just that unit. Without it, every unit with something to release goes in one release commit, with the tags and GitHub releases that `chamoji release --push` makes.
 - **The preview** lists only the units the PR touches, with the release merging it would make.

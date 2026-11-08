@@ -2,7 +2,7 @@
 # The chamoji GitHub Action; action.yml runs this. Everything arrives as
 # environment variables, never as ${{ }} expressions pasted into the script.
 #
-#   CHAMOJI_MODE      auto (default), notes, comment, release or card
+#   CHAMOJI_MODE      auto (default), notes, comment, release, merge, publish or card
 #   CHAMOJI_CLI       command to run chamoji; default: npx @chamoji/cli@$CHAMOJI_VERSION
 #   CHAMOJI_VERSION   chamoji version for npx; default: latest
 #   CHAMOJI_AI        true to pass --ai (needs TYPESAFE_API_KEY)
@@ -11,10 +11,25 @@
 #   CHAMOJI_COMMENT_AUTHOR   comment mode: login that owns the preview comment; default: github-actions[bot]
 #   CHAMOJI_CARD_URL     card mode: the renderer; default: https://chamoji.dev/api/card
 #   CHAMOJI_CARD_BRANCH  card mode: the branch that holds only card.png; default: chamoji-card
+#   CHAMOJI_PUBLISH   auto (default) publishes when release.publish is set; false never does
+#   CHAMOJI_NPM_TOKEN an npm token to publish with instead of trusted publishing;
+#                     masked first, then taken out of the environment and
+#                     given only to the calls that publish, never on a PR
+#   CHAMOJI_TAG       notes and publish modes: the tag; default: from GITHUB_REF
 #   GH_TOKEN, GH_REPO and the usual GITHUB_* variables
 #
 # Kept to bash 3.2 so it also runs on macOS runners.
 set -euo pipefail
+
+# The mask goes before anything else prints, so the log never shows the
+# token. Then it leaves the environment: only the calls that publish get it
+# (chamoji_publishing), and a pull request's job never does, since the PR's
+# code must never run near a secret. masked keeps it for scrub.
+npm_token=${CHAMOJI_NPM_TOKEN:-}
+[ -z "$npm_token" ] || echo "::add-mask::$npm_token"
+unset CHAMOJI_NPM_TOKEN
+masked=$npm_token
+case "${GITHUB_EVENT_NAME:-}" in pull_request*) npm_token= ;; esac
 
 mode=${CHAMOJI_MODE:-auto}
 summary=${GITHUB_STEP_SUMMARY:-/dev/null}
@@ -24,8 +39,17 @@ marker='<!-- chamoji-changelog -->'
 semver='^v?[0-9]+\.[0-9]+\.[0-9]+'
 read -r -a cli <<<"${CHAMOJI_CLI:-npx --yes @chamoji/cli@${CHAMOJI_VERSION:-latest}}"
 
+# $1 with the npm token replaced, for anything the Action writes itself.
+scrub() {
+	if [ -n "$masked" ]; then
+		printf '%s' "${1//"$masked"/***}"
+	else
+		printf '%s' "$1"
+	fi
+}
+
 fail() {
-	echo "::error::chamoji: $*" >&2
+	echo "::error::chamoji: $(scrub "$*")" >&2
 	exit 1
 }
 
@@ -37,6 +61,18 @@ chamoji() {
 	fi
 }
 
+# chamoji with the npm token in its environment, for the calls that publish:
+# release --publish, publish --catch-up and publish --from.
+chamoji_publishing() {
+	if [ -z "$npm_token" ]; then
+		chamoji "$@"
+	elif [ "${CHAMOJI_AI:-false}" = true ]; then
+		CHAMOJI_NPM_TOKEN=$npm_token "${cli[@]}" "$@" --ai --no-update-check
+	else
+		CHAMOJI_NPM_TOKEN=$npm_token "${cli[@]}" "$@" --no-update-check
+	fi
+}
+
 # The rendered changelog without its "# Changelog" title or leading blank lines.
 strip_title() {
 	sed '1{/^# Changelog$/d;}' | awk 'NF { started = 1 } started'
@@ -45,6 +81,22 @@ strip_title() {
 # A field from the webhook payload, read with node (set up by action.yml).
 event() {
 	node -e 'const e = require(process.env.GITHUB_EVENT_PATH); const v = process.argv[1].split(".").reduce((o, k) => o?.[k], e); process.stdout.write(v == null ? "" : String(v))' "$1"
+}
+
+# Whether version $1 is $2 or newer; false for anything that isn't x.y.z.
+at_least() {
+	node -e '
+		const parse = text => (/^v?(\d+)\.(\d+)\.(\d+)/.exec(text) ?? []).slice(1).map(Number);
+		const [have, need] = [parse(process.argv[1]), parse(process.argv[2])];
+		if (have.length !== 3) process.exit(1);
+		for (let i = 0; i < 3; i++) if (have[i] !== need[i]) process.exit(have[i] > need[i] ? 0 : 1);
+	' "$1" "$2"
+}
+
+# The repository's default branch, from the webhook payload; empty without one.
+default_branch() {
+	[ -n "${GITHUB_EVENT_PATH:-}" ] && [ -f "$GITHUB_EVENT_PATH" ] || return 0
+	event repository.default_branch 2>/dev/null || true
 }
 
 newest_tag() {
@@ -66,48 +118,133 @@ if [ "$(git rev-parse --is-shallow-repository)" = true ]; then
 	fail 'this is a shallow clone; check out with actions/checkout and fetch-depth: 0 so chamoji sees every commit and tag'
 fi
 
-# What chamoji.config.json says about releases: "none" (no release section, or
-# a file that can't be read; the CLI reports a broken file itself), "single"
-# (shape single) or "units" (any other shape).
+# What chamoji.config.json says about releases, as two words. The first is
+# "none" (no release section, or a file that can't be read; the CLI reports a
+# broken file itself), "single" (shape single) or "units" (any other shape),
+# with "+publish" when release.publish is set. The second is the oldest CLI
+# that knows every setting the section uses (empty for none).
 release_config() {
 	node -e '
 		try {
 			const release = JSON.parse(require("fs").readFileSync("chamoji.config.json", "utf8")).release;
-			if (typeof release !== "object" || release === null) process.stdout.write("none");
-			else process.stdout.write(release.shape === "single" ? "single" : "units");
+			if (typeof release !== "object" || release === null) {
+				process.stdout.write("none");
+			} else {
+				const shape = release.shape === "single" ? "single" : "units";
+				const publish = release.publish !== undefined && release.publish !== null && release.publish !== false;
+				const newer = ["trigger", "majors", "publish"].some(key => release[key] !== undefined);
+				process.stdout.write(`${shape}${publish ? "+publish" : ""} ${newer ? "0.15.0" : "0.13.0"}`);
+			}
 		} catch {
 			process.stdout.write("none");
 		}
 	'
 }
-config_release=$(release_config)
+need_cli=
+read -r config_release need_cli <<<"$(release_config)"
 units=false
-[ "$config_release" = units ] && units=true
+publishing=false
+case "$config_release" in units*) units=true ;; esac
+case "$config_release" in *+publish) publishing=true ;; esac
 
-# Release settings came with chamoji 0.13.0; an older CLI would ignore them.
-if [ "$config_release" != none ]; then
-	probe_error="$work/chamoji-version.err"
-	cli_version=$("${cli[@]}" --version --no-update-check 2>"$probe_error" | head -n 1 || true)
+# Whether the CLI is $1 or newer. It runs the CLI once, the first time.
+cli_version=
+cli_at_least() {
 	if [ -z "$cli_version" ]; then
-		fail "couldn't run chamoji to check its version: $(head -c 300 "$probe_error" | tr '\n' ' ')"
+		probe_error="$work/chamoji-version.err"
+		cli_version=$("${cli[@]}" --version --no-update-check 2>"$probe_error" | head -n 1 || true)
+		if [ -z "$cli_version" ]; then
+			fail "couldn't run chamoji to check its version: $(head -c 300 "$probe_error" | tr '\n' ' ')"
+		fi
 	fi
-	if ! node -e '
-		const parse = text => (/^v?(\d+)\.(\d+)\.(\d+)/.exec(text) ?? []).slice(1).map(Number);
-		const [have, need] = [parse(process.argv[1]), [0, 13, 0]];
-		if (have.length !== 3) process.exit(1);
-		for (let i = 0; i < 3; i++) if (have[i] !== need[i]) process.exit(have[i] > need[i] ? 0 : 1);
-	' "$cli_version"; then
-		fail "this repo's release settings need chamoji 0.13.0 or newer; set chamoji-version"
-	fi
+	at_least "$cli_version" "$1"
+}
+
+# Release settings came with chamoji 0.13.0, and trigger, majors and publish
+# with 0.15.0; an older CLI would ignore them.
+if [ -n "$need_cli" ] && ! cli_at_least "$need_cli"; then
+	fail "this repo's release settings need chamoji $need_cli or newer; set chamoji-version"
 fi
+
+case "${CHAMOJI_PUBLISH:-auto}" in
+	auto | false) ;;
+	*) fail "publish must be auto or false, not ${CHAMOJI_PUBLISH}" ;;
+esac
+publish_flag=
+if [ "$publishing" = true ] && [ "${CHAMOJI_PUBLISH:-auto}" != false ]; then
+	publish_flag=--publish
+fi
+
+# Trusted publishing needs npm 11.5.1 or newer; older runners get the latest.
+prepare_npm() {
+	if ! at_least "$(npm --version 2>/dev/null || true)" 11.5.1; then
+		npm install -g npm@latest >&2 || fail "couldn't install npm@latest; publishing needs npm 11.5.1 or newer"
+	fi
+	echo "npm $(npm --version)"
+}
+
+# Prints what a chamoji call wrote to the file $1, to stderr, without the token.
+show_problems() {
+	if [ -s "$1" ]; then
+		scrub "$(cat "$1")" >&2
+		echo >&2
+	fi
+}
+
+# Runs chamoji release with $@ and the input's version and unit, pushing. It
+# writes the notes to the summary and the tags to the version output. Exit 3
+# (nothing to release) passes: with $1 --on-merge, the summary gets the CLI's
+# own reason, else the usual line. It leaves the exit code in release_status,
+# and for any other failure the message in release_failed, for the caller.
+release_run() {
+	git config user.name 'github-actions[bot]'
+	git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+	local version_args=() unit_args=() problems="$work/chamoji-release.err" runner=chamoji
+	[ -z "${CHAMOJI_RELEASE_VERSION:-}" ] || version_args=("$CHAMOJI_RELEASE_VERSION")
+	[ -z "${CHAMOJI_UNIT:-}" ] || unit_args=(--unit "$CHAMOJI_UNIT")
+	[ -z "$publish_flag" ] || runner=chamoji_publishing
+	release_failed=
+	set +e
+	result=$($runner release ${version_args[@]+"${version_args[@]}"} ${unit_args[@]+"${unit_args[@]}"} "$@" --push $publish_flag --json 2>"$problems")
+	status=$?
+	set -e
+	release_status=$status
+	show_problems "$problems"
+	if [ "$status" -eq 3 ]; then
+		reason=
+		[ "${1:-}" != --on-merge ] || reason=$(grep '^chamoji: ' "$problems" || true)
+		printf '%s\n' "$(scrub "${reason:-chamoji: nothing to release since the last tag}")" | tee -a "$summary"
+		return 0
+	fi
+
+	if [ "$status" -ne 0 ]; then
+		release_failed="chamoji release failed with exit code $status"
+		return 0
+	fi
+	# Members of a fixed group can share one tag: it is named once, and each
+	# member's section says whose it is.
+	version=$(printf '%s' "$result" | node -e 'let s = ""; process.stdin.on("data", d => (s += d)).on("end", () => { const j = JSON.parse(s); process.stdout.write(j.units ? [...new Set(j.units.map(u => u.tag))].join(", ") : j.tag) })')
+	printf '%s' "$result" | node -e 'let s = ""; process.stdin.on("data", d => (s += d)).on("end", () => { const j = JSON.parse(s); const head = u => (j.units.filter(o => o.tag === u.tag).length > 1 ? `${u.tag} (${u.unit})` : u.tag); process.stdout.write((j.units ? j.units.map(u => `## ${head(u)}\n\n${u.notes.replace(/^## .*\n+/, "")}`).join("\n\n") : j.notes) + "\n") })' >>"$summary"
+	echo "version=$version" >>"$output"
+}
 
 if [ "$mode" = auto ]; then
 	case "${GITHUB_EVENT_NAME:-}:${GITHUB_REF:-}" in
 		push:refs/tags/*) mode=notes ;;
 		pull_request:* | pull_request_target:*) mode=comment ;;
-		*) fail "can't pick a mode for the ${GITHUB_EVENT_NAME:-unknown} event; set mode to notes, comment, release or card" ;;
+		workflow_dispatch:*) mode=release ;;
+		*) mode= ;;
 	esac
+	# A push to the default branch releases what it merged; a push to any
+	# other branch picks nothing.
+	if [ -z "$mode" ] && [ "${GITHUB_EVENT_NAME:-}" = push ] && [ -n "${GITHUB_REF:-}" ]; then
+		branch=$(default_branch)
+		[ -z "$branch" ] || [ "$GITHUB_REF" != "refs/heads/$branch" ] || mode=merge
+	fi
+	[ -n "$mode" ] || fail "can't pick a mode for the ${GITHUB_EVENT_NAME:-unknown} event; set mode to notes, comment, release or card"
 fi
+# The PR preview never publishes, so it never holds the token.
+[ "$mode" != comment ] || npm_token=
 
 case "$mode" in
 notes)
@@ -134,6 +271,10 @@ notes)
 	fi
 	if gh release view "$tag" >/dev/null 2>&1; then
 		gh release edit "$tag" --notes-file "$notes"
+	elif [ "$publishing" = true ]; then
+		# The release job publishes to npm first and creates the GitHub release
+		# after, so a release made here would announce packages npm lacks.
+		echo 'chamoji: the GitHub release is created when the publish finishes'
 	else
 		gh release create "$tag" --title "$tag" --notes-file "$notes" $prerelease
 	fi
@@ -337,29 +478,65 @@ comment)
 	;;
 
 release)
-	git config user.name 'github-actions[bot]'
-	git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-	unit_args=()
-	[ -z "${CHAMOJI_UNIT:-}" ] || unit_args=(--unit "$CHAMOJI_UNIT")
-	set +e
-	if [ -n "${CHAMOJI_RELEASE_VERSION:-}" ]; then
-		result=$(chamoji release "$CHAMOJI_RELEASE_VERSION" ${unit_args[@]+"${unit_args[@]}"} --push --json)
-	else
-		result=$(chamoji release ${unit_args[@]+"${unit_args[@]}"} --push --json)
+	[ -z "$publish_flag" ] || prepare_npm
+	release_run
+	[ -z "$release_failed" ] || fail "$release_failed"
+	;;
+
+merge)
+	# A push to the default branch: first publish what an earlier run tagged and
+	# npm lacks, then release what this push merged, if release.trigger says so.
+	# A catch-up that fails still lets the release run, and fails the job after.
+	cli_at_least 0.15.0 || fail 'releasing on merge needs chamoji 0.15.0 or newer; set chamoji-version'
+	catch_up_status=0
+	behind=
+	if [ -n "$publish_flag" ]; then
+		prepare_npm
+		set +e
+		caught=$(chamoji_publishing publish --catch-up --json 2>"$work/chamoji-catch-up.err")
+		catch_up_status=$?
+		set -e
+		show_problems "$work/chamoji-catch-up.err"
+		if [ "$catch_up_status" -ne 0 ]; then
+			behind=$(printf '%s' "$caught" | node -e 'let s = ""; process.stdin.on("data", d => (s += d)).on("end", () => { try { const j = JSON.parse(s); process.stdout.write(j.tags.filter(t => t.error !== undefined || t.outcomes.some(o => o.status === "failed")).map(t => t.tag).join(", ")) } catch {} })' || true)
+		fi
 	fi
+	release_run --on-merge
+	if [ "$catch_up_status" -ne 0 ]; then
+		# Catch-up looks only at the latest tags, so once this run has made a
+		# newer one, a re-run would pass and leave these tags off npm. A re-run
+		# helps only when the release made nothing (exit 3).
+		rerun=
+		[ "$release_status" -ne 3 ] || rerun='re-run this job, '
+		case "$behind" in
+			'') advice="chamoji publish --catch-up failed with exit code $catch_up_status; ${rerun}run chamoji publish --from with each tag its output names, or start a workflow with mode: publish on each" ;;
+			*,*) advice="catching up didn't finish for $behind; ${rerun}run chamoji publish --from with each tag, or start a workflow with mode: publish on each" ;;
+			*) advice="catching up didn't finish for $behind; ${rerun}run chamoji publish --from $behind, or start a workflow with mode: publish on $behind" ;;
+		esac
+		printf 'chamoji: %s\n\n' "$(scrub "$advice")" | tee -a "$summary"
+	fi
+	[ -z "$release_failed" ] || fail "$release_failed"
+	[ "$catch_up_status" -eq 0 ] || fail "$advice"
+	;;
+
+publish)
+	# Publishes what a tag released, such as after a release job whose publish failed.
+	cli_at_least 0.15.0 || fail 'publish mode needs chamoji 0.15.0 or newer; set chamoji-version'
+	tag=${CHAMOJI_TAG:-}
+	case "${GITHUB_REF:-}" in refs/tags/*) tag=${tag:-${GITHUB_REF#refs/tags/}} ;; esac
+	[ -n "$tag" ] || fail 'publish mode needs a tag: run it on a tag, or set CHAMOJI_TAG'
+	prepare_npm
+	set +e
+	result=$(chamoji_publishing publish --from "$tag" --json 2>"$work/chamoji-publish.err")
 	status=$?
 	set -e
+	show_problems "$work/chamoji-publish.err"
 	if [ "$status" -eq 3 ]; then
-		echo 'chamoji: nothing to release since the last tag' | tee -a "$summary"
+		echo "chamoji: nothing to publish for $tag (every package is already on npm, or was skipped)" | tee -a "$summary"
 		exit 0
 	fi
-
-	[ "$status" -eq 0 ] || fail "chamoji release failed with exit code $status"
-	# Members of a fixed group can share one tag: it is named once, and each
-	# member's section says whose it is.
-	version=$(printf '%s' "$result" | node -e 'let s = ""; process.stdin.on("data", d => (s += d)).on("end", () => { const j = JSON.parse(s); process.stdout.write(j.units ? [...new Set(j.units.map(u => u.tag))].join(", ") : j.tag) })')
-	printf '%s' "$result" | node -e 'let s = ""; process.stdin.on("data", d => (s += d)).on("end", () => { const j = JSON.parse(s); const head = u => (j.units.filter(o => o.tag === u.tag).length > 1 ? `${u.tag} (${u.unit})` : u.tag); process.stdout.write((j.units ? j.units.map(u => `## ${head(u)}\n\n${u.notes.replace(/^## .*\n+/, "")}`).join("\n\n") : j.notes) + "\n") })' >>"$summary"
-	echo "version=$version" >>"$output"
+	[ "$status" -eq 0 ] || fail "chamoji publish --from $tag failed with exit code $status"
+	printf '%s' "$result" | node -e 'let s = ""; process.stdin.on("data", d => (s += d)).on("end", () => { const j = JSON.parse(s); process.stdout.write(j.packages.map(p => `- ${p.name} ${p.version} → ${p.distTag}: ${p.status}`).join("\n") + "\n") })' >>"$summary"
 	;;
 
 card)
@@ -446,6 +623,6 @@ card)
 	;;
 
 *)
-	fail "unknown mode $mode (use auto, notes, comment, release or card)"
+	fail "unknown mode $mode (use auto, notes, comment, release, merge, publish or card)"
 	;;
 esac
