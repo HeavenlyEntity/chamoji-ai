@@ -378,3 +378,27 @@ test('a Vite app with vite in devDependencies and index.html is an app', async (
 	);
 	expect(withConfig.kind).toBe('app');
 });
+
+test('an app names its most specific framework', async () => {
+	const next = await classify(
+		'apps/web',
+		{dependencies: {next: '^15.0.0', react: '^19.0.0'}},
+		{'next.config.ts': 'export default {};'},
+	);
+	expect(next.framework).toBe('Next.js');
+	await repo?.cleanup();
+
+	const vite = await classify(
+		'packages/spa',
+		{
+			dependencies: {react: '^19.0.0'},
+			devDependencies: {vite: '^6.0.0', '@vitejs/plugin-react': '^4.0.0'},
+		},
+		{'index.html': '<html></html>'},
+	);
+	expect(vite.framework).toBe('Vite + React');
+	await repo?.cleanup();
+
+	const fallback = await classify('apps/x', {});
+	expect(fallback).toEqual({kind: 'app', reasons: ['under `apps/`']});
+});

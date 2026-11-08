@@ -137,13 +137,15 @@ async function tgzIn(dir: string): Promise<Set<string>> {
 /**
  * Packs `pkg` with the package manager that owns the workspace, so `workspace:`
  * and `catalog:` ranges are rewritten the way that tool rewrites them, and
- * returns the tarball's absolute path. `prepack` runs as usual.
+ * returns the tarball's absolute path. `prepack` runs as usual, with `env`
+ * when given, else the process environment.
  */
 export async function packPackage(
 	root: string,
 	pkg: WorkspacePackage,
 	pm: PackageManager,
 	outDir: string,
+	env?: NodeJS.ProcessEnv,
 ): Promise<string> {
 	const absOut = path.resolve(outDir);
 	const cwd = path.join(root, ...pkg.path.split('/').filter(Boolean));
@@ -152,6 +154,7 @@ export async function packPackage(
 	const run = spawnSpec(command, args);
 	const {stdout} = await execFileAsync(run.file, run.args, {
 		cwd,
+		...(env ? {env} : {}),
 		maxBuffer: 64 * 1024 * 1024,
 	});
 

@@ -1,5 +1,5 @@
 import {execFileSync} from 'node:child_process';
-import {mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises';
+import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {afterEach, describe, expect, it} from 'vitest';
@@ -95,6 +95,39 @@ describe('packArgs', () => {
 });
 
 describe('packPackage', () => {
+	it.skipIf(!has('npm'))(
+		'runs the pack with the env it is given',
+		async () => {
+			const prepack = `node -e "require('fs').writeFileSync('seen.txt', process.env.CHAMOJI_PACK_MARKER || 'none')"`;
+			const root = await tmp({
+				'package.json': JSON.stringify({
+					name: 'marked',
+					version: '1.0.0',
+					scripts: {prepack},
+				}),
+			});
+			const pkg = {
+				name: 'marked',
+				path: '',
+				version: '1.0.0',
+				private: false,
+				runtimeDeps: [],
+				ranges: {},
+			};
+			const out = await tmp({});
+
+			await packPackage(root, pkg, 'npm', out, {
+				...process.env,
+				CHAMOJI_PACK_MARKER: 'given',
+			});
+			expect(await readFile(path.join(root, 'seen.txt'), 'utf8')).toBe('given');
+
+			await packPackage(root, pkg, 'npm', await tmp({}));
+			expect(await readFile(path.join(root, 'seen.txt'), 'utf8')).toBe('none');
+		},
+		30_000,
+	);
+
 	it.skipIf(!has('pnpm'))('pnpm pack rewrites workspace ranges', async () => {
 		const root = await tmp({
 			'pnpm-workspace.yaml': "packages:\n  - 'packages/*'\n",
