@@ -563,6 +563,13 @@ describe('scrubEnv', () => {
 			npm_config_auth: 'q17',
 			npm_config__authtoken: 'r18',
 			npm_config_AuthToken: 's19',
+			npm_config_key: 't20',
+			NPM_CONFIG_CERT: 'u21',
+			npm_config_otp: 'v22',
+			YARN_NPM_AUTH_TOKEN: 'w23',
+			yarn_npm_auth_ident: 'x24',
+			ACTIONS_ID_TOKEN_REQUEST_URL: 'https://actions.test/t?x=1',
+			actions_id_token_request_token: 'z26',
 		};
 		const {env, secrets} = scrubEnv({
 			...dropped,

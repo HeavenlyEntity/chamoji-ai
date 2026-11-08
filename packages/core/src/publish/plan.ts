@@ -94,6 +94,7 @@ const DEFAULT_PUBLISH: PublishSettings = {
 	check: null,
 	prereleaseTag: 'next',
 	packages: [],
+	registries: [],
 };
 
 const INSTALL: Record<PackageManager, string[]> = {

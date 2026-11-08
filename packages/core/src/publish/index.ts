@@ -31,3 +31,9 @@ export {
 	type PublishPlan,
 	type PublishTarget,
 } from './plan.js';
+export {
+	publishMethod,
+	withTokenConfig,
+	type PublishMethod,
+} from './credentials.js';
+export {checkPublishAuth, type FetchLike} from './auth.js';

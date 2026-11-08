@@ -56,6 +56,8 @@ export type PublishSettings = {
 	check: string | null;
 	prereleaseTag: string;
 	packages: string[];
+	/** Extra registries (exact https URLs, ending in `/`) that may get the npm token. */
+	registries: string[];
 };
 
 type Obj = Record<string, unknown>;
@@ -228,6 +230,25 @@ export function parseReleaseSettings(
 
 type Fail = (key: string, problem: string) => never;
 
+/** Exact https registry URLs, normalised to end with `/`. */
+function registryList(value: unknown, fail: Fail): string[] {
+	return stringList(value, 'publish.registries', fail).map(entry => {
+		let url: URL | undefined;
+		try {
+			url = new URL(entry);
+		} catch {
+			// Reported below.
+		}
+
+		if (url?.protocol !== 'https:') {
+			return fail('publish.registries', `"${entry}" must be an https URL`);
+		}
+
+		const href = url.href;
+		return href.endsWith('/') ? href : `${href}/`;
+	});
+}
+
 function parsePublish(value: unknown, fail: Fail): PublishSettings | null {
 	if (value === undefined || value === false) {
 		return null;
@@ -237,6 +258,7 @@ function parsePublish(value: unknown, fail: Fail): PublishSettings | null {
 		check: null,
 		prereleaseTag: 'next',
 		packages: [],
+		registries: [],
 	};
 	if (value === true) {
 		return defaults;
@@ -247,7 +269,7 @@ function parsePublish(value: unknown, fail: Fail): PublishSettings | null {
 	}
 
 	for (const key of Object.keys(value)) {
-		if (!['check', 'prereleaseTag', 'packages'].includes(key)) {
+		if (!['check', 'prereleaseTag', 'packages', 'registries'].includes(key)) {
 			fail(`publish.${key}`, "isn't a setting");
 		}
 	}
@@ -268,6 +290,7 @@ function parsePublish(value: unknown, fail: Fail): PublishSettings | null {
 		check: (check as string | undefined) ?? null,
 		prereleaseTag: (prereleaseTag as string | undefined) ?? 'next',
 		packages: stringList(value.packages, 'publish.packages', fail),
+		registries: registryList(value.registries, fail),
 	};
 }
 
