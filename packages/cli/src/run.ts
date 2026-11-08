@@ -305,6 +305,10 @@ const HELP = `
 	             ran here, then create the GitHub release when the gh CLI
 	             is installed (with release.publish set, the GitHub release
 	             is left to the publish)
+	  --on-merge release: for the GitHub Action on a push to the default
+	             branch. Does nothing unless release.trigger is "merge" (exits
+	             3), and with release.majors "manual" holds back a breaking
+	             change for a release a person runs
 	  --publish  release: check the packages before the commit and tag, push,
 	             publish them to npm, then create the GitHub release
 	             (implies --push)
@@ -424,6 +428,7 @@ function parse(argv: string[]) {
 			updateCheck: {type: 'boolean', default: true},
 			dryRun: {type: 'boolean'},
 			push: {type: 'boolean'},
+			onMerge: {type: 'boolean'},
 			publish: {type: 'boolean'},
 			trailer: {type: 'string', isMultiple: true},
 			anyBranch: {type: 'boolean'},
@@ -603,6 +608,11 @@ export async function run(argv: string[], given: Io): Promise<number> {
 
 				case 'release': {
 					const config = await loadConfig(io.cwd, flags.config);
+					if (flags.onMerge && config.release?.trigger !== 'merge') {
+						io.stderr('chamoji: releases are manual here (release.trigger)\n');
+						return NO_RELEASE_NEEDED;
+					}
+
 					if (releasesUnits(config)) {
 						return await releaseUnits(config, cli.input[1], classify);
 					}
@@ -1426,6 +1436,21 @@ export async function run(argv: string[], given: Io): Promise<number> {
 			: ['npm: nothing to publish'];
 	}
 
+	/** What `--on-merge` asks planning to hold back: a breaking change, when the config says majors wait for a person. */
+	function holdMajors(config: ChamojiConfig): {holdMajors?: true} {
+		return flags.onMerge && config.release?.majors === 'manual'
+			? {holdMajors: true}
+			: {};
+	}
+
+	function announceHeld(held: string[] | undefined): void {
+		for (const name of held ?? []) {
+			io.stderr(
+				`chamoji: ${name} has a breaking change and waits for a manual release (release.majors)\n`,
+			);
+		}
+	}
+
 	async function release(
 		version: string | undefined,
 		classify: CommitClassifier | undefined,
@@ -1437,6 +1462,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 					cwd: io.cwd,
 					config,
 					...(version === undefined ? {} : {version}),
+					...holdMajors(config),
 					classify,
 					...options,
 				}),
@@ -1444,6 +1470,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 		);
 
 		if (plan.status === 'nothing') {
+			announceHeld(plan.held);
 			printResult(
 				[
 					`Nothing to release: no commit since ${plan.lastTag} implies a version bump.`,
@@ -1454,7 +1481,12 @@ export async function run(argv: string[], given: Io): Promise<number> {
 							]
 						: ['No commits since that tag.']),
 				],
-				{status: 'nothing', lastTag: plan.lastTag, unreleased: plan.unreleased},
+				{
+					status: 'nothing',
+					lastTag: plan.lastTag,
+					unreleased: plan.unreleased,
+					...heldFacts(plan.held),
+				},
 			);
 			return NO_RELEASE_NEEDED;
 		}
@@ -1604,6 +1636,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 					config,
 					...(only.length > 0 ? {units: only} : {}),
 					...(version === undefined ? {} : {versions: {[only[0]!]: version}}),
+					...holdMajors(config),
 					classify,
 					...options,
 				}),
@@ -1615,13 +1648,14 @@ export async function run(argv: string[], given: Io): Promise<number> {
 				? leftOutLine(line)
 				: pendingLine(line),
 		);
+		announceHeld(plan.held);
 		if (plan.status === 'nothing') {
 			printResult(
 				[
 					'Nothing to release: no unit has a commit of its own that implies a version bump.',
 					...waiting,
 				],
-				{status: 'nothing', pending: plan.pending},
+				{status: 'nothing', pending: plan.pending, ...heldFacts(plan.held)},
 			);
 			return NO_RELEASE_NEEDED;
 		}
@@ -1650,6 +1684,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 			files,
 			warnings: plan.warnings,
 			pending: plan.pending,
+			...heldFacts(plan.held),
 		};
 		const checked = flags.publish
 			? await checkRelease(
@@ -2133,6 +2168,11 @@ function describeBump(plan: ReadyPlan): string {
 	}
 
 	return plan.lastTag ? `${plan.bump}, from ${plan.lastTag}` : plan.bump;
+}
+
+/** `held` in the JSON, only when something was held. */
+function heldFacts(held: string[] | undefined): {held?: string[]} {
+	return held && held.length > 0 ? {held} : {};
 }
 
 function facts(plan: ReadyPlan, files: string[]) {

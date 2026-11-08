@@ -955,3 +955,36 @@ test('a changelog reached through a symlinked folder is refused, at plan and at 
 	await expect(applyUnitReleases(result)).rejects.toThrow(message);
 	expect(await readdir(outside)).toEqual([]);
 });
+
+test('holdMajors leaves out a major unit and recomputes what is left', async () => {
+	const dir = await appRepo([
+		{
+			commit: '💥 Rework the camera',
+			files: {'apps/mobile/src/camera.ts': 'dashboard\n'},
+		},
+		WEB_FEATURE,
+	]);
+	const held = ready(await plan(dir, {holdMajors: true}));
+	expect(held.held).toEqual(['mobile']);
+	expect(held.units.map(unit => unit.unit)).toEqual(['web']);
+	expect(
+		held.changes.every(change => change.file.startsWith('apps/web/')),
+	).toBe(true);
+	expect(held.subject).toContain('web/v');
+	expect(held.subject).not.toContain('mobile/');
+
+	const free = ready(await plan(dir));
+	expect(free.held).toBeUndefined();
+	expect(free.units.map(unit => unit.unit)).toContain('mobile');
+});
+
+test('holdMajors with only a major unit is a nothing plan that names it', async () => {
+	const dir = await appRepo([
+		{
+			commit: '💥 Rework the camera',
+			files: {'apps/mobile/src/camera.ts': 'dashboard\n'},
+		},
+	]);
+	const result = await plan(dir, {holdMajors: true});
+	expect(result).toMatchObject({status: 'nothing', held: ['mobile']});
+});

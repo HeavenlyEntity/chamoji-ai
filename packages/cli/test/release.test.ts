@@ -747,3 +747,75 @@ describe.skipIf(!has('npm'))('release --publish', () => {
 		expect(await gitOutput(remote, ['tag', '--list'])).toBe('');
 	});
 });
+
+describe('release --on-merge', () => {
+	const config = (release: object) => ({
+		'package.json': `${JSON.stringify({name: 'acme-lib', version: '1.0.0'}, null, '\t')}\n`,
+		'chamoji.config.json': `${JSON.stringify({release: {schema: 2, shape: 'single', ...release}}, null, '\t')}\n`,
+	});
+	const steps = (release: object, commit: string): RepoStep[] => [
+		{commit: '🎉 Init', files: config(release)},
+		{tag: 'v1.0.0', annotated: true},
+		{commit, files: {'change.js': 'export {};\n'}},
+	];
+
+	test('with trigger manual exits 3 with the message', async () => {
+		const repo = await repoFrom(steps({trigger: 'manual'}, '✨ Add search'));
+		const {code, stderr} = await chamoji(['release', '--on-merge'], repo.dir);
+		expect(code).toBe(3);
+		expect(stderr).toContain('releases are manual here (release.trigger)');
+		expect(await tagsOf(repo.dir)).not.toContain('v1.1.0');
+	});
+
+	test('with no release section exits 3 too', async () => {
+		const repo = await repoFrom(history);
+		const {code, stderr} = await chamoji(['release', '--on-merge'], repo.dir);
+		expect(code).toBe(3);
+		expect(stderr).toContain('releases are manual here (release.trigger)');
+	});
+
+	test('holds a major and names the package', async () => {
+		const repo = await repoFrom(
+			steps({trigger: 'merge', majors: 'manual'}, '💥 Drop the old API'),
+		);
+		const {code, stdout, stderr} = await chamoji(
+			['release', '--on-merge', '--json'],
+			repo.dir,
+		);
+		expect(code).toBe(3);
+		expect(stderr).toContain(
+			'acme-lib has a breaking change and waits for a manual release (release.majors)',
+		);
+		expect(JSON.parse(stdout)).toMatchObject({
+			status: 'nothing',
+			held: ['acme-lib'],
+		});
+		expect(await tagsOf(repo.dir)).not.toContain('v2.0.0');
+	});
+
+	test('releases a minor under majors manual', async () => {
+		const repo = await repoFrom(
+			steps({trigger: 'merge', majors: 'manual'}, '✨ Add search'),
+		);
+		const {code, stdout} = await chamoji(
+			['release', '--on-merge', '--json'],
+			repo.dir,
+		);
+		expect(code).toBe(0);
+		const result = JSON.parse(stdout) as {held?: string[]; tag: string};
+		expect(result.tag).toBe('v1.1.0');
+		expect(result.held).toBeUndefined();
+	});
+
+	test('without --on-merge, majors manual still releases a major', async () => {
+		const repo = await repoFrom(
+			steps({trigger: 'merge', majors: 'manual'}, '💥 Drop the old API'),
+		);
+		const {code, stdout} = await chamoji(['release', '--json'], repo.dir);
+		expect(code).toBe(0);
+		expect(JSON.parse(stdout)).toMatchObject({
+			status: 'released',
+			tag: 'v2.0.0',
+		});
+	});
+});

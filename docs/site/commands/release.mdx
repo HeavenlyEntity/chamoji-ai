@@ -75,7 +75,7 @@ In a repo with release units, each unit with something to release gets its own v
 	</Property>
 </Properties>
 
-## Flags {{ badge: '10', icon: 'flag' }}
+## Flags {{ badge: '11', icon: 'flag' }}
 
 <Properties>
 	<Property name="--dry-run" type="boolean">
@@ -102,6 +102,21 @@ In a repo with release units, each unit with something to release gets its own v
 		tarballs it checked, and creates the GitHub release last. A failed check
 		exits 2 with nothing committed or tagged. See [Release and
 		publish](#release-and-publish).
+	</Property>
+	<Property name="--on-merge" type="boolean">
+		The flag the GitHub Action runs on every push to the default branch, as
+		`chamoji release --on-merge --push --json`. You don’t need it for a release
+		you run yourself. It reads `release.trigger` and `release.majors`. Unless
+		`release.trigger` is `"merge"` (also when there is no `release` section) it
+		releases nothing, prints `releases are manual here (release.trigger)` and
+		exits 3. With `"majors": "manual"`, a breaking change is held back: a single
+		repo releases nothing, and in a monorepo the units whose next bump is major
+		are left out and the rest release. Each held unit, or the package name, or
+		`the repo` when there is none, gets a line on stderr: `web has a breaking
+		change and waits for a manual release (release.majors)`. A fixed group is
+		held whole when any member is. In JSON, `held` lists the names, and is left
+		out when nothing was held. Run `chamoji release` without the flag to release
+		the major yourself.
 	</Property>
 	<Property
 		name="--unit <name>"
