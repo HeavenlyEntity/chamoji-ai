@@ -231,3 +231,4 @@ export {
 	type ReplayLine,
 } from './setup/preview.js';
 export {stagedImpact} from './setup/impact.js';
+export * from './publish/index.js';
