@@ -2,7 +2,7 @@ import {mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {MEMORY_FETCH_REFSPEC, snapshotWorkstream} from '@chamoji/core';
-import {afterEach, expect, test, vi} from 'vitest';
+import {afterEach, describe, expect, test, vi} from 'vitest';
 import {
 	createRepo,
 	gitOutput,
@@ -13,6 +13,12 @@ import {fakeSsh} from '../../core/test/helpers/fake-ssh.js';
 import type {JevClient} from '../src/jev-classifier.js';
 import {run, type GhRunner} from '../src/run.js';
 import {recordingFace} from './helpers/recording-face.js';
+import {
+	chamojiPublishing,
+	fakeTools,
+	has,
+	TOKEN,
+} from './helpers/release-publish.js';
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -540,3 +546,204 @@ test.skipIf(process.platform === 'win32')(
 		]);
 	},
 );
+
+/** A single repo whose root package is a public library, released as v1.0.0, on a bare origin. */
+async function libraryOnOrigin(publish: unknown = true) {
+	const repo = await repoFrom([
+		{
+			commit: '🎉 Init',
+			files: {
+				'package.json': `${JSON.stringify({name: 'acme-lib', version: '1.0.0', main: 'index.js'}, null, '\t')}\n`,
+				'index.js': 'export {};\n',
+				'chamoji.config.json': `${JSON.stringify({release: {schema: 2, shape: 'single', publish}}, null, '\t')}\n`,
+			},
+		},
+		{tag: 'v1.0.0', annotated: true},
+		{commit: '✨ Add search', files: {'search.js': 'export {};\n'}},
+	]);
+	const remote = await mkdtemp(path.join(tmpdir(), 'chamoji-remote-'));
+	cleanups.push(async () => rm(remote, {recursive: true, force: true}));
+	await gitOutput(remote, ['init', '-q', '--bare']);
+	await gitOutput(repo.dir, ['remote', 'add', 'origin', remote]);
+	return {dir: repo.dir, remote};
+}
+
+const statusOf = async (dir: string) =>
+	gitOutput(dir, ['status', '--porcelain']);
+
+describe.skipIf(!has('npm'))('release --publish', () => {
+	test('release --publish runs checks before the commit', async () => {
+		const {dir, remote} = await libraryOnOrigin({check: 'exit 1'});
+		const before = await gitOutput(dir, ['rev-parse', 'HEAD']);
+		const tools = fakeTools();
+		const {code, stderr} = await chamojiPublishing(
+			['release', '--publish'],
+			dir,
+			tools,
+		);
+
+		expect(code).toBe(2);
+		expect(stderr).toContain('publish.check `exit 1` failed');
+		expect(await gitOutput(dir, ['rev-parse', 'HEAD'])).toBe(before);
+		expect(await tagsOf(dir)).toEqual(['v1.0.0']);
+		// The bumped package.json is put back and the new CHANGELOG.md removed.
+		expect(await statusOf(dir)).toBe('');
+		expect(tools.published()).toEqual([]);
+		expect(tools.releases()).toEqual([]);
+		expect(await gitOutput(remote, ['tag', '--list'])).toBe('');
+	});
+
+	test('release --publish publishes after an atomic push, then makes the GitHub release', async () => {
+		const {dir, remote} = await libraryOnOrigin();
+		let remoteTagsAtPublish = '';
+		const tools = fakeTools({
+			async onPublish() {
+				remoteTagsAtPublish = await gitOutput(remote, ['tag', '--list']);
+			},
+		});
+		const {code, stdout, stderr} = await chamojiPublishing(
+			['release', '--publish', '--json'],
+			dir,
+			tools,
+		);
+
+		expect(code).toBe(0);
+		const result = JSON.parse(stdout) as Record<string, unknown>;
+		expect(result).toMatchObject({
+			status: 'released',
+			tag: 'v1.1.0',
+			pushed: true,
+			githubRelease: true,
+			published: [
+				{
+					name: 'acme-lib',
+					version: '1.1.0',
+					distTag: 'latest',
+					status: 'published',
+				},
+			],
+		});
+		expect(remoteTagsAtPublish).toContain('v1.1.0');
+		// The tarball the checks packed, at the new version.
+		expect(tools.published()).toHaveLength(1);
+		expect(tools.published()[0]).toContain('./acme-lib-1.1.0.tgz');
+		expect(tools.releases()).toEqual(['gh release create v1.1.0']);
+		const publishedAt = tools.log.findIndex(line =>
+			line.startsWith('npm publish'),
+		);
+		const releasedAt = tools.log.indexOf('gh release create v1.1.0');
+		expect(publishedAt).toBeGreaterThan(-1);
+		expect(releasedAt).toBeGreaterThan(publishedAt);
+		expect(await statusOf(dir)).toBe('');
+		expect(stdout + stderr).not.toContain(TOKEN);
+	});
+
+	test('a failed publish after the push exits 1 with the message and no GitHub release', async () => {
+		const {dir, remote} = await libraryOnOrigin();
+		const tools = fakeTools({failPublish: true});
+		const {code, stdout, stderr} = await chamojiPublishing(
+			['release', '--publish'],
+			dir,
+			tools,
+		);
+
+		expect(code).toBe(1);
+		expect(stderr).toContain(
+			"chamoji: v1.1.0 is tagged and pushed; acme-lib 1.1.0 isn't on npm. Re-run this job, or run `chamoji publish --from v1.1.0`.\n",
+		);
+		expect(stdout).toContain(
+			'pushed: yes (HEAD and v1.1.0); no GitHub release, since the publish failed\nnpm: acme-lib 1.1.0 → latest: failed\n',
+		);
+		expect(tools.releases()).toEqual([]);
+		expect(await gitOutput(remote, ['tag', '--list'])).toContain('v1.1.0');
+		expect(stdout + stderr).not.toContain(TOKEN);
+	});
+
+	test('a lost push race publishes nothing', async () => {
+		const {dir, remote} = await libraryOnOrigin();
+		const branch = (await gitOutput(dir, ['branch', '--show-current'])).trim();
+		await gitOutput(dir, ['push', '-q', 'origin', 'HEAD', '--tags']);
+		// Someone else moves the remote branch; this clone doesn't know.
+		const other = await mkdtemp(path.join(tmpdir(), 'chamoji-other-'));
+		cleanups.push(async () => rm(other, {recursive: true, force: true}));
+		await gitOutput(other, ['clone', '-q', '-b', branch, remote, '.']);
+		await gitOutput(other, ['config', 'user.name', 'Other']);
+		await gitOutput(other, ['config', 'user.email', 'other@example.com']);
+		await gitOutput(other, ['commit', '-q', '--allow-empty', '-m', 'Moved on']);
+		await gitOutput(other, ['push', '-q', 'origin', `HEAD:${branch}`]);
+
+		const tools = fakeTools();
+		const {code, stdout} = await chamojiPublishing(
+			['release', '--publish', '--json'],
+			dir,
+			tools,
+		);
+
+		expect(code).toBe(1);
+		const result = JSON.parse(stdout) as Record<string, unknown>;
+		expect(result).toMatchObject({pushed: false, published: []});
+		expect(result['error']).toMatch(
+			/^the default branch moved during the release; .*the release commit and tag are kept/s,
+		);
+		expect(tools.published()).toEqual([]);
+		expect(tools.releases()).toEqual([]);
+		// The local release is kept, as a plain --push keeps it.
+		expect(await tagsOf(dir)).toContain('v1.1.0');
+		expect(await gitOutput(remote, ['tag', '--list'])).not.toContain('v1.1.0');
+	});
+
+	test('--push with publish configured defers the GitHub release', async () => {
+		const {dir} = await libraryOnOrigin();
+		const tools = fakeTools();
+		const {code, stdout} = await chamojiPublishing(
+			['release', '--push'],
+			dir,
+			tools,
+		);
+
+		expect(code).toBe(0);
+		expect(stdout).toContain(
+			'pushed: yes (HEAD and v1.1.0); the GitHub release is created after the publish\n',
+		);
+		expect(tools.releases()).toEqual([]);
+		expect(tools.published()).toEqual([]);
+
+		const json = await libraryOnOrigin();
+		const again = await chamojiPublishing(
+			['release', '--push', '--json'],
+			json.dir,
+			tools,
+		);
+		expect(again.code).toBe(0);
+		expect(JSON.parse(again.stdout)).toMatchObject({
+			pushed: true,
+			githubRelease: 'deferred',
+		});
+		expect(tools.releases()).toEqual([]);
+	});
+
+	test('--dry-run --publish shows the release and what it would publish, and changes nothing', async () => {
+		const {dir, remote} = await libraryOnOrigin();
+		const before = await gitOutput(dir, ['rev-parse', 'HEAD']);
+		const tools = fakeTools();
+		const {code, stdout} = await chamojiPublishing(
+			['release', '--dry-run', '--publish'],
+			dir,
+			tools,
+		);
+
+		expect(code).toBe(0);
+		expect(
+			stdout.startsWith('Would release v1.1.0 (minor, from v1.0.0).'),
+		).toBe(true);
+		expect(stdout).toContain(
+			'\nWould publish:\nacme-lib 1.1.0 → latest: would publish\n',
+		);
+		expect(await gitOutput(dir, ['rev-parse', 'HEAD'])).toBe(before);
+		expect(await tagsOf(dir)).toEqual(['v1.0.0']);
+		expect(await statusOf(dir)).toBe('');
+		expect(tools.published()).toEqual([]);
+		expect(tools.releases()).toEqual([]);
+		expect(await gitOutput(remote, ['tag', '--list'])).toBe('');
+	});
+});

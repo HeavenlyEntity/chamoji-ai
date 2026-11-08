@@ -10,7 +10,7 @@ export const metadata = {
 	Cut a release from your git history. chamoji picks the version from your
 	commits, writes the CHANGELOG.md section, bumps your version files, then makes
 	the release commit and an annotated tag. Add `--push` to push it and create
-	the GitHub release.
+	the GitHub release, or `--publish` to also publish it to npm.
 </p>
 
 <Tag variant="changes">CHANGES YOUR REPO</Tag>
@@ -54,6 +54,12 @@ export const metadata = {
 		clone, then creates the GitHub release with the gh CLI. A failed push keeps
 		the local release.
 	</Step>
+	<Step title="With --publish.">
+		The publish checks run before the commit and tag, on the release written to
+		the working tree. After the push, chamoji publishes the tarballs it checked,
+		and creates the GitHub release only once they are on npm. See [Release and
+		publish](#release-and-publish).
+	</Step>
 </Steps>
 
 In a repo with release units, each unit with something to release gets its own version, tag and changelog, in one release commit. The units’ version files are bumped, and the others wait. [Monorepos](/guides/monorepos) explains which commits belong to which unit.
@@ -69,14 +75,15 @@ In a repo with release units, each unit with something to release gets its own v
 	</Property>
 </Properties>
 
-## Flags {{ badge: '9', icon: 'flag' }}
+## Flags {{ badge: '10', icon: 'flag' }}
 
 <Properties>
 	<Property name="--dry-run" type="boolean">
 		Print the version, the files and the notes it would release, and write
 		nothing. A dirty working tree is allowed; the other checks still run, and
 		tags are still fetched. Wins over `--push`: nothing is committed, tagged or
-		pushed.
+		pushed. With `--publish`, it also lists what would be published, as `chamoji
+		publish --dry-run` does, and the working tree must be clean.
 	</Property>
 	<Property name="--push" type="boolean">
 		After the commit and tag, push HEAD and the tag to `origin`, sync memory if
@@ -84,7 +91,17 @@ In a repo with release units, each unit with something to release gets its own v
 		marked as a prerelease for a prerelease version. Without gh, the push still
 		happens and the output says the GitHub release was not created. In a
 		monorepo it creates one GitHub release per tag, or one for all of them with
-		`"githubReleases": "combined"`.
+		`"githubReleases": "combined"`. When `release.publish` is set, `--push` on
+		its own creates no GitHub release and says `the GitHub release is created
+		after the publish`; in JSON, `githubRelease` is `"deferred"`. The release
+		isn’t announced before it is on npm.
+	</Property>
+	<Property name="--publish" type="boolean">
+		Release and publish to npm in one command. It implies `--push`. The publish
+		checks run before the commit and tag, then chamoji pushes, publishes the
+		tarballs it checked, and creates the GitHub release last. A failed check
+		exits 2 with nothing committed or tagged. See [Release and
+		publish](#release-and-publish).
 	</Property>
 	<Property
 		name="--unit <name>"
@@ -148,6 +165,39 @@ In a repo with release units, each unit with something to release gets its own v
 		Release from a hotfix or release branch.
 	</Resource>
 </Resources>
+
+## Release and publish {{ icon: 'cloud-arrow-up' }}
+
+`chamoji release --publish` does what [`chamoji publish`](/commands/publish) does, in the same run as the release, in this order:
+
+<Steps>
+	<Step title="Checks first.">
+		chamoji writes the CHANGELOG.md section and the version bumps to the working
+		tree, without committing, and runs every publish check on them: your
+		`publish.check` command, a packed tarball for each package, dependencies npm
+		can install, and no apps. Then it checks that this run can sign in to npm.
+		If anything fails, the files are put back, nothing is committed or tagged,
+		and it exits 2.
+	</Step>
+	<Step title="Commit, tag and push.">
+		The release commit and tag, then one atomic push of HEAD and the tags. If
+		`origin`’s branch moved meanwhile, the push fails, nothing is published, and
+		it exits 1. The local commit and tag are kept, as with `--push`.
+	</Step>
+	<Step title="Publish.">
+		The tarballs the checks packed, in dependency order. A version that is
+		already on npm is skipped.
+	</Step>
+	<Step title="GitHub release.">Only once every package is on npm.</Step>
+</Steps>
+
+If a package fails to publish after the push, chamoji exits 1, creates no GitHub release, and says how to finish:
+
+```txt
+chamoji: v1.4.0 is tagged and pushed; @acme/ui 1.4.0 isn't on npm. Re-run this job, or run `chamoji publish --from v1.4.0`.
+```
+
+`chamoji publish --from v1.4.0` skips what is already on npm and publishes the rest. In `--json`, `published` lists each package with its `status`, and `error` holds that message.
 
 To treat “nothing to release” as success in CI:
 
@@ -319,11 +369,13 @@ chamoji: give --unit with a version, for example: chamoji release 2.0.0 --unit m
 		version file it can’t set: a `versionFiles` entry that is missing or a
 		symlink, a file it can’t set the version in, a dependency range it can’t
 		set, or a version that differs from its fixed group’s. Also for a `release`
-		section from a newer chamoji.
+		section from a newer chamoji. With `--publish`, also a publish check or the
+		npm sign-in check.
 	</Property>
 	<Property name="1">
 		Anything else, such as a failed push, an unknown unit, or a version without
-		`--unit` in a monorepo.
+		`--unit` in a monorepo. With `--publish`, also a package that failed to
+		publish after the push.
 	</Property>
 </Properties>
 

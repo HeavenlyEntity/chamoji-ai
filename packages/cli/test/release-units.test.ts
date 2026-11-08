@@ -2,7 +2,7 @@ import {existsSync} from 'node:fs';
 import {mkdir, mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {afterEach, expect, test} from 'vitest';
+import {afterEach, describe, expect, test} from 'vitest';
 import {
 	createRepo,
 	gitOutput,
@@ -10,6 +10,7 @@ import {
 } from '../../core/test/helpers/fixture-repo.js';
 import {run, type GhRunner} from '../src/run.js';
 import {recordingFace} from './helpers/recording-face.js';
+import {chamojiPublishing, fakeTools, has} from './helpers/release-publish.js';
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -855,4 +856,126 @@ test('a first release notes a version file that disagrees with the manifest', as
 	expect(stdout).toContain(
 		'note: apps/web/app.json had a version other than 0.1.0 (its package.json version); it now says 0.1.0\n',
 	);
+});
+
+/** Two public library units, @acme/core and @acme/util, each released at 1.0.0 and changed since. */
+async function twoLibraries(publish: unknown = true): Promise<string> {
+	return libraryRepo(
+		{
+			schema: 2,
+			shape: 'libraries',
+			units: {core: {path: 'packages/core'}, util: {path: 'packages/util'}},
+			publish,
+		},
+		{
+			core: {name: '@acme/core', version: '1.0.0', main: 'index.js'},
+			util: {name: '@acme/util', version: '1.0.0', main: 'index.js'},
+		},
+		[
+			{tag: '@acme/core@1.0.0', annotated: true},
+			{tag: '@acme/util@1.0.0', annotated: true},
+			{
+				commit: '✨ Add parsing',
+				files: {'packages/core/index.js': 'export const parse = 1;\n'},
+			},
+			{
+				commit: '🐛 Fix the util export',
+				files: {'packages/util/index.js': 'export const util = 1;\n'},
+			},
+		],
+	);
+}
+
+describe.skipIf(!has('npm'))('release --publish with units', () => {
+	test('release --publish runs checks before the commit', async () => {
+		const dir = await twoLibraries({check: 'exit 1'});
+		const remote = await withRemote(dir);
+		const before = await gitOutput(dir, ['rev-parse', 'HEAD']);
+		const tools = fakeTools();
+		const {code, stderr} = await chamojiPublishing(
+			['release', '--publish'],
+			dir,
+			tools,
+		);
+
+		expect(code).toBe(2);
+		expect(stderr).toContain('publish.check `exit 1` failed');
+		expect(await gitOutput(dir, ['rev-parse', 'HEAD'])).toBe(before);
+		expect(
+			(await gitOutput(dir, ['tag', '--list'])).trim().split('\n'),
+		).toEqual(['@acme/core@1.0.0', '@acme/util@1.0.0']);
+		expect(await gitOutput(dir, ['status', '--porcelain'])).toBe('');
+		expect(tools.published()).toEqual([]);
+		expect(tools.releases()).toEqual([]);
+		expect(await gitOutput(remote, ['tag', '--list'])).toBe('');
+	});
+
+	test('release --publish publishes after an atomic push, then makes the GitHub release', async () => {
+		const dir = await twoLibraries();
+		const remote = await withRemote(dir);
+		let remoteTagsAtPublish = '';
+		const tools = fakeTools({
+			async onPublish() {
+				remoteTagsAtPublish ||= await gitOutput(remote, ['tag', '--list']);
+			},
+		});
+		const {code, stdout} = await chamojiPublishing(
+			['release', '--publish', '--json'],
+			dir,
+			tools,
+			'2026-11-04',
+		);
+
+		expect(code).toBe(0);
+		const result = JSON.parse(stdout) as Record<string, unknown>;
+		expect(result).toMatchObject({
+			status: 'released',
+			pushed: true,
+			githubRelease: true,
+		});
+		expect(
+			(result['published'] as Array<Record<string, string>>).map(item => [
+				item['name'],
+				item['version'],
+				item['status'],
+			]),
+		).toEqual([
+			['@acme/core', '1.1.0', 'published'],
+			['@acme/util', '1.0.1', 'published'],
+		]);
+		expect(remoteTagsAtPublish).toContain('@acme/core@1.1.0');
+		expect(remoteTagsAtPublish).toContain('@acme/util@1.0.1');
+		expect(tools.published()).toHaveLength(2);
+		const lastPublish = tools.log.findLastIndex(line =>
+			line.startsWith('npm publish'),
+		);
+		const firstRelease = tools.log.findIndex(line =>
+			line.startsWith('gh release create'),
+		);
+		expect(firstRelease).toBeGreaterThan(lastPublish);
+		expect(tools.releases()).toEqual([
+			'gh release create @acme/core@1.1.0',
+			'gh release create @acme/util@1.0.1',
+		]);
+		expect(await gitOutput(dir, ['status', '--porcelain'])).toBe('');
+	});
+});
+
+test('--push with publish configured defers every GitHub release', async () => {
+	const dir = await twoLibraries();
+	await withRemote(dir);
+	const tools = fakeTools();
+	const {code, stdout} = await chamojiPublishing(
+		['release', '--push', '--json'],
+		dir,
+		tools,
+		'2026-11-04',
+	);
+
+	expect(code).toBe(0);
+	expect(JSON.parse(stdout)).toMatchObject({
+		pushed: true,
+		githubRelease: 'deferred',
+	});
+	expect(tools.log).toEqual([]);
 });

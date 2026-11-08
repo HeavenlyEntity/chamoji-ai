@@ -20,6 +20,7 @@ import {
 	listMemory,
 	loadComposeConfig,
 	loadConfig,
+	mask,
 	openJudgmentCache,
 	readStagedChanges,
 	planPublish,
@@ -32,6 +33,7 @@ import {
 	quietGitEnv,
 	readWorkspace,
 	ReleaseError,
+	restoreChanges,
 	render,
 	repoStats,
 	requireNpm,
@@ -39,6 +41,7 @@ import {
 	runGit,
 	runNpm,
 	runPublish,
+	scrubEnv,
 	shouldPrompt,
 	shouldStamp,
 	stampWorkstream,
@@ -47,19 +50,24 @@ import {
 	uniqueTags,
 	unitChangelog,
 	unitTagHistory,
+	writeChanges,
 	type ChamojiConfig,
 	type CommitClassifier,
 	type ComposeConfig,
 	type FetchLike,
+	type FileChange,
 	type NpmRunner,
 	type OutputFormat,
+	type PublishMethod,
 	type PublishOutcome,
+	type PublishPlan,
 	type PublishTarget,
 	type ReadyPlan,
 	type ReadyUnitPlan,
 	type ReleaseOptions,
 	type UnitPending,
 	type UnitPlan,
+	type WrittenChanges,
 } from '@chamoji/core';
 import {TypeSafeClient} from '@typesafe-ai/sdk';
 import meow from 'meow';
@@ -295,7 +303,11 @@ const HELP = `
 	             publish: list what would be published, publish nothing
 	  --push     release: push HEAD and the tag, sync memory if chamoji init
 	             ran here, then create the GitHub release when the gh CLI
-	             is installed
+	             is installed (with release.publish set, the GitHub release
+	             is left to the publish)
+	  --publish  release: check the packages before the commit and tag, push,
+	             publish them to npm, then create the GitHub release
+	             (implies --push)
 	  --trailer  release: add "Key: value" to the release commit (repeatable)
 	  --any-branch
 	             release: allow a branch other than origin's default
@@ -349,6 +361,7 @@ const HELP = `
 	  $ chamoji changelog --format html --output changelog.html
 	  $ chamoji release --dry-run
 	  $ chamoji release 2.0.0-rc.1 --push
+	  $ chamoji release --publish
 	  $ chamoji release 2.0.0 --unit mobile --dry-run
 	  $ chamoji publish --dry-run
 	  $ chamoji changelog --for-tag web/v1.4.0
@@ -358,8 +371,27 @@ const HELP = `
 
 export const NO_RELEASE_NEEDED = 3;
 
+const DEFERRED = 'the GitHub release is created after the publish';
+
 const outcomeText = (outcome: PublishOutcome): string =>
 	outcome.status === 'already' ? 'already on npm' : outcome.status;
+
+/** `name version → distTag`, the start of every publish line. */
+const targetLine = (item: {
+	name: string;
+	version: string;
+	distTag: string;
+}): string => `${item.name} ${item.version} → ${item.distTag}`;
+
+const outcomeLine = (outcome: PublishOutcome): string =>
+	`${targetLine(outcome)}: ${outcomeText(outcome)}`;
+
+const dryRunLine = (target: PublishTarget): string =>
+	`${targetLine(target)}: ${target.published ? 'already on npm' : 'would publish'}`;
+
+/** What a failed publish after the push says, and how to finish it. */
+const unpublished = (tag: string, name: string, version: string): string =>
+	`${tag} is tagged and pushed; ${name} ${version} isn't on npm. Re-run this job, or run \`chamoji publish --from ${tag}\`.`;
 
 const nothingToPublish = (count: number): string =>
 	count === 0
@@ -392,6 +424,7 @@ function parse(argv: string[]) {
 			updateCheck: {type: 'boolean', default: true},
 			dryRun: {type: 'boolean'},
 			push: {type: 'boolean'},
+			publish: {type: 'boolean'},
 			trailer: {type: 'string', isMultiple: true},
 			anyBranch: {type: 'boolean'},
 			unit: {type: 'string', isMultiple: true, default: []},
@@ -677,6 +710,82 @@ export async function run(argv: string[], given: Io): Promise<number> {
 		}
 	}
 
+	/**
+	 * What a publish runs with: the complete environment (`runNpm` adds
+	 * nothing, and an unset entry in io.env removes the variable the process
+	 * has), npm, whether this is CI, and the registries that may hold a token.
+	 */
+	function publishTools(config: ChamojiConfig): PublishTools {
+		const env = processEnv();
+		for (const [key, value] of Object.entries(io.env ?? {})) {
+			if (value === undefined) delete env[key];
+			else env[key] = value;
+		}
+
+		return {
+			env,
+			npm: io.npm ?? runNpm,
+			ci: env['CI'] === 'true',
+			registries: config.release?.publish?.registries ?? [],
+		};
+	}
+
+	/**
+	 * The method `plan` publishes with, once the credentials are checked.
+	 * Nothing to publish needs no credentials. A failed check discards the
+	 * plan and throws.
+	 */
+	async function publishAuth(
+		plan: PublishPlan,
+		tools: PublishTools,
+	): Promise<PublishMethod> {
+		try {
+			return plan.targets.some(target => !target.published)
+				? await checkPublishAuth(plan, {
+						env: tools.env,
+						npm: tools.npm,
+						fetch: io.fetch ?? (fetch as FetchLike),
+						ci: tools.ci,
+						registries: tools.registries,
+					})
+				: publishMethod(tools.env);
+		} catch (error) {
+			await discardPublishPlan(plan);
+			throw error;
+		}
+	}
+
+	/** Publishes a checked plan; `runPublish` removes its tarballs, however it ends. */
+	async function publishPlan(
+		plan: PublishPlan,
+		method: PublishMethod,
+		tools: PublishTools,
+	): Promise<PublishOutcome[]> {
+		return runPublish(plan, {
+			method,
+			npm: tools.npm,
+			env: tools.env,
+			ci: tools.ci,
+			registries: tools.registries,
+		});
+	}
+
+	/** One stderr line per package a plan skips, such as an app. */
+	function skippedLines(plan: PublishPlan): string[] {
+		return plan.skipped.map(
+			item => `chamoji: skipped ${item.name}: ${item.reason}\n`,
+		);
+	}
+
+	/** What a publish said about each package it didn't publish, on stderr. */
+	function reportOutcomes(outcomes: PublishOutcome[]): void {
+		for (const outcome of outcomes) {
+			if (outcome.message && outcome.status !== 'published') {
+				io.stderr(`chamoji: ${outcome.name}: ${outcome.message}\n`);
+			}
+		}
+	}
+
 	/** What `chamoji publish` and the Action's publish step run. */
 	async function publish(): Promise<number> {
 		if (flags.catchUp) {
@@ -684,16 +793,8 @@ export async function run(argv: string[], given: Io): Promise<number> {
 		}
 
 		const config = await loadConfig(io.cwd, flags.config);
-		// Complete on purpose: runNpm adds nothing, and an unset entry in io.env
-		// removes the variable the process has.
-		const env = processEnv();
-		for (const [key, value] of Object.entries(io.env ?? {})) {
-			if (value === undefined) delete env[key];
-			else env[key] = value;
-		}
-
-		const npm = io.npm ?? runNpm;
-		const registries = config.release?.publish?.registries ?? [];
+		const tools = publishTools(config);
+		const {env, npm} = tools;
 		await requireNpm(npm, io.cwd);
 		const plan = await planPublish({
 			cwd: io.cwd,
@@ -705,22 +806,11 @@ export async function run(argv: string[], given: Io): Promise<number> {
 			env,
 		});
 		const skipped = plan.skipped;
-		const skippedLines = skipped.map(
-			item => `chamoji: skipped ${item.name}: ${item.reason}\n`,
-		);
-		const line = (item: {
-			name: string;
-			version: string;
-			distTag: string;
-		}): string => `${item.name} ${item.version} → ${item.distTag}`;
 
 		if (flags.dryRun) {
 			await discardPublishPlan(plan);
-			const lines = plan.targets.map(
-				target =>
-					`${line(target)}: ${target.published ? 'already on npm' : 'would publish'}`,
-			);
-			for (const text of skippedLines) io.stderr(text);
+			const lines = plan.targets.map(target => dryRunLine(target));
+			for (const text of skippedLines(plan)) io.stderr(text);
 			const nothing = plan.targets.every(target => target.published);
 			if (flags.json) {
 				printResult([], {
@@ -737,44 +827,17 @@ export async function run(argv: string[], given: Io): Promise<number> {
 			return nothing ? NO_RELEASE_NEEDED : 0;
 		}
 
-		const ci = env['CI'] === 'true';
-		let method: ReturnType<typeof publishMethod>;
-		try {
-			// Nothing to publish needs no credentials.
-			method = plan.targets.some(target => !target.published)
-				? await checkPublishAuth(plan, {
-						env,
-						npm,
-						fetch: io.fetch ?? (fetch as FetchLike),
-						ci,
-						registries,
-					})
-				: publishMethod(env);
-		} catch (error) {
-			await discardPublishPlan(plan);
-			throw error;
-		}
-
-		const outcomes = await runPublish(plan, {
-			method,
-			npm,
-			env,
-			ci,
-			registries,
-		});
-		for (const text of skippedLines) io.stderr(text);
-		for (const outcome of outcomes) {
-			if (outcome.message && outcome.status !== 'published') {
-				io.stderr(`chamoji: ${outcome.name}: ${outcome.message}\n`);
-			}
-		}
+		const method = await publishAuth(plan, tools);
+		const outcomes = await publishPlan(plan, method, tools);
+		for (const text of skippedLines(plan)) io.stderr(text);
+		reportOutcomes(outcomes);
 
 		const failed = outcomes.some(outcome => outcome.status === 'failed');
 		const published = outcomes.some(outcome => outcome.status === 'published');
 		const status = failed ? 'failed' : published ? 'published' : 'nothing';
 		if (flags.json || outcomes.length > 0) {
 			printResult(
-				outcomes.map(outcome => `${line(outcome)}: ${outcomeText(outcome)}`),
+				outcomes.map(outcome => outcomeLine(outcome)),
 				{status, method, packages: outcomes, skipped},
 			);
 		}
@@ -1097,7 +1160,9 @@ export async function run(argv: string[], given: Io): Promise<number> {
 					return await plan({
 						anyBranch: flags.anyBranch,
 						fetch: io.fetchTags ?? true,
-						allowDirty: flags.dryRun,
+						// --publish writes the release to the tree and puts it back with
+						// git, which would lose uncommitted edits to those files.
+						allowDirty: flags.dryRun && !flags.publish,
 						today: io.today,
 						onStep() {
 							step.update('Fetching tags from origin');
@@ -1201,6 +1266,166 @@ export async function run(argv: string[], given: Io): Promise<number> {
 		);
 	}
 
+	/**
+	 * `release --publish` before the commit: writes the release to the working
+	 * tree, runs every publish check on what it will commit (the check
+	 * command, packing, dependencies, apps) and checks the npm credentials.
+	 * Any failure puts the tree back and throws. Under --dry-run the tree is
+	 * put back and the tarballs removed at once; the plan is kept for its
+	 * targets.
+	 */
+	async function checkRelease(
+		ready: {root: string; changes: FileChange[]},
+		config: ChamojiConfig,
+		versions: Map<string, string>,
+	): Promise<CheckedRelease> {
+		const tools = publishTools(config);
+		await requireNpm(tools.npm, io.cwd);
+		const written = await writeChanges(ready);
+		let keep = false;
+		try {
+			return await runStep(
+				face,
+				'Checking the packages',
+				async () => {
+					const plan = await planPublish({
+						cwd: io.cwd,
+						config,
+						npm: tools.npm,
+						env: tools.env,
+						versions,
+						skipTagCheck: true,
+					});
+					if (flags.dryRun) {
+						await discardPublishPlan(plan);
+						return {
+							plan,
+							method: publishMethod(tools.env),
+							tools,
+							written,
+						};
+					}
+
+					const method = await publishAuth(plan, tools);
+					keep = true;
+					return {plan, method, tools, written};
+				},
+				({plan}) => ({
+					outcome: 'ok',
+					text: `Checked ${plan.targets.length} package${plan.targets.length === 1 ? '' : 's'}`,
+				}),
+			);
+		} finally {
+			if (!keep) await restoreChanges(written);
+		}
+	}
+
+	/**
+	 * Whether a plain --push leaves the GitHub release to the publish: with
+	 * `release.publish` set, the release isn't announced before it is on npm.
+	 */
+	function defersGithubRelease(config: ChamojiConfig): boolean {
+		return !flags.publish && Boolean(config.release?.publish);
+	}
+
+	/** A failed release commit after `checkRelease`: the tree and the tarballs go. */
+	async function uncheckRelease(checked: CheckedRelease | undefined) {
+		if (!checked) return;
+		await restoreChanges(checked.written);
+		await discardPublishPlan(checked.plan);
+	}
+
+	/** What `release --dry-run --publish` adds: the targets, as `publish --dry-run` lists them. */
+	function wouldPublish(checked: CheckedRelease | undefined): {
+		lines: string[];
+		json: Record<string, unknown>;
+	} {
+		if (!checked) return {lines: [], json: {}};
+		const {targets, skipped} = checked.plan;
+		for (const text of skippedLines(checked.plan)) io.stderr(text);
+		return {
+			lines: [
+				'',
+				'Would publish:',
+				...(targets.length > 0
+					? targets.map(target => dryRunLine(target))
+					: ['nothing; no package to publish here']),
+			],
+			json: {
+				// The tarballs are gone after a dry run, so their paths aren't listed.
+				packages: targets.map(target =>
+					Object.fromEntries(
+						Object.entries(target).filter(([key]) => key !== 'tarball'),
+					),
+				),
+				skipped,
+			},
+		};
+	}
+
+	/**
+	 * Publishes the checked tarballs after the push. Returns the outcomes,
+	 * and the error to exit 1 with when a package isn't on npm: the tag is
+	 * pushed by then, so the error says how to finish.
+	 */
+	async function publishAfterPush(
+		checked: CheckedRelease,
+	): Promise<{outcomes: PublishOutcome[]; error?: string}> {
+		const {plan, method, tools} = checked;
+		const failure = (name: string, version: string): string => {
+			const target = plan.targets.find(
+				item => item.name === name && item.version === version,
+			);
+			return unpublished(target?.tag ?? '', name, version);
+		};
+
+		let outcomes: PublishOutcome[];
+		try {
+			if (method === 'local') {
+				// npm may ask for a one-time password on the terminal.
+				await face.release();
+				outcomes = await publishPlan(plan, method, tools);
+			} else {
+				outcomes = await runStep(
+					face,
+					'Publishing to npm',
+					async () => publishPlan(plan, method, tools),
+					done =>
+						done.some(outcome => outcome.status === 'failed')
+							? {outcome: 'warn', text: 'The publish failed'}
+							: {outcome: 'ok', text: 'Published to npm'},
+				);
+			}
+		} catch (error) {
+			const first = plan.targets.find(target => !target.published);
+			// The npm credentials are in this env; none of them is printed.
+			const message = mask(
+				stripControlLines((error as Error).message),
+				scrubEnv(tools.env).secrets,
+			);
+			io.stderr(`chamoji: ${message}\n`);
+			return {
+				outcomes: [],
+				...(first ? {error: failure(first.name, first.version)} : {}),
+			};
+		}
+
+		for (const text of skippedLines(plan)) io.stderr(text);
+		reportOutcomes(outcomes);
+		const failed = outcomes.find(outcome => outcome.status === 'failed');
+		return {
+			outcomes,
+			...(failed ? {error: failure(failed.name, failed.version)} : {}),
+		};
+	}
+
+	/** The npm lines of a release's summary. */
+	function publishedLines(outcomes: PublishOutcome[]): string[] {
+		return outcomes.length > 0
+			? outcomes.map(outcome => `npm: ${outcomeLine(outcome)}`)
+			: ['npm: nothing to publish'];
+	}
+
 	async function release(
 		version: string | undefined,
 		classify: CommitClassifier | undefined,
@@ -1236,7 +1461,11 @@ export async function run(argv: string[], given: Io): Promise<number> {
 
 		const summary = `${plan.tag} (${describeBump(plan)})`;
 		const files = plan.changes.map(change => change.file);
+		const checked = flags.publish
+			? await checkRelease(plan, config, new Map([[plan.tag, plan.version]]))
+			: undefined;
 		if (flags.dryRun) {
+			const would = wouldPublish(checked);
 			printResult(
 				[
 					`Would release ${summary}.`,
@@ -1244,42 +1473,74 @@ export async function run(argv: string[], given: Io): Promise<number> {
 					...plan.warnings.map(warning => `warning: ${warning}`),
 					'',
 					plan.notes,
+					...would.lines,
 				],
-				{status: 'dry-run', ...facts(plan, files), notes: plan.notes},
+				{
+					status: 'dry-run',
+					...facts(plan, files),
+					notes: plan.notes,
+					...would.json,
+				},
 			);
 			return 0;
 		}
 
-		const {commit} = await applyRelease(plan, {trailers: flags.trailer});
+		let commit: string;
+		try {
+			({commit} = await applyRelease(plan, {trailers: flags.trailer}));
+		} catch (error) {
+			await uncheckRelease(checked);
+			throw error;
+		}
+
 		let pushed: string = `no; to ship: git push origin HEAD ${plan.tag}`;
 		let pushError: string | undefined;
-		let githubRelease = false;
+		let publishError: string | undefined;
+		let published: PublishOutcome[] = [];
+		let githubRelease: boolean | 'deferred' = false;
 		let memory: string | undefined;
-		if (flags.push) {
+		if (flags.push || flags.publish) {
 			try {
 				await pushStep(plan.root, [plan.tag], async env =>
 					pushRelease(plan, env),
 				);
 				pushed = `yes (HEAD and ${plan.tag})`;
 				memory = await syncAfterRelease();
-				const result = unsettle(
-					await githubReleaseStep({
-						root: plan.root,
-						tag: plan.tag,
-						title: plan.tag,
-						notes: plan.notes,
-						prerelease: plan.bump === 'prerelease',
-					}),
-				);
-				githubRelease = result.ok;
-				pushed += result.ok
-					? '; GitHub release created'
-					: `; GitHub release not created: ${stripControlLines(result.message)}`;
+				if (checked) {
+					({outcomes: published, error: publishError} =
+						await publishAfterPush(checked));
+				}
+
+				if (publishError) {
+					pushed += '; no GitHub release, since the publish failed';
+				} else if (defersGithubRelease(config)) {
+					githubRelease = 'deferred';
+					pushed += `; ${DEFERRED}`;
+				} else {
+					const result = unsettle(
+						await githubReleaseStep({
+							root: plan.root,
+							tag: plan.tag,
+							title: plan.tag,
+							notes: plan.notes,
+							prerelease: plan.bump === 'prerelease',
+						}),
+					);
+					githubRelease = result.ok;
+					pushed += result.ok
+						? '; GitHub release created'
+						: `; GitHub release not created: ${stripControlLines(result.message)}`;
+				}
 			} catch (error) {
 				pushError = stripControlLines((error as Error).message);
 				pushed = `failed: ${pushError}`;
+			} finally {
+				// A push that failed leaves the tarballs; runPublish removed them otherwise.
+				if (checked) await discardPublishPlan(checked.plan);
 			}
 		}
+
+		if (publishError) io.stderr(`chamoji: ${publishError}\n`);
 
 		const [changelog, ...manifests] = plan.changes;
 		printResult(
@@ -1290,6 +1551,9 @@ export async function run(argv: string[], given: Io): Promise<number> {
 				`commit: ${commit} ${plan.subject}`,
 				`tag: ${plan.tag} (annotated)`,
 				`pushed: ${pushed}`,
+				...(checked && pushed.startsWith('yes')
+					? publishedLines(published)
+					: []),
 				...(memory === undefined ? [] : [`memory: ${memory}`]),
 				...plan.warnings.map(warning => `warning: ${warning}`),
 				...(githubRelease || pushed.startsWith('yes')
@@ -1306,12 +1570,15 @@ export async function run(argv: string[], given: Io): Promise<number> {
 				commit,
 				pushed: pushed.startsWith('yes'),
 				githubRelease,
-				...(pushError ? {error: pushError} : {}),
+				...(checked ? {published} : {}),
+				...(pushError || publishError
+					? {error: pushError ?? publishError}
+					: {}),
 				...(memory === undefined ? {} : {memory}),
 				notes: plan.notes,
 			},
 		);
-		return pushError ? 1 : 0;
+		return pushError || publishError ? 1 : 0;
 	}
 
 	/**
@@ -1384,7 +1651,15 @@ export async function run(argv: string[], given: Io): Promise<number> {
 			warnings: plan.warnings,
 			pending: plan.pending,
 		};
+		const checked = flags.publish
+			? await checkRelease(
+					plan,
+					config,
+					new Map(plan.units.map(unit => [unit.tag, unit.version])),
+				)
+			: undefined;
 		if (flags.dryRun) {
+			const would = wouldPublish(checked);
 			printResult(
 				[
 					'Would release:',
@@ -1393,27 +1668,45 @@ export async function run(argv: string[], given: Io): Promise<number> {
 					...notices,
 					...waiting,
 					...notes,
+					...would.lines,
 				],
-				{status: 'dry-run', ...unitFacts},
+				{status: 'dry-run', ...unitFacts, ...would.json},
 			);
 			return 0;
 		}
 
-		const {commit} = await applyUnitReleases(plan, {trailers: flags.trailer});
+		let commit: string;
+		try {
+			({commit} = await applyUnitReleases(plan, {trailers: flags.trailer}));
+		} catch (error) {
+			await uncheckRelease(checked);
+			throw error;
+		}
+
 		const listed = tagList(plan);
 		let pushed = `no; to ship: git push origin HEAD ${tags.join(' ')}`;
 		let pushError: string | undefined;
-		let githubRelease = false;
+		let publishError: string | undefined;
+		let published: PublishOutcome[] = [];
+		let githubRelease: boolean | 'deferred' = false;
 		let memory: string | undefined;
-		if (flags.push) {
+		if (flags.push || flags.publish) {
 			try {
 				await pushStep(plan.root, tags, async env =>
 					pushUnitReleases(plan, env),
 				);
 				pushed = `yes (HEAD and ${listed})`;
 				memory = await syncAfterRelease();
+				if (checked) {
+					({outcomes: published, error: publishError} =
+						await publishAfterPush(checked));
+				}
+
 				const failed: string[] = [];
-				const releases = githubReleases(plan, config);
+				const releases =
+					publishError || defersGithubRelease(config)
+						? []
+						: githubReleases(plan, config);
 				for (const item of releases) {
 					const named = releases.length === 1 ? '' : ` for ${item.tag}`;
 					const settled = await githubReleaseStep({
@@ -1433,16 +1726,27 @@ export async function run(argv: string[], given: Io): Promise<number> {
 					}
 				}
 
-				githubRelease = failed.length === 0;
-				pushed += githubRelease
-					? `; GitHub release${releases.length === 1 ? '' : 's'} created`
-					: `; ${failed.join('; ')}`;
+				if (publishError) {
+					pushed += '; no GitHub release, since the publish failed';
+				} else if (defersGithubRelease(config)) {
+					githubRelease = 'deferred';
+					pushed += `; ${DEFERRED}`;
+				} else {
+					githubRelease = failed.length === 0;
+					pushed += githubRelease
+						? `; GitHub release${releases.length === 1 ? '' : 's'} created`
+						: `; ${failed.join('; ')}`;
+				}
 			} catch (error) {
 				pushError = stripControlLines((error as Error).message);
 				pushed = `failed: ${pushError}`;
+			} finally {
+				// A push that failed leaves the tarballs; runPublish removed them otherwise.
+				if (checked) await discardPublishPlan(checked.plan);
 			}
 		}
 
+		if (publishError) io.stderr(`chamoji: ${publishError}\n`);
 		printResult(
 			[
 				`Released ${listed}.`,
@@ -1451,6 +1755,9 @@ export async function run(argv: string[], given: Io): Promise<number> {
 				`commit: ${commit} ${plan.subject}`,
 				`tags: ${listed} (annotated)`,
 				`pushed: ${pushed}`,
+				...(checked && pushed.startsWith('yes')
+					? publishedLines(published)
+					: []),
 				...(memory === undefined ? [] : [`memory: ${memory}`]),
 				...notices,
 				...waiting,
@@ -1467,11 +1774,14 @@ export async function run(argv: string[], given: Io): Promise<number> {
 				commit,
 				pushed: pushed.startsWith('yes'),
 				githubRelease,
-				...(pushError ? {error: pushError} : {}),
+				...(checked ? {published} : {}),
+				...(pushError || publishError
+					? {error: pushError ?? publishError}
+					: {}),
 				...(memory === undefined ? {} : {memory}),
 			},
 		);
-		return pushError ? 1 : 0;
+		return pushError || publishError ? 1 : 0;
 	}
 
 	/** `next-version` in a repo with release units: one line per unit. */
@@ -1761,6 +2071,22 @@ type PlanningOptions = Pick<
 	| 'onCredentials'
 	| 'env'
 >;
+
+/** What a publish runs with; see `publishTools`. */
+type PublishTools = {
+	env: Record<string, string>;
+	npm: NpmRunner;
+	ci: boolean;
+	registries: string[];
+};
+
+/** A release checked for `--publish`, its changes still in the working tree. */
+type CheckedRelease = {
+	plan: PublishPlan;
+	method: PublishMethod;
+	tools: PublishTools;
+	written: WrittenChanges;
+};
 
 type Settled<T> = {ok: true; value: T} | {ok: false; error: unknown};
 
