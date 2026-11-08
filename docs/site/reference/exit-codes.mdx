@@ -71,7 +71,9 @@ chamoji release --push || [ $? -eq 3 ]
 		version that isn’t semver or isn’t newer, a first release with no version, a
 		tag that already exists, or a shallow clone it couldn’t unshallow. In a
 		monorepo, also a version file it can’t set, or a version that differs from
-		its fixed group’s. 1 for anything else, such as a failed push.
+		its fixed group’s. With `--publish`, also a publish check or the npm sign-in
+		check. 1 for anything else, such as a failed push, or with `--publish` a
+		package that failed to publish after the push.
 	</Property>
 	<Property name="publish">
 		0 when something was published, or the dry run worked. 3 when every package

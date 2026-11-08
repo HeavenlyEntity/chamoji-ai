@@ -1,4 +1,4 @@
-import {readFile, writeFile} from 'node:fs/promises';
+import {mkdir, readFile, rm, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import semver from 'semver';
 import {buildChangelog} from './changelog.js';
@@ -354,6 +354,76 @@ export async function applyRelease(
 	}
 
 	return {commit: await git('rev-parse', '--short', 'HEAD')};
+}
+
+/** What `writeChanges` found before it wrote, so `restoreChanges` can undo it. */
+export type WrittenChanges = {
+	root: string;
+	/** Files git tracks; restored with `git checkout`. */
+	tracked: string[];
+	/** Files that didn't exist; removed. */
+	created: string[];
+	/** Files that existed untracked (ignored ones): their old text. */
+	untracked: Map<string, string>;
+};
+
+/**
+ * Writes a release plan's changes to the working tree without committing,
+ * so the release can be checked as it will be committed. `restoreChanges`
+ * puts every file back.
+ */
+export async function writeChanges(plan: {
+	root: string;
+	changes: FileChange[];
+}): Promise<WrittenChanges> {
+	const files = plan.changes.map(change => change.file);
+	const listed = await runGit(['ls-files', '-z', '--', ...files], plan.root);
+	const known = new Set(listed.split('\0').filter(Boolean));
+	const written: WrittenChanges = {
+		root: plan.root,
+		tracked: files.filter(file => known.has(file)),
+		created: [],
+		untracked: new Map(),
+	};
+	for (const file of files) {
+		if (known.has(file)) continue;
+		const text = await readFile(path.join(plan.root, file), 'utf8').catch(
+			(error: NodeJS.ErrnoException) => {
+				if (error.code === 'ENOENT') return null;
+				throw error;
+			},
+		);
+		if (text === null) written.created.push(file);
+		else written.untracked.set(file, text);
+	}
+
+	try {
+		for (const change of plan.changes) {
+			const file = path.join(plan.root, change.file);
+			await mkdir(path.dirname(file), {recursive: true});
+			await writeFile(file, change.text);
+		}
+	} catch (error) {
+		await restoreChanges(written);
+		throw error;
+	}
+
+	return written;
+}
+
+/** Puts back every file `writeChanges` wrote: tracked ones from git, new ones removed. */
+export async function restoreChanges(written: WrittenChanges): Promise<void> {
+	if (written.tracked.length > 0) {
+		await runGit(['checkout', '--', ...written.tracked], written.root);
+	}
+
+	for (const file of written.created) {
+		await rm(path.join(written.root, file), {force: true});
+	}
+
+	for (const [file, text] of written.untracked) {
+		await writeFile(path.join(written.root, file), text);
+	}
 }
 
 /** Pushes HEAD and the release tag, by name, to origin in one atomic push. A failure keeps the local release. */

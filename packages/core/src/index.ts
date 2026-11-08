@@ -139,12 +139,15 @@ export {
 	planRelease,
 	pushRelease,
 	releaseSubject,
+	restoreChanges,
 	stripTitle,
 	tagPrefix,
+	writeChanges,
 	type FileChange,
 	type ReadyPlan,
 	type ReleaseOptions,
 	type ReleasePlan,
+	type WrittenChanges,
 } from './release.js';
 export type * from './types.js';
 export {bumpFor, nextVersion} from './version.js';
