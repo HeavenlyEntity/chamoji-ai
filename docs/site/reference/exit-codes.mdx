@@ -73,14 +73,16 @@ chamoji release --push || [ $? -eq 3 ]
 		monorepo, also a version file it can’t set, or a version that differs from
 		its fixed group’s. With `--publish`, also a publish check or the npm sign-in
 		check. 1 for anything else, such as a failed push, or with `--publish` a
-		package that failed to publish after the push.
+		package that isn’t on npm after the push: it failed, or trusted publishing
+		skipped its first version.
 	</Property>
 	<Property name="publish">
-		0 when something was published, or the dry run worked. 3 when every package
-		is already on npm, or there is none to publish. 2 when a check failed: npm
-		older than 11.5.1, a dirty working tree, a version that doesn’t match its
-		tag, an app, or no way to sign in. 1 for anything else, such as a package
-		npm refused.
+		0 when something was published, or the dry run found something to publish. 3
+		when every package is already on npm, or there is none to publish, with
+		`--dry-run` too. With `--catch-up`, 0 unless a tag failed, and then 1. 2
+		when a check failed: npm older than 11.5.1, a dirty working tree, a version
+		that doesn’t match its tag, an app, or no way to sign in. 1 for anything
+		else, such as a package npm refused.
 	</Property>
 	<Property name="setup">
 		0 when it saved, or nothing would change. 2 when something would change and

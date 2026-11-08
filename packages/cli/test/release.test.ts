@@ -593,6 +593,27 @@ describe.skipIf(!has('npm'))('release --publish', () => {
 		expect(await gitOutput(remote, ['tag', '--list'])).toBe('');
 	});
 
+	test('release --publish that fails the sign-in check leaves no commit or tag, and exits 2', async () => {
+		const {dir, remote} = await libraryOnOrigin();
+		const before = await gitOutput(dir, ['rev-parse', 'HEAD']);
+		const tools = fakeTools({failWhoami: true});
+		const {code, stderr} = await chamojiPublishing(
+			['release', '--publish'],
+			dir,
+			tools,
+		);
+
+		expect(code).toBe(2);
+		expect(stderr).toContain('npm whoami');
+		expect(await gitOutput(dir, ['rev-parse', 'HEAD'])).toBe(before);
+		expect(await tagsOf(dir)).toEqual(['v1.0.0']);
+		expect(await statusOf(dir)).toBe('');
+		expect(tools.published()).toEqual([]);
+		expect(tools.releases()).toEqual([]);
+		expect(await gitOutput(remote, ['tag', '--list'])).toBe('');
+		expect(stderr).not.toContain(TOKEN);
+	});
+
 	test('release --publish publishes after an atomic push, then makes the GitHub release', async () => {
 		const {dir, remote} = await libraryOnOrigin();
 		let remoteTagsAtPublish = '';
