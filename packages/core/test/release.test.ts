@@ -3,6 +3,7 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {afterEach, expect, test, vi} from 'vitest';
 import {DEFAULT_GROUP_CONFIG} from '../src/config.js';
+import {parseReleaseSettings} from '../src/units/settings.js';
 import {
 	applyRelease,
 	bumpManifest,
@@ -290,6 +291,22 @@ test('planRelease reports nothing to release, with the unreleased subjects', asy
 		lastTag: 'v0.3.0',
 		unreleased: ['✅ Cover the empty-note case', '📝 Fix typos in the README'],
 	});
+});
+
+test('single repo with zeroMajor minor releases 0.15.0 for a breaking change at 0.14.0', async () => {
+	const repo = await repoWith([
+		{commit: '✨ Add notes'},
+		{tag: 'v0.14.0'},
+		{commit: 'feat!: drop x'},
+	]);
+	const release = parseReleaseSettings(
+		{schema: 1, shape: 'single', zeroMajor: 'minor'},
+		'chamoji.config.json',
+	);
+	expect(
+		await plan(repo.dir, {config: {groups: DEFAULT_GROUP_CONFIG, release}}),
+	).toMatchObject({status: 'ready', version: '0.15.0', bump: 'minor'});
+	expect(await plan(repo.dir)).toMatchObject({version: '1.0.0', bump: 'major'});
 });
 
 test('planRelease needs a version for the first release', async () => {

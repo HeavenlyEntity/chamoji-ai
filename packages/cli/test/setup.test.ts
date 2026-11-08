@@ -728,7 +728,7 @@ test('setup --yes exits 2 for a release section from a newer chamoji', async () 
 	const {code, stderr} = await chamoji(['setup', '--yes'], dir);
 	expect(code).toBe(2);
 	expect(stderr).toContain(
-		"this repo's release settings need chamoji 0.13.0 or newer",
+		"this repo's release settings need chamoji 0.15.0 or newer",
 	);
 	expect(await fetchesMemory(dir)).toBe(false);
 });

@@ -145,10 +145,10 @@ Without a `release` section, the repo is one package: one version, one `v*` tag 
 </Note>
 
 <Properties>
-	<Property name="schema" type="1 · required" since="0.13.0">
-		The section’s format. A higher number is from a newer chamoji, which stops
-		with “this repo’s release settings need chamoji 0.13.0 or newer” and exit
-		code 2.
+	<Property name="schema" type="1 | 2 · required" since="0.13.0">
+		The section’s format. `trigger`, `majors` and `publish` need `2`. A number
+		above 2 is from a newer chamoji, which stops with “this repo’s release
+		settings need chamoji 0.15.0 or newer” and exit code 2.
 	</Property>
 	<Property
 		name="shape"
@@ -156,7 +156,25 @@ Without a `release` section, the repo is one package: one version, one `v*` tag 
 		since="0.13.0"
 	>
 		`apps` versions each app, `libraries` each package. `single` is the default
-		behaviour, one release for the whole repo, and takes no other key.
+		behaviour, one release for the whole repo, and takes only `zeroMajor`,
+		`trigger`, `majors` and `publish` besides.
+	</Property>
+	<Property name="trigger" type="'merge' | 'manual'" since="0.15.0">
+		What starts a release. `merge` releases when a change is merged to the
+		default branch, and `manual` waits for you to run the release. Needs
+		`"schema": 2`. Default: `manual`.
+	</Property>
+	<Property name="majors" type="'auto' | 'manual'" since="0.15.0">
+		Whether a breaking change raises the major version on its own. `manual`
+		leaves a major release to you. Needs `"schema": 2`. Default: `auto`.
+	</Property>
+	<Property name="publish" type="boolean | object" since="0.15.0">
+		Publish the release to npm. `true` uses the defaults, `false` publishes
+		nothing, and an object sets any of `check`, `prereleaseTag` and `packages`.
+		`check` is a command that must pass first (default: none), `prereleaseTag`
+		is the npm tag for a prerelease (default: `next`), and `packages` lists the
+		packages to publish (default: none). Any other key inside `publish` stops
+		the command. Needs `"schema": 2`. Default: `false`.
 	</Property>
 	<Property name="units" type="object" since="0.13.0">
 		Each unit by name, with its settings (below). A name can’t be empty or
@@ -183,8 +201,9 @@ Without a `release` section, the repo is one package: one version, one `v*` tag 
 		notes. Default: `none`.
 	</Property>
 	<Property name="zeroMajor" type="'minor'" since="0.13.0">
-		Make a breaking change raise the minor version while a unit is at 0.x.
-		Default: unset, so a breaking change raises the major version.
+		Make a breaking change raise the minor version while a unit, or the repo
+		with `single`, is at 0.x. Default: unset, so a breaking change raises the
+		major version.
 	</Property>
 	<Property name="fixed" type="list of lists of unit names" since="0.13.0">
 		Units that always share one version: the largest bump of any of them. When
@@ -207,7 +226,7 @@ Without a `release` section, the repo is one package: one version, one `v*` tag 
 	</Property>
 </Properties>
 
-Every key but `schema` and `shape` needs `apps` or `libraries`. With `single`, any other key stops the command.
+Every key but `schema`, `shape`, `trigger`, `majors`, `publish` and `zeroMajor` needs `apps` or `libraries`. With `single`, any other key stops the command.
 
 ## A unit {{ badge: '8', icon: 'package' }}
 

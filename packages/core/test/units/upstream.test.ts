@@ -26,6 +26,9 @@ function settings(over: Partial<ReleaseSettings> = {}): ReleaseSettings {
 		tags: {ignore: [], aliases: {}},
 		rootChangelog: false,
 		githubReleases: 'per-unit',
+		trigger: 'manual',
+		majors: 'auto',
+		publish: null,
 		...over,
 	};
 }

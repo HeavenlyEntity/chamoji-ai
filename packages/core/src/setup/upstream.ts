@@ -195,6 +195,9 @@ export async function detectUpstream(
 		tags: {ignore: inheritedTags.map(exactPattern), aliases: {}},
 		rootChangelog: false,
 		githubReleases: 'per-unit',
+		trigger: 'manual',
+		majors: 'auto',
+		publish: null,
 	};
 	const {commits, syncs} = await readUpstream(
 		root,

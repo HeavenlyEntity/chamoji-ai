@@ -75,12 +75,81 @@ test('tag and changelog come from the shape defaults when absent', () => {
 	expect(libs.sharedChanges).toBe('release-dependents');
 });
 
-test('schema above 1 is refused', () => {
-	const call = () => parseReleaseSettings({...gearz, schema: 2}, FILE);
+test('schema 3 asks for a newer chamoji', () => {
+	const call = () => parseReleaseSettings({...gearz, schema: 3}, FILE);
 	expect(call).toThrow(ConfigVersionError);
 	expect(call).toThrow(
-		"this repo's release settings need chamoji 0.13.0 or newer",
+		"this repo's release settings need chamoji 0.15.0 or newer",
 	);
+});
+
+test('parses trigger, majors and publish under schema 2', () => {
+	const settings = parseReleaseSettings(
+		{
+			schema: 2,
+			shape: 'single',
+			trigger: 'merge',
+			majors: 'manual',
+			publish: {check: 'pnpm test'},
+		},
+		FILE,
+	);
+	expect(settings.schema).toBe(2);
+	expect(settings.trigger).toBe('merge');
+	expect(settings.majors).toBe('manual');
+	expect(settings.publish).toEqual({
+		check: 'pnpm test',
+		prereleaseTag: 'next',
+		packages: [],
+	});
+});
+
+test('defaults when the keys are absent', () => {
+	const settings = parseReleaseSettings({schema: 1, shape: 'single'}, FILE);
+	expect(settings.trigger).toBe('manual');
+	expect(settings.majors).toBe('auto');
+	expect(settings.publish).toBeNull();
+	expect(
+		parseReleaseSettings({schema: 2, shape: 'single', publish: false}, FILE)
+			.publish,
+	).toBeNull();
+});
+
+test('publish true means the defaults', () => {
+	expect(
+		parseReleaseSettings({schema: 2, shape: 'single', publish: true}, FILE)
+			.publish,
+	).toEqual({check: null, prereleaseTag: 'next', packages: []});
+});
+
+test('new keys need schema 2', () => {
+	expect(() =>
+		parseReleaseSettings({schema: 1, shape: 'single', trigger: 'merge'}, FILE),
+	).toThrow(`Invalid config ${FILE}: release.trigger needs "schema": 2`);
+});
+
+test('rejects bad values', () => {
+	const bad = (extra: Record<string, unknown>) => () =>
+		parseReleaseSettings({schema: 2, shape: 'single', ...extra}, FILE);
+	expect(bad({trigger: 'push'})).toThrow(
+		'release.trigger must be "merge" or "manual"',
+	);
+	expect(bad({majors: 'never'})).toThrow(
+		'release.majors must be "auto" or "manual"',
+	);
+	expect(bad({publish: {packages: 'x'}})).toThrow(
+		'release.publish.packages must be a list of strings',
+	);
+	expect(bad({publish: {tag: 'x'}})).toThrow(
+		"release.publish.tag isn't a setting",
+	);
+});
+
+test('zeroMajor is allowed with shape single', () => {
+	expect(
+		parseReleaseSettings({schema: 1, shape: 'single', zeroMajor: 'minor'}, FILE)
+			.zeroMajor,
+	).toBe('minor');
 });
 
 test('a missing or non-integer schema is invalid', () => {
@@ -229,7 +298,6 @@ test.each([
 	['exclude', ['apps/e2e']],
 	['sharedChanges', 'ride-along'],
 	['rootFiles', 'none'],
-	['zeroMajor', 'minor'],
 	['fixed', []],
 	['upstream', {name: 'Makerkit'}],
 	['tags', {ignore: ['^\\d+\\.\\d+\\.\\d+$']}],
