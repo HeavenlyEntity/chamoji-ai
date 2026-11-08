@@ -30,6 +30,25 @@ test('requireNpm accepts 11.5.1 and newer', async () => {
 	await expect(requireNpm(reply('12.0.0'), '/')).resolves.toBeUndefined();
 });
 
+test('npmVersion and publishedVersions run without npm tokens', async () => {
+	const seen: Array<Record<string, string>> = [];
+	const npm: NpmRunner = async (args, options) => {
+		seen.push(options.env);
+		return args[0] === '--version'
+			? {ok: true, stdout: '11.6.0\n', stderr: ''}
+			: {ok: false, stdout: '', stderr: 'npm error code E404'};
+	};
+	const env = {
+		PATH: '/usr/bin',
+		CHAMOJI_NPM_TOKEN: 'a',
+		NPM_TOKEN: 'b',
+		NODE_AUTH_TOKEN: 'c',
+	};
+	await npmVersion(npm, '/', env);
+	await publishedVersions(npm, 'x', 'https://r.dev/', '/', env);
+	expect(seen).toEqual([{PATH: '/usr/bin'}, {PATH: '/usr/bin'}]);
+});
+
 test('publishedVersions asks npm view and reads versions and latest', async () => {
 	const calls: string[][] = [];
 	const npm: NpmRunner = async args => {

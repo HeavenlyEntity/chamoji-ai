@@ -31,9 +31,15 @@ import {
 	type Lookup,
 	type Manifest,
 } from './checks.js';
+import {
+	checkRegistry,
+	publishMethod,
+	registryVersions,
+	type PublishMethod,
+} from './credentials.js';
 import {distTagFor} from './dist-tags.js';
 import {classifyPackage} from './kind.js';
-import {publishedVersions, type NpmRunner} from './npm.js';
+import type {NpmRunner} from './npm.js';
 import {detectPackageManager, spawnSpec, type PackageManager} from './pack.js';
 import {registryFor} from './registry.js';
 
@@ -79,7 +85,15 @@ export type PublishOptions = {
 	/** The dist-tag, instead of the one the version implies. */
 	tag?: string;
 	npm: NpmRunner;
+	/** The complete environment, credentials included; nothing the repo runs gets them. */
 	env: Record<string, string>;
+	/**
+	 * How the run will publish; `publishMethod(env)` when left out. Under a
+	 * token, registry lookups read with the token config.
+	 */
+	method?: PublishMethod;
+	/** `release.publish.registries`: the registries beyond npmjs a token may go to. */
+	registries?: string[];
 	/**
 	 * For `release --publish`: tag -> version for releases set in the working
 	 * tree and not tagged yet. They replace the tags at HEAD, and the tree may
@@ -253,17 +267,30 @@ async function planIn(
 	}
 
 	const pm = await detectPackageManager(root);
+	const reading = {
+		env: options.env,
+		method: options.method ?? publishMethod(options.env),
+		extra: options.registries ?? [],
+	};
+	// Every registry is checked before npm is asked anything.
+	for (const {pkg} of ordered) {
+		// eslint-disable-next-line no-await-in-loop
+		const registry = await registryFor(root, pkg);
+		checkRegistry(pkg.name, registry, reading.method, reading.extra);
+	}
+
 	const known = new Map<string, Promise<Lookup>>();
 	const lookup = async (pkg: WorkspacePackage): Promise<Lookup> => {
 		let found = known.get(pkg.name);
 		if (!found) {
 			found = (async () => {
 				const registry = await registryFor(root, pkg);
-				const versions = await publishedVersions(
+				const versions = await registryVersions(
 					options.npm,
 					pkg.name,
 					registry,
 					root,
+					reading,
 				);
 				return {registry, versions};
 			})();

@@ -1,11 +1,12 @@
 import {ReleaseError} from '../release.js';
 import {
+	checkRegistry,
 	publishMethod,
 	withTokenConfig,
 	type PublishMethod,
 } from './credentials.js';
-import {mask} from './checks.js';
-import {DEFAULT_REGISTRY, processEnv, type NpmRunner} from './npm.js';
+import {mask, scrubEnv} from './checks.js';
+import {processEnv, type NpmRunner} from './npm.js';
 import type {PublishPlan} from './plan.js';
 
 export type FetchLike = (
@@ -101,12 +102,18 @@ async function checkWhoami(
 	extra: string[],
 ): Promise<void> {
 	const registries = [...new Set(plan.targets.map(target => target.registry))];
+	// Under a token, npm gets no npm credential in its environment, only the
+	// token config, so a repo's `.npmrc` can't send a token anywhere else. A
+	// local run checks the login it will publish with, its own env unchanged.
 	const run = async (runEnv: Record<string, string>) => {
+		const whoamiEnv = env.CHAMOJI_NPM_TOKEN
+			? scrubEnv({...processEnv(), ...runEnv}).env
+			: {...processEnv(), ...runEnv};
 		for (const registry of registries) {
 			// eslint-disable-next-line no-await-in-loop
 			const result = await npm(['whoami', '--registry', registry], {
 				cwd: plan.root,
-				env: {...processEnv(), ...runEnv},
+				env: whoamiEnv,
 			});
 			if (!result.ok) {
 				fail(
@@ -139,21 +146,7 @@ export async function checkPublishAuth(
 	const method = publishMethod(options.env);
 	const extra = options.registries ?? [];
 	for (const target of plan.targets) {
-		if (!target.registry.startsWith('https:')) {
-			fail(
-				`${target.name}: ${target.registry} isn't https; chamoji won't send credentials to it`,
-			);
-		}
-
-		if (
-			method === 'token' &&
-			target.registry !== DEFAULT_REGISTRY &&
-			!extra.includes(target.registry)
-		) {
-			fail(
-				`${target.name}: ${target.registry} isn't a registry chamoji may send the npm token to; add it to \`release.publish.registries\``,
-			);
-		}
+		checkRegistry(target.name, target.registry, method, extra);
 	}
 
 	if (method === 'local' && options.ci) {

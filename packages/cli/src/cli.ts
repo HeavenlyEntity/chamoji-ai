@@ -2,6 +2,7 @@
 import {readFileSync} from 'node:fs';
 import process from 'node:process';
 import {supportsColor, supportsColorStderr} from 'chalk';
+import {takeCredentials} from './credentials.js';
 import {createFace} from './face.js';
 import {shouldAnimate} from './face-settings.js';
 import {useAscii} from './faces.js';
@@ -14,6 +15,10 @@ import {createUpdateCheck} from './update-check.js';
 const {version} = JSON.parse(
 	readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
 ) as {version: string};
+
+// Before anything else runs: the publish credentials leave process.env, which
+// git, gh and the repo's hooks inherit, and only the publish tools get them.
+const credentials = takeCredentials(process.env);
 
 const argv = process.argv.slice(2);
 const stdout = (text: string) => {
@@ -104,6 +109,7 @@ const welcome: WelcomeSettings | undefined = showsLogo(argv)
 
 process.exitCode = await run(argv, {
 	cwd: process.cwd(),
+	credentials,
 	// The face owns the line it draws, so every write goes through it.
 	stdout: face ? face.wrap(stdout) : stdout,
 	stderr: face ? face.wrap(stderr) : stderr,

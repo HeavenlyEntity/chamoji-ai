@@ -420,6 +420,137 @@ describe.skipIf(!has('npm'))('planPublish', () => {
 		},
 	);
 
+	/** An npm that answers `npm view` with E404 and records each call's env and token config. */
+	function recordingNpm() {
+		const calls: Array<{
+			args: string[];
+			env: Record<string, string>;
+			config: string;
+		}> = [];
+		const npm: NpmRunner = async (args, options) => {
+			const file = options.env.npm_config_userconfig;
+			calls.push({
+				args,
+				env: options.env,
+				config: file ? await readFile(file, 'utf8') : '',
+			});
+			return {ok: false, stdout: '', stderr: 'npm error code E404'};
+		};
+		return {npm, views: () => calls.filter(call => call.args[0] === 'view')};
+	}
+
+	const TOKENS = {
+		CHAMOJI_NPM_TOKEN: 'npm_planSecret111',
+		NPM_TOKEN: 'npm_other222',
+		NODE_AUTH_TOKEN: 'npm_node333',
+	};
+
+	it('npm view never gets an npm token, even one in the process env', async () => {
+		const dir = await repoWith(MONOREPO, ['v1.0.0']);
+		const {npm, views} = recordingNpm();
+		const saved = {...process.env};
+		Object.assign(process.env, TOKENS);
+		try {
+			await plan({
+				cwd: dir,
+				npm,
+				env: {PATH: process.env.PATH ?? '', ...TOKENS},
+				method: 'local',
+			});
+		} finally {
+			for (const key of Object.keys(TOKENS)) {
+				if (saved[key] === undefined) delete process.env[key];
+				else process.env[key] = saved[key];
+			}
+		}
+
+		expect(views().length).toBeGreaterThan(0);
+		for (const view of views()) {
+			for (const key of Object.keys(TOKENS)) {
+				expect(view.env[key]).toBeUndefined();
+			}
+
+			expect(JSON.stringify(view.env)).not.toContain('npm_');
+			expect(view.env.PATH).toBeTruthy();
+		}
+	});
+
+	it('under a token, npm view of a listed registry reads with the token config only', async () => {
+		const dir = await repoWith(
+			{
+				...MONOREPO,
+				'packages/core/package.json': lib('@acme/core', '1.0.0', {
+					publishConfig: {registry: 'https://npm.acme.dev/'},
+				}),
+			},
+			['v1.0.0'],
+		);
+		const {npm, views} = recordingNpm();
+		await plan({
+			cwd: dir,
+			npm,
+			env: TOKENS,
+			method: 'token',
+			registries: ['https://npm.acme.dev/'],
+		});
+
+		const core = views().find(view => view.args[1] === '@acme/core')!;
+		expect(core.args).toContain('https://npm.acme.dev/');
+		expect(core.env.npm_config_userconfig).toBeTruthy();
+		expect(core.config.trim()).toBe(
+			`//npm.acme.dev/:_authToken=${TOKENS.CHAMOJI_NPM_TOKEN}`,
+		);
+		const cli = views().find(view => view.args[1] === '@acme/cli')!;
+		expect(cli.config.trim()).toBe(
+			`//registry.npmjs.org/:_authToken=${TOKENS.CHAMOJI_NPM_TOKEN}`,
+		);
+		for (const view of views()) {
+			for (const key of Object.keys(TOKENS)) {
+				expect(view.env[key]).toBeUndefined();
+			}
+		}
+	});
+
+	it('refuses an unlisted registry under a token before any lookup', async () => {
+		const dir = await repoWith(
+			{
+				...MONOREPO,
+				'packages/cli/package.json': lib('@acme/cli', '1.0.0', {
+					dependencies: {'@acme/core': '^1.0.0'},
+					publishConfig: {registry: 'https://evil.example/'},
+				}),
+			},
+			['v1.0.0'],
+		);
+		const {npm, views} = recordingNpm();
+		const refused = plan({cwd: dir, npm, env: TOKENS, method: 'token'});
+
+		await expect(refused).rejects.toThrow(ReleaseError);
+		await expect(refused).rejects.toThrow(
+			"@acme/cli: https://evil.example/ isn't a registry chamoji may send the npm token to; add it to `release.publish.registries`",
+		);
+		expect(views()).toEqual([]);
+	});
+
+	it('refuses an http registry before any lookup', async () => {
+		const dir = await repoWith(
+			{
+				...MONOREPO,
+				'packages/core/package.json': lib('@acme/core', '1.0.0', {
+					publishConfig: {registry: 'http://npm.acme.dev/'},
+				}),
+			},
+			['v1.0.0'],
+		);
+		const {npm, views} = recordingNpm();
+		const refused = plan({cwd: dir, npm, method: 'local'});
+
+		await expect(refused).rejects.toThrow(
+			"@acme/core: http://npm.acme.dev/ isn't https; chamoji won't send credentials to it",
+		);
+		expect(views()).toEqual([]);
+	});
+
 	it('single repo --from skips an app, as a plain publish does', async () => {
 		const dir = await repoWith({...MONOREPO, ...NEXT_APP}, ['v1.0.0']);
 		const made = await plan({cwd: dir, from: ['v1.0.0']});

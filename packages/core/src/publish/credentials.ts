@@ -1,8 +1,8 @@
 import {chmod, mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-
-import {DEFAULT_REGISTRY} from './npm.js';
+import {ReleaseError} from '../release.js';
+import {DEFAULT_REGISTRY, publishedVersions, type NpmRunner} from './npm.js';
 
 export type PublishMethod = 'oidc' | 'token' | 'local';
 
@@ -26,12 +26,12 @@ function nerfDart(registry: string): string {
 }
 
 /**
- * Runs `body` with an npm user config that holds the token for each registry
- * that may have it: npmjs, and the `extra` ones the config lists. Registries
- * come from repo content, so any other is left out.
- *
- * so the token never sits in an argument or in the repo's `.npmrc`. The file
- * is owner-only and gone when `body` settles.
+ * Runs `body` with `npm_config_userconfig` pointing at a temporary npm user
+ * config that holds the token for each of `registries` that may have it:
+ * npmjs, and the `extra` ones `release.publish.registries` lists. Registries
+ * come from repo content, so any other is left out. The token never sits in
+ * an argument or in the repo's `.npmrc`; the file is owner-only and gone when
+ * `body` settles.
  */
 export async function withTokenConfig<T>(
 	env: Record<string, string>,
@@ -53,4 +53,66 @@ export async function withTokenConfig<T>(
 	} finally {
 		await rm(dir, {recursive: true, force: true});
 	}
+}
+
+/**
+ * Refuses a registry chamoji mustn't send credentials to: one that isn't
+ * https, or, under a token, one other than npmjs that
+ * `release.publish.registries` doesn't list. A registry comes from repo
+ * content (`publishConfig.registry`, `.npmrc`), which anyone can change in a
+ * pull request.
+ */
+export function checkRegistry(
+	name: string,
+	registry: string,
+	method: PublishMethod,
+	extra: string[],
+): void {
+	if (!registry.startsWith('https:')) {
+		throw new ReleaseError(
+			'publish-check',
+			`${name}: ${registry} isn't https; chamoji won't send credentials to it`,
+		);
+	}
+
+	if (
+		method === 'token' &&
+		registry !== DEFAULT_REGISTRY &&
+		!extra.includes(registry)
+	) {
+		throw new ReleaseError(
+			'publish-check',
+			`${name}: ${registry} isn't a registry chamoji may send the npm token to; add it to \`release.publish.registries\``,
+		);
+	}
+}
+
+/**
+ * `publishedVersions` for a run that publishes with `method`: the registry is
+ * checked first, and under a token npm reads with the token config, so a
+ * restricted package or a private registry answers; it never gets the token
+ * in its environment.
+ */
+export async function registryVersions(
+	npm: NpmRunner,
+	name: string,
+	registry: string,
+	cwd: string,
+	options: {
+		env: Record<string, string>;
+		method: PublishMethod;
+		extra: string[];
+	},
+): ReturnType<typeof publishedVersions> {
+	checkRegistry(name, registry, options.method, options.extra);
+	if (options.method !== 'token') {
+		return publishedVersions(npm, name, registry, cwd, options.env);
+	}
+
+	return withTokenConfig(
+		options.env,
+		[registry],
+		async tokenEnv => publishedVersions(npm, name, registry, cwd, tokenEnv),
+		options.extra,
+	);
 }

@@ -182,6 +182,34 @@ describe.skipIf(!has('npm'))('chamoji publish', () => {
 		expect(stdout + stderr).not.toContain(TOKEN);
 	});
 
+	it('publishes with the token in io.credentials, which only npm sees', async () => {
+		const dir = await repoWith(MONOREPO, ['v1.0.0']);
+		const fake = fakeNpm();
+		let stdout = '';
+		const code = await run(['publish', '--json'], {
+			cwd: dir,
+			stdout: text => (stdout += text),
+			stderr: () => {},
+			fetchTags: false,
+			npm: fake.npm,
+			fetch: fetchNever,
+			env: {
+				CI: undefined,
+				ACTIONS_ID_TOKEN_REQUEST_URL: undefined,
+				ACTIONS_ID_TOKEN_REQUEST_TOKEN: undefined,
+				CHAMOJI_NPM_TOKEN: undefined,
+			},
+			credentials: {CHAMOJI_NPM_TOKEN: TOKEN},
+		});
+
+		expect(code).toBe(0);
+		expect(JSON.parse(stdout)).toMatchObject({
+			status: 'published',
+			method: 'token',
+		});
+		expect(stdout).not.toContain(TOKEN);
+	});
+
 	it('prints one line per package without --json', async () => {
 		const dir = await repoWith({...MONOREPO, ...NEXT_APP}, ['v1.0.0']);
 		const {code, stdout, stderr} = await chamoji(
