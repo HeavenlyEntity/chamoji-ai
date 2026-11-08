@@ -1564,6 +1564,8 @@ process.exit(spawnSync(process.execPath, [${JSON.stringify(real)}, ...process.ar
 			expect(await read('npm-calls')).toMatch(
 				/^publish \.\/acme-lib-1\.0\.0\.tgz /m,
 			);
+			// Once the tag is all on npm, its missing GitHub release is made.
+			expect(await read('calls')).toContain('release create v1.0.0');
 
 			const again = await action({
 				CHAMOJI_CLI: unitCli,
