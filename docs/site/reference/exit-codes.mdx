@@ -27,7 +27,8 @@ export const metadata = {
 		newer chamoji.
 	</Property>
 	<Property name="3">
-		Nothing to release. Only `next-version` and `release` use it.
+		Nothing to release or publish. Only `next-version`, `release` and `publish`
+		use it.
 	</Property>
 </Properties>
 
@@ -47,7 +48,7 @@ To treat “nothing to release” as success in CI:
 chamoji release --push || [ $? -eq 3 ]
 ```
 
-## Every command {{ icon: 'list-numbers', badge: '13' }}
+## Every command {{ icon: 'list-numbers', badge: '14' }}
 
 <Properties>
 	<Property name="chamoji">
@@ -71,6 +72,13 @@ chamoji release --push || [ $? -eq 3 ]
 		tag that already exists, or a shallow clone it couldn’t unshallow. In a
 		monorepo, also a version file it can’t set, or a version that differs from
 		its fixed group’s. 1 for anything else, such as a failed push.
+	</Property>
+	<Property name="publish">
+		0 when something was published, or the dry run worked. 3 when every package
+		is already on npm, or there is none to publish. 2 when a check failed: npm
+		older than 11.5.1, a dirty working tree, a version that doesn’t match its
+		tag, an app, or no way to sign in. 1 for anything else, such as a package
+		npm refused.
 	</Property>
 	<Property name="setup">
 		0 when it saved, or nothing would change. 2 when something would change and

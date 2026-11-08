@@ -9,19 +9,24 @@ import {
 	buildChangelog,
 	CARD_ENDPOINT,
 	cardUrl,
+	checkPublishAuth,
 	committedSection,
 	ConfigVersionError,
 	fetchesMemory,
 	getActive,
 	hasMessageContent,
 	isAuthFailure,
+	discardPublishPlan,
 	listMemory,
 	loadComposeConfig,
 	loadConfig,
 	openJudgmentCache,
 	readStagedChanges,
+	planPublish,
 	planRelease,
 	planUnitReleases,
+	processEnv,
+	publishMethod,
 	pushRelease,
 	pushUnitReleases,
 	quietGitEnv,
@@ -29,8 +34,11 @@ import {
 	ReleaseError,
 	render,
 	repoStats,
+	requireNpm,
 	resolveUnits,
 	runGit,
+	runNpm,
+	runPublish,
 	shouldPrompt,
 	shouldStamp,
 	stampWorkstream,
@@ -42,7 +50,11 @@ import {
 	type ChamojiConfig,
 	type CommitClassifier,
 	type ComposeConfig,
+	type FetchLike,
+	type NpmRunner,
 	type OutputFormat,
+	type PublishOutcome,
+	type PublishTarget,
 	type ReadyPlan,
 	type ReadyUnitPlan,
 	type ReleaseOptions,
@@ -102,6 +114,10 @@ export type Io = {
 	gh?: GhRunner;
 	/** `release` fetches tags from origin first; tests turn it off. Default true. */
 	fetchTags?: boolean;
+	/** Runs npm for `publish`; tests pass a fake. Defaults to the real npm. */
+	npm?: NpmRunner;
+	/** Fetches for the OIDC check of `publish`; tests pass a fake. Defaults to global fetch. */
+	fetch?: FetchLike;
 	/** The terminal the composer runs on, or null when there is none; tests pass a fake. */
 	terminal?: () => ComposerTerminal | null;
 	/** Environment for the hook's CI check; defaults to process.env. */
@@ -200,6 +216,9 @@ const HELP = `
 	                                   (exits 3 when no release is needed)
 	  $ chamoji release [version]      Cut a release: CHANGELOG.md, version
 	                                   bumps, release commit and tag
+	  $ chamoji publish [options]      Publish the packages a release tagged to
+	                                   npm (exits 3 when there is nothing to
+	                                   publish)
 
 	Workstreams
 	  $ chamoji ws                     List workstreams with their unreleased
@@ -256,7 +275,8 @@ const HELP = `
 	Options
 	  --format   markdown (default), md, json or html
 	  --output   Write to this file instead of stdout
-	  --from     Leave out this release tag and everything older
+	  --from     changelog: leave out this release tag and everything older.
+	             publish: publish what this tag released (repeatable)
 	  --to       Ref to treat as the head of history (default: HEAD)
 	  --release  Name the unreleased section with this version
 	  --since    Only the commits after this ref, as one section (for
@@ -271,22 +291,26 @@ const HELP = `
 	             It sees the query and, per match, up to 300 characters of
 	             the subject and card text, with emails removed.
 	             mcp: the same reorder, for the search_memory tool.
-	  --dry-run  release: show the version and notes, change nothing
+	  --dry-run  release: show the version and notes, change nothing.
+	             publish: list what would be published, publish nothing
 	  --push     release: push HEAD and the tag, sync memory if chamoji init
 	             ran here, then create the GitHub release when the gh CLI
 	             is installed
 	  --trailer  release: add "Key: value" to the release commit (repeatable)
 	  --any-branch
 	             release: allow a branch other than origin's default
-	  --unit     release and next-version: only this release unit (repeatable;
-	             release 2.0.0 needs exactly one); changelog: this unit's
-	             releases
+	  --unit     release, next-version and publish: only this release unit
+	             (repeatable; release 2.0.0 needs exactly one); changelog:
+	             this unit's releases
+	  --tag      publish: the npm dist-tag to publish under, instead of the
+	             one the version implies
+	  --catch-up publish: not available yet
 	  --for-tag  changelog: only the release with this tag, from the unit
 	             whose tag format it fits
 	  --yes      setup: take every recommended answer without asking; the
 	             hook is still only offered
 	  --explain  setup: print each value it writes and where it came from
-	  --json     release: print the result as JSON; card: print the numbers;
+	  --json     release and publish: print the result as JSON; card: print the numbers;
 	             ws list: print the workstreams as an array;
 	             why: print the blame result; memory list and show: print
 	             the entries; memory search: print the matches;
@@ -326,12 +350,21 @@ const HELP = `
 	  $ chamoji release --dry-run
 	  $ chamoji release 2.0.0-rc.1 --push
 	  $ chamoji release 2.0.0 --unit mobile --dry-run
+	  $ chamoji publish --dry-run
 	  $ chamoji changelog --for-tag web/v1.4.0
 	  $ chamoji setup
 	  $ chamoji setup releases --yes --explain
 `;
 
 export const NO_RELEASE_NEEDED = 3;
+
+const outcomeText = (outcome: PublishOutcome): string =>
+	outcome.status === 'already' ? 'already on npm' : outcome.status;
+
+const nothingToPublish = (count: number): string =>
+	count === 0
+		? 'chamoji: nothing to publish (no package to publish here)'
+		: 'chamoji: nothing to publish (every package is already on npm, or was skipped)';
 
 const FORMATS: Record<string, OutputFormat> = {
 	markdown: 'markdown',
@@ -350,7 +383,7 @@ function parse(argv: string[]) {
 		flags: {
 			format: {type: 'string', default: 'markdown'},
 			output: {type: 'string', shortFlag: 'o'},
-			from: {type: 'string'},
+			from: {type: 'string', isMultiple: true},
 			to: {type: 'string', default: 'HEAD'},
 			release: {type: 'string'},
 			since: {type: 'string'},
@@ -362,6 +395,8 @@ function parse(argv: string[]) {
 			trailer: {type: 'string', isMultiple: true},
 			anyBranch: {type: 'boolean'},
 			unit: {type: 'string', isMultiple: true, default: []},
+			tag: {type: 'string'},
+			catchUp: {type: 'boolean'},
 			forTag: {type: 'string'},
 			json: {type: 'boolean'},
 			none: {type: 'boolean'},
@@ -397,6 +432,8 @@ export async function run(argv: string[], given: Io): Promise<number> {
 	// Commands that never wait never touch the face, whatever was passed.
 	const face = given.face && hasFace(cli.input, flags) ? given.face : NO_FACE;
 	const io: Io = {...given, face};
+	/** `--from`, once per tag. */
+	const froms = flags.from ?? [];
 	/** A step a command is running that Jev's progress shows on, if any. */
 	let jevHost: Step | undefined;
 	const jev = jevFace(face, () => jevHost);
@@ -457,6 +494,10 @@ export async function run(argv: string[], given: Io): Promise<number> {
 						);
 					}
 
+					if (froms.length > 1) {
+						throw new Error('--from takes one tag for changelog');
+					}
+
 					const config = await loadConfig(io.cwd, flags.config);
 					if (releasesUnits(config)) {
 						return await changelogUnits(config, format, classify);
@@ -467,7 +508,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 						cwd: io.cwd,
 						config,
 						to: flags.to,
-						from: flags.from,
+						from: froms[0],
 						release: flags.release,
 						since: flags.since,
 						today: io.today,
@@ -536,6 +577,10 @@ export async function run(argv: string[], given: Io): Promise<number> {
 					refuseUnitFlags();
 					await monorepoHint(config);
 					return await release(cli.input[1], classify);
+				}
+
+				case 'publish': {
+					return await publish();
 				}
 
 				case 'hook': {
@@ -630,6 +675,114 @@ export async function run(argv: string[], given: Io): Promise<number> {
 				? PREFLIGHT_FAILED
 				: 1;
 		}
+	}
+
+	/** What `chamoji publish` and the Action's publish step run. */
+	async function publish(): Promise<number> {
+		if (flags.catchUp) {
+			throw new Error("--catch-up isn't available yet");
+		}
+
+		const config = await loadConfig(io.cwd, flags.config);
+		// Complete on purpose: runNpm adds nothing, and an unset entry in io.env
+		// removes the variable the process has.
+		const env = processEnv();
+		for (const [key, value] of Object.entries(io.env ?? {})) {
+			if (value === undefined) delete env[key];
+			else env[key] = value;
+		}
+
+		const npm = io.npm ?? runNpm;
+		const registries = config.release?.publish?.registries ?? [];
+		await requireNpm(npm, io.cwd);
+		const plan = await planPublish({
+			cwd: io.cwd,
+			config,
+			...(froms.length > 0 ? {from: froms} : {}),
+			...(flags.unit.length > 0 ? {units: flags.unit} : {}),
+			...(flags.tag === undefined ? {} : {tag: flags.tag}),
+			npm,
+			env,
+		});
+		const skipped = plan.skipped;
+		const skippedLines = skipped.map(
+			item => `chamoji: skipped ${item.name}: ${item.reason}\n`,
+		);
+		const line = (item: {
+			name: string;
+			version: string;
+			distTag: string;
+		}): string => `${item.name} ${item.version} → ${item.distTag}`;
+
+		if (flags.dryRun) {
+			await discardPublishPlan(plan);
+			const lines = plan.targets.map(
+				target =>
+					`${line(target)}: ${target.published ? 'already on npm' : 'would publish'}`,
+			);
+			for (const text of skippedLines) io.stderr(text);
+			const nothing = plan.targets.every(target => target.published);
+			if (flags.json) {
+				printResult([], {
+					status: 'dry-run',
+					method: publishMethod(env),
+					packages: plan.targets satisfies PublishTarget[],
+					skipped,
+				});
+			} else {
+				if (lines.length > 0) printResult(lines, {});
+				if (nothing) io.stderr(`${nothingToPublish(plan.targets.length)}\n`);
+			}
+
+			return nothing ? NO_RELEASE_NEEDED : 0;
+		}
+
+		const ci = env['CI'] === 'true';
+		let method: ReturnType<typeof publishMethod>;
+		try {
+			// Nothing to publish needs no credentials.
+			method = plan.targets.some(target => !target.published)
+				? await checkPublishAuth(plan, {
+						env,
+						npm,
+						fetch: io.fetch ?? (fetch as FetchLike),
+						ci,
+						registries,
+					})
+				: publishMethod(env);
+		} catch (error) {
+			await discardPublishPlan(plan);
+			throw error;
+		}
+
+		const outcomes = await runPublish(plan, {
+			method,
+			npm,
+			env,
+			ci,
+			registries,
+		});
+		for (const text of skippedLines) io.stderr(text);
+		for (const outcome of outcomes) {
+			if (outcome.message && outcome.status !== 'published') {
+				io.stderr(`chamoji: ${outcome.name}: ${outcome.message}\n`);
+			}
+		}
+
+		const failed = outcomes.some(outcome => outcome.status === 'failed');
+		const published = outcomes.some(outcome => outcome.status === 'published');
+		const status = failed ? 'failed' : published ? 'published' : 'nothing';
+		if (flags.json || outcomes.length > 0) {
+			printResult(
+				outcomes.map(outcome => `${line(outcome)}: ${outcomeText(outcome)}`),
+				{status, method, packages: outcomes, skipped},
+			);
+		}
+
+		if (failed) return 1;
+		if (published) return 0;
+		if (!flags.json) io.stderr(`${nothingToPublish(outcomes.length)}\n`);
+		return NO_RELEASE_NEEDED;
 	}
 
 	async function card(): Promise<number> {
@@ -1412,7 +1565,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 		}
 
 		if (
-			flags.from !== undefined ||
+			froms.length > 0 ||
 			flags.release !== undefined ||
 			flags.since !== undefined ||
 			flags.to !== 'HEAD'

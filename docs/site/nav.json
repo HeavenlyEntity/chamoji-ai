@@ -16,6 +16,7 @@
 			{"title": "changelog", "href": "/commands/changelog"},
 			{"title": "next-version", "href": "/commands/next-version"},
 			{"title": "release", "href": "/commands/release"},
+			{"title": "publish", "href": "/commands/publish"},
 			{"title": "ws", "href": "/commands/ws"},
 			{"title": "why", "href": "/commands/why"},
 			{"title": "memory", "href": "/commands/memory"},

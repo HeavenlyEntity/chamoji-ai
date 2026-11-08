@@ -1,0 +1,158 @@
+export const metadata = {
+	title: 'chamoji publish',
+	description:
+		'Publish the packages a release tagged to npm: the checks, the tarballs, the dist-tag and the two ways CI signs in.',
+};
+
+# `chamoji publish`
+
+<p className="lead">
+	Publish the packages that a release tagged to npm. chamoji plans the whole run
+	and checks it first, packs each package, then publishes the tarballs in
+	dependency order. A version that is already on npm is skipped, so running it
+	again is safe.
+</p>
+
+<Tag variant="changes">PUBLISHES TO NPM</Tag>
+<Tag variant="mono">MONOREPO-AWARE</Tag>
+<Tag variant="ci">--json FOR CI AND AGENTS</Tag>
+
+<Note>
+	It publishes what the tags at HEAD released. To publish an older release, pass
+	its tag with `--from`.
+</Note>
+
+## What it does, in order {{ tag: 'PUBLISHES TO NPM', variant: 'changes', label: 'chamoji publish', icon: 'cloud-arrow-up' }}
+
+<Steps>
+	<Step title="npm.">
+		Needs npm 11.5.1 or newer, which is the first version that can sign in with
+		trusted publishing. An older one exits 2.
+	</Step>
+	<Step title="Plan and checks.">
+		A clean working tree, package versions that match their tags, no Next.js or
+		other app, no dependency npm can’t install, and your `publish.check` command
+		if you set one. Each package that isn’t on npm yet is packed and its tarball
+		inspected. The first failure exits 2 and nothing is published.
+	</Step>
+	<Step title="Sign-in check.">
+		Before anything goes out, chamoji checks that this run can publish. See [the
+		two CI methods](#in-ci).
+	</Step>
+	<Step title="Publish.">
+		Each tarball goes up with `npm publish`, with scripts off, under its
+		dist-tag. The first failure stops the run; what was published stays
+		published.
+	</Step>
+</Steps>
+
+The dist-tag is `latest` for a normal version, and `next` for a prerelease unless `release.publish.prereleaseTag` says otherwise. Pass `--tag` to choose one.
+
+## In CI {{ icon: 'robot' }}
+
+CI signs in one of two ways, and chamoji picks from the environment:
+
+<Properties>
+	<Property name="CHAMOJI_NPM_TOKEN" type="token">
+		An npm token. It wins when both are available. chamoji writes it to a
+		private, temporary npm config for the one `npm publish` call, and sends it
+		only to npmjs, or to a registry you list in `release.publish.registries`. It
+		never reaches your repo’s scripts, and it is never printed.
+	</Property>
+	<Property name="Trusted publishing" type="OIDC">
+		With no token, a GitHub Actions job that grants `id-token: write` signs in
+		with a short-lived OIDC token, and npm adds provenance. Add the workflow as
+		a trusted publisher on npmjs.com first. npm can’t trust a package that
+		doesn’t exist, so the first version of a new package is skipped in this
+		mode; publish it once from your machine or with a token.
+	</Property>
+</Properties>
+
+On your own machine, chamoji uses whatever `npm whoami` already knows, and npm asks for a one-time password in your terminal if your account needs one. In CI with neither method, it exits 2 and says what to grant.
+
+[GitHub Action](/guides/github-action) covers the workflow side.
+
+## Flags {{ badge: '6', icon: 'flag' }}
+
+<Properties>
+	<Property name="--dry-run" type="boolean">
+		Plan and check everything, then list each package with its version, dist-tag
+		and whether it is already on npm. Nothing is published, and no sign-in is
+		needed.
+	</Property>
+	<Property name="--from <tag>" type="string · repeatable">
+		Publish what this tag released, instead of the tags at HEAD. Repeat it for
+		several. A tag that isn’t at HEAD is checked out in a temporary worktree.
+	</Property>
+	<Property name="--unit <name>" type="string · repeatable · monorepos">
+		Publish only these units. Only in a repo with release units.
+	</Property>
+	<Property name="--tag <dist-tag>" type="string">
+		The npm dist-tag to publish under, instead of the one the version implies.
+	</Property>
+	<Property name="--json" type="boolean">
+		Print the result as JSON on stdout, with a `status` of `published`,
+		`dry-run`, `nothing` or `failed`, the sign-in `method`, the `packages` and
+		the `skipped` ones. Exit codes stay the same.
+	</Property>
+	<Property name="--config <file>" type="string · default chamoji.config.json">
+		Read this config file instead.
+	</Property>
+</Properties>
+
+## Output {{ icon: 'terminal-window' }}
+
+One line per package, on stdout. Packages that were left out, such as an app, get a line on stderr with the reason:
+
+```txt {{ title: 'chamoji publish' }}
+@chamoji/core 0.15.0 → latest: published
+@chamoji/cli 0.15.0 → latest: published
+chamoji: skipped web: Next.js app (`next` in dependencies, `next.config.ts`)
+```
+
+With `--dry-run`:
+
+```txt {{ title: 'chamoji publish --dry-run' }}
+@chamoji/core 0.15.0 → latest: already on npm
+@chamoji/cli 0.15.0 → latest: would publish
+```
+
+When every package is already on npm, or there is nothing to publish, it exits 3:
+
+```txt {{ title: 'chamoji publish' }}
+@chamoji/core 0.15.0 → latest: already on npm
+chamoji: nothing to publish (every package is already on npm, or was skipped)
+```
+
+## Exit codes
+
+<Properties>
+	<Property name="0">Something was published, or the dry run worked.</Property>
+	<Property name="3">
+		Nothing to publish: every package is already on npm, or there are none.
+	</Property>
+	<Property name="2">
+		A check failed: npm older than 11.5.1, a dirty working tree, a version that
+		doesn’t match its tag, an app, a dependency npm can’t install, a failing
+		`publish.check`, or no way to sign in. Nothing was published.
+	</Property>
+	<Property name="1">
+		Anything else, such as a package that npm refused.
+	</Property>
+</Properties>
+
+[Exit codes](/reference/exit-codes) has every command’s codes.
+
+## Related {{ anchor: false }}
+
+<Guides>
+	<Guide href="/commands/release" name="release">
+		Cut the version, the changelog and the tags that publish reads.
+	</Guide>
+	<Guide href="/guides/github-action" name="GitHub Action">
+		Run chamoji in CI.
+	</Guide>
+	<Guide href="/reference/config" name="Config">
+		Every key in chamoji.config.json, with its default.
+	</Guide>
+</Guides>
