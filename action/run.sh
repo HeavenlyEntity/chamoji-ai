@@ -93,6 +93,13 @@ at_least() {
 	' "$1" "$2"
 }
 
+# npm refuses provenance for a package built from a private repository, so the
+# CLI is told to leave it out.
+if [ -n "${GITHUB_EVENT_PATH:-}" ] && [ -f "$GITHUB_EVENT_PATH" ] &&
+	[ "$(event repository.private 2>/dev/null || true)" = true ]; then
+	export CHAMOJI_PROVENANCE=false
+fi
+
 # The repository's default branch, from the webhook payload; empty without one.
 default_branch() {
 	[ -n "${GITHUB_EVENT_PATH:-}" ] && [ -f "$GITHUB_EVENT_PATH" ] || return 0

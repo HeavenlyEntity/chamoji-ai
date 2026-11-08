@@ -91,7 +91,7 @@ describe('runPublish', () => {
 		const out = await runPublish(plan, {
 			method: 'token',
 			npm,
-			env: {CHAMOJI_NPM_TOKEN: TOKEN},
+			env: {CHAMOJI_NPM_TOKEN: TOKEN, ...OIDC},
 			ci: true,
 		});
 		expect(out.map(o => o.status)).toEqual([
@@ -149,6 +149,41 @@ describe('runPublish', () => {
 		});
 		expect(second.calls[0]!.args).not.toContain('--provenance');
 		expect(second.calls[0]!.inheritStdio).toBeFalsy();
+	});
+
+	it('asks for provenance only when the job can mint an OIDC token', async () => {
+		const argsWith = async (env: Record<string, string>) => {
+			const {npm, calls} = fake();
+			await runPublish(await setup([{name: 'a'}]), {
+				method: 'token',
+				npm,
+				env: {CHAMOJI_NPM_TOKEN: TOKEN, ...env},
+				ci: true,
+			});
+			return calls[0]!.args;
+		};
+
+		// Without id-token: write, npm would refuse --provenance.
+		expect(await argsWith({})).not.toContain('--provenance');
+		expect(
+			await argsWith({
+				ACTIONS_ID_TOKEN_REQUEST_URL: OIDC.ACTIONS_ID_TOKEN_REQUEST_URL,
+			}),
+		).not.toContain('--provenance');
+		expect(await argsWith(OIDC)).toContain('--provenance');
+		// A private repository can't have provenance.
+		expect(
+			await argsWith({...OIDC, CHAMOJI_PROVENANCE: 'false'}),
+		).not.toContain('--provenance');
+
+		const {npm, calls} = fake();
+		await runPublish(await setup([{name: 'a'}]), {
+			method: 'oidc',
+			npm,
+			env: {...OIDC, CHAMOJI_PROVENANCE: 'false'},
+			ci: true,
+		});
+		expect(calls[0]!.args).not.toContain('--provenance');
 	});
 
 	it('a re-run publishes only what is missing', async () => {

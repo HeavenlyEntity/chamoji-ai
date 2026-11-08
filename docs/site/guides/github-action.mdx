@@ -253,6 +253,8 @@ The job publishes with one of two credentials:
 
 The Action masks the token before it prints anything, then takes it out of the environment. Only the calls that publish get it, as `CHAMOJI_NPM_TOKEN`, and a job on a pull request never passes it on.
 
+npm adds provenance whenever the job grants `id-token: write`, with a token too. Without that permission, or in a private repository, which npm refuses provenance for, chamoji publishes without it.
+
 npm can’t trust a package that doesn’t exist yet, so trusted publishing skips a package’s first version. Publish the first version from your machine with `chamoji publish`, or with a token, then add the trusted publisher.
 
 Trusted publishing needs npm 11.5.1 or newer. When the runner’s npm is older, the Action installs `npm@latest` first, and it prints the npm version it publishes with.

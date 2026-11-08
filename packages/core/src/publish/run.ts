@@ -19,7 +19,10 @@ export type RunPublishOptions = {
 	npm: NpmRunner;
 	/** The complete environment npm runs in (PATH included); `runNpm` adds nothing. */
 	env: Record<string, string>;
-	/** Running in CI: provenance is asked for when the method allows it. */
+	/**
+	 * Running in CI: provenance is asked for when the method isn't local, the
+	 * job can mint an OIDC token, and `CHAMOJI_PROVENANCE` isn't `false`.
+	 */
 	ci: boolean;
 	/** The registries beyond npmjs that may hold the token (`release.publish.registries`). */
 	registries?: string[];
@@ -59,6 +62,16 @@ export async function runPublish(
 		env.ACTIONS_ID_TOKEN_REQUEST_TOKEN,
 	].filter((secret): secret is string => Boolean(secret));
 	const outcomes: PublishOutcome[] = [];
+	// npm signs provenance with the job's OIDC token, and refuses it without
+	// one; the Action sets CHAMOJI_PROVENANCE=false for a private repository,
+	// which npm also refuses.
+	const provenance =
+		ci &&
+		method !== 'local' &&
+		Boolean(
+			env.ACTIONS_ID_TOKEN_REQUEST_URL && env.ACTIONS_ID_TOKEN_REQUEST_TOKEN,
+		) &&
+		env.CHAMOJI_PROVENANCE !== 'false';
 
 	try {
 		for (const target of plan.targets) {
@@ -108,7 +121,7 @@ export async function runPublish(
 				`--tag=${target.distTag}`,
 				`--registry=${registryUrl}`,
 				...(scope ? [`--${scope}:registry=${registryUrl}`] : []),
-				...(ci && method !== 'local' ? ['--provenance'] : []),
+				...(provenance ? ['--provenance'] : []),
 				...(scopedDefault ? ['--access', 'public'] : []),
 				'--ignore-scripts',
 			];

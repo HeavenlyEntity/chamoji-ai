@@ -24,9 +24,11 @@ const cli = `${process.execPath} ${path.join(root, 'packages/cli/dist/cli.js')}`
 // The real CLI, except that --version answers FAKE_CLI_VERSION (default
 // 0.13.0): the build in this checkout still says 0.12.0, which the Action
 // refuses for repos with release settings. A call that has CHAMOJI_NPM_TOKEN
-// in its environment is listed in token-calls.
+// in its environment is listed in token-calls, and one with CHAMOJI_PROVENANCE
+// in provenance-calls, after its value.
 const FAKE_CLI = `#!/usr/bin/env bash
 [ -z "\${CHAMOJI_NPM_TOKEN:-}" ] || printf '%s\\n' "$*" >> "$(dirname "$0")/token-calls"
+[ -z "\${CHAMOJI_PROVENANCE:-}" ] || printf '%s %s\\n' "$CHAMOJI_PROVENANCE" "$*" >> "$(dirname "$0")/provenance-calls"
 if [ "$1" = --version ]; then echo "\${FAKE_CLI_VERSION:-0.13.0}"; exit 0; fi
 case "$(pwd)" in *chamoji-head) { pwd; env; } >> "$(dirname "$0")/worktree-env" ;; esac
 exec "${process.execPath}" "${path.join(root, 'packages/cli/dist/cli.js')}" "$@"
@@ -1414,6 +1416,46 @@ process.exit(spawnSync(process.execPath, [${JSON.stringify(real)}, ...process.ar
 			expect(calls[0]).toMatch(/^publish --catch-up --json /);
 			expect(calls[1]).toMatch(/^release --on-merge --push --publish --json /);
 			expect(calls.join('\n')).not.toContain(TOKEN);
+		});
+
+		test('a private repository turns provenance off for the CLI', async () => {
+			const {action, unitCli, read, fake} = await setup(
+				library({trigger: 'merge', publish: true}),
+			);
+			await writeFile(
+				path.join(fake, 'event.json'),
+				JSON.stringify({repository: {default_branch: 'main', private: true}}),
+			);
+			const result = await action({
+				CHAMOJI_CLI: unitCli,
+				...merged,
+				CHAMOJI_NPM_TOKEN: TOKEN,
+				FAKE_NPM_PUBLISHED: '1.0.0',
+			});
+			expect(result.code).toBe(0);
+			const calls = (await read('provenance-calls'))
+				.split('\n')
+				.filter(Boolean);
+			expect(calls).toContainEqual(
+				expect.stringMatching(/^false publish --catch-up /),
+			);
+			expect(calls).toContainEqual(
+				expect.stringMatching(/^false release --on-merge /),
+			);
+		});
+
+		test('a public repository leaves provenance to the CLI', async () => {
+			const {action, unitCli, read} = await setup(
+				library({trigger: 'merge', publish: true}),
+			);
+			const result = await action({
+				CHAMOJI_CLI: unitCli,
+				...merged,
+				CHAMOJI_NPM_TOKEN: TOKEN,
+				FAKE_NPM_PUBLISHED: '1.0.0',
+			});
+			expect(result.code).toBe(0);
+			expect(await read('provenance-calls')).toBe('');
 		});
 
 		test('a pull request never hands the npm token to chamoji', async () => {
