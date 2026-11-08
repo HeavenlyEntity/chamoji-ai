@@ -68,6 +68,8 @@ CI signs in one of two ways, and chamoji picks from the environment:
 	</Property>
 </Properties>
 
+In CI, provenance is added whenever the job can mint an OIDC token (`id-token: write`), with either method. Set `CHAMOJI_PROVENANCE=false` to leave it out, as the Action does for a private repository, which npm refuses provenance for.
+
 On your own machine, chamoji uses whatever `npm whoami` already knows, and npm asks for a one-time password in your terminal if your account needs one. In CI with neither method, it exits 2 and says what to grant.
 
 [GitHub Action](/guides/github-action) covers the workflow side.
