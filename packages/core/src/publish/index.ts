@@ -11,3 +11,15 @@ export {
 	type PackageManager,
 	type TarballFacts,
 } from './pack.js';
+export {distTagFor} from './dist-tags.js';
+export {
+	DEFAULT_REGISTRY,
+	MIN_NPM,
+	npmVersion,
+	publishedVersions,
+	requireNpm,
+	runNpm,
+	type NpmResult,
+	type NpmRunner,
+} from './npm.js';
+export {registryFor} from './registry.js';

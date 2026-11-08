@@ -35,7 +35,8 @@ export class ReleaseError extends Error {
 			| 'first-release'
 			| 'not-newer'
 			| 'tag-exists'
-			| 'invalid-version',
+			| 'invalid-version'
+			| 'publish-check',
 		message: string,
 	) {
 		super(message);
