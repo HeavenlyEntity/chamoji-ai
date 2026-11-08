@@ -14,6 +14,7 @@ import {
 	CHANGELOG_FILE,
 	ReleaseError,
 	gitMessage,
+	movedPrefix,
 	preflight,
 	releaseSubject,
 	type FileChange,
@@ -381,7 +382,7 @@ export async function applyUnitReleases(
 	return {commit: await git('rev-parse', '--short', 'HEAD')};
 }
 
-/** Pushes HEAD and every unit tag, as refs/tags/<tag>, to origin in one push. A failure keeps the local release. */
+/** Pushes HEAD and every unit tag, as refs/tags/<tag>, to origin in one atomic push. A failure keeps the local release. */
 export async function pushUnitReleases(
 	plan: ReadyUnitPlan,
 	env?: Record<string, string>,
@@ -391,6 +392,7 @@ export async function pushUnitReleases(
 		await runGit(
 			[
 				'push',
+				'--atomic',
 				'--quiet',
 				'origin',
 				'HEAD',
@@ -401,7 +403,7 @@ export async function pushUnitReleases(
 		);
 	} catch (error) {
 		throw new Error(
-			`released ${tags.join(', ')} locally, but the push failed; the release commit and tags are kept:\n${gitMessage(error)}`,
+			`${movedPrefix(error)}released ${tags.join(', ')} locally, but the push failed; the release commit and tags are kept:\n${gitMessage(error)}`,
 		);
 	}
 }
