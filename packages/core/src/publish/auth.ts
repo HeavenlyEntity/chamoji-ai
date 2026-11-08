@@ -105,14 +105,16 @@ async function checkWhoami(
 	// Under a token, npm gets no npm credential in its environment, only the
 	// token config, so a repo's `.npmrc` can't send a token anywhere else. A
 	// local run checks the login it will publish with, its own env unchanged.
-	const run = async (runEnv: Record<string, string>) => {
+	// Under a token npm also runs outside the repo, so the repo's `.npmrc`
+	// can't set a proxy or weaken TLS for the token's request.
+	const run = async (runEnv: Record<string, string>, cwd = plan.root) => {
 		const whoamiEnv = env.CHAMOJI_NPM_TOKEN
 			? scrubEnv({...processEnv(), ...runEnv}).env
 			: {...processEnv(), ...runEnv};
 		for (const registry of registries) {
 			// eslint-disable-next-line no-await-in-loop
 			const result = await npm(['whoami', '--registry', registry], {
-				cwd: plan.root,
+				cwd,
 				env: whoamiEnv,
 			});
 			if (!result.ok) {
