@@ -494,6 +494,41 @@ describe.skipIf(!has('npm'))('chamoji publish', () => {
 		expect(gh.created().map(c => c[2])).toEqual(['@acme/core@1.0.0']);
 	});
 
+	it('--catch-up skips a public app unit and exits 0', async () => {
+		const config = json({
+			release: {
+				schema: 2,
+				shape: 'apps',
+				units: {web: {path: 'apps/web'}, core: {path: 'packages/core'}},
+			},
+		});
+		const dir = await repoWith(
+			{...MONOREPO, ...NEXT_APP, 'chamoji.config.json': config},
+			['web/v1.0.0'],
+		);
+		const fake = fakeNpm();
+		const {code, stdout, stderr} = await chamoji(
+			['publish', '--catch-up', '--json'],
+			dir,
+			fake.npm,
+			undefined,
+			fakeGh(['web/v1.0.0']).gh,
+		);
+
+		expect(code).toBe(0);
+		const result = JSON.parse(stdout) as {
+			status: string;
+			tags: Array<{tag: string; error?: string; skipped: unknown[]}>;
+		};
+		expect(result.status).toBe('nothing');
+		expect(result.tags[0]!.error).toBeUndefined();
+		expect(result.tags[0]!.skipped).toEqual([
+			{name: 'web', reason: expect.stringMatching(/^Next\.js app/) as string},
+		]);
+		expect(stderr).toContain('skipped web: Next.js app');
+		expect(fake.published()).toEqual([]);
+	});
+
 	it('--catch-up refuses --from and --dry-run', async () => {
 		const dir = await repoWith(MONOREPO, ['v1.0.0']);
 		for (const extra of [['--from', 'v1.0.0'], ['--dry-run']]) {
