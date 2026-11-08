@@ -310,6 +310,30 @@ describe('checkPublishAuth', () => {
 		}
 	});
 
+	it('whoami under a token gets no npm token variable, only the token config', async () => {
+		const seen: Array<Record<string, string>> = [];
+		const npm: NpmRunner = async (_args, options) => {
+			seen.push(options.env);
+			return {ok: true, stdout: 'me', stderr: ''};
+		};
+		await checkPublishAuth(planOf(target('a')), {
+			env: {
+				CHAMOJI_NPM_TOKEN: 'tok-9',
+				NPM_TOKEN: 'tok-8',
+				NODE_AUTH_TOKEN: 'tok-7',
+			},
+			npm,
+			fetch: neverFetch,
+			ci: true,
+		});
+		expect(seen).toHaveLength(1);
+		expect(seen[0]!.npm_config_userconfig).toBeTruthy();
+		expect(seen[0]!.CHAMOJI_NPM_TOKEN).toBeUndefined();
+		expect(seen[0]!.NPM_TOKEN).toBeUndefined();
+		expect(seen[0]!.NODE_AUTH_TOKEN).toBeUndefined();
+		expect(JSON.stringify(seen[0])).not.toContain('tok-');
+	});
+
 	it('a failed whoami says to log in, without the token', async () => {
 		const npm: NpmRunner = async () => ({
 			ok: false,

@@ -4,9 +4,8 @@ import type {ChamojiConfig} from '../types.js';
 import {unitTagHistory} from '../units/tags.js';
 import {isExcluded, readWorkspace, resolveUnits} from '../units/workspace.js';
 import {checkPublishAuth, type FetchLike} from './auth.js';
-import {publishMethod} from './credentials.js';
+import {publishMethod, registryVersions} from './credentials.js';
 import {distTagFor} from './dist-tags.js';
-import {publishedVersions} from './npm.js';
 import {registryFor} from './registry.js';
 import {
 	discardPublishPlan,
@@ -33,8 +32,6 @@ export type CatchUpOptions = Omit<
 	fetch: FetchLike;
 	/** Running in CI: provenance is asked for when the method allows it. */
 	ci: boolean;
-	/** `release.publish.registries`: the extra registries that may hold a token. */
-	registries?: string[];
 };
 
 /**
@@ -127,11 +124,16 @@ async function nothingMissing(
 				path: dir,
 			} as Parameters<typeof registryFor>[1]);
 			// eslint-disable-next-line no-await-in-loop
-			const found = await publishedVersions(
+			const found = await registryVersions(
 				options.npm,
 				manifest.name,
 				registry,
 				root,
+				{
+					env: options.env,
+					method: options.method ?? publishMethod(options.env),
+					extra: options.registries ?? [],
+				},
 			);
 			if (!found?.versions.includes(version)) return null;
 			outcomes.push({
@@ -187,6 +189,7 @@ export async function catchUp(
 			// Catch-up names every unit's tag itself, so an app is skipped, not refused.
 			const plan = await planPublish({
 				...planning,
+				registries: registries ?? [],
 				from: [tag],
 				refuseApps: false,
 			});

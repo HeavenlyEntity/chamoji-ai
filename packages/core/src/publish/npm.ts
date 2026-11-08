@@ -2,6 +2,7 @@ import {execFile, spawn} from 'node:child_process';
 import {promisify} from 'node:util';
 import semver from 'semver';
 import {ReleaseError} from '../release.js';
+import {scrubEnv} from './checks.js';
 import {spawnSpec} from './pack.js';
 
 const execFileAsync = promisify(execFile);
@@ -69,8 +70,13 @@ export const runNpm: NpmRunner = async (args, options) => {
 	}
 };
 
-export async function npmVersion(npm: NpmRunner, cwd: string): Promise<string> {
-	const result = await npm(['--version'], {cwd, env: processEnv()});
+/** npm's version, asked with no npm credential in its environment. */
+export async function npmVersion(
+	npm: NpmRunner,
+	cwd: string,
+	env: Record<string, string> = processEnv(),
+): Promise<string> {
+	const result = await npm(['--version'], {cwd, env: scrubEnv(env).env});
 	if (!result.ok) {
 		throw new Error(
 			`npm --version failed: ${result.stderr.trim() || 'is npm installed?'}`,
@@ -80,8 +86,12 @@ export async function npmVersion(npm: NpmRunner, cwd: string): Promise<string> {
 	return result.stdout.trim();
 }
 
-export async function requireNpm(npm: NpmRunner, cwd: string): Promise<void> {
-	const version = await npmVersion(npm, cwd);
+export async function requireNpm(
+	npm: NpmRunner,
+	cwd: string,
+	env: Record<string, string> = processEnv(),
+): Promise<void> {
+	const version = await npmVersion(npm, cwd, env);
 	if (!semver.valid(version) || semver.lt(version, MIN_NPM)) {
 		throw new ReleaseError(
 			'publish-check',
@@ -113,16 +123,22 @@ function npmError(result: NpmResult): {code: string; message: string} {
 	return {code: /\bE404\b/.test(text) ? 'E404' : '', message: text};
 }
 
-/** What the registry has for `name`, or null when it has never been published. */
+/**
+ * What the registry has for `name`, or null when it has never been published.
+ * npm runs in `env` without its npm credentials: a repo's `.npmrc` could
+ * otherwise send one to any registry. A token reaches it only through the
+ * `npm_config_userconfig` that `withTokenConfig` adds.
+ */
 export async function publishedVersions(
 	npm: NpmRunner,
 	name: string,
 	registry: string,
 	cwd: string,
+	env: Record<string, string> = processEnv(),
 ): Promise<{versions: string[]; latest: string | null} | null> {
 	const result = await npm(
 		['view', name, 'versions', 'dist-tags', '--json', '--registry', registry],
-		{cwd, env: processEnv()},
+		{cwd, env: scrubEnv(env).env},
 	);
 	if (!result.ok) {
 		const {code, message} = npmError(result);

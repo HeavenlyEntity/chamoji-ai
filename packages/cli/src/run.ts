@@ -133,6 +133,12 @@ export type Io = {
 	terminal?: () => ComposerTerminal | null;
 	/** Environment for the hook's CI check; defaults to process.env. */
 	env?: Record<string, string | undefined>;
+	/**
+	 * The publish credentials (`CHAMOJI_NPM_TOKEN` and the job's OIDC request)
+	 * that cli.ts takes out of process.env, so git, gh and the repo's hooks
+	 * never see them. Only the publish tools get them.
+	 */
+	credentials?: Record<string, string>;
 	/** Jev's commit sorting for --ai; tests pass a fake. Defaults to the TypeSafe API. */
 	jev?: JevClient;
 	/** Jev's commit advice; tests pass a fake. Defaults to the TypeSafe API. */
@@ -727,7 +733,8 @@ export async function run(argv: string[], given: Io): Promise<number> {
 	/**
 	 * What a publish runs with: the complete environment (`runNpm` adds
 	 * nothing, and an unset entry in io.env removes the variable the process
-	 * has), npm, whether this is CI, and the registries that may hold a token.
+	 * has) with the credentials only this gets, how it will publish, npm,
+	 * whether this is CI, and the registries that may hold a token.
 	 */
 	function publishTools(config: ChamojiConfig): PublishTools {
 		const env = processEnv();
@@ -736,8 +743,10 @@ export async function run(argv: string[], given: Io): Promise<number> {
 			else env[key] = value;
 		}
 
+		Object.assign(env, io.credentials);
 		return {
 			env,
+			method: publishMethod(env),
 			npm: io.npm ?? runNpm,
 			ci: env['CI'] === 'true',
 			registries: config.release?.publish?.registries ?? [],
@@ -815,7 +824,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 
 		const config = await loadConfig(io.cwd, flags.config);
 		const tools = publishTools(config);
-		await requireNpm(tools.npm, io.cwd);
+		await requireNpm(tools.npm, io.cwd, tools.env);
 		const results = await catchUp({
 			cwd: io.cwd,
 			config,
@@ -823,6 +832,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 			...(flags.tag === undefined ? {} : {tag: flags.tag}),
 			npm: tools.npm,
 			env: tools.env,
+			method: tools.method,
 			fetch: io.fetch ?? (fetch as FetchLike),
 			ci: tools.ci,
 			registries: tools.registries,
@@ -986,7 +996,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 		const config = await loadConfig(io.cwd, flags.config);
 		const tools = publishTools(config);
 		const {env, npm} = tools;
-		await requireNpm(npm, io.cwd);
+		await requireNpm(npm, io.cwd, env);
 		const plan = await planPublish({
 			cwd: io.cwd,
 			config,
@@ -995,6 +1005,8 @@ export async function run(argv: string[], given: Io): Promise<number> {
 			...(flags.tag === undefined ? {} : {tag: flags.tag}),
 			npm,
 			env,
+			method: tools.method,
+			registries: tools.registries,
 		});
 		const skipped = plan.skipped;
 
@@ -1471,7 +1483,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 		versions: Map<string, string>,
 	): Promise<CheckedRelease> {
 		const tools = publishTools(config);
-		await requireNpm(tools.npm, io.cwd);
+		await requireNpm(tools.npm, io.cwd, tools.env);
 		const written = await writeChanges(ready);
 		let keep = false;
 		try {
@@ -1484,6 +1496,8 @@ export async function run(argv: string[], given: Io): Promise<number> {
 						config,
 						npm: tools.npm,
 						env: tools.env,
+						method: tools.method,
+						registries: tools.registries,
 						versions,
 						skipTagCheck: true,
 					});
@@ -2290,6 +2304,7 @@ type PlanningOptions = Pick<
 
 /** What a publish runs with; see `publishTools`. */
 type PublishTools = {
+	method: PublishMethod;
 	env: Record<string, string>;
 	npm: NpmRunner;
 	ci: boolean;
