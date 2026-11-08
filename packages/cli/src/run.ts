@@ -7,6 +7,7 @@ import {
 	applyRelease,
 	applyUnitReleases,
 	buildChangelog,
+	catchUp,
 	CARD_ENDPOINT,
 	cardUrl,
 	checkPublishAuth,
@@ -51,6 +52,7 @@ import {
 	unitChangelog,
 	unitTagHistory,
 	writeChanges,
+	type CatchUpResult,
 	type ChamojiConfig,
 	type CommitClassifier,
 	type ComposeConfig,
@@ -71,6 +73,7 @@ import {
 } from '@chamoji/core';
 import {TypeSafeClient} from '@typesafe-ai/sdk';
 import meow from 'meow';
+import semver from 'semver';
 import {runAgentHook} from './agent-hook.js';
 import {
 	createCommitAdvisor,
@@ -320,7 +323,8 @@ const HELP = `
 	             this unit's releases
 	  --tag      publish: the npm dist-tag to publish under, instead of the
 	             one the version implies
-	  --catch-up publish: not available yet
+	  --catch-up publish: publish what each unit's latest tag released and
+	             npm lacks, and create its missing GitHub release
 	  --for-tag  changelog: only the release with this tag, from the unit
 	             whose tag format it fits
 	  --yes      setup: take every recommended answer without asking; the
@@ -796,11 +800,184 @@ export async function run(argv: string[], given: Io): Promise<number> {
 		}
 	}
 
+	/**
+	 * `publish --catch-up`: for each unit's latest tag (or the repo's), publishes
+	 * what that tag released and npm lacks, then creates its GitHub release when
+	 * everything is on npm and the release is missing. A tag that fails is
+	 * reported and the rest go on; the exit is 1 if any failed, else 0.
+	 */
+	async function publishCatchUp(): Promise<number> {
+		if (froms.length > 0 || flags.dryRun) {
+			throw new Error(
+				`--catch-up looks at the latest tags itself; it doesn't take ${froms.length > 0 ? '--from' : '--dry-run'}`,
+			);
+		}
+
+		const config = await loadConfig(io.cwd, flags.config);
+		const tools = publishTools(config);
+		await requireNpm(tools.npm, io.cwd);
+		const results = await catchUp({
+			cwd: io.cwd,
+			config,
+			...(flags.unit.length > 0 ? {units: flags.unit} : {}),
+			...(flags.tag === undefined ? {} : {tag: flags.tag}),
+			npm: tools.npm,
+			env: tools.env,
+			fetch: io.fetch ?? (fetch as FetchLike),
+			ci: tools.ci,
+			registries: tools.registries,
+		});
+
+		const lines: string[] = [];
+		const tags: Array<
+			CatchUpResult & {githubRelease?: 'created' | 'exists' | string}
+		> = [];
+		for (const result of results) {
+			const {tag, outcomes, error} = result;
+			const missing = outcomes.filter(outcome => outcome.status !== 'already');
+			const complete =
+				error === undefined &&
+				outcomes.length > 0 &&
+				outcomes.every(
+					outcome =>
+						outcome.status === 'published' || outcome.status === 'already',
+				);
+			const count = (
+				status: PublishOutcome['status'],
+				label: string = status,
+			) => {
+				const n = outcomes.filter(outcome => outcome.status === status).length;
+				return n > 0 ? [`${label} ${n}`] : [];
+			};
+
+			let release: string | undefined;
+			if (complete) release = await catchUpRelease(config, tag);
+
+			const summary = error
+				? `error: ${stripControlLines(error)}`
+				: missing.length === 0
+					? 'nothing missing'
+					: [
+							...count('published'),
+							...count('failed'),
+							...count('skipped'),
+							...count('already', 'already on npm'),
+						].join(', ');
+			lines.push(
+				`${tag}: ${summary}${release === undefined || release === 'exists' ? '' : `; ${releaseText(release)}`}`,
+				...missing.map(outcome => `  ${outcomeLine(outcome)}`),
+			);
+			reportOutcomes(outcomes);
+			tags.push({
+				...result,
+				...(error === undefined ? {} : {error: stripControlLines(error)}),
+				...(release === undefined ? {} : {githubRelease: release}),
+			});
+		}
+
+		const anyFailed = results.some(
+			result =>
+				result.error !== undefined ||
+				result.outcomes.some(outcome => outcome.status === 'failed'),
+		);
+		const anyPublished = results.some(result =>
+			result.outcomes.some(outcome => outcome.status === 'published'),
+		);
+		const status = anyFailed
+			? 'failed'
+			: anyPublished
+				? 'caught-up'
+				: 'nothing';
+		printResult(lines.length > 0 ? lines : ['no release tag to catch up on'], {
+			status,
+			tags,
+		});
+		return anyFailed ? 1 : 0;
+
+		function releaseText(release: string): string {
+			return release === 'created'
+				? 'GitHub release created'
+				: `GitHub release not created: ${release}`;
+		}
+	}
+
+	/**
+	 * Creates the GitHub release for `tag` when there is none: 'exists' when gh
+	 * finds it, 'created', or why it wasn't. Without gh, or when gh can't say
+	 * the release is missing, nothing is created and the answer is undefined.
+	 */
+	async function catchUpRelease(
+		config: ChamojiConfig,
+		tag: string,
+	): Promise<string | undefined> {
+		const gh = io.gh ?? runGh;
+		const viewed = await gh(['release', 'view', tag]);
+		if (viewed.ok) return 'exists';
+		if (/no gh CLI/i.test(viewed.message)) return undefined;
+		try {
+			const root = (
+				await runGit(['rev-parse', '--show-toplevel'], io.cwd)
+			).trim();
+			const settled = await githubReleaseStep({
+				root,
+				tag,
+				title: tag,
+				notes: await catchUpNotes(config, root, tag),
+				prerelease:
+					semver.prerelease(
+						semver.coerce(tag, {includePrerelease: true})?.version ?? '',
+					) !== null,
+				forTag: tag,
+			});
+			const result = settled.ok
+				? settled.value
+				: {ok: false, message: (settled.error as Error).message};
+			return result.ok ? 'created' : stripControlLines(result.message);
+		} catch (error) {
+			return stripControlLines((error as Error).message);
+		}
+	}
+
+	/** The release notes for a tag already cut: what `changelog --for-tag` says, or the tag's own section in a repo without units. */
+	async function catchUpNotes(
+		config: ChamojiConfig,
+		root: string,
+		tag: string,
+	): Promise<string> {
+		if (releasesUnits(config)) {
+			let notes = '';
+			let problem = '';
+			const code = await run(
+				[
+					'changelog',
+					'--for-tag',
+					tag,
+					...(flags.config === undefined ? [] : ['--config', flags.config]),
+				],
+				{
+					...io,
+					stdout: text => (notes += text),
+					stderr: text => (problem += text),
+				},
+			);
+			if (code !== 0) throw new Error(problem.trim() || `no notes for ${tag}`);
+			return notes.trim();
+		}
+
+		const changelog = await buildChangelog({
+			cwd: root,
+			config,
+			to: tag,
+			today: io.today,
+		});
+		const release = changelog.releases.find(item => item.tag === tag);
+		if (!release) throw new Error(`no notes for ${tag}`);
+		return stripTitle(render({...changelog, releases: [release]}, 'markdown'));
+	}
+
 	/** What `chamoji publish` and the Action's publish step run. */
 	async function publish(): Promise<number> {
-		if (flags.catchUp) {
-			throw new Error("--catch-up isn't available yet");
-		}
+		if (flags.catchUp) return publishCatchUp();
 
 		const config = await loadConfig(io.cwd, flags.config);
 		const tools = publishTools(config);

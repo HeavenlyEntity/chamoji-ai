@@ -43,3 +43,9 @@ export {
 	type PublishOutcome,
 	type RunPublishOptions,
 } from './run.js';
+export {
+	catchUp,
+	latestReleaseTags,
+	type CatchUpOptions,
+	type CatchUpResult,
+} from './catch-up.js';

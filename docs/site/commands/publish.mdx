@@ -72,7 +72,29 @@ On your own machine, chamoji uses whatever `npm whoami` already knows, and npm a
 
 [GitHub Action](/guides/github-action) covers the workflow side.
 
-## Flags {{ badge: '6', icon: 'flag' }}
+## Catching up {{ icon: 'cloud-arrow-up' }}
+
+`chamoji publish --catch-up` is the step CI runs before each release. It finishes releases that were tagged and pushed but never reached npm, such as after a failed run, or a release cut on your machine.
+
+For each unit's latest release tag (the repo's latest version tag when there are no units) it publishes the packages that tag released and npm doesn't have yet. It never looks at older tags. Where the tag's packages are all on npm and its GitHub release is missing, it creates that release with the tag's notes, so a release published by an earlier catch-up still gets its release. With no `gh`, or when `gh` can't say the release is missing, it creates nothing.
+
+A tag that fails never stops the others. Under trusted publishing, packages that have never been on npm are skipped with their message, as in a normal publish.
+
+One summary line per tag goes on stdout, with a line under it for each package that wasn't already on npm:
+
+```txt {{ title: 'chamoji publish --catch-up' }}
+@acme/core@1.0.0: nothing missing
+@acme/util@1.0.0: published 1; GitHub release created
+  @acme/util 1.0.0 → latest: published
+@acme/cli@2.1.0: failed 1
+  @acme/cli 2.1.0 → latest: failed
+```
+
+A tag that couldn't be planned or checked reads `<tag>: error: <why>`. A GitHub release that can't be created is a note on its line, not a failure.
+
+It exits 0 when no tag failed, including when nothing was missing, and 1 when any tag has an error or a failed publish. With `--json` it prints `status` and a `tags` list. `status` is `caught-up` when something was published, `nothing` when nothing was missing, and `failed` when any tag failed. Each tag has its `tag`, its `outcomes` (as in `packages`), an `error` when there is one, and a `githubRelease` of `created`, `exists` or why it wasn't created.
+
+## Flags {{ badge: '7', icon: 'flag' }}
 
 <Properties>
 	<Property name="--dry-run" type="boolean">
@@ -83,6 +105,11 @@ On your own machine, chamoji uses whatever `npm whoami` already knows, and npm a
 	<Property name="--from <tag>" type="string · repeatable">
 		Publish what this tag released, instead of the tags at HEAD. Repeat it for
 		several. A tag that isn’t at HEAD is checked out in a temporary worktree.
+	</Property>
+	<Property name="--catch-up" type="boolean">
+		Finish releases that were tagged but never published; see [Catching
+		up](#catching-up). It looks at the latest tags itself, so it doesn't take
+		`--from` or `--dry-run`.
 	</Property>
 	<Property name="--unit <name>" type="string · repeatable · monorepos">
 		Publish only these units. Only in a repo with release units.
