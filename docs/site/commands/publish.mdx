@@ -125,12 +125,15 @@ An app is never published, and catch-up skips it with its reason on stderr rathe
 		Publish only these units. Only in a repo with release units.
 	</Property>
 	<Property name="--tag <dist-tag>" type="string">
-		The npm dist-tag to publish under, instead of the one the version implies.
+		The npm dist-tag to publish under, instead of the one the version implies. A
+		word such as `next` or `release-1`: npm refuses a tag that is a version or a
+		range, such as `v1`.
 	</Property>
 	<Property name="--json" type="boolean">
 		Print the result as JSON on stdout, with a `status` of `published`,
 		`dry-run`, `nothing` or `failed`, the sign-in `method`, the `packages` and
-		the `skipped` ones. Exit codes stay the same.
+		the `skipped` ones. A dry run lists no tarball paths, since it removes the
+		tarballs. Exit codes stay the same.
 	</Property>
 	<Property name="--config <file>" type="string · default chamoji.config.json">
 		Read this config file instead.
@@ -164,9 +167,12 @@ chamoji: nothing to publish (every package is already on npm, or was skipped)
 ## Exit codes
 
 <Properties>
-	<Property name="0">Something was published, or the dry run worked.</Property>
+	<Property name="0">
+		Something was published, or the dry run found something to publish.
+	</Property>
 	<Property name="3">
-		Nothing to publish: every package is already on npm, or there are none.
+		Nothing to publish: every package is already on npm, or there are none. A
+		dry run exits 3 for this too.
 	</Property>
 	<Property name="2">
 		A check failed: npm older than 11.5.1, a dirty working tree, a version that

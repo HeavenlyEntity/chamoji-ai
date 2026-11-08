@@ -401,6 +401,12 @@ const targetLine = (item: {
 const outcomeLine = (outcome: PublishOutcome): string =>
 	`${targetLine(outcome)}: ${outcomeText(outcome)}`;
 
+/** Targets for a dry run's JSON: its tarballs are gone, so their paths aren't listed. */
+const withoutTarballs = (
+	targets: PublishTarget[],
+): Array<Omit<PublishTarget, 'tarball'>> =>
+	targets.map(({tarball: _gone, ...rest}) => rest);
+
 const dryRunLine = (target: PublishTarget): string =>
 	`${targetLine(target)}: ${target.published ? 'already on npm' : 'would publish'}`;
 
@@ -1066,7 +1072,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 				printResult([], {
 					status: 'dry-run',
 					method: publishMethod(env),
-					packages: plan.targets satisfies PublishTarget[],
+					packages: withoutTarballs(plan.targets),
 					skipped,
 				});
 			} else {
@@ -1631,15 +1637,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 					? targets.map(target => dryRunLine(target))
 					: ['nothing; no package to publish here']),
 			],
-			json: {
-				// The tarballs are gone after a dry run, so their paths aren't listed.
-				packages: targets.map(target =>
-					Object.fromEntries(
-						Object.entries(target).filter(([key]) => key !== 'tarball'),
-					),
-				),
-				skipped,
-			},
+			json: {packages: withoutTarballs(targets), skipped},
 		};
 	}
 

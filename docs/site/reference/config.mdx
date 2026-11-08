@@ -142,6 +142,8 @@ Without a `release` section, the repo is one package: one version, one `v*` tag 
 <Note>
 	Pin the CLI to 0.13.0 or newer before you add a `release` section. 0.12.1
 	refuses it, and 0.12.0 ignores it and cuts one release for the whole repo.
+	`trigger`, `majors` and `publish`, and `zeroMajor` with `single`, need 0.15.0
+	or newer.
 </Note>
 
 <Properties>
@@ -177,12 +179,13 @@ Without a `release` section, the repo is one package: one version, one `v*` tag 
 		nothing, and an object sets any of `check`, `prereleaseTag`, `packages` and
 		`registries`. `check` is a command that must pass first (default: none),
 		`prereleaseTag` is the npm tag for a prerelease (default: `next`), and
-		`packages` lists the packages to publish (default: none). `registries` lists
-		extra registries, as exact `https` URLs, that may receive
-		`CHAMOJI_NPM_TOKEN` (default: none); the token only goes to
-		`https://registry.npmjs.org/` and these, and a package that publishes
-		anywhere else is refused. Any other key inside `publish` stops the command.
-		Needs `"schema": 2`. Default: `false`.
+		`packages` lists packages, by name or path, to publish whatever their kind,
+		such as one detected as an app (default: none). Without it, every public
+		package that isn’t an app is published. `registries` lists extra registries,
+		as exact `https` URLs, that may receive `CHAMOJI_NPM_TOKEN` (default: none);
+		the token only goes to `https://registry.npmjs.org/` and these, and a
+		package that publishes anywhere else is refused. Any other key inside
+		`publish` stops the command. Needs `"schema": 2`. Default: `false`.
 	</Property>
 	<Property name="units" type="object" since="0.13.0">
 		Each unit by name, with its settings (below). A name can’t be empty or
@@ -210,8 +213,8 @@ Without a `release` section, the repo is one package: one version, one `v*` tag 
 	</Property>
 	<Property name="zeroMajor" type="'minor'" since="0.13.0">
 		Make a breaking change raise the minor version while a unit, or the repo
-		with `single`, is at 0.x. Default: unset, so a breaking change raises the
-		major version.
+		with `single`, is at 0.x. With `single` it needs 0.15.0 or newer. Default:
+		unset, so a breaking change raises the major version.
 	</Property>
 	<Property name="fixed" type="list of lists of unit names" since="0.13.0">
 		Units that always share one version: the largest bump of any of them. When

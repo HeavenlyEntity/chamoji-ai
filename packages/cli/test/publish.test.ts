@@ -155,6 +155,29 @@ describe.skipIf(!has('npm'))('chamoji publish', () => {
 		expect(stdout).not.toContain(TOKEN);
 	});
 
+	it('--dry-run --json lists no tarball path, since the tarballs are gone', async () => {
+		const dir = await repoWith(MONOREPO, ['v1.0.0']);
+		const {code, stdout} = await chamoji(
+			['publish', '--dry-run', '--json'],
+			dir,
+			fakeNpm({'@acme/core': ['1.0.0']}).npm,
+		);
+
+		expect(code).toBe(0);
+		const result = JSON.parse(stdout) as {
+			status: string;
+			packages: Array<Record<string, unknown>>;
+		};
+		expect(result.status).toBe('dry-run');
+		expect(result.packages.map(p => p['name'])).toEqual([
+			'@acme/core',
+			'@acme/util',
+		]);
+		for (const item of result.packages)
+			expect(item).not.toHaveProperty('tarball');
+		expect(stdout).not.toContain('.tgz');
+	});
+
 	it('publishes and prints JSON', async () => {
 		const dir = await repoWith(MONOREPO, ['v1.0.0']);
 		const fake = fakeNpm();

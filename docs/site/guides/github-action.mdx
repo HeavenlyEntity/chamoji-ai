@@ -203,11 +203,21 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
+      - uses: pnpm/action-setup@v4 # the version in package.json's packageManager
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          # No registry-url: the .npmrc it writes would stand in for the npm
+          # credentials chamoji passes, and trusted publishing would fail.
+      - run: pnpm install --frozen-lockfile
       - uses: HeavenlyEntity/chamoji-ai@v0.15.0
         with:
           release-version: ${{ inputs.version }}
           chamoji-version: '0.15.0'
 ```
+
+chamoji packs each package with your package manager, so the job installs your dependencies first. With npm, leave out `pnpm/action-setup`, set `cache: npm` and run `npm ci`; with Yarn, `cache: yarn` and `yarn install --immutable`; with Bun, use `oven-sh/setup-bun` and `bun install --frozen-lockfile`. A package that needs building is built by its `prepack` script, which packing runs, or by a build step you add before chamoji.
 
 - **`concurrency`** runs one release at a time, and `cancel-in-progress: false` lets a queued run wait instead of cancelling one halfway through a publish.
 - **`ref`** checks out the tip of the default branch, not the pushed commit, so a queued run starts from the release commit the run before it pushed.
@@ -274,7 +284,7 @@ The catch-up looks at every package in the latest tags. Mark each app `"private"
 
 ## Inputs {{ icon: 'sliders', badge: '13' }}
 
-Every input of `action.yml` at v0.14.0, with its default:
+Every input of `action.yml` at v0.15.0, with its default:
 
 <Properties>
 	<Property name="mode" type="string · default auto">
@@ -369,17 +379,18 @@ Every input of `action.yml` at v0.14.0, with its default:
 
 ## Permissions {{ icon: 'shield' }}
 
-Each job needs `fetch-depth: 0` on `actions/checkout`, and one permission:
+Each job needs `fetch-depth: 0` on `actions/checkout`, and these permissions:
 
-| Job       | Permission             | What uses it                                |
-| --------- | ---------------------- | ------------------------------------------- |
-| `notes`   | `contents: write`      | Creating or editing the GitHub release      |
-| `comment` | `pull-requests: write` | Posting and updating the preview comment    |
-| `release` | `contents: write`      | Pushing the commit and tag, and the release |
-| `merge`   | `contents: write`      | Pushing the commit and tag, and the release |
-| `card`    | `contents: write`      | Pushing the card branch                     |
+| Job        | Permission                           | What uses it                                                               |
+| ---------- | ------------------------------------ | -------------------------------------------------------------------------- |
+| `notes`    | `contents: write`                    | Creating or editing the GitHub release                                     |
+| `comment`  | `pull-requests: write`               | Posting and updating the preview comment                                   |
+| `release`  | `contents: write`                    | Pushing the commit and tag, and the release                                |
+| `merge`    | `contents: write`                    | Pushing the commit and tag, and the release                                |
+| `card`     | `contents: write`                    | Pushing the card branch                                                    |
+| Publishing | `id-token: write`, `contents: write` | Trusted publishing or provenance, and the GitHub release after the publish |
 
-Publishing from `release`, `merge` or `publish` with trusted publishing also needs `id-token: write`.
+Publishing is what `release` and `merge` do when `release.publish` is set, and what `publish` mode does. With an `npm-token`, `id-token: write` is only for provenance.
 
 `card` pushes with the credential `actions/checkout` leaves behind, so `persist-credentials: false` breaks it.
 

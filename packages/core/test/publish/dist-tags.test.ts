@@ -42,3 +42,9 @@ test.each(['--registry=x', '1.2.3', '^1', 'a b'])(
 		).toThrow(ReleaseError);
 	},
 );
+
+test('a refused dist-tag suggests one npm accepts', () => {
+	expect(() => distTagFor('1.4.2', '1.0.0', {...options, tag: 'v1'})).toThrow(
+		`"v1" can't be a dist-tag; use a word such as next or release-1, not a version, a range or an option`,
+	);
+});

@@ -12,7 +12,7 @@ export function distTagFor(
 		if (!isDistTag(tag)) {
 			throw new ReleaseError(
 				'publish-check',
-				`"${tag}" can't be a dist-tag; use a word such as next or v1, not a version, a range or an option`,
+				`"${tag}" can't be a dist-tag; use a word such as next or release-1, not a version, a range or an option`,
 			);
 		}
 
