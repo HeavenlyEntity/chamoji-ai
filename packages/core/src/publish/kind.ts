@@ -1,9 +1,14 @@
 import {access, readdir, readFile} from 'node:fs/promises';
 import path from 'node:path';
 import type {WorkspacePackage} from '../units/workspace.js';
-import {FRAMEWORKS} from './frameworks.js';
+import {FRAMEWORKS, type Framework} from './frameworks.js';
 
-export type PackageKind = {kind: 'app' | 'library'; reasons: string[]};
+export type PackageKind = {
+	kind: 'app' | 'library';
+	reasons: string[];
+	/** For an app, the framework it's built with, when one is known. */
+	framework?: string;
+};
 
 type Obj = Record<string, unknown>;
 
@@ -140,6 +145,7 @@ export async function classifyPackage(
 
 	const app: string[] = [];
 	const weak: string[] = [];
+	const matched: Framework[] = [];
 	for (const framework of FRAMEWORKS) {
 		const needed = framework.requires?.file;
 		// eslint-disable-next-line no-await-in-loop
@@ -172,6 +178,7 @@ export async function classifyPackage(
 		if (reasons.length > 0 && hasFile) {
 			if (needed) reasons.push(`\`${needed}\``);
 			for (const reason of reasons) push(app, reason);
+			matched.push(framework);
 			continue;
 		}
 
@@ -186,15 +193,25 @@ export async function classifyPackage(
 		}
 	}
 
+	// The most specific framework: one no other match is built on.
+	let framework = matched.find(
+		found => !matched.some(other => other.basedOn.includes(found.id)),
+	)?.name;
+
 	if (anyDependency.has('electron') && isObject(manifest['build'])) {
 		push(app, '`electron` with a `build` config');
+		framework ??= 'Electron';
 	}
 
-	if (await hasExpoConfig(folder)) push(app, '`app.json` with an `expo` key');
+	if (await hasExpoConfig(folder)) {
+		push(app, '`app.json` with an `expo` key');
+		framework ??= 'Expo';
+	}
 
 	if (anyDependency.has('react-native') || anyDependency.has('expo')) {
 		if (entries.includes('ios') && entries.includes('android')) {
 			push(app, '`ios/` and `android/` folders');
+			framework ??= anyDependency.has('expo') ? 'Expo' : 'React Native';
 		}
 	}
 
@@ -203,7 +220,9 @@ export async function classifyPackage(
 		if (await exists(at(file))) push(app, `\`${file}\``);
 	}
 
-	if (app.length > 0) return {kind: 'app', reasons: app};
+	if (app.length > 0) {
+		return {kind: 'app', reasons: app, ...(framework ? {framework} : {})};
+	}
 
 	if (manifest['main'] !== undefined) push(weak, '`main` field');
 	if (weak.length > 0) return {kind: 'library', reasons: weak};

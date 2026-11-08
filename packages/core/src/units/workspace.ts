@@ -187,7 +187,11 @@ async function findManifests(
 	return found;
 }
 
-function readPackage(folder: string, manifest: Obj): WorkspacePackage | null {
+/** The package a manifest describes, or null without a name. */
+export function readPackage(
+	folder: string,
+	manifest: Obj,
+): WorkspacePackage | null {
 	const {name} = manifest;
 	if (typeof name !== 'string' || name === '') return null;
 
@@ -284,7 +288,8 @@ export async function readWorkspace(root: string): Promise<WorkspacePackage[]> {
 	return packages;
 }
 
-const isExcluded = (file: string, exclude: string[]): boolean =>
+/** Does an `exclude` glob cover `file` or a folder above it? */
+export const isExcluded = (file: string, exclude: string[]): boolean =>
 	exclude.some(glob => coversPath(glob, file));
 
 /** Does folder `dir` hold `file`, on a segment boundary? */

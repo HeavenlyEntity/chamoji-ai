@@ -23,3 +23,11 @@ export {
 	type NpmRunner,
 } from './npm.js';
 export {registryFor} from './registry.js';
+export {mask, scrubEnv} from './checks.js';
+export {
+	discardPublishPlan,
+	planPublish,
+	type PublishOptions,
+	type PublishPlan,
+	type PublishTarget,
+} from './plan.js';

@@ -139,7 +139,13 @@ export async function planUnitReleases(
 	const {root, warnings: checks} = await preflight(options);
 	const git = async (...args: string[]) => (await runGit(args, root)).trim();
 	const packages = await readWorkspace(root);
-	const units = dependencyOrder(resolveUnits(settings, packages));
+	const resolved = resolveUnits(settings, packages);
+	// Units whose packages another unit depends on come first; otherwise config order.
+	const units = dependencyOrder(
+		resolved,
+		unit => unit.name,
+		unit => dependencyUnits(unit, resolved),
+	);
 	const tags = await listTags(root, 'HEAD');
 	const today = options.today ?? new Date().toISOString().slice(0, 10);
 
@@ -443,21 +449,29 @@ export function unitSettings(
 	return settings;
 }
 
-/** Units whose packages another unit depends on come first; otherwise config order. */
-function dependencyOrder(units: ResolvedUnit[]): ResolvedUnit[] {
+/**
+ * What others depend on comes first; otherwise the order given. A cycle is
+ * broken where it's first met. Units and published packages both use it.
+ */
+export function dependencyOrder<T>(
+	items: readonly T[],
+	key: (item: T) => string,
+	dependencies: (item: T) => readonly T[],
+): T[] {
 	const done = new Set<string>();
 	const visiting = new Set<string>();
-	const ordered: ResolvedUnit[] = [];
-	const visit = (unit: ResolvedUnit) => {
-		if (done.has(unit.name) || visiting.has(unit.name)) return;
-		visiting.add(unit.name);
-		for (const dep of dependencyUnits(unit, units)) visit(dep);
-		visiting.delete(unit.name);
-		done.add(unit.name);
-		ordered.push(unit);
+	const ordered: T[] = [];
+	const visit = (item: T) => {
+		const id = key(item);
+		if (done.has(id) || visiting.has(id)) return;
+		visiting.add(id);
+		for (const dep of dependencies(item)) visit(dep);
+		visiting.delete(id);
+		done.add(id);
+		ordered.push(item);
 	};
 
-	for (const unit of units) visit(unit);
+	for (const item of items) visit(item);
 	return ordered;
 }
 
