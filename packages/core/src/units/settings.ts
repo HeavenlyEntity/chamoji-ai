@@ -21,7 +21,7 @@ export type UnitSettings = {
 };
 
 export type ReleaseSettings = {
-	schema: 1;
+	schema: 1 | 2;
 	shape: Shape;
 	/** In config order. */
 	units: UnitSettings[];
@@ -44,6 +44,18 @@ export type ReleaseSettings = {
 	};
 	rootChangelog: boolean;
 	githubReleases: 'per-unit' | 'combined';
+	/** What starts a release: a merge to the default branch, or a person. */
+	trigger: 'merge' | 'manual';
+	/** Whether a breaking change raises the major on its own. */
+	majors: 'auto' | 'manual';
+	/** Null when the release isn't published to npm. */
+	publish: PublishSettings | null;
+};
+
+export type PublishSettings = {
+	check: string | null;
+	prereleaseTag: string;
+	packages: string[];
 };
 
 type Obj = Record<string, unknown>;
@@ -55,7 +67,6 @@ export const UNIT_ONLY: readonly string[] = [
 	'exclude',
 	'sharedChanges',
 	'rootFiles',
-	'zeroMajor',
 	'fixed',
 	'upstream',
 	'tags',
@@ -82,14 +93,14 @@ export function parseReleaseSettings(
 	}
 
 	const {schema} = value;
-	if (typeof schema === 'number' && Number.isInteger(schema) && schema > 1) {
+	if (typeof schema === 'number' && Number.isInteger(schema) && schema > 2) {
 		throw new ConfigVersionError(
-			"this repo's release settings need chamoji 0.13.0 or newer",
+			"this repo's release settings need chamoji 0.15.0 or newer",
 		);
 	}
 
-	if (schema !== 1) {
-		fail('schema', 'must be 1');
+	if (schema !== 1 && schema !== 2) {
+		fail('schema', 'must be 1 or 2');
 	}
 
 	const {shape} = value;
@@ -109,6 +120,42 @@ export function parseReleaseSettings(
 			}
 		}
 	}
+
+	for (const key of ['trigger', 'majors', 'publish']) {
+		if (value[key] !== undefined && schema !== 2) {
+			fail(key, 'needs "schema": 2');
+		}
+	}
+
+	if (
+		value.trigger !== undefined &&
+		!['merge', 'manual'].includes(value.trigger as string)
+	) {
+		fail('trigger', 'must be "merge" or "manual"');
+	}
+
+	if (
+		value.majors !== undefined &&
+		!['auto', 'manual'].includes(value.majors as string)
+	) {
+		fail('majors', 'must be "auto" or "manual"');
+	}
+
+	const trigger = oneOf(
+		value.trigger,
+		['merge', 'manual'] as const,
+		'manual',
+		'trigger',
+		fail,
+	);
+	const majors = oneOf(
+		value.majors,
+		['auto', 'manual'] as const,
+		'auto',
+		'majors',
+		fail,
+	);
+	const publish = parsePublish(value.publish, fail);
 
 	const units = parseUnits(value.units, kind, fail);
 	const names = new Set(units.map(unit => unit.name));
@@ -161,7 +208,7 @@ export function parseReleaseSettings(
 	);
 
 	return {
-		schema: 1,
+		schema: schema as 1 | 2,
 		shape: kind,
 		units,
 		exclude,
@@ -173,10 +220,56 @@ export function parseReleaseSettings(
 		tags,
 		rootChangelog: rootChangelog === true,
 		githubReleases,
+		trigger,
+		majors,
+		publish,
 	};
 }
 
 type Fail = (key: string, problem: string) => never;
+
+function parsePublish(value: unknown, fail: Fail): PublishSettings | null {
+	if (value === undefined || value === false) {
+		return null;
+	}
+
+	const defaults: PublishSettings = {
+		check: null,
+		prereleaseTag: 'next',
+		packages: [],
+	};
+	if (value === true) {
+		return defaults;
+	}
+
+	if (!isObject(value)) {
+		return fail('publish', 'must be true, false or an object');
+	}
+
+	for (const key of Object.keys(value)) {
+		if (!['check', 'prereleaseTag', 'packages'].includes(key)) {
+			fail(`publish.${key}`, "isn't a setting");
+		}
+	}
+
+	const {check, prereleaseTag} = value;
+	if (check !== undefined && (typeof check !== 'string' || !check.trim())) {
+		fail('publish.check', 'must be a non-empty string');
+	}
+
+	if (
+		prereleaseTag !== undefined &&
+		(typeof prereleaseTag !== 'string' || !prereleaseTag.trim())
+	) {
+		fail('publish.prereleaseTag', 'must be a non-empty string');
+	}
+
+	return {
+		check: (check as string | undefined) ?? null,
+		prereleaseTag: (prereleaseTag as string | undefined) ?? 'next',
+		packages: stringList(value.packages, 'publish.packages', fail),
+	};
+}
 
 function parseUnits(value: unknown, shape: Shape, fail: Fail): UnitSettings[] {
 	if (value === undefined) {

@@ -93,11 +93,11 @@ test('a config with a newer release schema is refused by this version', async ()
 	dir = await mkdtemp(path.join(tmpdir(), 'chamoji-config-'));
 	await writeFile(
 		path.join(dir, 'chamoji.config.json'),
-		JSON.stringify({release: {schema: 2, shape: 'apps', units: {}}}),
+		JSON.stringify({release: {schema: 3, shape: 'apps', units: {}}}),
 	);
 
 	await expect(loadConfig(dir)).rejects.toThrow(
-		"this repo's release settings need chamoji 0.13.0 or newer",
+		"this repo's release settings need chamoji 0.15.0 or newer",
 	);
 	await expect(loadConfig(dir)).rejects.toBeInstanceOf(ConfigVersionError);
 });

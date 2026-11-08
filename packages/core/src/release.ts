@@ -212,6 +212,15 @@ export async function planRelease(
 		);
 	} else if (unreleased?.nextVersion) {
 		version = unreleased.nextVersion;
+		// With zeroMajor, a breaking change at 0.x raises the minor.
+		if (
+			config.release?.zeroMajor === 'minor' &&
+			unreleased.bump === 'major' &&
+			previous &&
+			semver.major(previous) === 0
+		) {
+			version = semver.inc(previous, 'minor') ?? version;
+		}
 	} else {
 		const subjects = await git(
 			'log',

@@ -527,13 +527,13 @@ test.each([['release', '--dry-run'], ['changelog']])(
 		repo = await createRepo(history);
 		await writeFile(
 			path.join(repo.dir, 'chamoji.config.json'),
-			JSON.stringify({release: {schema: 2, shape: 'apps', units: {}}}),
+			JSON.stringify({release: {schema: 3, shape: 'apps', units: {}}}),
 		);
 		const {code, stdout, stderr} = await chamoji(argv, repo.dir);
 		expect(code).toBe(2);
 		expect(stdout).toBe('');
 		expect(stderr).toBe(
-			"chamoji: this repo's release settings need chamoji 0.13.0 or newer\n",
+			"chamoji: this repo's release settings need chamoji 0.15.0 or newer\n",
 		);
 	},
 );

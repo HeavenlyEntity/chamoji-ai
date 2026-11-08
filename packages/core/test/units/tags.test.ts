@@ -41,6 +41,9 @@ function settings(
 		tags: {ignore: [], aliases: {}, ...tags},
 		rootChangelog: false,
 		githubReleases: 'per-unit',
+		trigger: 'manual',
+		majors: 'auto',
+		publish: null,
 	};
 }
 
