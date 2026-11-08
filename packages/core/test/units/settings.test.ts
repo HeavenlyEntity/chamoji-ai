@@ -101,6 +101,7 @@ test('parses trigger, majors and publish under schema 2', () => {
 		check: 'pnpm test',
 		prereleaseTag: 'next',
 		packages: [],
+		registries: [],
 	});
 });
 
@@ -119,7 +120,27 @@ test('publish true means the defaults', () => {
 	expect(
 		parseReleaseSettings({schema: 2, shape: 'single', publish: true}, FILE)
 			.publish,
-	).toEqual({check: null, prereleaseTag: 'next', packages: []});
+	).toEqual({check: null, prereleaseTag: 'next', packages: [], registries: []});
+});
+
+test('publish.registries is normalised and must be https URLs', () => {
+	const parse = (registries: unknown) => () =>
+		parseReleaseSettings(
+			{schema: 2, shape: 'single', publish: {registries}},
+			FILE,
+		);
+	expect(
+		parse(['https://npm.acme.dev', 'https://npm.acme.dev/x/'])(),
+	).toMatchObject({
+		publish: {registries: ['https://npm.acme.dev/', 'https://npm.acme.dev/x/']},
+	});
+	expect(parse(['http://npm.acme.dev/'])).toThrow(
+		'release.publish.registries "http://npm.acme.dev/" must be an https URL',
+	);
+	expect(parse(['not a url'])).toThrow('must be an https URL');
+	expect(parse('x')).toThrow(
+		'release.publish.registries must be a list of strings',
+	);
 });
 
 test('new keys need schema 2', () => {

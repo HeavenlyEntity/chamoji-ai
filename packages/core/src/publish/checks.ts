@@ -43,6 +43,10 @@ const CREDENTIAL_KEYS = [
 	// Registry-scoped settings (`//host/:_password` and the like).
 	/^npm_config_.*\/\//i,
 	/^npm_config_(?:_?auth|_?authtoken|_?password|username|certfile|keyfile)$/i,
+	/^npm_config_(?:key|cert|otp)$/i,
+	/^yarn_npm_auth_(?:token|ident)$/i,
+	// The job's OIDC request: a repo script could mint tokens with it.
+	/^actions_id_token_request_(?:url|token)$/i,
 ];
 
 /**

@@ -170,11 +170,15 @@ Without a `release` section, the repo is one package: one version, one `v*` tag 
 	</Property>
 	<Property name="publish" type="boolean | object" since="0.15.0">
 		Publish the release to npm. `true` uses the defaults, `false` publishes
-		nothing, and an object sets any of `check`, `prereleaseTag` and `packages`.
-		`check` is a command that must pass first (default: none), `prereleaseTag`
-		is the npm tag for a prerelease (default: `next`), and `packages` lists the
-		packages to publish (default: none). Any other key inside `publish` stops
-		the command. Needs `"schema": 2`. Default: `false`.
+		nothing, and an object sets any of `check`, `prereleaseTag`, `packages` and
+		`registries`. `check` is a command that must pass first (default: none),
+		`prereleaseTag` is the npm tag for a prerelease (default: `next`), and
+		`packages` lists the packages to publish (default: none). `registries` lists
+		extra registries, as exact `https` URLs, that may receive
+		`CHAMOJI_NPM_TOKEN` (default: none); the token only goes to
+		`https://registry.npmjs.org/` and these, and a package that publishes
+		anywhere else is refused. Any other key inside `publish` stops the command.
+		Needs `"schema": 2`. Default: `false`.
 	</Property>
 	<Property name="units" type="object" since="0.13.0">
 		Each unit by name, with its settings (below). A name can’t be empty or
