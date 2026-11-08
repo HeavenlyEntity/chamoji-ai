@@ -8,11 +8,15 @@ branding:
 inputs:
   mode:
     description: >-
-      auto (default) writes release notes on a tag push and a changelog preview
-      comment on a pull request. Or set notes, comment, release (cuts a
-      release with `chamoji release --push`) or card (saves the repo's card
-      image alone on card-branch; needs contents write, and a schedule or push
-      trigger of your own, since auto never picks it).
+      auto (default) writes release notes on a tag push, a changelog preview
+      comment on a pull request, releases on workflow_dispatch, and on a push
+      to the default branch runs merge (publishes what npm lacks, then
+      releases when release.trigger is merge). Or set notes, comment, release
+      (cuts a release with `chamoji release --push`), merge, publish
+      (publishes what the pushed tag released, with `chamoji publish --from`)
+      or card (saves the repo's card image alone on card-branch; needs
+      contents write, and a schedule or push trigger of your own, since auto
+      never picks it).
     default: auto
   chamoji-version:
     description: '@chamoji/cli version to run with npx.'
@@ -33,6 +37,19 @@ inputs:
     description: >-
       release mode only. In a repo with release units, release just this unit;
       empty releases every unit that has changes of its own.
+    default: ''
+  publish:
+    description: >-
+      auto publishes to npm in release and merge mode when chamoji.config.json
+      sets release.publish; false never does. Trusted publishing needs
+      id-token write.
+    default: auto
+  npm-token:
+    description: >-
+      An npm token, from a repository secret, to publish with instead of
+      trusted publishing. The Action masks it and passes it, as
+      CHAMOJI_NPM_TOKEN, only to the CLI calls that publish, never on a pull
+      request.
     default: ''
   ai:
     description: Sort vague commits with Jev (needs typesafe-api-key).
@@ -56,8 +73,8 @@ inputs:
     default: chamoji-card
   github-token:
     description: >-
-      Token for gh. notes and release need contents write; comment needs
-      pull-requests write. card doesn't use it: it pushes with the credential
+      Token for gh. notes, release and merge need contents write; comment
+      needs pull-requests write. card doesn't use it: it pushes with the credential
       that actions/checkout saved, so give the job contents write.
     default: ${{ github.token }}
 
@@ -91,6 +108,8 @@ runs:
         CHAMOJI_CARD_URL: ${{ inputs.card-endpoint }}
         CHAMOJI_CARD_BRANCH: ${{ inputs.card-branch }}
         CHAMOJI_AI: ${{ inputs.ai }}
+        CHAMOJI_PUBLISH: ${{ inputs.publish }}
+        CHAMOJI_NPM_TOKEN: ${{ inputs.npm-token }}
         TYPESAFE_API_KEY: ${{ inputs.typesafe-api-key }}
         GH_TOKEN: ${{ inputs.github-token }}
         GH_REPO: ${{ github.repository }}
