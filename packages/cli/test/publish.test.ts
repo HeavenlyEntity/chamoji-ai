@@ -1,6 +1,7 @@
 import {execFileSync} from 'node:child_process';
 import {afterEach, describe, expect, it} from 'vitest';
 import type {FetchLike, NpmRunner} from '@chamoji/core';
+import type {GhRunner} from '../src/run.js';
 import {
 	createRepo,
 	type FixtureRepo,
@@ -104,6 +105,7 @@ async function chamoji(
 	cwd: string,
 	npm: NpmRunner,
 	env: Record<string, string | undefined> = {CHAMOJI_NPM_TOKEN: TOKEN},
+	gh?: GhRunner,
 ) {
 	let stdout = '';
 	let stderr = '';
@@ -114,6 +116,7 @@ async function chamoji(
 		today: '2026-10-28',
 		fetchTags: false,
 		npm,
+		...(gh ? {gh} : {}),
 		fetch: fetchNever,
 		// An unset value removes the variable that the real environment has.
 		env: {
@@ -277,16 +280,232 @@ describe.skipIf(!has('npm'))('chamoji publish', () => {
 		expect(stdout + stderr).not.toContain(TOKEN);
 	});
 
-	it('--catch-up is not available yet', async () => {
+	/** A recording fake gh: `releases` already exist; `view` of any other fails, `create` is recorded. */
+	function fakeGh(existing: string[] = [], available = true) {
+		const calls: string[][] = [];
+		const gh: GhRunner = async args => {
+			calls.push(args);
+			if (!available)
+				return {ok: false, message: 'no gh CLI, so no GitHub release'};
+			if (args[1] === 'view') {
+				return existing.includes(args[2]!)
+					? {ok: true, message: ''}
+					: {ok: false, message: 'release not found'};
+			}
+
+			return {ok: true, message: 'https://github.com/acme/x/releases/tag/x'};
+		};
+
+		return {gh, calls, created: () => calls.filter(c => c[1] === 'create')};
+	}
+
+	it('--catch-up publishes a release that never reached npm, then creates its GitHub release', async () => {
 		const dir = await repoWith(MONOREPO, ['v1.0.0']);
-		const {code, stderr} = await chamoji(
+		const fake = fakeNpm();
+		const gh = fakeGh();
+		const {code, stdout, stderr} = await chamoji(
+			['publish', '--catch-up'],
+			dir,
+			fake.npm,
+			undefined,
+			gh.gh,
+		);
+
+		expect(code).toBe(0);
+		expect(fake.published()).toHaveLength(2);
+		expect(stdout).toContain('v1.0.0: published 2');
+		expect(stdout).toContain('GitHub release created');
+		expect(gh.created()).toHaveLength(1);
+		expect(gh.created()[0]!.slice(0, 3)).toEqual([
+			'release',
+			'create',
+			'v1.0.0',
+		]);
+		expect(stdout + stderr).not.toContain(TOKEN);
+	});
+
+	it('--catch-up publishes what is missing from a tag whose other package is on npm', async () => {
+		const dir = await repoWith(MONOREPO, ['v1.0.0']);
+		const fake = fakeNpm({'@acme/core': ['1.0.0']});
+		const {code, stdout} = await chamoji(
+			['publish', '--catch-up'],
+			dir,
+			fake.npm,
+			undefined,
+			fakeGh(['v1.0.0']).gh,
+		);
+
+		expect(code).toBe(0);
+		expect(stdout).toContain('@acme/util 1.0.0 → latest: published');
+		expect(stdout).toContain('v1.0.0: published 1, already on npm 1');
+		expect(fake.published()).toHaveLength(1);
+	});
+
+	it('--catch-up with nothing missing exits 0 and creates nothing', async () => {
+		const dir = await repoWith(MONOREPO, ['v1.0.0']);
+		const fake = fakeNpm({'@acme/core': ['1.0.0'], '@acme/util': ['1.0.0']});
+		const gh = fakeGh(['v1.0.0']);
+		const {code, stdout} = await chamoji(
+			['publish', '--catch-up'],
+			dir,
+			fake.npm,
+			undefined,
+			gh.gh,
+		);
+
+		expect(code).toBe(0);
+		expect(stdout).toContain('v1.0.0: nothing missing');
+		expect(fake.published()).toEqual([]);
+		expect(gh.created()).toEqual([]);
+	});
+
+	it('--catch-up creates a missing GitHub release when everything is already on npm', async () => {
+		const dir = await repoWith(MONOREPO, ['v1.0.0']);
+		const fake = fakeNpm({'@acme/core': ['1.0.0'], '@acme/util': ['1.0.0']});
+		const gh = fakeGh();
+		const {code, stdout} = await chamoji(
+			['publish', '--catch-up'],
+			dir,
+			fake.npm,
+			undefined,
+			gh.gh,
+		);
+
+		expect(code).toBe(0);
+		expect(stdout).toContain('v1.0.0: nothing missing; GitHub release created');
+		expect(gh.created()).toHaveLength(1);
+	});
+
+	it('--catch-up creates no GitHub release when gh is not available', async () => {
+		const dir = await repoWith(MONOREPO, ['v1.0.0']);
+		const gh = fakeGh([], false);
+		const {code, stdout} = await chamoji(
 			['publish', '--catch-up'],
 			dir,
 			fakeNpm().npm,
+			undefined,
+			gh.gh,
+		);
+
+		expect(code).toBe(0);
+		expect(stdout).toContain('v1.0.0: published 2');
+		expect(stdout).not.toContain('GitHub release created');
+		expect(gh.created()).toEqual([]);
+	});
+
+	it('--catch-up keeps going after a failed tag and exits 1', async () => {
+		const dir = await repoWith({...MONOREPO, 'chamoji.config.json': UNITS}, [
+			'@acme/core@1.0.0',
+			'@acme/util@1.0.0',
+		]);
+		const base = fakeNpm();
+		const npm: NpmRunner = async (args, options) =>
+			args[0] === 'publish' && args[1]!.includes('acme-core')
+				? {ok: false, stdout: '', stderr: `E403 for ${TOKEN}`}
+				: base.npm(args, options);
+		const gh = fakeGh();
+		const {code, stdout, stderr} = await chamoji(
+			['publish', '--catch-up'],
+			dir,
+			npm,
+			undefined,
+			gh.gh,
 		);
 
 		expect(code).toBe(1);
-		expect(stderr).toContain("--catch-up isn't available yet");
+		expect(stdout).toContain('@acme/core@1.0.0: failed 1');
+		expect(stdout).toContain('@acme/util@1.0.0: published 1');
+		expect(gh.created().map(c => c[2])).toEqual(['@acme/util@1.0.0']);
+		expect(stdout + stderr).not.toContain(TOKEN);
+	});
+
+	it('--catch-up exits 1 for a tag that could not be checked', async () => {
+		const dir = await repoWith(MONOREPO, ['v1.0.0']);
+		const base = fakeNpm();
+		const npm: NpmRunner = async (args, options) =>
+			args[0] === 'view'
+				? {ok: false, stdout: '', stderr: 'npm error code ETIMEDOUT'}
+				: base.npm(args, options);
+		const {code, stdout} = await chamoji(
+			['publish', '--catch-up'],
+			dir,
+			npm,
+			undefined,
+			fakeGh().gh,
+		);
+
+		expect(code).toBe(1);
+		expect(stdout).toContain('v1.0.0: error:');
+	});
+
+	it('--catch-up --json lists each tag', async () => {
+		const dir = await repoWith(MONOREPO, ['v1.0.0']);
+		const {code, stdout} = await chamoji(
+			['publish', '--catch-up', '--json'],
+			dir,
+			fakeNpm().npm,
+			undefined,
+			fakeGh().gh,
+		);
+
+		expect(code).toBe(0);
+		const result = JSON.parse(stdout) as {
+			status: string;
+			tags: Array<{tag: string; outcomes: Array<{status: string}>}>;
+		};
+		expect(result.status).toBe('caught-up');
+		expect(result.tags).toHaveLength(1);
+		expect(result.tags[0]!.tag).toBe('v1.0.0');
+		expect(result.tags[0]!.outcomes.map(o => o.status)).toEqual([
+			'published',
+			'published',
+		]);
+	});
+
+	it('--catch-up --json says nothing when nothing is missing', async () => {
+		const dir = await repoWith(MONOREPO, ['v1.0.0']);
+		const fake = fakeNpm({'@acme/core': ['1.0.0'], '@acme/util': ['1.0.0']});
+		const {code, stdout} = await chamoji(
+			['publish', '--catch-up', '--json'],
+			dir,
+			fake.npm,
+			undefined,
+			fakeGh(['v1.0.0']).gh,
+		);
+
+		expect(code).toBe(0);
+		expect(JSON.parse(stdout)).toMatchObject({status: 'nothing'});
+	});
+
+	it("--catch-up uses a unit tag's own notes for its GitHub release", async () => {
+		const dir = await repoWith({...MONOREPO, 'chamoji.config.json': UNITS}, [
+			'@acme/core@1.0.0',
+		]);
+		const gh = fakeGh();
+		const {code} = await chamoji(
+			['publish', '--catch-up'],
+			dir,
+			fakeNpm().npm,
+			undefined,
+			gh.gh,
+		);
+
+		expect(code).toBe(0);
+		expect(gh.created().map(c => c[2])).toEqual(['@acme/core@1.0.0']);
+	});
+
+	it('--catch-up refuses --from and --dry-run', async () => {
+		const dir = await repoWith(MONOREPO, ['v1.0.0']);
+		for (const extra of [['--from', 'v1.0.0'], ['--dry-run']]) {
+			// eslint-disable-next-line no-await-in-loop
+			const {code, stderr} = await chamoji(
+				['publish', '--catch-up', ...extra],
+				dir,
+				fakeNpm().npm,
+			);
+			expect(code).toBe(1);
+			expect(stderr).toContain('--catch-up');
+		}
 	});
 });
 
