@@ -94,7 +94,9 @@ In a repo with release units, each unit with something to release gets its own v
 		`"githubReleases": "combined"`. When `release.publish` is set, `--push` on
 		its own creates no GitHub release and says `the GitHub release is created
 		after the publish`; in JSON, `githubRelease` is `"deferred"`. The release
-		isn’t announced before it is on npm.
+		isn’t announced before it is on npm. With `CHAMOJI_PUBLISH=false` in the
+		environment, as the GitHub Action sets for `publish: false`, nothing
+		publishes after it, so it creates the GitHub release at once.
 	</Property>
 	<Property name="--publish" type="boolean">
 		Release and publish to npm in one command. It implies `--push`. The publish
@@ -102,6 +104,12 @@ In a repo with release units, each unit with something to release gets its own v
 		tarballs it checked, and creates the GitHub release last. A failed check
 		exits 2 with nothing committed or tagged. See [Release and
 		publish](#release-and-publish).
+	</Property>
+	<Property name="--tag <dist-tag>" type="string · with --publish">
+		The npm dist-tag to publish under, instead of the one the version implies,
+		as for [`chamoji publish`](/commands/publish). A hotfix below the latest
+		version needs one, such as `--tag release-1`; without it the checks refuse
+		it before anything is committed.
 	</Property>
 	<Property name="--on-merge" type="boolean">
 		The flag the GitHub Action runs on every push to the default branch, as
@@ -209,10 +217,12 @@ In a repo with release units, each unit with something to release gets its own v
 If a package fails to publish after the push, chamoji exits 1, creates no GitHub release, and says how to finish:
 
 ```txt
-chamoji: v1.4.0 is tagged and pushed; @acme/ui 1.4.0 isn't on npm. Re-run this job, or run `chamoji publish --from v1.4.0`.
+chamoji: v1.4.0 is tagged and pushed; @acme/ui 1.4.0 isn't on npm. Run `chamoji publish --from v1.4.0` to publish it.
 ```
 
-`chamoji publish --from v1.4.0` skips what is already on npm and publishes the rest. In `--json`, `published` lists each package with its `status`, and `error` holds that message.
+`chamoji publish --from v1.4.0` skips what is already on npm, publishes the rest, and then creates the missing GitHub release. In `--json`, `published` lists each package with its `status`, and `error` holds that message.
+
+Trusted publishing can’t publish a package’s first version, so it skips it. That package isn’t on npm either: chamoji exits 1, creates no GitHub release, and says to publish it from your machine with `chamoji publish --from <tag>`, or with an npm token, then to add the trusted publisher on npmjs.com.
 
 To treat “nothing to release” as success in CI:
 

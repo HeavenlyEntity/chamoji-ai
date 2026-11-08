@@ -1305,6 +1305,8 @@ process.exit(spawnSync(process.execPath, [${JSON.stringify(real)}, ...process.ar
 			expect(result.code).toBe(0);
 			expect(await originGit('tag', '--list')).toContain('v1.1.0');
 			expect(await read('npm-calls')).toBe('');
+			// No publish follows, so the release job makes the GitHub release.
+			expect(await read('calls')).toContain('release create v1.1.0');
 		});
 
 		test('the npm token is masked and never printed', async () => {
@@ -1356,6 +1358,17 @@ process.exit(spawnSync(process.execPath, [${JSON.stringify(real)}, ...process.ar
 			expect(existing.code).toBe(0);
 			expect(await read('calls')).toContain('release edit v1.1.0 --notes-file');
 			expect(await read('calls')).not.toContain('release create');
+
+			// With publish false nothing publishes, so notes mode makes it.
+			const off = await action({
+				CHAMOJI_CLI: unitCli,
+				FAKE_CLI_VERSION: '0.15.0',
+				GITHUB_EVENT_NAME: 'push',
+				GITHUB_REF: 'refs/tags/v1.1.0',
+				CHAMOJI_PUBLISH: 'false',
+			});
+			expect(off.code).toBe(0);
+			expect(await read('calls')).toContain('release create v1.1.0');
 		});
 
 		test('catch-up failure fails the job after the release', async () => {
@@ -1416,6 +1429,49 @@ process.exit(spawnSync(process.execPath, [${JSON.stringify(real)}, ...process.ar
 			expect(calls[0]).toMatch(/^publish --catch-up --json /);
 			expect(calls[1]).toMatch(/^release --on-merge --push --publish --json /);
 			expect(calls.join('\n')).not.toContain(TOKEN);
+		});
+
+		test('release mode catches up before it releases', async () => {
+			const {action, unitCli, read, originGit} = await setup(
+				library({trigger: 'manual', publish: true}),
+			);
+			const result = await action({
+				CHAMOJI_CLI: unitCli,
+				FAKE_CLI_VERSION: '0.15.0',
+				GITHUB_EVENT_NAME: 'workflow_dispatch',
+				GITHUB_REF: 'refs/heads/main',
+				CHAMOJI_NPM_TOKEN: TOKEN,
+			});
+			expect(result.code).toBe(0);
+			const calls = (await read('token-calls')).split('\n').filter(Boolean);
+			expect(calls[0]).toMatch(/^publish --catch-up --json /);
+			expect(calls[1]).toMatch(/^release --push --publish --json /);
+			const npm = await read('npm-calls');
+			expect(npm).toMatch(/^publish \.\/acme-lib-1\.0\.0\.tgz /m);
+			expect(npm).toMatch(/^publish \.\/acme-lib-1\.1\.0\.tgz /m);
+			expect(await originGit('tag', '--list')).toContain('v1.1.0');
+		});
+
+		test('in release mode a failed catch-up still releases, then fails the job', async () => {
+			const {action, unitCli, read, originGit} = await setup(
+				library({trigger: 'manual', publish: true}),
+			);
+			const result = await action({
+				CHAMOJI_CLI: unitCli,
+				FAKE_CLI_VERSION: '0.15.0',
+				CHAMOJI_MODE: 'release',
+				CHAMOJI_NPM_TOKEN: TOKEN,
+				FAKE_NPM_FAIL: '1.0.0',
+			});
+			expect(result.code).toBe(1);
+			expect(await read('npm-calls')).toMatch(
+				/^publish \.\/acme-lib-1\.1\.0\.tgz /m,
+			);
+			expect(await originGit('tag', '--list')).toContain('v1.1.0');
+			const advice =
+				"catching up didn't finish for v1.0.0; run chamoji publish --from v1.0.0, or start a workflow with mode: publish on v1.0.0";
+			expect(result.stderr).toContain(advice);
+			expect(await read('summary')).toContain(advice);
 		});
 
 		test('a private repository turns provenance off for the CLI', async () => {

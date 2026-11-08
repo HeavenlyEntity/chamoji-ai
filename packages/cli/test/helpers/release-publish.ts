@@ -20,10 +20,17 @@ export const TOKEN = 'npm_releaseSecretToken789';
 /**
  * A fake npm and a fake gh that write to one call log, so a test can check
  * the order: `npm publish <tarball>` and `gh release create <tag>`. The
- * registry has never seen any package. `failPublish` makes every publish fail.
+ * registry has only the `versions` given (the last is latest), else never
+ * saw any package. `failPublish` makes every publish fail, and `failWhoami`
+ * every whoami.
  */
 export function fakeTools(
-	options: {failPublish?: boolean; onPublish?: () => Promise<void>} = {},
+	options: {
+		failPublish?: boolean;
+		failWhoami?: boolean;
+		onPublish?: () => Promise<void>;
+		versions?: string[];
+	} = {},
 ) {
 	const log: string[] = [];
 	const npm: NpmRunner = async args => {
@@ -32,9 +39,24 @@ export function fakeTools(
 			return {ok: true, stdout: '11.6.0', stderr: ''};
 		}
 
-		if (args[0] === 'whoami') return {ok: true, stdout: 'dev', stderr: ''};
+		if (args[0] === 'whoami') {
+			return options.failWhoami
+				? {ok: false, stdout: '', stderr: 'npm error code E401'}
+				: {ok: true, stdout: 'dev', stderr: ''};
+		}
+
 		if (args[0] === 'view') {
-			return {ok: false, stdout: '', stderr: 'npm error code E404'};
+			const versions = options.versions ?? [];
+			return versions.length > 0
+				? {
+						ok: true,
+						stdout: JSON.stringify({
+							versions,
+							'dist-tags': {latest: versions.at(-1)},
+						}),
+						stderr: '',
+					}
+				: {ok: false, stdout: '', stderr: 'npm error code E404'};
 		}
 
 		if (args[0] === 'publish') {
@@ -65,12 +87,16 @@ const fetchNever: FetchLike = async () => {
 	throw new Error('no network in tests');
 };
 
-/** Runs chamoji with the fake tools, a token, and no CI or OIDC from the real environment. */
+/**
+ * Runs chamoji with the fake tools, a token, and no CI or OIDC from the real
+ * environment; `env` changes that environment.
+ */
 export async function chamojiPublishing(
 	argv: string[],
 	cwd: string,
 	tools: {npm: NpmRunner; gh: GhRunner},
 	today = '2026-10-28',
+	env: Record<string, string | undefined> = {},
 ) {
 	let stdout = '';
 	let stderr = '';
@@ -88,6 +114,7 @@ export async function chamojiPublishing(
 			ACTIONS_ID_TOKEN_REQUEST_URL: undefined,
 			ACTIONS_ID_TOKEN_REQUEST_TOKEN: undefined,
 			CHAMOJI_NPM_TOKEN: TOKEN,
+			...env,
 		},
 	});
 	return {code, stdout, stderr};

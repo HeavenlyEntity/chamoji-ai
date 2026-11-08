@@ -78,9 +78,10 @@ On a pushed tag, the Action writes that release’s notes and puts them on its G
 		If the tag already has a GitHub release, its notes are replaced. Otherwise
 		the Action creates one, titled with the tag. Without release units, it marks
 		it a prerelease when the tag has a hyphen anywhere, such as `v2.0.0-rc.1`.
-		When `chamoji.config.json` sets `release.publish`, it never creates one: it
-		says “the GitHub release is created when the publish finishes” and passes,
-		since the release job creates it once npm has the packages.
+		When `chamoji.config.json` sets `release.publish` and the `publish` input
+		isn’t `false`, it never creates one: it says “the GitHub release is created
+		when the publish finishes” and passes, since the release job creates it once
+		npm has the packages.
 	</Step>
 </Steps>
 
@@ -236,7 +237,7 @@ On a push to the default branch, the Action:
 	</Step>
 </Steps>
 
-A run from the Actions tab (`workflow_dispatch`) runs `release`, with `--publish` when publishing is on, so this is how a held breaking change ships.
+A run from the Actions tab (`workflow_dispatch`) runs `release`, with `--publish` when publishing is on, so this is how a held breaking change ships. When it publishes, it catches up first, as a merge does, and a catch-up that fails still lets the release run and fails the job at the end.
 
 ### Credentials {{ anchor: false }}
 
@@ -265,7 +266,7 @@ The catch-up looks at every package in the latest tags. Mark each app `"private"
 
 ### Publishing a tag again {{ anchor: false }}
 
-`mode: publish` runs `chamoji publish --from` for the pushed tag, or the tag a run from the Actions tab was started on, such as after a publish that failed. When npm already has everything, it passes with “nothing to publish for” and the tag. It doesn’t create the GitHub release; the next merge’s catch-up does, for the latest tags.
+`mode: publish` runs `chamoji publish --from` for the pushed tag, or the tag a run from the Actions tab was started on, such as after a publish that failed. When npm already has everything, it passes with “nothing to publish for” and the tag. Once everything the tag released is on npm, it creates the tag’s GitHub release if it is missing.
 
 ## The repo card {{ tag: 'CI', variant: 'ci', label: 'mode: card', icon: 'github-logo' }}
 
@@ -308,8 +309,9 @@ Every input of `action.yml` at v0.14.0, with its default:
 	<Property name="publish" type="string · default auto" since="0.15.0">
 		`auto` publishes to npm in `release` and `merge` mode when
 		`chamoji.config.json` sets `release.publish`. `false` never publishes: the
-		release is tagged and pushed, and its GitHub release waits for the next run
-		that publishes. Anything else fails the job.
+		release is tagged, pushed and given its GitHub release at once, as without
+		`release.publish`, and `notes` mode creates a missing release too. Anything
+		else fails the job.
 	</Property>
 	<Property name="npm-token" type="string · default empty" since="0.15.0">
 		An npm token to publish with instead of trusted publishing, such as
