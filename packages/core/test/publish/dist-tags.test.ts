@@ -15,16 +15,30 @@ test('a release below latest throws publish-check', () => {
 		expect(error).toBeInstanceOf(ReleaseError);
 		expect((error as ReleaseError).code).toBe('publish-check');
 		expect((error as ReleaseError).message).toBe(
-			'1.4.2 is lower than latest (2.1.0); pass --tag to publish it under another dist-tag, for example --tag v1',
+			'1.4.2 is lower than latest (2.1.0); pass --tag to publish it under another dist-tag, for example --tag release-1',
 		);
 	}
 });
 
 test('--tag wins', () => {
-	expect(distTagFor('1.4.2', '2.1.0', {...options, tag: 'v1'})).toBe('v1');
+	expect(distTagFor('1.4.2', '2.1.0', {...options, tag: 'release-1'})).toBe(
+		'release-1',
+	);
 });
 
 test('a newer release, or the first one, is latest', () => {
 	expect(distTagFor('1.1.0', '1.0.0', options)).toBe('latest');
 	expect(distTagFor('1.0.0', null, options)).toBe('latest');
 });
+
+test.each(['--registry=x', '1.2.3', '^1', 'a b'])(
+	'a dist-tag of %s is refused',
+	bad => {
+		expect(() => distTagFor('1.4.2', '1.0.0', {...options, tag: bad})).toThrow(
+			ReleaseError,
+		);
+		expect(() =>
+			distTagFor('2.0.0-rc.1', '1.0.0', {prereleaseTag: bad}),
+		).toThrow(ReleaseError);
+	},
+);

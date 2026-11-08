@@ -391,8 +391,11 @@ describe.skipIf(!has('npm'))('planPublish', () => {
 		await expect(plan({cwd: dir, npm})).rejects.toThrow(
 			/^@acme\/core: 1\.0\.0 is lower than latest \(2\.0\.0\)/,
 		);
-		const made = await plan({cwd: dir, npm, tag: 'v1'});
-		expect(made.targets.map(target => target.distTag)).toEqual(['v1', 'v1']);
+		const made = await plan({cwd: dir, npm, tag: 'release-1'});
+		expect(made.targets.map(target => target.distTag)).toEqual([
+			'release-1',
+			'release-1',
+		]);
 	});
 
 	it.skipIf(process.platform === 'win32')(

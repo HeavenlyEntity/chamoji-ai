@@ -438,3 +438,15 @@ test('upstream.authors is an optional list of emails', () => {
 		);
 	}
 });
+
+test.each(['--registry=x', '1.2.3', '^1', 'a b'])(
+	'publish.prereleaseTag %s is refused',
+	bad => {
+		expect(() =>
+			parseReleaseSettings(
+				{schema: 2, shape: 'single', publish: {prereleaseTag: bad}},
+				FILE,
+			),
+		).toThrow(/Invalid config .*release\.publish\.prereleaseTag/);
+	},
+);

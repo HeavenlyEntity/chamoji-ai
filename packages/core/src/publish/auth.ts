@@ -5,7 +5,7 @@ import {
 	type PublishMethod,
 } from './credentials.js';
 import {mask} from './checks.js';
-import {DEFAULT_REGISTRY, type NpmRunner} from './npm.js';
+import {DEFAULT_REGISTRY, processEnv, type NpmRunner} from './npm.js';
 import type {PublishPlan} from './plan.js';
 
 export type FetchLike = (
@@ -106,7 +106,7 @@ async function checkWhoami(
 			// eslint-disable-next-line no-await-in-loop
 			const result = await npm(['whoami', '--registry', registry], {
 				cwd: plan.root,
-				env: runEnv,
+				env: {...processEnv(), ...runEnv},
 			});
 			if (!result.ok) {
 				fail(

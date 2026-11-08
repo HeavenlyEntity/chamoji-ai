@@ -17,13 +17,25 @@ export type NpmRunner = (
 	options: {cwd: string; env: Record<string, string>; inheritStdio?: boolean},
 ) => Promise<NpmResult>;
 
+/** `process.env` without its unset entries, as a complete child environment. */
+export function processEnv(): Record<string, string> {
+	const env: Record<string, string> = {};
+	for (const [key, value] of Object.entries(process.env)) {
+		if (value !== undefined) env[key] = value;
+	}
+
+	return env;
+}
+
 /**
- * Runs npm without a shell string. With `inheritStdio` npm owns the terminal,
+ * Runs npm without a shell string. `options.env` is the child's whole
+ * environment, with no merge with `process.env`, so a variable the caller left
+ * out never reaches npm; callers build it (PATH included). With `inheritStdio` npm owns the terminal,
  * so its OTP prompt reaches the user; stdout and stderr are then empty.
  */
 export const runNpm: NpmRunner = async (args, options) => {
 	const run = spawnSpec('npm', args);
-	const env = {...process.env, ...options.env};
+	const env = options.env;
 	if (options.inheritStdio) {
 		return new Promise(resolve => {
 			const child = spawn(run.file, run.args, {
@@ -58,7 +70,7 @@ export const runNpm: NpmRunner = async (args, options) => {
 };
 
 export async function npmVersion(npm: NpmRunner, cwd: string): Promise<string> {
-	const result = await npm(['--version'], {cwd, env: {}});
+	const result = await npm(['--version'], {cwd, env: processEnv()});
 	if (!result.ok) {
 		throw new Error(
 			`npm --version failed: ${result.stderr.trim() || 'is npm installed?'}`,
@@ -110,7 +122,7 @@ export async function publishedVersions(
 ): Promise<{versions: string[]; latest: string | null} | null> {
 	const result = await npm(
 		['view', name, 'versions', 'dist-tags', '--json', '--registry', registry],
-		{cwd, env: {}},
+		{cwd, env: processEnv()},
 	);
 	if (!result.ok) {
 		const {code, message} = npmError(result);
