@@ -8,18 +8,28 @@ import {publishMethod} from './credentials.js';
 import {distTagFor} from './dist-tags.js';
 import {publishedVersions} from './npm.js';
 import {registryFor} from './registry.js';
-import {discardPublishPlan, planPublish, type PublishOptions} from './plan.js';
+import {
+	discardPublishPlan,
+	planPublish,
+	type PublishOptions,
+	type PublishPlan,
+} from './plan.js';
 import {runPublish, type PublishOutcome} from './run.js';
 
 export type CatchUpResult = {
 	tag: string;
 	/** What each of the tag's packages came to; empty when `error` stopped it. */
 	outcomes: PublishOutcome[];
+	/** The tag's packages that aren't published, such as apps, and why. */
+	skipped?: PublishPlan['skipped'];
 	/** Why the tag couldn't be planned, checked or run, when it couldn't. */
 	error?: string;
 };
 
-export type CatchUpOptions = Omit<PublishOptions, 'from' | 'versions'> & {
+export type CatchUpOptions = Omit<
+	PublishOptions,
+	'from' | 'versions' | 'refuseApps'
+> & {
 	fetch: FetchLike;
 	/** Running in CI: provenance is asked for when the method allows it. */
 	ci: boolean;
@@ -174,7 +184,12 @@ export async function catchUp(
 
 		try {
 			// eslint-disable-next-line no-await-in-loop
-			const plan = await planPublish({...planning, from: [tag]});
+			// Catch-up names every unit's tag itself, so an app is skipped, not refused.
+			const plan = await planPublish({
+				...planning,
+				from: [tag],
+				refuseApps: false,
+			});
 			let method;
 			try {
 				// Nothing missing needs no credentials.
@@ -202,7 +217,11 @@ export async function catchUp(
 				ci,
 				registries: registries ?? [],
 			});
-			results.push({tag, outcomes});
+			results.push({
+				tag,
+				outcomes,
+				...(plan.skipped.length > 0 ? {skipped: plan.skipped} : {}),
+			});
 		} catch (error) {
 			results.push({tag, outcomes: [], error: messageOf(error)});
 		}

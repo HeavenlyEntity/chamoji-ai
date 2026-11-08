@@ -867,6 +867,10 @@ export async function run(argv: string[], given: Io): Promise<number> {
 				`${tag}: ${summary}${release === undefined || release === 'exists' ? '' : `; ${releaseText(release)}`}`,
 				...missing.map(outcome => `  ${outcomeLine(outcome)}`),
 			);
+			for (const item of result.skipped ?? []) {
+				io.stderr(`chamoji: skipped ${item.name}: ${item.reason}\n`);
+			}
+
 			reportOutcomes(outcomes);
 			tags.push({
 				...result,

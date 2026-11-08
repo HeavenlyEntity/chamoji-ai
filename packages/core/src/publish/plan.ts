@@ -88,6 +88,12 @@ export type PublishOptions = {
 	versions?: Map<string, string>;
 	/** Don't compare manifest versions with the tags. */
 	skipTagCheck?: boolean;
+	/**
+	 * Whether an app in a named unit's release is refused (the default) or
+	 * skipped with its reason, as catch-up does: it names every unit's tag
+	 * itself, so an app there is no mistake.
+	 */
+	refuseApps?: boolean;
 };
 
 const DEFAULT_PUBLISH: PublishSettings = {
@@ -406,7 +412,9 @@ async function choose(
 	const exclude = settings?.exclude ?? [];
 	// Only a unit named by --from or --unit is refused for being an app; a
 	// single repo's tag names the release, so its apps are always skipped.
-	const named = Boolean(options.from?.length || options.units?.length);
+	const named =
+		options.refuseApps !== false &&
+		Boolean(options.from?.length || options.units?.length);
 	const dependedOn = new Set(all.flatMap(pkg => pkg.runtimeDeps));
 	const chosen: Chosen[] = [];
 	const skipped: PublishPlan['skipped'] = [];

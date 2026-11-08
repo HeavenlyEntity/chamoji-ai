@@ -216,6 +216,43 @@ describe.skipIf(!has('npm') || !has('pnpm'))('catchUp', () => {
 		expect(fake.published()).toEqual([]);
 	});
 
+	it('skips a public app in a units repo instead of failing its tag', async () => {
+		const repo = await createRepo([
+			{
+				commit: '✨ Start',
+				files: {
+					...MONOREPO,
+					'pnpm-workspace.yaml': "packages:\n  - 'packages/*'\n  - 'apps/*'\n",
+					'apps/web/package.json': json({
+						name: 'web',
+						version: '1.0.0',
+						dependencies: {next: '^15.0.0'},
+					}),
+					'apps/web/next.config.ts': 'export default {};\n',
+				},
+			},
+			{tag: 'web/v1.0.0'},
+		]);
+		repos.push(repo);
+		const fake = fakeNpm();
+		const apps = {
+			schema: 2,
+			shape: 'apps',
+			units: {web: {path: 'apps/web'}, core: {path: 'packages/core'}},
+		};
+
+		const results = await catchUp(options(repo.dir, config(apps), fake));
+
+		expect(results).toHaveLength(1);
+		expect(results[0]!.tag).toBe('web/v1.0.0');
+		expect(results[0]!.error).toBeUndefined();
+		expect(results[0]!.outcomes).toEqual([]);
+		expect(results[0]!.skipped).toEqual([
+			{name: 'web', reason: expect.stringMatching(/^Next\.js app/) as string},
+		]);
+		expect(fake.published()).toEqual([]);
+	});
+
 	it('skips never-published packages under trusted publishing', async () => {
 		const dir = await repoWith(['v1.0.0']);
 		const fake = fakeNpm();
