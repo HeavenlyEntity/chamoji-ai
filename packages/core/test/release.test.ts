@@ -476,6 +476,32 @@ async function withOrigin(repo: FixtureRepo): Promise<string> {
 	return remote;
 }
 
+test('pushRelease pushes the commit and tag atomically', async () => {
+	const repo = await releasable();
+	const remote = await withOrigin(repo);
+	const result = await ready(repo.dir, {fetch: false});
+	await applyRelease(result);
+
+	// Someone else moves the remote branch after the release was made.
+	const other = await mkdtemp(path.join(tmpdir(), 'chamoji-other-'));
+	cleanups.push(async () => rm(other, {recursive: true, force: true}));
+	await gitOutput(other, ['clone', '-q', remote, '.']);
+	await gitOutput(other, ['config', 'user.name', 'Other']);
+	await gitOutput(other, ['config', 'user.email', 'other@example.com']);
+	await gitOutput(other, ['commit', '-q', '--allow-empty', '-m', 'Moved on']);
+	await gitOutput(other, ['push', '-q', 'origin', 'main']);
+
+	await expect(pushRelease(result)).rejects.toThrow(
+		/^the default branch moved during the release; .*the release commit and tag are kept/s,
+	);
+	expect(
+		await gitOutput(repo.dir, ['ls-remote', '--tags', 'origin']),
+	).not.toContain(`refs/tags/${result.tag}`);
+	expect(
+		(await gitOutput(repo.dir, ['tag', '--list', result.tag])).trim(),
+	).toBe(result.tag);
+});
+
 test('planRelease reports fetch-tags when origin exists', async () => {
 	const repo = await repoWith(widgets);
 	await withOrigin(repo);

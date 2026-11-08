@@ -355,22 +355,29 @@ export async function applyRelease(
 	return {commit: await git('rev-parse', '--short', 'HEAD')};
 }
 
-/** Pushes HEAD and the release tag, by name, to origin. A failure keeps the local release. */
+/** Pushes HEAD and the release tag, by name, to origin in one atomic push. A failure keeps the local release. */
 export async function pushRelease(
 	plan: ReadyPlan,
 	env?: Record<string, string>,
 ): Promise<void> {
 	try {
 		await runGit(
-			['push', '--quiet', 'origin', 'HEAD', plan.tag],
+			['push', '--atomic', '--quiet', 'origin', 'HEAD', plan.tag],
 			plan.root,
 			env,
 		);
 	} catch (error) {
 		throw new Error(
-			`released ${plan.tag} locally, but the push failed; the release commit and tag are kept:\n${gitMessage(error)}`,
+			`${movedPrefix(error)}released ${plan.tag} locally, but the push failed; the release commit and tag are kept:\n${gitMessage(error)}`,
 		);
 	}
+}
+
+/** Leads the push error when git refused because the remote branch moved. */
+export function movedPrefix(error: unknown): string {
+	return /\[rejected\]|fetch first|non-fast-forward/.test(gitMessage(error))
+		? 'the default branch moved during the release; '
+		: '';
 }
 
 /** What git printed on stderr, else the error's message. */

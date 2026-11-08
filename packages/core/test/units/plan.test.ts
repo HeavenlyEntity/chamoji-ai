@@ -403,6 +403,32 @@ test('a failed second tag removes the first', async () => {
 	expect(await git(dir, ['status', '--porcelain'])).toBe('');
 });
 
+test('pushUnitReleases pushes the commit and every tag atomically', async () => {
+	const dir = await appRepo([WEB_FEATURE, MOBILE_FIX], {tags: false});
+	const remote = await mkdtemp(path.join(tmpdir(), 'chamoji-origin-'));
+	cleanups.push(async () => rm(remote, {recursive: true, force: true}));
+	await git(remote, ['init', '-q', '--bare', '-b', 'main']);
+	await git(dir, ['remote', 'add', 'origin', remote]);
+	await git(dir, ['push', '-q', 'origin', 'main']);
+
+	const result = ready(await plan(dir, {fetch: false}));
+	await applyUnitReleases(result);
+
+	const other = await mkdtemp(path.join(tmpdir(), 'chamoji-other-'));
+	cleanups.push(async () => rm(other, {recursive: true, force: true}));
+	await git(other, ['clone', '-q', remote, '.']);
+	await git(other, ['config', 'user.name', 'Other']);
+	await git(other, ['config', 'user.email', 'other@example.com']);
+	await git(other, ['commit', '-q', '--allow-empty', '-m', 'Moved on']);
+	await git(other, ['push', '-q', 'origin', 'main']);
+
+	await expect(pushUnitReleases(result)).rejects.toThrow(
+		/^the default branch moved during the release; .*the release commit and tags are kept/s,
+	);
+	expect(await git(remote, ['tag', '--list'])).toBe('');
+	expect((await git(dir, ['tag', '--list'])).split('\n')).toHaveLength(2);
+});
+
 test('apply then push sends HEAD and every tag', async () => {
 	const dir = await appRepo([WEB_FEATURE, MOBILE_FIX], {tags: false});
 	const remote = await mkdtemp(path.join(tmpdir(), 'chamoji-origin-'));
