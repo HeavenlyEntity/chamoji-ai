@@ -1,4 +1,4 @@
-import {chmod, mkdtemp, rm, writeFile} from 'node:fs/promises';
+import {chmod, mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {ReleaseError} from '../release.js';
@@ -31,17 +31,21 @@ function nerfDart(registry: string): string {
  * npmjs, and the `extra` ones `release.publish.registries` lists. Registries
  * come from repo content, so any other is left out. The token never sits in
  * an argument or in the repo's `.npmrc`; the file is owner-only and gone when
- * `body` settles.
+ * `body` settles. `body` also gets `cwd`, an empty directory to run npm in: run
+ * from the repo, npm would read the repo's `.npmrc`, whose `proxy`,
+ * `strict-ssl` or `cafile` could expose the token on its way to the registry.
  */
 export async function withTokenConfig<T>(
 	env: Record<string, string>,
 	registries: string[],
-	body: (env: Record<string, string>) => Promise<T>,
+	body: (env: Record<string, string>, cwd: string) => Promise<T>,
 	extra: string[] = [],
 ): Promise<T> {
 	const token = env.CHAMOJI_NPM_TOKEN ?? '';
 	const dir = await mkdtemp(path.join(tmpdir(), 'chamoji-npm-'));
 	try {
+		const cwd = path.join(dir, 'cwd');
+		await mkdir(cwd);
 		const file = path.join(dir, 'npmrc');
 		const allowed = new Set([DEFAULT_REGISTRY, ...extra]);
 		const lines = [
@@ -49,7 +53,7 @@ export async function withTokenConfig<T>(
 		].map(key => `${key}:_authToken=${token}`);
 		await writeFile(file, `${lines.join('\n')}\n`, {mode: 0o600});
 		await chmod(file, 0o600);
-		return await body({...env, npm_config_userconfig: file});
+		return await body({...env, npm_config_userconfig: file}, cwd);
 	} finally {
 		await rm(dir, {recursive: true, force: true});
 	}
@@ -112,7 +116,8 @@ export async function registryVersions(
 	return withTokenConfig(
 		options.env,
 		[registry],
-		async tokenEnv => publishedVersions(npm, name, registry, cwd, tokenEnv),
+		async (tokenEnv, neutral) =>
+			publishedVersions(npm, name, registry, neutral, tokenEnv),
 		options.extra,
 	);
 }

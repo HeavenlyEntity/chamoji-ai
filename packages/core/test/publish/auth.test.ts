@@ -1,5 +1,8 @@
 import {readFile, stat} from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import {afterEach, describe, expect, it} from 'vitest';
+import {registryVersions} from '../../src/publish/credentials.js';
 import {
 	checkPublishAuth,
 	publishMethod,
@@ -332,6 +335,41 @@ describe('checkPublishAuth', () => {
 		expect(seen[0]!.NPM_TOKEN).toBeUndefined();
 		expect(seen[0]!.NODE_AUTH_TOKEN).toBeUndefined();
 		expect(JSON.stringify(seen[0])).not.toContain('tok-');
+	});
+
+	it("whoami under a token runs outside the repo, so its .npmrc can't proxy the token", async () => {
+		const cwds: string[] = [];
+		const npm: NpmRunner = async (_args, options) => {
+			cwds.push(options.cwd);
+			return {ok: true, stdout: 'me', stderr: ''};
+		};
+		const plan = planOf(target('a'));
+		await checkPublishAuth(plan, {
+			env: {CHAMOJI_NPM_TOKEN: 'tok-9'},
+			npm,
+			fetch: neverFetch,
+			ci: true,
+		});
+		expect(cwds).toHaveLength(1);
+		expect(cwds[0]).not.toBe(plan.root);
+		expect(path.relative(plan.root, cwds[0]!).startsWith('..')).toBe(true);
+		expect(path.relative(os.tmpdir(), cwds[0]!).startsWith('..')).toBe(false);
+	});
+
+	it("npm view under a token runs outside the repo, so its .npmrc can't proxy the token", async () => {
+		const cwds: string[] = [];
+		const npm: NpmRunner = async (_args, options) => {
+			cwds.push(options.cwd);
+			return {ok: true, stdout: '{"versions":["1.0.0"]}', stderr: ''};
+		};
+		const root = process.cwd();
+		await registryVersions(npm, 'a', 'https://registry.npmjs.org/', root, {
+			env: {CHAMOJI_NPM_TOKEN: 'tok-9'},
+			method: 'token',
+			extra: [],
+		});
+		expect(cwds).toHaveLength(1);
+		expect(path.relative(root, cwds[0]!).startsWith('..')).toBe(true);
 	});
 
 	it('a failed whoami says to log in, without the token', async () => {
