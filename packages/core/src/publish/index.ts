@@ -16,6 +16,7 @@ export {
 	DEFAULT_REGISTRY,
 	MIN_NPM,
 	npmVersion,
+	processEnv,
 	publishedVersions,
 	requireNpm,
 	runNpm,
@@ -37,3 +38,8 @@ export {
 	type PublishMethod,
 } from './credentials.js';
 export {checkPublishAuth, type FetchLike} from './auth.js';
+export {
+	runPublish,
+	type PublishOutcome,
+	type RunPublishOptions,
+} from './run.js';

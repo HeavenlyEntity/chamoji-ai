@@ -1,5 +1,6 @@
 import path from 'node:path';
 import {ConfigVersionError} from '../config.js';
+import {isDistTag} from '../publish/tag-name.js';
 
 export type Shape = 'single' | 'apps' | 'libraries';
 
@@ -284,6 +285,13 @@ function parsePublish(value: unknown, fail: Fail): PublishSettings | null {
 		(typeof prereleaseTag !== 'string' || !prereleaseTag.trim())
 	) {
 		fail('publish.prereleaseTag', 'must be a non-empty string');
+	}
+
+	if (typeof prereleaseTag === 'string' && !isDistTag(prereleaseTag)) {
+		fail(
+			'publish.prereleaseTag',
+			`"${prereleaseTag}" can't be a dist-tag; use a word such as next, not a version, a range or an option`,
+		);
 	}
 
 	return {

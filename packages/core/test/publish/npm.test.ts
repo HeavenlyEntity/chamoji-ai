@@ -1,7 +1,11 @@
+import {chmod, mkdtemp, writeFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
 import {expect, test} from 'vitest';
 import {
 	publishedVersions,
 	requireNpm,
+	runNpm,
 	npmVersion,
 	type NpmRunner,
 } from '../../src/index.js';
@@ -87,3 +91,26 @@ test('publishedVersions throws other failures with npm message', async () => {
 		publishedVersions(reply(body, false), 'x', 'https://r.dev/', '/'),
 	).rejects.toThrow('offline');
 });
+
+test.skipIf(process.platform === 'win32')(
+	'runNpm gives the child only options.env, not process.env',
+	async () => {
+		const bin = await mkdtemp(path.join(tmpdir(), 'chamoji-fake-npm-'));
+		const script = path.join(bin, 'npm');
+		await writeFile(
+			script,
+			'#!/bin/sh\necho "leak=${LEAK_ONLY_IN_PROCESS:-unset} kept=${KEPT:-unset}"\n',
+		);
+		await chmod(script, 0o755);
+		process.env.LEAK_ONLY_IN_PROCESS = 'secret';
+		try {
+			const result = await runNpm([], {
+				cwd: bin,
+				env: {PATH: `${bin}:/usr/bin:/bin`, KEPT: 'yes'},
+			});
+			expect(result.stdout.trim()).toBe('leak=unset kept=yes');
+		} finally {
+			delete process.env.LEAK_ONLY_IN_PROCESS;
+		}
+	},
+);
