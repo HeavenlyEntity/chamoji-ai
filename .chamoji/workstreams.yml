@@ -10,3 +10,7 @@ workstreams:
   monorepo-releases:
     title: Monorepo releases
     status: active
+  publishing:
+    title: Publishing to npm
+    emoji: 📦
+    status: shipped
