@@ -136,6 +136,17 @@ afterEach(async () => {
 	await Promise.all(cleanups.splice(0).map(async cleanup => cleanup()));
 });
 
+// The environment without the GitHub runner's own variables. On CI the tests
+// run inside a pull_request job, and its GITHUB_EVENT_NAME would make the
+// Action drop the npm token in every test that doesn't set one.
+function runnerFree(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+	return Object.fromEntries(
+		Object.entries(env).filter(
+			([key]) => !/^(GITHUB|RUNNER|ACTIONS)_/.test(key),
+		),
+	);
+}
+
 async function setup(steps: RepoStep[]) {
 	const repo = await createRepo(steps);
 	const fake = await mkdtemp(path.join(tmpdir(), 'chamoji-gh-'));
@@ -188,7 +199,7 @@ async function setup(steps: RepoStep[]) {
 			const {stdout, stderr} = await execFileAsync('bash', [script], {
 				cwd: repo.dir,
 				env: {
-					...process.env,
+					...runnerFree(process.env),
 					PATH: `${fake}${path.delimiter}${process.env.PATH}`,
 					FAKE_GH_DIR: fake,
 					FAKE_CURL_BODY: path.join(fake, 'card.png'),
