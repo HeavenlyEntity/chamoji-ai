@@ -207,24 +207,30 @@ export type GhRunner = (
 	options?: {timeoutMs?: number},
 ) => Promise<{ok: boolean; message: string}>;
 
-/** The GitHub CLI, without a shell. Missing `gh` is a soft failure. */
-const runGh: GhRunner = async (args, options) =>
-	new Promise(resolve => {
-		execFile(
-			'gh',
-			args,
-			{timeout: options?.timeoutMs ?? 0},
-			(error, stdout, stderr) => {
-				if (!error) {
-					resolve({ok: true, message: stdout.trim()});
-				} else if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-					resolve({ok: false, message: 'no gh CLI, so no GitHub release'});
-				} else {
-					resolve({ok: false, message: stderr.trim() || error.message});
-				}
-			},
-		);
-	});
+/**
+ * The GitHub CLI, without a shell, run in `cwd`: gh picks the GitHub repo from
+ * the git remotes there, so it must be the repo chamoji works on. Missing `gh`
+ * is a soft failure.
+ */
+const ghIn =
+	(cwd: string): GhRunner =>
+	async (args, options) =>
+		new Promise(resolve => {
+			execFile(
+				'gh',
+				args,
+				{cwd, timeout: options?.timeoutMs ?? 0},
+				(error, stdout, stderr) => {
+					if (!error) {
+						resolve({ok: true, message: stdout.trim()});
+					} else if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+						resolve({ok: false, message: 'no gh CLI, so no GitHub release'});
+					} else {
+						resolve({ok: false, message: stderr.trim() || error.message});
+					}
+				},
+			);
+		});
 
 const HELP = `
 	Release
@@ -716,7 +722,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 							json: flags.json ?? false,
 							explain: flags.explain ?? false,
 						},
-						{...io, gh: io.gh ?? runGh},
+						{...io, gh: io.gh ?? ghIn(io.cwd)},
 					);
 				}
 
@@ -941,7 +947,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 		config: ChamojiConfig,
 		tag: string,
 	): Promise<string | undefined> {
-		const gh = io.gh ?? runGh;
+		const gh = io.gh ?? ghIn(io.cwd);
 		const viewed = await gh(['release', 'view', tag]);
 		if (viewed.ok) return 'exists';
 		if (/no gh CLI/i.test(viewed.message)) return undefined;
@@ -1519,7 +1525,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 							'chamoji-release-notes.md',
 						);
 						await writeFile(notesFile, `${release.notes}\n`);
-						return (io.gh ?? runGh)([
+						return (io.gh ?? ghIn(io.cwd))([
 							'release',
 							'create',
 							release.tag,

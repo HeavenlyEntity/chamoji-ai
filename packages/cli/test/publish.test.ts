@@ -1,4 +1,7 @@
 import {execFileSync} from 'node:child_process';
+import {mkdtemp, readFile, realpath, rm, writeFile} from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import {afterEach, describe, expect, it} from 'vitest';
 import type {FetchLike, NpmRunner} from '@chamoji/core';
 import type {GhRunner} from '../src/run.js';
@@ -21,6 +24,12 @@ const has = (tool: string): boolean => {
 };
 
 const TOKEN = 'npm_cliSecretToken456';
+
+/** A gh that isn't installed, for the tests that don't pass their own. */
+const noGh: GhRunner = async () => ({
+	ok: false,
+	message: 'no gh CLI, so no GitHub release',
+});
 
 const repos: FixtureRepo[] = [];
 afterEach(async () => {
@@ -105,7 +114,7 @@ async function chamoji(
 	cwd: string,
 	npm: NpmRunner,
 	env: Record<string, string | undefined> = {CHAMOJI_NPM_TOKEN: TOKEN},
-	gh?: GhRunner,
+	gh: GhRunner | 'real' = noGh,
 ) {
 	let stdout = '';
 	let stderr = '';
@@ -116,7 +125,9 @@ async function chamoji(
 		today: '2026-10-28',
 		fetchTags: false,
 		npm,
-		...(gh ? {gh} : {}),
+		// The real gh only when a test asks, with a stand-in on PATH: gh acts on
+		// the GitHub repo it finds, and a real one could release on this repo.
+		...(gh === 'real' ? {} : {gh}),
 		fetch: fetchNever,
 		// An unset value removes the variable that the real environment has.
 		env: {
@@ -625,6 +636,38 @@ describe.skipIf(!has('npm'))('chamoji publish', () => {
 		);
 		expect(gh.created()).toEqual([]);
 	});
+
+	it.skipIf(process.platform === 'win32')(
+		'the real gh runs in the repo being published, not the current directory',
+		async () => {
+			const dir = await repoWith(MONOREPO, ['v1.0.0']);
+			const bin = await mkdtemp(path.join(os.tmpdir(), 'chamoji-gh-'));
+			const log = path.join(bin, 'calls');
+			await writeFile(
+				path.join(bin, 'gh'),
+				`#!/bin/sh\necho "$(pwd -P) $*" >> '${log}'\necho 'release not found' >&2\nexit 1\n`,
+				{mode: 0o755},
+			);
+			const previous = process.env.PATH;
+			process.env.PATH = `${bin}${path.delimiter}${previous ?? ''}`;
+			try {
+				await chamoji(
+					['publish', '--from', 'v1.0.0'],
+					dir,
+					fakeNpm().npm,
+					undefined,
+					'real',
+				);
+				const repo = await realpath(dir);
+				const calls = (await readFile(log, 'utf8')).trim().split('\n');
+				expect(calls).toContain(`${repo} release view v1.0.0`);
+				for (const call of calls) expect(call).toMatch(`${repo} release `);
+			} finally {
+				process.env.PATH = previous;
+				await rm(bin, {recursive: true, force: true});
+			}
+		},
+	);
 
 	it('--catch-up skips a public app unit and exits 0', async () => {
 		const config = json({
