@@ -1,5 +1,75 @@
 # Changelog
 
+## [v0.15.0](https://github.com/HeavenlyEntity/chamoji-ai/compare/v0.14.0...v0.15.0) - 2026-11-09
+
+### Highlights
+
+- 📦 **Publishing to npm**
+  - ✨ Release and publish on merge from the Action ([a7adb42](https://github.com/HeavenlyEntity/chamoji-ai/commit/a7adb4219f180fa56a502d864d4ccc4e53863eb7))
+  - ✨ Catch up releases that never reached npm ([9f584c6](https://github.com/HeavenlyEntity/chamoji-ai/commit/9f584c64e37983a3e5599c9c1783514e6a845ee8))
+  - ✨ Hold breaking changes for a manual release when asked ([a6799d1](https://github.com/HeavenlyEntity/chamoji-ai/commit/a6799d1def52253dea2c562d67c1de23b5b20fc4))
+  - ✨ Release and publish in one command ([ed285dd](https://github.com/HeavenlyEntity/chamoji-ai/commit/ed285ddd950b546597eb012792266e621f20c039))
+  - ✨ Add chamoji publish ([3b8a4e0](https://github.com/HeavenlyEntity/chamoji-ai/commit/3b8a4e08571fede132e1f78b0a4546cbdb69d029))
+  - ✨ Publish tarballs with npm, skipping what's already there ([76fc1da](https://github.com/HeavenlyEntity/chamoji-ai/commit/76fc1da59d9fabd3e2dea9b9deda0603b068ec92))
+  - ✨ Plan a publish with every check before anything is published ([31f8b08](https://github.com/HeavenlyEntity/chamoji-ai/commit/31f8b0808d0e9ac9c1825be7ad28147f52f9f705))
+  - ✨ Add the npm runner, registry and dist-tag rules ([0454c45](https://github.com/HeavenlyEntity/chamoji-ai/commit/0454c45145cfe9b7e81aa4cb7edb8aaa4a86b507))
+  - ✨ Pack packages with the workspace's own package manager ([ef12bd3](https://github.com/HeavenlyEntity/chamoji-ai/commit/ef12bd39e69ea068956e2ce1a6c849d9473981a1))
+  - ✨ Tell apps from libraries by framework and entry points ([8e110d8](https://github.com/HeavenlyEntity/chamoji-ai/commit/8e110d8b81664324bea18eead37b50c116f13bcb))
+  - ✨ Add release trigger, majors and publish settings ([e07ef92](https://github.com/HeavenlyEntity/chamoji-ai/commit/e07ef920755de84b1f2cdf0b7be9f1cc9bae4715))
+  - 🐛 Run gh in the repo being released, and keep tests off the real gh ([38c47b7](https://github.com/HeavenlyEntity/chamoji-ai/commit/38c47b70ad924a9aadc24805055a519cf59df6c2))
+  - 🐛 Finish GitHub releases and recovery that publishing left undone ([92e406a](https://github.com/HeavenlyEntity/chamoji-ai/commit/92e406ab2aef64033cbe1913b4da768593fb723e))
+  - 🐛 Ask for provenance only when npm can sign it ([a9f9f0e](https://github.com/HeavenlyEntity/chamoji-ai/commit/a9f9f0ebba489c8485ef5ab00596f0111ab60a0b))
+  - 🐛 Skip apps when catching up instead of failing the tag ([df78afe](https://github.com/HeavenlyEntity/chamoji-ai/commit/df78afe9c34a794f5326ebd108e6fadf3aa8616b))
+  - 🐛 Push the release commit and tags atomically ([2590e18](https://github.com/HeavenlyEntity/chamoji-ai/commit/2590e18827caea1334d9871637fc145be87cf098))
+  - 🔒️ Run token npm lookups outside the repo so its .npmrc can't proxy them ([e7d950e](https://github.com/HeavenlyEntity/chamoji-ai/commit/e7d950e64135026fe418b5d6a62bcc2e9eaf1cd4))
+  - 🔒️ Keep publish credentials away from git hooks and registry lookups ([cdca67f](https://github.com/HeavenlyEntity/chamoji-ai/commit/cdca67f7e5773bde5b226c8c373ecccbd9049dc2))
+  - 🔐 Check npm credentials before anything is tagged ([07cdf94](https://github.com/HeavenlyEntity/chamoji-ai/commit/07cdf941c2c8845e330b488ad726f6fc8f0769f0))
+  - 📝 Make the publishing docs and small edges match what runs ([4bde2bf](https://github.com/HeavenlyEntity/chamoji-ai/commit/4bde2bf45fa6775d6f3af3e7e6f7566b9b243e6a))
+  - ✅ Make the publish tests pass on Windows ([7bd77c4](https://github.com/HeavenlyEntity/chamoji-ai/commit/7bd77c4d8faee9866f620a653493f7bb5ead5247))
+  - ✅ Keep the runner's GitHub variables out of the Action tests ([fa6afc0](https://github.com/HeavenlyEntity/chamoji-ai/commit/fa6afc037a6fed9f79cf9f696a34425b8791af89))
+  - ✅ Check that publish mode makes the tag's GitHub release ([dc7b069](https://github.com/HeavenlyEntity/chamoji-ai/commit/dc7b06973f70fb4b0844c604b01700f4e8fe6e73))
+- 🧠 **Project memory**
+  - 📝 Note an illustration of merge styles and project memory ([37c3f73](https://github.com/HeavenlyEntity/chamoji-ai/commit/37c3f7347924a4c8420f70be539ccb5f32e33631))
+
+### Changed
+
+- 🔧 Ship the publishing workstream ([14612e7](https://github.com/HeavenlyEntity/chamoji-ai/commit/14612e7d109e41e359546d2604e0373010d8f2b0))
+
+### Security
+
+- 🔒️ Send security reports to the private report form ([070fe57](https://github.com/HeavenlyEntity/chamoji-ai/commit/070fe5715315c947ffd805b38e914d0054b54e57))
+- 🔒️ Allow only each docs component's own attributes ([273ded8](https://github.com/HeavenlyEntity/chamoji-ai/commit/273ded879d2590f19155cd1efa064be90dc5bcb5))
+- 🔒️ Check code block titles and link schemes in the docs pages ([ae0cfde](https://github.com/HeavenlyEntity/chamoji-ai/commit/ae0cfde800dd28e247e9904622e9e4dd673d6ecd))
+
+### Documentation
+
+- 📝 Show the latest release next to the readme's Action examples ([76d29bb](https://github.com/HeavenlyEntity/chamoji-ai/commit/76d29bb30ea6eee9c8fc5fb7d4f3eb926ac4838a))
+- 📝 Pin the readme's and release skill's Action examples to v0.14.0 ([91104d8](https://github.com/HeavenlyEntity/chamoji-ai/commit/91104d86314755e2e36edec7727c41b2c285f60c))
+- 📝 Point the contributing guide at pnpm benchmark ([#1](https://github.com/HeavenlyEntity/chamoji-ai/issues/1)) ([dcd0b45](https://github.com/HeavenlyEntity/chamoji-ai/commit/dcd0b452e3e7e261255e8183fd4589f6f503b805))
+- 📝 Design and plan the sponsors page ([149be95](https://github.com/HeavenlyEntity/chamoji-ai/commit/149be95353aaf3278d44fa2ae44d0985c9932894))
+- 📝 Paste the Prettier-stable sponsors block ([26a5771](https://github.com/HeavenlyEntity/chamoji-ai/commit/26a5771551a7dfa19babec6e00fef2a17f391068))
+- 📝 Add a Sponsors section to the README ([a3594a1](https://github.com/HeavenlyEntity/chamoji-ai/commit/a3594a1b5b5ca6b06f58167aa4c702aff12d0bc8))
+- 📝 Mark monorepo releases shipped and npm publishing next ([555bef5](https://github.com/HeavenlyEntity/chamoji-ai/commit/555bef5f22374ae9f38150c529e0c74bac27d85c))
+- 📝 Correct the Action, card and agent guides and the key location ([1d7ca51](https://github.com/HeavenlyEntity/chamoji-ai/commit/1d7ca5192523130a06a035a9fa410bdd65f35c0f))
+- 📝 Write the last four guides for the docs site ([5fac786](https://github.com/HeavenlyEntity/chamoji-ai/commit/5fac7861abb85985ffca9ec7bd9a72991c35c195))
+- 📝 Correct the monorepo and composer facts in the guides ([7da4a86](https://github.com/HeavenlyEntity/chamoji-ai/commit/7da4a86572754f2065241503fb237e9919538311))
+- 📝 Write the first four guides for the docs site ([ea6954f](https://github.com/HeavenlyEntity/chamoji-ai/commit/ea6954f96db986b4c53e12b99a1737317c03ad62))
+- 📝 Correct the hook and mcp pages and settle the since tags ([b90ecad](https://github.com/HeavenlyEntity/chamoji-ai/commit/b90ecadc71b58a1b8616b5f32c34d0b7f7bbdda1))
+- 📝 Write the last six command pages for the docs site ([1175e3c](https://github.com/HeavenlyEntity/chamoji-ai/commit/1175e3c0db11d9d293671a22439dbb6566bed499))
+- 📝 Correct the monorepo facts on the command pages ([902c0e8](https://github.com/HeavenlyEntity/chamoji-ai/commit/902c0e8fe3cf02b3fa16da6cd20e517b4b328d27))
+- 📝 Write the first six command pages for the docs site ([8268092](https://github.com/HeavenlyEntity/chamoji-ai/commit/8268092ee651281a94e3c7205aa50d3b0222b955))
+- 📝 Correct facts on the Reference and Install pages ([a35379b](https://github.com/HeavenlyEntity/chamoji-ai/commit/a35379b14f3d41dc64c433eed9b7b7ba2a1023d4))
+- 📝 Write the Get started and Reference pages for the docs site ([7f240fc](https://github.com/HeavenlyEntity/chamoji-ai/commit/7f240fc04b4248897f3da154331d50ca50290ec3))
+
+### Maintenance
+
+- ✅ Parse the docs pages and allow only the known components ([2512f2b](https://github.com/HeavenlyEntity/chamoji-ai/commit/2512f2bdcde93e4b10b5a0b5d9281535746a34f5))
+- ✅ Check the docs site's pages and nav ([d8eace3](https://github.com/HeavenlyEntity/chamoji-ai/commit/d8eace3fbccb11cdc83c6757cb1886473f4aa5f6))
+
+### Miscellaneous
+
+- 🔗 Point the brand guide's React Bits link at React Bits Pro ([21fc01e](https://github.com/HeavenlyEntity/chamoji-ai/commit/21fc01e189bd10c4f2642f4f867a41669f45edcb))
+
 ## [v0.14.0](https://github.com/HeavenlyEntity/chamoji-ai/compare/v0.13.0...v0.14.0) - 2026-11-04
 
 ### Added
