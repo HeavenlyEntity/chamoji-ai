@@ -41,6 +41,16 @@ const planOf = (...targets: PublishTarget[]): PublishPlan => ({
 	worktree: null,
 });
 
+// Whether `dir` is `parent` or under it. On Windows the two can be on
+// different drives, where path.relative gives an absolute path, not `..`.
+function isInside(parent: string, dir: string): boolean {
+	const relative = path.relative(parent, dir);
+	return (
+		relative === '' ||
+		(!relative.startsWith('..') && !path.isAbsolute(relative))
+	);
+}
+
 const OIDC_ENV = {
 	ACTIONS_ID_TOKEN_REQUEST_URL: 'https://actions.test/token?x=1',
 	ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'request-secret',
@@ -351,9 +361,8 @@ describe('checkPublishAuth', () => {
 			ci: true,
 		});
 		expect(cwds).toHaveLength(1);
-		expect(cwds[0]).not.toBe(plan.root);
-		expect(path.relative(plan.root, cwds[0]!).startsWith('..')).toBe(true);
-		expect(path.relative(os.tmpdir(), cwds[0]!).startsWith('..')).toBe(false);
+		expect(isInside(plan.root, cwds[0]!)).toBe(false);
+		expect(isInside(os.tmpdir(), cwds[0]!)).toBe(true);
 	});
 
 	it("npm view under a token runs outside the repo, so its .npmrc can't proxy the token", async () => {
@@ -369,7 +378,7 @@ describe('checkPublishAuth', () => {
 			extra: [],
 		});
 		expect(cwds).toHaveLength(1);
-		expect(path.relative(root, cwds[0]!).startsWith('..')).toBe(true);
+		expect(isInside(root, cwds[0]!)).toBe(false);
 	});
 
 	it('a failed whoami says to log in, without the token', async () => {
