@@ -18,6 +18,7 @@ import {
 	type PublishPlan,
 } from '../../src/index.js';
 import type {ChamojiConfig} from '../../src/types.js';
+import {spawnSpec} from '../../src/publish/pack.js';
 import {createRepo, type FixtureRepo} from '../helpers/fixture-repo.js';
 
 const has = (tool: string): boolean => {
@@ -604,7 +605,13 @@ describe.skipIf(!has('npm'))('planPublish', () => {
 				await writeFile(target, text);
 			}
 
-			execFileSync('pnpm', ['install', '--offline', '--ignore-scripts'], {
+			// Through cmd.exe on Windows, where pnpm is a .cmd shim.
+			const install = spawnSpec('pnpm', [
+				'install',
+				'--offline',
+				'--ignore-scripts',
+			]);
+			execFileSync(install.file, install.args, {
 				cwd: scratch,
 				stdio: 'ignore',
 			});
