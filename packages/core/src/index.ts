@@ -224,15 +224,8 @@ export {questions, summary, type Question} from './setup/questions.js';
 export {detectMentions} from './setup/mentions.js';
 export {assertNoSymlinks} from './links.js';
 export {checkCommand} from './setup/package-scripts.js';
-export {
-	findReleaseWorkflow,
-	releaseWorkflow,
-	RELEASE_WORKFLOW_FILE,
-	workflowAdvice,
-	workflowLacking,
-} from './setup/workflow.js';
-export {privatizeEdit} from './setup/privatize.js';
-export {pnpmSetupVersion} from './publish/lockfile.js';
+export {planSetupFiles, publishTargets} from './setup/files.js';
+export {RELEASE_WORKFLOW_FILE} from './setup/workflow.js';
 export {
 	readReleaseSection,
 	releaseSection,
