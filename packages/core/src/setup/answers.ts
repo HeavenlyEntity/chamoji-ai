@@ -115,6 +115,11 @@ function unitFor(detection: Detection, facts: UnitFacts, shape: Shape): Unit {
 		versionFiles: facts.versionFiles,
 		buildNumber: 'untouched',
 		versioning: 'semver',
+		// With no tag the manifest's version is the one to start from, when the
+		// package.json and the manifest.xml disagree.
+		...(facts.versionMismatch && !formats?.last
+			? {firstVersion: facts.versionMismatch.manifest}
+			: {}),
 		...easOf(facts),
 	};
 }
@@ -176,7 +181,12 @@ function recommendFor(detection: Detection, shape: Shape): SetupAnswers {
 		why: {},
 	};
 	answers.why = whyFor(detection, answers, id =>
-		DETECTED.has(id.split(':')[0]!) || (id === 'fixed' && shared)
+		DETECTED.has(id.split(':')[0]!) ||
+		(id === 'fixed' && shared) ||
+		(id.startsWith('firstVersion:') &&
+			units.some(
+				unit => id === `firstVersion:${unit.name}` && unit.firstVersion,
+			))
 			? 'detected'
 			: 'recommended',
 	);
