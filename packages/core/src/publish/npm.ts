@@ -15,7 +15,13 @@ export type NpmResult = {ok: boolean; stdout: string; stderr: string};
 /** Runs npm. Tests pass a fake, so nothing reaches a real registry. */
 export type NpmRunner = (
 	args: string[],
-	options: {cwd: string; env: Record<string, string>; inheritStdio?: boolean},
+	options: {
+		cwd: string;
+		env: Record<string, string>;
+		inheritStdio?: boolean;
+		/** Kills npm after this long; the run then fails. Without it npm runs to the end. */
+		timeoutMs?: number;
+	},
 ) => Promise<NpmResult>;
 
 /** `process.env` without its unset entries, as a complete child environment. */
@@ -58,6 +64,9 @@ export const runNpm: NpmRunner = async (args, options) => {
 			cwd: options.cwd,
 			env,
 			maxBuffer: 64 * 1024 * 1024,
+			...(options.timeoutMs === undefined
+				? {}
+				: {timeout: options.timeoutMs, killSignal: 'SIGKILL' as const}),
 		});
 		return {ok: true, stdout, stderr};
 	} catch (error) {
@@ -135,10 +144,15 @@ export async function publishedVersions(
 	registry: string,
 	cwd: string,
 	env: Record<string, string> = processEnv(),
+	timeoutMs?: number,
 ): Promise<{versions: string[]; latest: string | null} | null> {
 	const result = await npm(
 		['view', name, 'versions', 'dist-tags', '--json', '--registry', registry],
-		{cwd, env: scrubEnv(env).env},
+		{
+			cwd,
+			env: scrubEnv(env).env,
+			...(timeoutMs === undefined ? {} : {timeoutMs}),
+		},
 	);
 	if (!result.ok) {
 		const {code, message} = npmError(result);

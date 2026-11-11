@@ -133,3 +133,21 @@ test.skipIf(process.platform === 'win32')(
 		}
 	},
 );
+
+test.skipIf(process.platform === 'win32')(
+	'runNpm kills npm that outlives timeoutMs and fails',
+	async () => {
+		const bin = await mkdtemp(path.join(tmpdir(), 'chamoji-slow-npm-'));
+		const script = path.join(bin, 'npm');
+		await writeFile(script, '#!/bin/sh\nsleep 30\n');
+		await chmod(script, 0o755);
+		const started = Date.now();
+		const result = await runNpm([], {
+			cwd: bin,
+			env: {PATH: `${bin}:/usr/bin:/bin`},
+			timeoutMs: 100,
+		});
+		expect(result.ok).toBe(false);
+		expect(Date.now() - started).toBeLessThan(5000);
+	},
+);

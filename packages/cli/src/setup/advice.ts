@@ -1,5 +1,6 @@
 import {
 	getRemoteWebUrl,
+	processEnv,
 	publishedVersions,
 	type NpmRunner,
 } from '@chamoji/core';
@@ -131,8 +132,14 @@ export async function neverPublished(
 		const found = await Promise.all(
 			packages.map(async pkg => {
 				try {
-					return (await publishedVersions(npm, pkg.name, pkg.registry, cwd)) ===
-						null
+					return (await publishedVersions(
+						npm,
+						pkg.name,
+						pkg.registry,
+						cwd,
+						processEnv(),
+						timeoutMs,
+					)) === null
 						? pkg.name
 						: null;
 				} catch {

@@ -138,8 +138,10 @@ test('a token names the secret and never a value', () => {
 
 test('neverPublished lists the packages npm has no record of', async () => {
 	const seen: string[][] = [];
-	const npm: NpmRunner = async args => {
+	const timeouts: Array<number | undefined> = [];
+	const npm: NpmRunner = async (args, options) => {
 		seen.push(args);
+		timeouts.push(options.timeoutMs);
 		return args[1] === '@acme/new'
 			? {ok: false, stdout: '', stderr: 'npm error code E404'}
 			: {
@@ -160,6 +162,8 @@ test('neverPublished lists the packages npm has no record of', async () => {
 			'/',
 		),
 	).toEqual(['@acme/new']);
+	// npm is killed by the runner, not just abandoned.
+	expect(timeouts).toEqual([5000, 5000]);
 	// A package npm can't answer for is left out, not guessed at.
 	const broken: NpmRunner = async () => ({
 		ok: false,
