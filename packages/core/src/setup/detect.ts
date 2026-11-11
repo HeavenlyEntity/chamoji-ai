@@ -1,13 +1,9 @@
 import {lstat, readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {listTags, runGit} from '../git.js';
+import {readLockfiles} from '../publish/lockfile.js';
 import {sdfFramework, type DetectedFramework} from '../publish/frameworks.js';
-import {
-	classifyPackage,
-	detectFramework,
-	sdfKind,
-	type PackageKind,
-} from '../publish/kind.js';
+import {inspectPackage, sdfKind, type PackageKind} from '../publish/kind.js';
 import {findSdfProjects, type SdfProject} from '../units/sdf.js';
 import {escapeRegExp} from '../units/tags.js';
 import {detectVersionFiles, readEasRemote} from '../units/version-files.js';
@@ -233,13 +229,15 @@ async function readRootOnly(
 export async function detectLayout(root: string): Promise<LayoutDetection> {
 	const packages = (await readWorkspace(root)).filter(pkg => pkg.path !== '');
 	const sdf = await findSdfProjects(root);
+	const lockfiles = await readLockfiles(root);
 	const dependedOn = new Set(packages.flatMap(pkg => pkg.runtimeDeps));
 	const classified: Array<Candidate & {pkg: WorkspacePackage}> = [];
 	for (const pkg of packages) {
 		// eslint-disable-next-line no-await-in-loop
-		const kind = await classifyPackage(root, pkg, dependedOn, {sdf});
-		// eslint-disable-next-line no-await-in-loop
-		const framework = kind.detected ?? (await detectFramework(root, pkg.path));
+		const {kind, framework} = await inspectPackage(root, pkg, dependedOn, {
+			sdf,
+			lockfiles,
+		});
 		classified.push({
 			path: pkg.path,
 			pkg,

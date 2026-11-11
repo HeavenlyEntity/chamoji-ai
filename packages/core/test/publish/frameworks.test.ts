@@ -6,8 +6,10 @@ import {
 	classifyPackage,
 	detectFramework,
 	FRAMEWORKS,
+	readWorkspace,
 	type WorkspacePackage,
 } from '../../src/index.js';
+import {inspectPackage} from '../../src/publish/kind.js';
 import {type FixtureRepo} from '../helpers/fixture-repo.js';
 import {frameworkZoo} from '../helpers/setup-fixtures.js';
 
@@ -148,6 +150,37 @@ test('an app.config.ts alone is no framework; with @solidjs/start it is SolidSta
 			'export default {};\n',
 		);
 		expect((await detectFramework(dir, 'solid'))?.id).toBe('solid-start');
+	} finally {
+		await rm(dir, {recursive: true, force: true});
+	}
+});
+
+test('inspecting a package gives what classifying and detecting give separately', async () => {
+	const packages = (await readWorkspace(repo.dir)).filter(
+		pkg => pkg.path !== '',
+	);
+	expect(packages.length).toBeGreaterThan(5);
+	for (const pkg of packages) {
+		expect(await inspectPackage(repo.dir, pkg, new Set(), {})).toEqual({
+			kind: await classifyPackage(repo.dir, pkg),
+			framework: await detectFramework(repo.dir, pkg.path),
+		});
+	}
+});
+
+test('a library with strong signals still reports its framework when inspected', async () => {
+	const dir = await mkdtemp(path.join(tmpdir(), 'chamoji-inspect-'));
+	try {
+		await mkdir(path.join(dir, 'ui'));
+		await writeFile(
+			path.join(dir, 'ui', 'package.json'),
+			'{"name":"ui","version":"1.0.0","exports":"./index.js","dependencies":{"next":"^15.2.0"}}\n',
+		);
+		const pkg = {path: 'ui', name: 'ui', private: false} as WorkspacePackage;
+		const inspected = await inspectPackage(dir, pkg, new Set(), {});
+		expect(inspected.kind.kind).toBe('library');
+		expect(inspected.framework?.id).toBe('next');
+		expect(inspected.framework).toEqual(await detectFramework(dir, 'ui'));
 	} finally {
 		await rm(dir, {recursive: true, force: true});
 	}
