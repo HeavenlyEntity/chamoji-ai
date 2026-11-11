@@ -218,6 +218,8 @@ export {
 	type Source,
 } from './setup/answers.js';
 export {questions, summary, type Question} from './setup/questions.js';
+export {detectMentions} from './setup/mentions.js';
+export {checkCommand, defaultBranch} from './setup/workflow.js';
 export {
 	readReleaseSection,
 	releaseSection,

@@ -144,8 +144,9 @@ async function gearzSection(dir: string) {
 		])
 	).split('\n')[0];
 	return {
-		schema: 1,
+		schema: 2,
 		shape: 'apps',
+		trigger: 'merge',
 		units: {
 			web: {path: 'apps/web', tag: 'web/v{version}'},
 			mobile: {
@@ -374,21 +375,36 @@ test("--explain names each value's source", async () => {
 	);
 });
 
-test('a single package: nothing to set up for releases; memory still runs', async () => {
+test('a single package: --yes writes when to release; memory still runs', async () => {
 	const dir = await withOrigin(await made(singlePackage()));
 	const {code, stdout} = await chamoji(['setup', '--yes'], dir);
 	expect(code).toBe(0);
-	expect(stdout).toContain(`${SINGLE}\n`);
-	expect(stdout).not.toContain(WROTE);
-	expect(existsSync(path.join(dir, 'chamoji.config.json'))).toBe(false);
+	expect(stdout).toContain(`${WROTE}\n`);
+	expect(stdout).not.toContain(`${SINGLE}\n`);
+	// Ruling 2: a single package gets a section, so the trigger is written
+	// down; solo is public and has no check script, so publish is a bare true.
+	expect((await readConfig(dir)).release).toEqual({
+		schema: 2,
+		shape: 'single',
+		trigger: 'merge',
+		publish: true,
+	});
 	expect(stdout).toContain('origin now fetches chamoji memory.\n');
 	expect(await fetchesMemory(dir)).toBe(true);
 
 	const json = await chamoji(['setup', 'releases', '--yes', '--json'], dir);
 	const report = JSON.parse(json.stdout) as Report;
-	expect(report.steps).toEqual([{step: 'releases', result: 'nothing-to-do'}]);
-	// Nothing was written, so there's no section to report.
-	expect(report.answers).toBeNull();
+	expect(report.steps).toEqual([{step: 'releases', result: 'unchanged'}]);
+});
+
+test('a single package is only written when setup is asked to', async () => {
+	const dir = await made(singlePackage());
+	const {code, stdout} = await chamoji(['setup', 'releases', '--json'], dir);
+	expect(code).toBe(2);
+	expect(
+		(JSON.parse(stdout) as Report).steps.find(step => step.step === 'releases'),
+	).toEqual({step: 'releases', result: 'written'});
+	expect(existsSync(path.join(dir, 'chamoji.config.json'))).toBe(false);
 });
 
 test("a re-run with nothing new is already up to date and shows each step's state", async () => {

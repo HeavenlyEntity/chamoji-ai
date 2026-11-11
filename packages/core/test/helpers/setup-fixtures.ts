@@ -632,3 +632,84 @@ export async function acpSingle(): Promise<FixtureRepo> {
 		},
 	]);
 }
+
+/** The libraries of `libraryLayout`, publishable, with root `check` and `test` scripts under pnpm. */
+export async function publishableLibraries(
+	options: {registry?: string; extraSteps?: RepoStep[]} = {},
+): Promise<FixtureRepo> {
+	return createRepo([
+		{
+			commit: '🎉 Start the libraries',
+			files: {
+				'package.json': manifest('acme', {
+					private: true,
+					scripts: {check: 'tsc', test: 'vitest'},
+				}),
+				'pnpm-workspace.yaml': "packages:\n  - 'packages/*'\n",
+				'pnpm-lock.yaml': "lockfileVersion: '9.0'\n",
+				'packages/ui/package.json': manifest('@acme/ui', {
+					version: '1.2.0',
+					exports: {'.': './dist/index.js'},
+					...(options.registry
+						? {publishConfig: {registry: options.registry}}
+						: {}),
+				}),
+				'packages/core/package.json': manifest('@acme/core', {
+					version: '1.2.0',
+					exports: {'.': './dist/index.js'},
+				}),
+			},
+		},
+		...(options.extraSteps ?? []),
+	]);
+}
+
+/** A public Next.js app next to a private one, no libraries. */
+export async function publicApps(): Promise<FixtureRepo> {
+	return createRepo([
+		{
+			commit: '🎉 Start the apps',
+			files: {
+				'package.json': manifest('acme', {private: true}),
+				'pnpm-workspace.yaml': "packages:\n  - 'apps/*'\n",
+				'apps/web/package.json': manifest('web', {
+					version: '1.0.0',
+					dependencies: {next: '^15.2.0', react: '^19.0.0'},
+				}),
+				'apps/web/next.config.mjs': 'export default {};\n',
+				'apps/admin/package.json': manifest('admin', {
+					private: true,
+					version: '1.0.0',
+					dependencies: {next: '^15.2.0', react: '^19.0.0'},
+				}),
+				'apps/admin/next.config.mjs': 'export default {};\n',
+			},
+		},
+	]);
+}
+
+/** One library plus one public app, as a mixed repo. */
+export async function libraryAndApp(): Promise<FixtureRepo> {
+	return createRepo([
+		{
+			commit: '🎉 Start the repo',
+			files: {
+				'package.json': manifest('acme', {private: true}),
+				'pnpm-workspace.yaml': "packages:\n  - 'apps/*'\n  - 'packages/*'\n",
+				'packages/ui/package.json': manifest('@acme/ui', {
+					version: '1.2.0',
+					exports: {'.': './dist/index.js'},
+				}),
+				'packages/core/package.json': manifest('@acme/core', {
+					version: '1.2.0',
+					exports: {'.': './dist/index.js'},
+				}),
+				'apps/web/package.json': manifest('web', {
+					version: '1.0.0',
+					dependencies: {next: '^15.2.0', react: '^19.0.0'},
+				}),
+				'apps/web/next.config.mjs': 'export default {};\n',
+			},
+		},
+	]);
+}

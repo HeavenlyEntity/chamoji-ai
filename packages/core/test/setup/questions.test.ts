@@ -11,14 +11,20 @@ import {
 } from '../../src/index.js';
 import type {RepoStep} from '../helpers/fixture-repo.js';
 import {useDetection} from '../helpers/setup-detection.js';
-import {gearzLayout, suiteAppMonorepo} from '../helpers/setup-fixtures.js';
+import {
+	gearzLayout,
+	libraryAndApp,
+	publishableLibraries,
+	singlePackage,
+	suiteAppMonorepo,
+} from '../helpers/setup-fixtures.js';
 
 const {detected} = useDetection();
 
 test("summary reads like the spec's example", async () => {
 	const detection = await detected(gearzLayout({template: true}));
 	expect(summary(detection, recommend(detection))).toBe(
-		"Found 4 apps (mobile, web, dev-tool, e2e) and 2 internal packages. mobile and web get their own versions; dev-tool, e2e and tooling are left out. 3 tags look like they came from Makerkit and will be ignored. Shared changes ride along with each app's own releases.",
+		"Found 4 apps (mobile, web, dev-tool, e2e) and 2 internal packages. mobile and web get their own versions; dev-tool, e2e and tooling are left out. 3 tags look like they came from Makerkit and will be ignored. Shared changes ride along with each app's own releases. Releases happen on merge to main.",
 	);
 });
 
@@ -69,7 +75,7 @@ test('summary ends with a tag that disagrees with its manifest, then squashed sy
 	);
 	const text = summary(detection, recommend(detection));
 	expect(text).toMatch(
-		/ releases\. web's last tag says 1\.3\.0 but apps\/web\/package\.json says 0\.1\.0; the tag wins, and the release sets the file to the new version\. 2 commits look like squash-merged Makerkit syncs; they count as ordinary commits\.$/,
+		/ releases\. Releases happen on merge to main\. web's last tag says 1\.3\.0 but apps\/web\/package\.json says 0\.1\.0; the tag wins, and the release sets the file to the new version\. 2 commits look like squash-merged Makerkit syncs; they count as ordinary commits\.$/,
 	);
 });
 
@@ -381,4 +387,118 @@ test('a unit with no version mismatch gets no firstVersion', async () => {
 		false,
 	);
 	expect(answers.why['firstVersion:web']).toBe('recommended');
+});
+
+test('the new questions appear for every shape, after the shape question', async () => {
+	const ids = (detection: Detection, answers: SetupAnswers) =>
+		questions(detection, answers).map(question => question.id);
+	const single = await detected(singlePackage());
+	expect(ids(single, recommend(single)).slice(0, 4)).toEqual([
+		'shape',
+		'trigger',
+		'majors',
+		'publish',
+	]);
+	const gearz = await detected(gearzLayout({template: true}));
+	expect(ids(gearz, recommend(gearz)).slice(0, 5)).toEqual([
+		'shape',
+		'trigger',
+		'majors',
+		'privatize',
+		'units',
+	]);
+	const libs = await detected(publishableLibraries());
+	expect(ids(libs, recommend(libs)).slice(0, 7)).toEqual([
+		'shape',
+		'trigger',
+		'majors',
+		'publish',
+		'publish.check',
+		'ciAuth',
+		'units',
+	]);
+	const mixed = await detected(libraryAndApp());
+	expect(ids(mixed, recommend(mixed)).slice(0, 8)).toEqual([
+		'shape',
+		'trigger',
+		'majors',
+		'publish',
+		'publish.check',
+		'privatize',
+		'ciAuth',
+		'units',
+	]);
+	// Only a re-run's missing trigger needs an answer; the rest have a recommendation.
+	expect(
+		questions(libs, recommend(libs)).filter(
+			question => question.needsAnswer && !question.id.includes(':'),
+		),
+	).toEqual([]);
+});
+
+test('the trigger and ciAuth questions read the branch and offer the spec wording', async () => {
+	const detection = await detected(publishableLibraries());
+	const asked = questions(detection, recommend(detection));
+	const byId = (id: string) => asked.find(question => question.id === id)!;
+	expect(byId('trigger').title).toBe('When should a release happen?');
+	expect(byId('trigger').options).toEqual([
+		{value: 'merge', label: 'On merge to main', recommended: true},
+		{value: 'manual', label: 'Only when someone runs it'},
+	]);
+	expect(byId('majors').options).toEqual([
+		{
+			value: 'auto',
+			label: 'Release on merge like any other change',
+			recommended: true,
+		},
+		{value: 'manual', label: 'Wait for someone to release it'},
+	]);
+	expect(byId('publish').title).toBe('Publish packages to npm?');
+	expect(byId('publish').options.map(option => option.value)).toEqual([
+		'on',
+		'off',
+	]);
+	expect(byId('publish.check').kind).toBe('text');
+	expect(byId('publish.check').options[0]).toMatchObject({
+		value: 'pnpm check && pnpm test',
+		recommended: true,
+	});
+	expect(byId('ciAuth').title).toBe('How should CI sign in to npm?');
+	expect(byId('ciAuth').options).toEqual([
+		{value: 'oidc', label: 'Trusted publishing', recommended: true},
+		{value: 'token', label: 'An npm token'},
+	]);
+});
+
+test('the publish question lists each package with its kind and reason', async () => {
+	const detection = await detected(libraryAndApp());
+	const publish = questions(detection, recommend(detection)).find(
+		question => question.id === 'publish',
+	);
+	expect(publish?.found).toBe(
+		'Publishing @acme/core (library: `exports` field) and @acme/ui (library: `exports` field); web is an app and is not published',
+	);
+});
+
+test('the summary says when releases happen and how many packages publish', async () => {
+	const libs = await detected(publishableLibraries());
+	const answers = recommend(libs);
+	expect(summary(libs, answers)).toMatch(
+		/ Releases happen on merge to main\. 2 packages publish to npm after their checks pass\.$/,
+	);
+	const manual = applyAnswer(libs, answers, 'trigger', 'manual');
+	expect(summary(libs, manual)).toContain(
+		' Releases happen when someone runs them. 2 packages publish',
+	);
+	const noCheck = applyAnswer(libs, answers, 'publish.check', '');
+	expect(summary(libs, noCheck)).toContain('2 packages publish to npm.');
+	const off = applyAnswer(libs, answers, 'publish', 'off');
+	expect(summary(libs, off)).not.toContain('publish to npm');
+	const one = {
+		...answers,
+		publish: {check: 'pnpm check', packages: ['@acme/core']},
+	};
+	expect(summary(libs, one)).toContain(
+		'1 package publishes to npm after its check passes.',
+	);
 });

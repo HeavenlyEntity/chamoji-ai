@@ -2,7 +2,12 @@ import {CONFIG_FILE} from '../config.js';
 import {parseReleaseSettings} from '../units/settings.js';
 import {matchesTagPattern, versionFromTag} from '../units/tags.js';
 import {ownerOf, resolveUnits} from '../units/workspace.js';
-import type {Detection, SetupAnswers} from './answers.js';
+import {
+	mentionFor,
+	tokenRegistry,
+	type Detection,
+	type SetupAnswers,
+} from './answers.js';
 import {MAX_COMMITS, type LayoutDetection, type UnitFacts} from './detect.js';
 import {releaseSection} from './section.js';
 import type {UnitTagFormats} from './tags.js';
@@ -329,6 +334,160 @@ function upstreamFound(detection: Detection, answers: SetupAnswers): string {
 		: `No upstream remote or ${prose} tags were found`;
 }
 
+/** A package's role as the publish question says it: 'library: `exports` field'. */
+const roleOf = (kind: string, reasons: string[]): string =>
+	reasons.length > 0 ? `${kind}: ${reasons.join(', ')}` : kind;
+
+/** The questions every shape gets: when to release, breaking changes, npm and version pins. */
+function releaseQuestions(
+	detection: Detection,
+	answers: SetupAnswers,
+): Question[] {
+	const {branch, publishable, publicApps} = detection;
+	const asked: Question[] = [];
+	const add = (question: Omit<Question, 'needsAnswer'>, needsAnswer = false) =>
+		asked.push({...question, needsAnswer});
+	add(
+		{
+			id: 'trigger',
+			title: 'When should a release happen?',
+			found: `Your default branch is ${branch}`,
+			kind: 'choice',
+			options: choice(
+				[
+					['merge', `On merge to ${branch}`],
+					['manual', 'Only when someone runs it'],
+				],
+				'merge',
+			),
+		},
+		// A section from before triggers existed is asked again.
+		answers.triggerUnset === true,
+	);
+	add({
+		id: 'majors',
+		title: 'What happens with a breaking change?',
+		found:
+			'A breaking change raises the major version, a bigger step than a feature or a fix',
+		kind: 'choice',
+		options: choice(
+			[
+				['auto', 'Release on merge like any other change'],
+				['manual', 'Wait for someone to release it'],
+			],
+			'auto',
+		),
+	});
+	if (publishable.length > 0 || answers.publish) {
+		const apps = publicApps.map(app => app.name);
+		const found =
+			publishable.length > 0
+				? `Publishing ${list(
+						publishable.map(
+							pkg => `${pkg.name} (${roleOf('library', pkg.reasons)})`,
+						),
+					)}${
+						apps.length > 0
+							? `; ${list(apps)} ${apps.length === 1 ? 'is an app and is' : 'are apps and are'} not published`
+							: ''
+					}`
+				: 'No public library was found to publish';
+		add({
+			id: 'publish',
+			title: 'Publish packages to npm?',
+			found,
+			kind: 'choice',
+			options: choice(
+				[
+					['on', 'Yes, publish after each release'],
+					['off', 'No, only tag and release'],
+				],
+				publishable.length > 0 ? 'on' : 'off',
+			),
+		});
+	}
+
+	if (answers.publish) {
+		add({
+			id: 'publish.check',
+			title: 'Which command must pass before publishing?',
+			found: detection.check
+				? `The root package.json has scripts that ${detection.check} runs`
+				: 'The root package.json has no check, test or build script',
+			kind: 'text',
+			options: detection.check
+				? [{value: detection.check, label: detection.check, recommended: true}]
+				: [{value: '', label: 'No check', recommended: true}],
+		});
+	}
+
+	if (publicApps.length > 0) {
+		add({
+			id: 'privatize',
+			title: 'Which public apps should be marked private?',
+			found: `${list(publicApps.map(app => `${app.name} (${roleOf('app', app.kind.reasons)})`))} ${publicApps.length === 1 ? 'has' : 'have'} no "private": true, so npm would accept a publish`,
+			kind: 'ticks',
+			options: publicApps.map(app => ({
+				value: app.path,
+				label: `${app.name} (${app.path === '' ? 'package.json' : app.path})`,
+				recommended: true,
+			})),
+		});
+	}
+
+	if (answers.publish) {
+		const other = tokenRegistry(detection);
+		add({
+			id: 'ciAuth',
+			title: 'How should CI sign in to npm?',
+			found: other
+				? `${other.name} publishes to ${other.registry}, which needs an npm token`
+				: 'Every package publishes to npmjs, which supports trusted publishing',
+			kind: 'choice',
+			options: choice(
+				[
+					['oidc', 'Trusted publishing'],
+					['token', 'An npm token'],
+				],
+				other ? 'token' : 'oidc',
+			),
+		});
+	}
+
+	const detected = detection.mentions.flatMap(mention => {
+		const held = mentionFor(answers, mention);
+		return held ? [held] : [];
+	});
+	const patterns = unique([
+		...detected.map(mention => mention.pattern),
+		...answers.mentions.map(mention => mention.pattern),
+	]);
+	if (patterns.length > 0) {
+		const where = (pattern: string): string[] =>
+			(
+				answers.mentions.find(mention => mention.pattern === pattern) ??
+				detected.find(mention => mention.pattern === pattern)
+			)?.files ?? [];
+		add({
+			id: 'mentions',
+			title: 'Which version pins in the docs should a release move?',
+			found: list(
+				patterns.map(pattern => `${pattern} is in ${list(where(pattern))}`),
+			),
+			kind: 'ticks',
+			options: patterns.map(pattern => ({
+				value: pattern,
+				label: pattern,
+				...(detected.some(mention => mention.pattern === pattern)
+					? {recommended: true}
+					: {}),
+			})),
+		});
+	}
+
+	return asked;
+}
+
 /** Every question setup can ask, in screen order, given the current answers. */
 export function questions(
 	detection: Detection,
@@ -357,6 +516,7 @@ export function questions(
 			needsAnswer: false,
 		},
 	];
+	asked.push(...releaseQuestions(detection, answers));
 	if (answers.shape === 'single') return asked;
 	const add = (question: Omit<Question, 'needsAnswer'>, needsAnswer = false) =>
 		asked.push({...question, needsAnswer});
@@ -630,6 +790,25 @@ function authorsClause(detection: Detection, answers: SetupAnswers): string {
 	return `commits by ${who} count as ${baseName(detection, answers).prose}'s`;
 }
 
+/** "Releases happen on merge to main. 2 packages publish to npm after their checks pass." */
+function releasesSentence(detection: Detection, answers: SetupAnswers): string {
+	const when =
+		answers.trigger === 'merge'
+			? `Releases happen on merge to ${detection.branch}.`
+			: 'Releases happen when someone runs them.';
+	if (!answers.publish) return when;
+	const n =
+		answers.publish.packages.length > 0
+			? answers.publish.packages.length
+			: detection.publishable.length;
+	const check = answers.publish.check !== null;
+	return `${when} ${
+		n === 1
+			? `1 package publishes to npm${check ? ' after its check passes' : ''}.`
+			: `${n} packages publish to npm${check ? ' after their checks pass' : ''}.`
+	}`;
+}
+
 /** The first-screen paragraph: what setup found and what it will do. */
 export function summary(detection: Detection, answers: SetupAnswers): string {
 	const {tags, upstream} = detection;
@@ -671,6 +850,7 @@ export function summary(detection: Detection, answers: SetupAnswers): string {
 		);
 	}
 
+	sentences.push(releasesSentence(detection, answers));
 	for (const unit of answers.units) {
 		const {facts, formats} = factsOf(detection, unit);
 		if (formats?.manifestDisagrees && formats.last && facts?.version) {

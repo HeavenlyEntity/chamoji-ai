@@ -159,15 +159,20 @@ type ReleasesPlan = {
 	text: string;
 };
 
-/** What the releases step writes for these answers. A single package with no section gets nothing. */
+/**
+ * What the releases step writes for these answers. A single package with no
+ * section gets one too (it says when to release), but only when asked for:
+ * with --yes, or by naming the step. Otherwise it gets nothing, as before.
+ */
 function planReleases(
 	original: string | null,
 	existing: unknown,
 	detection: Detection,
 	answers: SetupAnswers,
+	asked: boolean,
 ): ReleasesPlan {
 	const section = releaseSection(answers);
-	if (existing === undefined && detection.layout.kind === 'single') {
+	if (existing === undefined && detection.layout.kind === 'single' && !asked) {
 		return {result: 'nothing-to-do', section, text: original ?? ''};
 	}
 
@@ -222,6 +227,7 @@ export async function runSetup(
 			? recommend(detection)
 			: answersFromSection(existing, detection));
 	const states = await stepStates(io, detection, existing);
+	const asked = args.yes || args.step === 'releases';
 	const scope = args.step ? [args.step] : [...STEP_NAMES];
 	// Names, versions and paths come from the repo; none reaches the terminal raw.
 	const out = args.json
@@ -230,7 +236,7 @@ export async function runSetup(
 	const terminal = Boolean(io.setupScreen) && process.stderr.isTTY === true;
 	// What the screen is given: the steps in scope, with a named releases step
 	// asked again whatever its state (ruling R16).
-	const asked = states
+	const screened = states
 		.filter(state => scope.includes(state.step))
 		.map(state =>
 			state.step === 'releases' && args.step === 'releases'
@@ -243,7 +249,7 @@ export async function runSetup(
 		!args.json &&
 		terminal &&
 		releases &&
-		(asksReleases(detection!, asked) || stepPrompts(asked).length > 0);
+		(asksReleases(detection!, screened) || stepPrompts(screened).length > 0);
 
 	if (!args.step && !screening) {
 		out(`${states.map(state => state.line).join('\n')}\n\n`);
@@ -269,7 +275,7 @@ export async function runSetup(
 			const result = await io.setupScreen!({
 				detection: detection!,
 				initial: answers!,
-				states: asked,
+				states: screened,
 				...previews(root, io),
 				columns: process.stderr.columns ?? 80,
 			});
@@ -289,7 +295,7 @@ export async function runSetup(
 
 	// Doing it.
 	const plan = releases
-		? planReleases(original, existing, detection!, answers!)
+		? planReleases(original, existing, detection!, answers!, asked)
 		: null;
 	const results: Array<{step: StepName; result: StepResult}> = [];
 	const wrote: string[] = [];
@@ -330,7 +336,7 @@ export async function runSetup(
 	/** No --yes and no terminal, or --json without --yes: say what setup would do. */
 	function report(squash: string | null): number {
 		const plan = releases
-			? planReleases(original, existing, detection!, answers!)
+			? planReleases(original, existing, detection!, answers!, asked)
 			: null;
 		const results: Array<{step: StepName; result: StepResult}> = [];
 		if (plan) {
@@ -450,6 +456,9 @@ function questionFor(keys: string[]): string | null {
 	const [key, name, field] = keys;
 	switch (key) {
 		case 'shape':
+		case 'trigger':
+		case 'majors':
+		case 'mentions':
 		case 'sharedChanges':
 		case 'rootFiles':
 		case 'zeroMajor':
@@ -460,6 +469,12 @@ function questionFor(keys: string[]): string | null {
 
 		case 'exclude': {
 			return 'units';
+		}
+
+		case 'publish': {
+			// publish.packages is carried through as written, never asked.
+			if (name === undefined) return 'publish';
+			return name === 'check' ? 'publish.check' : null;
 		}
 
 		case 'upstream': {
