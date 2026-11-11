@@ -2,6 +2,7 @@
 // Regenerate with: pnpm icons:generate
 // Marks are from simple-icons (CC0) and @phosphor-icons/core (MIT). The
 // logos belong to their owners and only name the framework a project uses.
+// @phosphor-icons/core: Copyright (c) 2023 Phosphor Icons
 
 export const ICON_COLUMNS = 8;
 export const ICON_ROWS = 4;
