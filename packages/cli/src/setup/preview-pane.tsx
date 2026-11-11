@@ -72,7 +72,7 @@ export function PreviewPane({loaded}: {loaded: Loaded<Preview>}) {
 		);
 	}
 
-	const {heading, units, warnings} = loaded.value;
+	const {heading, units, warnings, files = []} = loaded.value;
 	return (
 		<Box flexDirection="column">
 			<Text bold>{clean(heading)}</Text>
@@ -82,6 +82,23 @@ export function PreviewPane({loaded}: {loaded: Loaded<Preview>}) {
 			{units.map(unit => (
 				<UnitLines key={unit.unit} unit={unit} />
 			))}
+			{files.length > 0 && (
+				<Box flexDirection="column" marginTop={1}>
+					<Text bold>Setup would also write:</Text>
+					{files.map(({file, how}) => (
+						<Box key={file} flexDirection="column">
+							<Text>
+								{'  '}
+								{clean(file)}
+							</Text>
+							<Text dimColor>
+								{'    '}
+								{clean(how)}
+							</Text>
+						</Box>
+					))}
+				</Box>
+			)}
 			{warnings.map((warning, index) => (
 				<Text key={index} color="yellow">
 					{clean(warning)}

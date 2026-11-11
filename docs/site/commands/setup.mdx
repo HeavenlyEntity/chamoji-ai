@@ -19,8 +19,9 @@ export const metadata = {
 <Tag variant="ci">--json FOR CI AND AGENTS</Tag>
 
 <Note>
-	Setup never commits. It writes only the `release` section of
-	`chamoji.config.json`, so review it and commit it yourself.
+	Setup never commits. It writes the `release` section of `chamoji.config.json`
+	and, when you ask for them, a release workflow and `"private": true` in public
+	apps. It shows each file first, and you review and commit them yourself.
 </Note>
 
 ## What it does, in order {{ tag: 'SETUP', variant: 'setup', label: 'chamoji setup', icon: 'gear' }}
@@ -43,8 +44,13 @@ export const metadata = {
 		nothing.
 	</Step>
 	<Step title="Writes the release section.">
-		Only the `release` section of `chamoji.config.json`. The file’s other keys
-		are kept, and a section with nothing new is left untouched.
+		The `release` section of `chamoji.config.json`. The file’s other keys are
+		kept, and a section with nothing new is left untouched.
+	</Step>
+	<Step title="Writes the other release files.">
+		The preview lists each one before anything is saved: the release workflow
+		and the `package.json` edits, as set out in [Files setup
+		writes](#files-setup-writes).
 	</Step>
 	<Step title="Runs the per-clone steps.">
 		Memory sharing, Claude Code and the commit composer hook, the ones you
@@ -134,6 +140,31 @@ Every repo, whatever its shape, is asked these, right after what it releases. Ea
 
 These keys need `"schema": 2`, so setup writes it with `trigger`, `majors` (when it isn’t `auto`), `publish` or `mentions`. A section with none of them stays at `"schema": 1`. Detection reads files only and never uses the network.
 
+## Files setup writes {{ icon: 'file-code' }}
+
+Besides `chamoji.config.json`, the releases step may write two more kinds of file. Each is shown in the preview and listed in `--json`’s `wrote`, and none is committed:
+
+<Properties>
+	<Property name=".github/workflows/chamoji-release.yml">
+		The release workflow. It’s written when the trigger is `merge`, or
+		publishing is on, and no tracked workflow in `.github/workflows` already
+		runs chamoji. A section with no `trigger` counts as manual, so an old
+		section doesn’t start releasing on its own: it gets no workflow until you
+		answer the trigger. It pins the Action to the CLI version that wrote it.
+		[The GitHub Action](/guides/github-action#release-on-merge) shows the file.
+		When a workflow or a file is already there, setup never replaces it. It
+		prints the permissions and `with:` lines that workflow needs, as `A workflow
+		already runs chamoji (…); it needs:`.
+	</Property>
+	<Property name="package.json">
+		`"private": true`, added after `"version"` (else after `"name"`) in each
+		public app you ticked in the privatize question, keeping the file’s
+		indentation. `--yes` takes the recommended tick, all of them.
+	</Property>
+</Properties>
+
+Setup refuses to write through a symlink: if `package.json`, the workflow file or a folder above either is one, it stops with an error and writes nothing. In `--json`, `existingWorkflow` names the workflow that stood in for a new file, or is `null`.
+
 ## Flags {{ badge: '4', icon: 'flag' }}
 
 <Properties>
@@ -147,7 +178,7 @@ These keys need `"schema": 2`, so setup writes it with `trigger`, `majors` (when
 		Print what setup found and did as JSON on stdout, and nothing else. It never
 		opens the screen. Without `--yes` it writes nothing and reports what it
 		would do. With `--yes` it does it, then reports. The keys are `found`,
-		`answers`, `why`, `steps`, `wrote` and `squashMerge`.
+		`answers`, `why`, `steps`, `wrote`, `squashMerge` and `existingWorkflow`.
 	</Property>
 	<Property name="--explain" type="boolean">
 		Print each value of the release section and where it came from: detected in
@@ -274,7 +305,8 @@ With `--json`, the report is JSON. This is `shop` before its first setup, trimme
     }
   ],
   "wrote": [],
-  "squashMerge": null
+  "squashMerge": null,
+  "existingWorkflow": null
 }
 ```
 

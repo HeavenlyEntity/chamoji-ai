@@ -27,7 +27,7 @@ import {
 import {releaseSection, unasked} from './section.js';
 import {detectTags, findUpstreamRemote, type TagDetection} from './tags.js';
 import {detectUpstream, type UpstreamDetection} from './upstream.js';
-import {checkCommand, defaultBranch} from './workflow.js';
+import {checkCommand, defaultBranch, findReleaseWorkflow} from './workflow.js';
 
 export type Detection = {
 	layout: LayoutDetection;
@@ -35,6 +35,8 @@ export type Detection = {
 	upstream: UpstreamDetection;
 	/** The branch merge releases run on (ruling 11). */
 	branch: string;
+	/** A tracked workflow that already runs chamoji, and how it signs in to npm. */
+	workflow: {file: string; ciAuth: 'oidc' | 'token'} | null;
 	/** The recommended check before publishing, from the root scripts; null with none (ruling 10). */
 	check: string | null;
 	/** Public libraries, with where each publishes. */
@@ -119,6 +121,7 @@ export async function detect(root: string): Promise<Detection> {
 		tags,
 		upstream,
 		branch: await defaultBranch(root),
+		workflow: await findReleaseWorkflow(root),
 		check: await checkCommand(root, await detectPackageManager(root)),
 		...(await detectPublishing(root, layout)),
 	};
@@ -293,7 +296,7 @@ function recommendFor(detection: Detection, shape: Shape): SetupAnswers {
 				: null,
 		mentions: [],
 		privatize: detection.publicApps.map(app => app.path),
-		ciAuth: needsToken(detection) ? 'token' : 'oidc',
+		ciAuth: ciAuthFor(detection),
 		kept: {},
 		why: {},
 	};
@@ -326,6 +329,10 @@ export const tokenRegistry = (
 
 const needsToken = (detection: Detection): boolean =>
 	tokenRegistry(detection) !== undefined;
+
+/** The npm sign-in: the token a registry needs, else what the existing workflow uses, else trusted publishing. */
+const ciAuthFor = (detection: Detection): 'oidc' | 'token' =>
+	needsToken(detection) ? 'token' : (detection.workflow?.ciAuth ?? 'oidc');
 
 /**
  * `mention` as these answers can hold it: with no unit in a single repo, else
@@ -404,7 +411,7 @@ export function answersFromSection(
 		mentions: settings.mentions,
 		// What an earlier run left public is its own to decide, so nothing is ticked.
 		privatize: [],
-		ciAuth: needsToken(detection) ? 'token' : 'oidc',
+		ciAuth: ciAuthFor(detection),
 		kept: unasked(section as Record<string, unknown>),
 		why: {},
 	};

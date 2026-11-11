@@ -109,6 +109,7 @@ const welcome: WelcomeSettings | undefined = showsLogo(argv)
 
 process.exitCode = await run(argv, {
 	cwd: process.cwd(),
+	cliVersion: version,
 	credentials,
 	// The face owns the line it draws, so every write goes through it.
 	stdout: face ? face.wrap(stdout) : stdout,
