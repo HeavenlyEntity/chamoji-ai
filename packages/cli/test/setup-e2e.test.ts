@@ -25,6 +25,7 @@ import {
 	acpSingle,
 	appsAndLibraries,
 	gearzLayout,
+	nextRootApp,
 	suiteAppMonorepo,
 	templatedSuiteApp,
 } from '../../core/test/helpers/setup-fixtures.js';
@@ -525,7 +526,6 @@ test('acpSingle: shown as an Account Customization Project, first release asks f
 	);
 	expect(given.code).toBe(0);
 	const released = JSON.parse(given.stdout) as {
-		units?: unknown;
 		files: string[];
 	};
 	expect(released.files).toEqual(['CHANGELOG.md']);
@@ -540,8 +540,8 @@ test('acpSingle: shown as an Account Customization Project, first release asks f
 	);
 });
 
-describe('Next.js at the root, Expo under packages/ and a Vite app, none private', () => {
-	test('setup finds apps with reasons and libraries with theirs', async () => {
+describe('a workspace with Expo and Vite apps, an Expo module and a React library, none private', () => {
+	test('setup finds the apps and libraries under packages/ with their reasons', async () => {
 		const dir = await made(appsAndLibraries);
 		const setup = await chamoji(['setup', '--yes', '--json'], dir);
 		expect(setup.stderr).toBe('');
@@ -674,4 +674,37 @@ test('chamoji publish refuses a SuiteApp package: nothing NetSuite is offered fo
 	expect(result.code).toBe(2);
 	expect(result.stderr).toContain('NetSuite SuiteApp');
 	expect(result.stderr).toContain("apps aren't published");
+});
+
+test('a single package that is a public Next.js app: an app with reasons, never offered for npm, marked private', async () => {
+	const dir = await made(nextRootApp);
+	// Setup lists no packages for a single repo; the root app shows in the
+	// privatize question, with the reasons that make it an app.
+	const detection = await detect(dir);
+	expect(detection.publicApps).toMatchObject([
+		{
+			path: '',
+			name: 'storefront',
+			kind: {
+				kind: 'app',
+				reasons: ['`next` in dependencies', '`next.config.mjs`'],
+			},
+		},
+	]);
+	expect(detection.publishable).toEqual([]);
+	const asked = questions(detection, recommend(detection));
+	expect(asked.find(question => question.id === 'privatize')?.found).toContain(
+		'storefront',
+	);
+	expect(asked.some(question => question.id === 'publish')).toBe(false);
+	const setup = await chamoji(['setup', '--yes', '--json'], dir);
+	expect(setup.stderr).toBe('');
+	expect(setup.code).toBe(0);
+	const report = JSON.parse(setup.stdout) as SetupReport;
+	expect(report.answers.publish).toBeUndefined();
+	expect(
+		'publish' in ((await readJson(dir, 'chamoji.config.json')).release as {}),
+	).toBe(false);
+	expect((await readJson(dir, 'package.json')).private).toBe(true);
+	expect(report.wrote).toContain('package.json');
 });
