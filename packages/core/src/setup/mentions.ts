@@ -3,7 +3,7 @@ import path from 'node:path';
 import {runGit} from '../git.js';
 import {mentionRegex} from '../units/mentions.js';
 import type {Mention} from '../units/settings.js';
-import type {WorkspacePackage} from '../units/workspace.js';
+import {unitNameOf, type WorkspacePackage} from '../units/workspace.js';
 
 const MAX_FILES = 500;
 const MAX_FILE_BYTES = 256 * 1024;
@@ -65,9 +65,7 @@ export async function detectMentions(
 			.filter(pkg => !pkg.private)
 			.map(pkg => ({
 				pattern: `${pkg.name}@{version}`,
-				...(pkg.path === ''
-					? {}
-					: {unit: pkg.path.split('/').filter(Boolean).pop()!}),
+				...(pkg.path === '' ? {} : {unit: unitNameOf(pkg.path)}),
 			})),
 	];
 	if (wanted.length === 0) return [];
