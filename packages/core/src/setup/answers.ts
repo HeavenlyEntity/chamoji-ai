@@ -83,7 +83,7 @@ async function detectPublishing(
 		const kind =
 			layout.candidates.find(facts => facts.path === pkg.path)?.kind ??
 			// eslint-disable-next-line no-await-in-loop
-			(await classifyPackage(root, pkg, dependedOn));
+			(await classifyPackage(root, pkg, dependedOn, {sdf: layout.sdf}));
 		if (kind.kind === 'app') {
 			publicApps.push({path: pkg.path, name: pkg.name, kind});
 		} else {

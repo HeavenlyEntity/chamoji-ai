@@ -2,11 +2,11 @@ import {lstat, readdir, readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {ReleaseError} from '../release.js';
 import {
-	readManifest,
-	PROJECT_VERSION,
+	manifestVersion,
+	readSdfManifest,
 	sdfProjectAt,
 	setManifestVersion,
-	stripComments,
+	type SdfProject,
 } from './sdf.js';
 import type {ResolvedUnit} from './workspace.js';
 
@@ -724,6 +724,7 @@ async function subfolders(root: string, folder: string): Promise<string[]> {
 export async function detectVersionFiles(
 	root: string,
 	unitPath: string,
+	options?: {sdf?: SdfProject[]},
 ): Promise<string[]> {
 	const settings: Settings = {to: '0.0.0', current: null, increment: false};
 	const candidates = [
@@ -741,7 +742,7 @@ export async function detectVersionFiles(
 	}
 
 	candidates.push(joinPath(unitPath, 'android', 'app', 'build.gradle'));
-	const sdf = await sdfProjectAt(root, unitPath);
+	const sdf = await sdfProjectAt(root, unitPath, {projects: options?.sdf});
 	if (sdf) candidates.push(sdf.manifest);
 
 	const found: string[] = [];
@@ -769,10 +770,8 @@ export async function readUnitVersion(
 	if (unit.pkg?.version) return unit.pkg.version;
 	for (const file of unit.versionFiles) {
 		if (path.posix.basename(file) !== 'manifest.xml') continue;
-		const text = await readManifest(root, file);
-		const value = (text === null ? undefined : stripComments(text))
-			?.match(PROJECT_VERSION)?.[1]
-			?.trim();
+		const text = await readSdfManifest(root, file);
+		const value = text === null ? null : manifestVersion(text);
 		if (value) return value;
 	}
 

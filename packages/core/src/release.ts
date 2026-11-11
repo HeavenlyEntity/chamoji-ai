@@ -11,7 +11,11 @@ import {
 } from './git.js';
 import {renderMarkdown} from './render/markdown.js';
 import {editMentions} from './units/mentions.js';
-import {findSdfProjects, setManifestVersion} from './units/sdf.js';
+import {
+	findSdfProjects,
+	readSdfManifest,
+	setManifestVersion,
+} from './units/sdf.js';
 import type {
 	ChamojiConfig,
 	CommitClassifier,
@@ -342,8 +346,8 @@ export async function planRelease(
 			continue;
 		}
 
-		const text = await readFile(path.join(root, project.manifest), 'utf8');
-		const edited = setManifestVersion(text, version);
+		const text = await readSdfManifest(root, project.manifest);
+		const edited = text === null ? null : setManifestVersion(text, version);
 		if (edited !== null) {
 			changes.push({
 				file: project.manifest,
