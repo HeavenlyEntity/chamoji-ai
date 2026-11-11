@@ -1,3 +1,4 @@
+import {readFileSync} from 'node:fs';
 import {FRAMEWORKS} from '@chamoji/core';
 import {expect, test} from 'vitest';
 import {
@@ -35,4 +36,24 @@ test('no icon is blank or too faint to read', () => {
 		const filled = [...icon.large.join('')].filter(c => c !== ' ').length;
 		expect(filled, id).toBeGreaterThanOrEqual(16);
 	}
+});
+
+test("the generated header carries Phosphor's copyright line", () => {
+	const license = readFileSync(
+		new URL(
+			'../../../node_modules/@phosphor-icons/core/LICENSE',
+			import.meta.url,
+		),
+		'utf8',
+	);
+	const copyright = license
+		.split('\n')
+		.find(line => line.startsWith('Copyright'))!
+		.trim();
+	const source = readFileSync(
+		new URL('../src/framework-icons.ts', import.meta.url),
+		'utf8',
+	);
+	const header = source.slice(0, source.indexOf('export'));
+	expect(header).toContain(copyright);
 });
