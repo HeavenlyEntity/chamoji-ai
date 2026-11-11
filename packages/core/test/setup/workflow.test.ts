@@ -15,7 +15,7 @@ import {
 	findReleaseWorkflow,
 	privatizeEdit,
 	releaseWorkflow,
-	workflowLacks,
+	workflowLacking,
 } from '../../src/index.js';
 import {
 	createRepo,
@@ -190,7 +190,10 @@ async function withWorkflows(files: Record<string, string>): Promise<string> {
 test('findReleaseWorkflow finds a hand-written workflow using the Action', async () => {
 	const dir = await withWorkflows({
 		'.github/workflows/ci.yml': 'name: ci\non: push\n',
-		'.github/workflows/publish.yaml': `jobs:
+		'.github/workflows/publish.yaml': `on:
+  push:
+    branches: [main]
+jobs:
   x:
     steps:
       - uses: HeavenlyEntity/chamoji-ai@v0.15.0
@@ -218,7 +221,7 @@ test('findReleaseWorkflow also knows a CLI release step', async () => {
 	for (const line of ['npx @chamoji/cli release --push', 'chamoji release']) {
 		// eslint-disable-next-line no-await-in-loop
 		const dir = await withWorkflows({
-			'.github/workflows/r.yml': `steps:\n  - run: ${line}\n`,
+			'.github/workflows/r.yml': `on: workflow_dispatch\njobs:\n  r:\n    steps:\n      - run: ${line}\n`,
 		});
 		// eslint-disable-next-line no-await-in-loop
 		expect(await findReleaseWorkflow(dir)).toEqual({
@@ -316,17 +319,132 @@ test.skipIf(process.platform === 'win32')(
 	},
 );
 
-test('workflowLacks: the generated file has it all; a bare Action step does not', () => {
-	expect(workflowLacks(OIDC_WORKFLOW, 'oidc')).toBe(false);
+const LACK = {branch: 'main', merge: true};
+
+test('workflowLacking: the generated file has it all; a bare Action step lacks the rest', () => {
+	expect(workflowLacking(OIDC_WORKFLOW, {...LACK, ciAuth: 'oidc'})).toEqual([]);
 	// The generated file comments the token out, so the token method lacks it.
-	expect(workflowLacks(OIDC_WORKFLOW, 'token')).toBe(true);
+	expect(workflowLacking(OIDC_WORKFLOW, {...LACK, ciAuth: 'token'})).toEqual([
+		'with: npm-token: ${{ secrets.NPM_TOKEN }}',
+	]);
 	expect(
-		workflowLacks(OIDC_WORKFLOW.replace('# npm-token', 'npm-token'), 'token'),
-	).toBe(false);
+		workflowLacking(OIDC_WORKFLOW.replace('# npm-token', 'npm-token'), {
+			...LACK,
+			ciAuth: 'token',
+		}),
+	).toEqual([]);
 	expect(
-		workflowLacks(
-			'steps:\n  - uses: HeavenlyEntity/chamoji-ai@v0.15.0\n',
-			'oidc',
+		workflowLacking(
+			'on: workflow_dispatch\njobs:\n  r:\n    steps:\n      - uses: HeavenlyEntity/chamoji-ai@v0.15.0\n',
+			{...LACK, ciAuth: 'oidc'},
 		),
-	).toBe(true);
+	).toEqual([
+		'on: push: branches: [main]',
+		'permissions: contents: write',
+		'permissions: id-token: write',
+		'with: release-version: ${{ inputs.version }}',
+	]);
+	// Without a merge trigger, the push trigger isn't asked for.
+	expect(
+		workflowLacking(
+			OIDC_WORKFLOW.replace('  push:\n    branches: [main]\n', ''),
+			{
+				...LACK,
+				merge: false,
+				ciAuth: 'oidc',
+			},
+		),
+	).toEqual([]);
+});
+
+const NOTES = `name: changelog
+on:
+  pull_request:
+  push:
+    tags: ['v*']
+jobs:
+  chamoji:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: HeavenlyEntity/chamoji-ai@v0.14.0
+`;
+
+test('T6-a: a notes and PR-comment workflow does not count; the Action on push to main does', async () => {
+	const notes = await withWorkflows({'.github/workflows/changelog.yml': NOTES});
+	expect(await findReleaseWorkflow(notes)).toBeNull();
+	const onMain = await withWorkflows({
+		'.github/workflows/changelog.yml': NOTES,
+		'.github/workflows/release.yml': NOTES.replace(
+			"  push:\n    tags: ['v*']",
+			'  push:\n    branches: [main]',
+		),
+	});
+	expect(await findReleaseWorkflow(onMain)).toEqual({
+		file: '.github/workflows/release.yml',
+		ciAuth: 'oidc',
+	});
+	// Another branch's push, or a different branch name, doesn't count.
+	const other = await withWorkflows({
+		'.github/workflows/release.yml': NOTES.replace(
+			"  push:\n    tags: ['v*']",
+			'  push:\n    branches: [dev]',
+		),
+	});
+	expect(await findReleaseWorkflow(other)).toBeNull();
+	expect(await findReleaseWorkflow(other, 'dev')).not.toBeNull();
+});
+
+test('T6-a: workflow_dispatch alone counts, and a file that does not parse is matched by text', async () => {
+	const dispatch = await withWorkflows({
+		'.github/workflows/d.yml': NOTES.replace(
+			"  pull_request:\n  push:\n    tags: ['v*']",
+			'  workflow_dispatch:',
+		),
+	});
+	expect((await findReleaseWorkflow(dispatch))?.file).toBe(
+		'.github/workflows/d.yml',
+	);
+	const broken = await withWorkflows({
+		'.github/workflows/b.yml':
+			'steps: [\n  uses: HeavenlyEntity/chamoji-ai@v1\n',
+	});
+	expect((await findReleaseWorkflow(broken))?.file).toBe(
+		'.github/workflows/b.yml',
+	);
+});
+
+test('privatizeEdit never flips a nested "private": false', async () => {
+	const nested = await withManifest(
+		'{\n\t"name": "web",\n\t"version": "1.0.0",\n\t"x": {\n\t\t"private": false\n\t}\n}\n',
+	);
+	expect((await privatizeEdit(nested, 'apps/web')).text).toBe(
+		'{\n\t"name": "web",\n\t"version": "1.0.0",\n\t"private": true,\n\t"x": {\n\t\t"private": false\n\t}\n}\n',
+	);
+	const both = await withManifest(
+		'{\n\t"name": "web",\n\t"x": {\n\t\t"private": false\n\t},\n\t"private": false\n}\n',
+	);
+	expect((await privatizeEdit(both, 'apps/web')).text).toBe(
+		'{\n\t"name": "web",\n\t"x": {\n\t\t"private": false\n\t},\n\t"private": true\n}\n',
+	);
+});
+
+test('privatizeEdit makes a minified false, or a non-boolean private, true', async () => {
+	const minified = await withManifest(
+		'{"name":"web","version":"1.0.0","private":false}\n',
+	);
+	const {text} = await privatizeEdit(minified, 'apps/web');
+	expect(JSON.parse(text)).toEqual({
+		name: 'web',
+		version: '1.0.0',
+		private: true,
+	});
+	const string = await withManifest(
+		'{\n\t"name": "web",\n\t"version": "1.0.0",\n\t"private": "false"\n}\n',
+	);
+	expect(JSON.parse((await privatizeEdit(string, 'apps/web')).text)).toEqual({
+		name: 'web',
+		version: '1.0.0',
+		private: true,
+	});
 });

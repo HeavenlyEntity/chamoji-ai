@@ -116,12 +116,13 @@ export async function detect(root: string): Promise<Detection> {
 	const upstream = await detectUpstream(root, remote, tags.inherited.tags, {
 		canonical: tags.canonical,
 	});
+	const branch = await defaultBranch(root);
 	return {
 		layout,
 		tags,
 		upstream,
-		branch: await defaultBranch(root),
-		workflow: await findReleaseWorkflow(root),
+		branch,
+		workflow: await findReleaseWorkflow(root, branch),
 		check: await checkCommand(root, await detectPackageManager(root)),
 		...(await detectPublishing(root, layout)),
 	};

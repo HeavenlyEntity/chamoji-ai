@@ -148,13 +148,18 @@ Besides `chamoji.config.json`, the releases step may write two more kinds of fil
 	<Property name=".github/workflows/chamoji-release.yml">
 		The release workflow. It’s written when the trigger is `merge`, or
 		publishing is on, and no tracked workflow in `.github/workflows` already
-		runs chamoji. A section with no `trigger` counts as manual, so an old
-		section doesn’t start releasing on its own: it gets no workflow until you
-		answer the trigger. It pins the Action to the CLI version that wrote it.
-		[The GitHub Action](/guides/github-action#release-on-merge) shows the file.
-		When a workflow or a file is already there, setup never replaces it. It
-		prints the permissions and `with:` lines that workflow needs, as `A workflow
-		already runs chamoji (…); it needs:`.
+		runs chamoji’s release. A workflow counts when a step uses the Action or
+		runs `chamoji release`, and it runs on a push to the default branch or on
+		`workflow_dispatch`; a notes or PR-comment workflow that runs only on pull
+		requests and tags doesn’t count. A section with no `trigger` counts as
+		manual, so an old section doesn’t start releasing on its own: it gets no
+		workflow until you answer the trigger. It pins the Action to the CLI version
+		that wrote it. [The GitHub Action](/guides/github-action#release-on-merge)
+		shows the file. When a workflow or a file is already there, setup never
+		replaces it. It prints the trigger, permission and `with:` lines that
+		workflow lacks, as `A workflow already runs chamoji (…); it needs:`, and
+		nothing when it lacks none. `--json` lists the same lines in
+		`workflowAdvice`.
 	</Property>
 	<Property name="package.json">
 		`"private": true`, added after `"version"` (else after `"name"`) in each
@@ -178,7 +183,8 @@ Setup refuses to write through a symlink: if `package.json`, the workflow file o
 		Print what setup found and did as JSON on stdout, and nothing else. It never
 		opens the screen. Without `--yes` it writes nothing and reports what it
 		would do. With `--yes` it does it, then reports. The keys are `found`,
-		`answers`, `why`, `steps`, `wrote`, `squashMerge` and `existingWorkflow`.
+		`answers`, `why`, `steps`, `wrote`, `squashMerge`, `existingWorkflow` and
+		`workflowAdvice`.
 	</Property>
 	<Property name="--explain" type="boolean">
 		Print each value of the release section and where it came from: detected in
@@ -306,7 +312,8 @@ With `--json`, the report is JSON. This is `shop` before its first setup, trimme
   ],
   "wrote": [],
   "squashMerge": null,
-  "existingWorkflow": null
+  "existingWorkflow": null,
+  "workflowAdvice": []
 }
 ```
 

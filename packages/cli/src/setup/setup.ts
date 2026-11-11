@@ -14,7 +14,7 @@ import {
 	RELEASE_WORKFLOW_FILE,
 	releaseWorkflow,
 	workflowAdvice,
-	workflowLacks,
+	workflowLacking,
 	getRemoteWebUrl,
 	loadConfig,
 	previewReleases,
@@ -170,8 +170,10 @@ type ReleasesPlan = {
 	text: string;
 	/** The other files setup writes: the release workflow, then each privatized package.json. */
 	files: FileChange[];
-	/** A workflow that already runs chamoji and the sign-in it should use, instead of a new file. */
+	/** What an existing workflow that runs chamoji lacks, said as advice, instead of a new file. */
 	advice: string | null;
+	/** The lines `advice` names; empty when nothing is missing. */
+	adviceLines: string[];
 	/** The file that stands in for a new workflow, for `--json`. */
 	existingWorkflow: string | null;
 };
@@ -191,12 +193,15 @@ async function planFiles(
 	answers: SetupAnswers,
 	branch: string,
 	cliVersion: string | undefined,
-): Promise<Pick<ReleasesPlan, 'files' | 'advice' | 'existingWorkflow'>> {
+): Promise<
+	Pick<ReleasesPlan, 'files' | 'advice' | 'adviceLines' | 'existingWorkflow'>
+> {
 	const files: FileChange[] = [];
 	let advice: string | null = null;
+	let adviceLines: string[] = [];
 	let existingWorkflow: string | null = null;
 	if (wantsWorkflow(answers) && cliVersion !== undefined) {
-		const found = await findReleaseWorkflow(root);
+		const found = await findReleaseWorkflow(root, branch);
 		const target = path.join(root, RELEASE_WORKFLOW_FILE);
 		await assertNoSymlinks(root, RELEASE_WORKFLOW_FILE);
 		// An untracked file at the new path counts too: it's someone's to keep.
@@ -208,9 +213,13 @@ async function planFiles(
 				() => '',
 			);
 			// One that has it all, as setup's own file does, needs no advice.
-			advice = workflowLacks(body, answers.ciAuth)
-				? workflowAdvice(present, answers.ciAuth)
-				: null;
+			adviceLines = workflowLacking(body, {
+				ciAuth: answers.ciAuth,
+				branch,
+				merge: effectiveTrigger(answers) === 'merge',
+			});
+			advice =
+				adviceLines.length > 0 ? workflowAdvice(present, adviceLines) : null;
 		} else {
 			files.push({
 				file: RELEASE_WORKFLOW_FILE,
@@ -236,7 +245,7 @@ async function planFiles(
 		if (change.text !== before) files.push(change);
 	}
 
-	return {files, advice, existingWorkflow};
+	return {files, advice, adviceLines, existingWorkflow};
 }
 
 /** What the releases step writes for these answers; a single package gets a section too. */
@@ -527,6 +536,7 @@ export async function runSetup(
 					wrote,
 					squashMerge: squash,
 					existingWorkflow: plan?.existingWorkflow ?? null,
+					workflowAdvice: plan?.adviceLines ?? [],
 				},
 				null,
 				2,
