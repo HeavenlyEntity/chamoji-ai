@@ -7,7 +7,8 @@ import {
 } from '@chamoji/core';
 import {Box, Text} from 'ink';
 import {stripControlLines} from '../text.js';
-import {FrameworkSummary, type FrameworkRow} from './frameworks-view.js';
+import {FrameworkSummary} from './frameworks-view.js';
+import type {FrameworkRow} from './frameworks.js';
 import type {Loaded} from './preview-pane.js';
 
 /** Repo text (names, paths, tags, notes) never reaches the terminal raw. */

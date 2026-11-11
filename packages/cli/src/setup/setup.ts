@@ -50,7 +50,7 @@ import {
 	type StepResult,
 	type StepState,
 } from './steps.js';
-import {frameworksOf, frameworkText} from './frameworks-view.js';
+import {frameworksOf, frameworkText} from './frameworks.js';
 
 /** What the screen hands back: the answers to save and the steps picked, or a cancel. */
 export type ScreenResult =

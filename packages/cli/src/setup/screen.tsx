@@ -13,7 +13,7 @@ import {ASCII_FACES, FACES, IDLE_LOOP, useAscii} from '../faces.js';
 import {detectTheme, paintFoil, queryBackground, type Rgb} from '../foil.js';
 import {stripControlLines} from '../text.js';
 import type {Terminal} from '../tty.js';
-import {colorsFor, frameworksOf} from './frameworks-view.js';
+import {colorsFor, frameworksOf} from './frameworks.js';
 import {PreviewPane, type Loaded} from './preview-pane.js';
 import {
 	Answer,
