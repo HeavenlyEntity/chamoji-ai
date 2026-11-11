@@ -717,8 +717,7 @@ export async function libraryAndApp(): Promise<FixtureRepo> {
 /**
  * A repo that is itself a Next.js app, with a public Expo app and a Vite
  * site under `packages/`, an Expo module and a React component library whose
- * `react` is a peer. Nothing in it is `private` but the workspace root of
- * the packages below, which is the app itself.
+ * `react` is a peer. Nothing in it is `private`, the root app included.
  */
 export async function appsAndLibraries(): Promise<FixtureRepo> {
 	return createRepo([
@@ -784,5 +783,21 @@ export async function readmePins(): Promise<FixtureRepo> {
 		},
 		{tag: '@acme/ui@1.0.0', annotated: true},
 		{tag: '@acme/core@1.0.0', annotated: true},
+	]);
+}
+
+/** A single package whose root is a public Next.js app. */
+export async function nextRootApp(): Promise<FixtureRepo> {
+	return createRepo([
+		{
+			commit: '🎉 Start the app',
+			files: {
+				'package.json': manifest('storefront', {
+					version: '1.0.0',
+					dependencies: {next: '^15.2.0', react: '^19.0.0'},
+				}),
+				'next.config.mjs': 'export default {};\n',
+			},
+		},
 	]);
 }
