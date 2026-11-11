@@ -950,12 +950,12 @@ jobs:
 	).toBe(mine);
 });
 
-test('an existing workflow with a token keeps the token method in what it prints', async () => {
+test('an existing workflow with the token line is not told to add it, only what it lacks', async () => {
 	const dir = await made(singlePackage());
 	await mkdir(path.join(dir, '.github/workflows'), {recursive: true});
 	await writeFile(
 		path.join(dir, '.github/workflows/release.yml'),
-		'steps:\n  - uses: HeavenlyEntity/chamoji-ai@v0.15.0\n    with:\n      npm-token: ${{ secrets.NPM_TOKEN }}\n',
+		'on:\n  push:\n    branches: [main]\njobs:\n  r:\n    steps:\n      - uses: HeavenlyEntity/chamoji-ai@v0.15.0\n        with:\n          npm-token: ${{ secrets.NPM_TOKEN }}\n',
 	);
 	await gitOutput(dir, ['add', '-A']);
 	await gitOutput(dir, [
@@ -969,7 +969,9 @@ test('an existing workflow with a token keeps the token method in what it prints
 		'👷 Add a release workflow',
 	]);
 	const {stdout} = await chamoji(['setup', 'releases', '--yes'], dir);
-	expect(stdout).toContain('npm-token: ${{ secrets.NPM_TOKEN }}');
+	expect(stdout).not.toContain('with: npm-token');
+	expect(stdout).toContain('on: workflow_dispatch');
+	expect(stdout).toContain('permissions: contents: write');
 });
 
 test('trigger manual and publish off: no workflow is written', async () => {
@@ -1111,4 +1113,55 @@ test('the screen preview lists the extra files', async () => {
 	expect(
 		(shown as {files: Array<{file: string}>}).files.map(f => f.file),
 	).toEqual([WORKFLOW, 'apps/web/package.json']);
+});
+
+test('T6-a: a notes workflow does not block the release workflow', async () => {
+	const dir = await made(singlePackage());
+	await mkdir(path.join(dir, '.github/workflows'), {recursive: true});
+	await writeFile(
+		path.join(dir, '.github/workflows/changelog.yml'),
+		"on:\n  pull_request:\n  push:\n    tags: ['v*']\njobs:\n  c:\n    steps:\n      - uses: HeavenlyEntity/chamoji-ai@v0.14.0\n",
+	);
+	await gitOutput(dir, ['add', '-A']);
+	await gitOutput(dir, [
+		'-c',
+		'user.name=Dev',
+		'-c',
+		'user.email=dev@example.com',
+		'commit',
+		'-q',
+		'-m',
+		'👷 Add notes',
+	]);
+	const {stdout} = await chamoji(['setup', 'releases', '--yes', '--json'], dir);
+	const report = JSON.parse(stdout) as Report & {workflowAdvice: string[]};
+	expect(report.wrote).toContain(WORKFLOW);
+	expect(report.workflowAdvice).toEqual([]);
+});
+
+test('T6-a: a counted dispatch-only workflow is told about the push trigger, and --json lists the lines', async () => {
+	const dir = await made(singlePackage());
+	await mkdir(path.join(dir, '.github/workflows'), {recursive: true});
+	await writeFile(
+		path.join(dir, '.github/workflows/release.yml'),
+		'on: workflow_dispatch\npermissions:\n  contents: write\n  id-token: write\njobs:\n  r:\n    steps:\n      - uses: HeavenlyEntity/chamoji-ai@v0.15.0\n        with:\n          release-version: ${{ inputs.version }}\n',
+	);
+	await gitOutput(dir, ['add', '-A']);
+	await gitOutput(dir, [
+		'-c',
+		'user.name=Dev',
+		'-c',
+		'user.email=dev@example.com',
+		'commit',
+		'-q',
+		'-m',
+		'👷 Add release',
+	]);
+	const plain = await chamoji(['setup', 'releases', '--yes'], dir);
+	expect(plain.stdout).toContain('on: push: branches: [main]');
+	const json = await chamoji(['setup', 'releases', '--json'], dir);
+	expect(
+		(JSON.parse(json.stdout) as {workflowAdvice: string[]}).workflowAdvice,
+	).toEqual(['on: push: branches: [main]']);
+	expect(existsSync(path.join(dir, WORKFLOW))).toBe(false);
 });

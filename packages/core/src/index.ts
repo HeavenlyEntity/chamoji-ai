@@ -229,7 +229,7 @@ export {
 	releaseWorkflow,
 	RELEASE_WORKFLOW_FILE,
 	workflowAdvice,
-	workflowLacks,
+	workflowLacking,
 } from './setup/workflow.js';
 export {
 	readReleaseSection,

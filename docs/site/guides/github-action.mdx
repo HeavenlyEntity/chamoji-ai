@@ -251,7 +251,7 @@ jobs:
 
 - **With the token method,** the `npm-token` line is written uncommented, and `id-token: write` stays for provenance.
 - **Your package manager** gets its setup step before the Action: `pnpm/action-setup@v4` for pnpm, `oven-sh/setup-bun@v2` for Bun, and `corepack enable` for Yarn. npm needs none.
-- **It never overwrites a workflow.** If a tracked workflow already runs chamoji, or a file is already at that path, setup leaves it alone. When that workflow lacks the permissions or inputs above, setup prints what it needs. Add an install step and Node settings as in the example above if packing needs them.
+- **It never overwrites a workflow.** If a tracked workflow already runs chamoji’s release (it uses the Action or `chamoji release`, on a push to the default branch or `workflow_dispatch`), or a file is already at that path, setup leaves it alone. A workflow that only writes notes or PR comments doesn’t count. When the one that does lacks a trigger, permission or input above, setup prints what it needs. Add an install step and Node settings as in the example above if packing needs them.
 - **A symlink is refused.** If `.github`, `.github/workflows` or the file is a symlink, setup stops and writes nothing through it.
 
 chamoji packs each package with your package manager, so the job installs your dependencies first. With npm, leave out `pnpm/action-setup`, set `cache: npm` and run `npm ci`; with Yarn, `cache: yarn` and `yarn install --immutable`; with Bun, use `oven-sh/setup-bun` and `bun install --frozen-lockfile`. A package that needs building is built by its `prepack` script, which packing runs, or by a build step you add before chamoji.

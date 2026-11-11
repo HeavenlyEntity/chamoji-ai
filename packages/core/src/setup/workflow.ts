@@ -1,5 +1,6 @@
 import {lstat, readFile} from 'node:fs/promises';
 import path from 'node:path';
+import {parse} from 'yaml';
 import {runGit} from '../git.js';
 import type {FileChange} from '../release.js';
 import type {PackageManager} from '../publish/pack.js';
@@ -74,7 +75,7 @@ export async function defaultBranch(root: string): Promise<string> {
 	return 'main';
 }
 
-/** What a tracked workflow must hold to count as running chamoji's release. */
+/** What a step must hold to count as running chamoji's release. */
 const RUNS_CHAMOJI = [
 	'HeavenlyEntity/chamoji-ai@',
 	'chamoji release',
@@ -84,13 +85,81 @@ const WORKFLOW_FILE = /^\.github\/workflows\/[^/]+\.ya?ml$/;
 /** An `npm-token:` input that isn't commented out. */
 const TOKEN_LINE = /^[ \t]*(?:-[ \t]+)?npm-token[ \t]*:/m;
 
+/** Whether an `on.push` filter covers `branch`: no filter, or a list that names it. */
+function pushCovers(push: unknown, branch: string): boolean {
+	if (!isObject(push)) return true;
+	const list = (value: unknown): string[] | null =>
+		Array.isArray(value) ? value.map(String) : null;
+	const only = list(push['branches']);
+	const ignored = list(push['branches-ignore']);
+	if (only)
+		return only.some(each => each === branch || each === '**' || each === '*');
+	// A tags-only filter never runs on a branch push.
+	if (push['tags'] !== undefined || push['tags-ignore'] !== undefined) {
+		return false;
+	}
+
+	return ignored ? !ignored.includes(branch) : true;
+}
+
+/** What a workflow's `on:` runs on, or null when the text isn't a workflow we can read. */
+function triggersOf(
+	body: string,
+	branch: string,
+): {push: boolean; dispatch: boolean; runs: boolean} | null {
+	let doc: unknown;
+	try {
+		doc = parse(body);
+	} catch {
+		return null;
+	}
+
+	if (!isObject(doc)) return null;
+	const on = doc['on'];
+	let push = false;
+	let dispatch = false;
+	if (typeof on === 'string') {
+		push = on === 'push';
+		dispatch = on === 'workflow_dispatch';
+	} else if (Array.isArray(on)) {
+		push = on.includes('push');
+		dispatch = on.includes('workflow_dispatch');
+	} else if (isObject(on)) {
+		push = 'push' in on && pushCovers(on['push'], branch);
+		dispatch = 'workflow_dispatch' in on;
+	}
+
+	const jobs = isObject(doc['jobs']) ? Object.values(doc['jobs']) : [];
+	const runs = jobs.some(job => {
+		if (!isObject(job)) return false;
+		const parts: unknown[] = [job['uses']];
+		if (Array.isArray(job['steps'])) {
+			for (const step of job['steps']) {
+				if (isObject(step)) parts.push(step['uses'], step['run']);
+			}
+		}
+
+		return parts.some(
+			part =>
+				typeof part === 'string' &&
+				RUNS_CHAMOJI.some(needle => part.includes(needle)),
+		);
+	});
+	return {push, dispatch, runs};
+}
+
 /**
- * The tracked workflow that already runs chamoji, with how it signs in to
- * npm: `token` when it has an uncommented `npm-token:` line. Only tracked
- * `.github/workflows/*.yml` and `*.yaml` count; the first in path order wins.
+ * The tracked workflow that already runs chamoji's release, with how it signs
+ * in to npm: `token` when it has an uncommented `npm-token:` line. Only
+ * tracked `.github/workflows/*.yml` and `*.yaml` count, in path order. A
+ * workflow counts when a step uses the Action or runs `chamoji release`, and
+ * it runs on a push to `branch` (default: the default branch) or on
+ * `workflow_dispatch`; a notes or PR-comment workflow doesn't. A file that
+ * doesn't parse is matched by its text alone.
  */
 export async function findReleaseWorkflow(
 	root: string,
+	branch?: string,
 ): Promise<{file: string; ciAuth: 'oidc' | 'token'} | null> {
 	let listed: string[];
 	try {
@@ -102,6 +171,7 @@ export async function findReleaseWorkflow(
 		return null;
 	}
 
+	const onBranch = branch ?? (await defaultBranch(root));
 	for (const file of listed) {
 		let body: string;
 		try {
@@ -111,9 +181,11 @@ export async function findReleaseWorkflow(
 			continue;
 		}
 
-		if (RUNS_CHAMOJI.some(needle => body.includes(needle))) {
-			return {file, ciAuth: TOKEN_LINE.test(body) ? 'token' : 'oidc'};
-		}
+		const facts = triggersOf(body, onBranch);
+		const counts = facts
+			? facts.runs && (facts.push || facts.dispatch)
+			: RUNS_CHAMOJI.some(needle => body.includes(needle));
+		if (counts) return {file, ciAuth: TOKEN_LINE.test(body) ? 'token' : 'oidc'};
 	}
 
 	return null;
@@ -186,30 +258,49 @@ export function releaseWorkflow(options: {
 }
 
 /**
- * Whether an existing workflow's text lacks something a release needs: write
- * access to contents, `id-token: write`, the `release-version` input, or with
- * the token method an uncommented `npm-token:`.
+ * What an existing workflow lacks for a release, as lines to add: the push
+ * trigger (only when `merge`) and `workflow_dispatch`, write access to
+ * contents, `id-token: write`, the `release-version` input, and with the
+ * token method an uncommented `npm-token:`. A file that doesn't parse is
+ * never said to lack a trigger.
  */
-export function workflowLacks(text: string, ciAuth: 'oidc' | 'token'): boolean {
-	return (
-		!/contents:[ \t]*write/.test(text) ||
-		!/id-token:[ \t]*write/.test(text) ||
-		!/^[ \t]*release-version[ \t]*:/m.test(text) ||
-		(ciAuth === 'token' && !TOKEN_LINE.test(text))
-	);
+export function workflowLacking(
+	text: string,
+	options: {ciAuth: 'oidc' | 'token'; branch: string; merge: boolean},
+): string[] {
+	const {ciAuth, branch, merge} = options;
+	const facts = triggersOf(text, branch);
+	const lines: string[] = [];
+	if (facts && merge && !facts.push) {
+		lines.push(`on: push: branches: [${branch}]`);
+	}
+
+	if (facts && !facts.dispatch) lines.push('on: workflow_dispatch');
+	if (!/contents:[ \t]*write/.test(text)) {
+		lines.push('permissions: contents: write');
+	}
+
+	if (!/id-token:[ \t]*write/.test(text)) {
+		lines.push('permissions: id-token: write');
+	}
+
+	if (!/^[ \t]*release-version[ \t]*:/m.test(text)) {
+		lines.push('with: release-version: ${{ inputs.version }}');
+	}
+
+	if (ciAuth === 'token' && !TOKEN_LINE.test(text)) {
+		lines.push('with: npm-token: ${{ secrets.NPM_TOKEN }}');
+	}
+
+	return lines;
 }
 
-/** The `with:` lines an existing workflow needs for these answers. */
-export function workflowAdvice(file: string, ciAuth: 'oidc' | 'token'): string {
-	return `${[
+/** The advice for an existing workflow that lacks `lines`. */
+export function workflowAdvice(file: string, lines: string[]): string {
+	return [
 		`A workflow already runs chamoji (${file}); it needs:`,
-		'  permissions:',
-		'    contents: write',
-		'    id-token: write',
-		'  with:',
-		'    release-version: ${{ inputs.version }}',
-		...(ciAuth === 'token' ? ['    npm-token: ${{ secrets.NPM_TOKEN }}'] : []),
-	].join('\n')}`;
+		...lines.map(line => `  ${line}`),
+	].join('\n');
 }
 
 /**
@@ -262,9 +353,17 @@ export async function privatizeEdit(
 
 	const eol = original.includes('\r\n') ? '\r\n' : '\n';
 	const indent = /^([ \t]+)"/m.exec(original)?.[1];
-	// `"private": false` is flipped in place.
-	const flipped = new RegExp(`^([ \\t]*"private"[ \\t]*:[ \\t]*)false`, 'm');
-	if (indent !== undefined && flipped.test(original)) {
+	// A top-level `"private": false` is flipped in place: only a key at the
+	// top-level indent counts, never one nested deeper.
+	const flipped = new RegExp(
+		`^(${indent ?? ''}"private"[ \\t]*:[ \\t]*)false`,
+		'm',
+	);
+	if (
+		indent !== undefined &&
+		manifest['private'] === false &&
+		flipped.test(original)
+	) {
 		return {file, text: original.replace(flipped, '$1true'), how};
 	}
 
@@ -295,6 +394,8 @@ export async function privatizeEdit(
 	const next: Record<string, unknown> = {};
 	if (!keys.includes(after)) next['private'] = true;
 	for (const [key, value] of Object.entries(manifest)) {
+		// An old `private` (false, or not a boolean) is replaced, not kept.
+		if (key === 'private') continue;
 		next[key] = value;
 		if (key === after) next['private'] = true;
 	}
