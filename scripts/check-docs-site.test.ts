@@ -178,15 +178,15 @@ test('metadata whose title or description is not a string literal', () => {
 test('a component outside the allowed list', () => {
 	expect(onePage('<Script>x</Script>\n\nText with <span>html</span>.')).toEqual(
 		[
-			'index.mdx:5 uses <Script>, which the docs site does not provide. Use one of Note, Properties, Property, Steps, Step, CodeGroup, Row, Col, Guides, Guide, Resources, Resource, Tag, Button, p.',
-			'index.mdx:7 uses <span>, which the docs site does not provide. Use one of Note, Properties, Property, Steps, Step, CodeGroup, Row, Col, Guides, Guide, Resources, Resource, Tag, Button, p.',
+			'index.mdx:5 uses <Script>, which the docs site does not provide. Use one of Note, Properties, Property, Steps, Step, CodeGroup, Row, Col, Guides, Guide, Resources, Resource, Tag, Button, MonorepoDiagram, p.',
+			'index.mdx:7 uses <span>, which the docs site does not provide. Use one of Note, Properties, Property, Steps, Step, CodeGroup, Row, Col, Guides, Guide, Resources, Resource, Tag, Button, MonorepoDiagram, p.',
 		],
 	);
 });
 
 test('a fragment', () => {
 	expect(onePage('<>x</>')).toEqual([
-		'index.mdx:5 uses <>, which the docs site does not provide. Use one of Note, Properties, Property, Steps, Step, CodeGroup, Row, Col, Guides, Guide, Resources, Resource, Tag, Button, p.',
+		'index.mdx:5 uses <>, which the docs site does not provide. Use one of Note, Properties, Property, Steps, Step, CodeGroup, Row, Col, Guides, Guide, Resources, Resource, Tag, Button, MonorepoDiagram, p.',
 	]);
 });
 
