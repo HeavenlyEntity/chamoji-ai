@@ -1,6 +1,7 @@
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import semver from 'semver';
+import {escapeRegExp} from './units/tags.js';
 import type {RawCommit} from './types.js';
 
 const execFileAsync = promisify(execFile);
@@ -395,7 +396,7 @@ export function repoSlug(
 	options: {host?: string} = {},
 ): string | null {
 	const origin = options.host
-		? `https://${options.host.replaceAll(/[$()*+.?[\\\]^{|}]/g, String.raw`\$&`)}`
+		? `https://${escapeRegExp(options.host)}`
 		: 'https?://[^/]+';
 	return (
 		new RegExp(`^${origin}/([^/]+/[^/]+)$`).exec(webUrl ?? '')?.[1] ?? null

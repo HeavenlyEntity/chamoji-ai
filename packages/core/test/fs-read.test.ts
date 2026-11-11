@@ -15,13 +15,19 @@ test('readBoundedText reads a file within the limit and nothing else', async () 
 	made.push(dir);
 	await writeFile(path.join(dir, 'a.txt'), 'hello');
 	await mkdir(path.join(dir, 'folder'));
-	await symlink(path.join(dir, 'a.txt'), path.join(dir, 'link.txt')).catch(
-		() => {},
-	);
 	expect(await readBoundedText(path.join(dir, 'a.txt'), 5)).toBe('hello');
 	expect(await readBoundedText(path.join(dir, 'a.txt'), 4)).toBeNull();
 	expect(await readBoundedText(path.join(dir, 'folder'), 100)).toBeNull();
 	expect(await readBoundedText(path.join(dir, 'missing.txt'), 100)).toBeNull();
-	// A link is never followed (and a missing one reads as null too).
-	expect(await readBoundedText(path.join(dir, 'link.txt'), 100)).toBeNull();
 });
+
+test.skipIf(process.platform === 'win32')(
+	'readBoundedText never follows a link',
+	async () => {
+		const dir = await mkdtemp(path.join(tmpdir(), 'chamoji-fsread-'));
+		made.push(dir);
+		await writeFile(path.join(dir, 'a.txt'), 'hello');
+		await symlink(path.join(dir, 'a.txt'), path.join(dir, 'link.txt'));
+		expect(await readBoundedText(path.join(dir, 'link.txt'), 100)).toBeNull();
+	},
+);
