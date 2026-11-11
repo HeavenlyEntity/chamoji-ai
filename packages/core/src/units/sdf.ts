@@ -1,6 +1,7 @@
-import {lstat, readFile, stat} from 'node:fs/promises';
+import {readFile, stat} from 'node:fs/promises';
 import path from 'node:path';
 import {runGit} from '../git.js';
+import {isLinkAt} from '../links.js';
 
 export type SdfProject = {
 	/** The unit folder, '/'-separated and relative to the repo; '' for the root. */
@@ -94,14 +95,6 @@ export async function readManifest(
 	}
 }
 
-const isLink = async (root: string, file: string): Promise<boolean> => {
-	try {
-		return (await lstat(path.join(root, file))).isSymbolicLink();
-	} catch {
-		return false;
-	}
-};
-
 /** The tracked and untracked-but-not-ignored files; empty outside a repo. */
 async function listFiles(root: string): Promise<string[]> {
 	try {
@@ -150,7 +143,7 @@ export async function findSdfProjects(root: string): Promise<SdfProject[]> {
 		let chosen: string | undefined;
 		if (tracked.has(configFile)) {
 			// A linked config could point anywhere; chamoji reads none of it.
-			if (await isLink(root, configFile)) continue;
+			if (await isLinkAt(root, configFile)) continue;
 			const config = (await read(root, configFile)) ?? '';
 			const named = normalizeFolder(FOLDER.exec(config)?.[1] ?? DEFAULT_FOLDER);
 			chosen = candidates.find(
@@ -166,7 +159,7 @@ export async function findSdfProjects(root: string): Promise<SdfProject[]> {
 		if (chosen === undefined) continue;
 		const manifest = chosen ? `${chosen}/manifest.xml` : 'manifest.xml';
 		const deploy = chosen ? `${chosen}/deploy.xml` : 'deploy.xml';
-		if ((await isLink(root, manifest)) || (await isLink(root, deploy))) {
+		if ((await isLinkAt(root, manifest)) || (await isLinkAt(root, deploy))) {
 			continue;
 		}
 
