@@ -1,4 +1,4 @@
-import {readFile} from 'node:fs/promises';
+import {lstat, readFile} from 'node:fs/promises';
 import path from 'node:path';
 import semver from 'semver';
 import {runGit} from '../git.js';
@@ -21,6 +21,21 @@ async function trackedFiles(root: string, glob: string): Promise<string[]> {
 	return out.split('\0').filter(Boolean);
 }
 
+/** Whether the file or a folder above it is a symlink; a write would leave the repo's files. */
+async function viaLink(root: string, file: string): Promise<boolean> {
+	let at = root;
+	for (const part of file.split('/')) {
+		at = path.join(at, part);
+		try {
+			if ((await lstat(at)).isSymbolicLink()) return true;
+		} catch {
+			return false;
+		}
+	}
+
+	return false;
+}
+
 /**
  * Moves every older version the mentions name to `to`. `pending` holds the
  * release's changes so far; a mentioned file already in it is edited on top of
@@ -40,7 +55,11 @@ export async function editMentions(
 		const regex = mentionRegex(mention.pattern);
 		const files = new Set<string>();
 		for (const glob of mention.files) {
-			const found = await trackedFiles(root, glob);
+			const found: string[] = [];
+			for (const file of await trackedFiles(root, glob)) {
+				if (!(await viaLink(root, file))) found.push(file);
+			}
+
 			if (found.length === 0) {
 				throw new ReleaseError(
 					'invalid-mention',

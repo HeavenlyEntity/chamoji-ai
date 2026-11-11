@@ -1075,3 +1075,71 @@ test('a unit release updates only its own mentions', async () => {
 		'web: gearz/web@v0.2.0\nmobile: gearz/mobile@v1.0.0\n',
 	);
 });
+
+const MENTION_UNITS = (() => {
+	const {upstream: _upstream, ...release} = GEARZ_CONFIG.release;
+	return {...release, schema: 2};
+})();
+
+test('pins for two units in one readme merge into one change', async () => {
+	const config = {
+		release: {
+			...MENTION_UNITS,
+			mentions: [
+				{pattern: 'gearz/web@v{version}', files: ['README.md'], unit: 'web'},
+				{
+					pattern: 'gearz/mobile@v{version}',
+					files: ['README.md'],
+					unit: 'mobile',
+				},
+			],
+		},
+	};
+	const repo = await createRepo([
+		{
+			commit: '🎉 Start the gearz monorepo',
+			files: {
+				...appFiles('0.1.0', config),
+				'README.md': 'web: gearz/web@v0.1.0\nmobile: gearz/mobile@v1.0.0\n',
+			},
+		},
+		{tag: 'web/v0.1.0', annotated: true},
+		{tag: 'mobile/v1.0.0', annotated: true},
+		WEB_FEATURE,
+		MOBILE_FIX,
+	]);
+	cleanups.push(repo.cleanup);
+	const result = ready(await plan(repo.dir));
+	expect(
+		result.changes.filter(change => change.file === 'README.md'),
+	).toHaveLength(1);
+	expect(changeOf(result, 'README.md')).toBe(
+		'web: gearz/web@v0.2.0\nmobile: gearz/mobile@v1.0.1\n',
+	);
+	for (const unit of result.units) expect(unit.files).toContain('README.md');
+});
+
+test('a version file two units both change still stops the release', async () => {
+	const config = {
+		release: {
+			...MENTION_UNITS,
+			units: {
+				...MENTION_UNITS.units,
+				web: {
+					path: 'apps/web',
+					tag: 'web/v{version}',
+					versionFiles: ['apps/mobile/app.config.ts'],
+				},
+			},
+		},
+	};
+	const repo = await createRepo([
+		{commit: '🎉 Start', files: appFiles('0.1.0', config)},
+		{tag: 'web/v0.1.0', annotated: true},
+		{tag: 'mobile/v1.0.0', annotated: true},
+		WEB_FEATURE,
+		MOBILE_FIX,
+	]);
+	cleanups.push(repo.cleanup);
+	await expect(plan(repo.dir)).rejects.toThrow('would be changed by both');
+});
