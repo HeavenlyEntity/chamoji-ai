@@ -6,6 +6,8 @@
 
 export const ICON_COLUMNS = 8;
 export const ICON_ROWS = 4;
+/** The brand colour of a Phosphor stand-in; the name stays uncoloured. */
+export const FALLBACK_HEX = '#8a8a8a';
 
 export type FrameworkIcon = {
 	/** The brand colour as #rrggbb. */

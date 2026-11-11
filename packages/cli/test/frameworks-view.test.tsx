@@ -3,10 +3,12 @@ import chalk from 'chalk';
 import {render} from 'ink-testing-library';
 import {afterEach, expect, test} from 'vitest';
 import {
-	FrameworkSummary,
 	frameworksOf,
 	frameworkText,
 	iconColor,
+} from '../src/setup/frameworks.js';
+import {
+	FrameworkSummary,
 	MIN_ICON_WIDTH,
 } from '../src/setup/frameworks-view.js';
 

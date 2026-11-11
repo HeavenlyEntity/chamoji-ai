@@ -105,14 +105,19 @@ export function parseOscBackground(reply: string): Rgb | undefined {
 	};
 }
 
-/** Whether the colour is light, by relative luminance over 0.5. */
-export function isLight({r, g, b}: Rgb): boolean {
+/** The colour's relative luminance, per WCAG: 0 for black to 1 for white. */
+export function relativeLuminance({r, g, b}: Rgb): number {
 	const linear = (value: number) => {
 		const unit = value / 255;
 		return unit <= 0.039_28 ? unit / 12.92 : ((unit + 0.055) / 1.055) ** 2.4;
 	};
 
-	return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b) > 0.5;
+	return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+}
+
+/** Whether the colour is light, by relative luminance over 0.5. */
+export function isLight(rgb: Rgb): boolean {
+	return relativeLuminance(rgb) > 0.5;
 }
 
 /** How long to keep swallowing input after the answer limit has passed. */
