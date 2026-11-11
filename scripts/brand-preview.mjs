@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // Builds and serves the brand preview: the Iridescence foil, the logo plate
 // and the Marow Block display type. It also prints each framework icon in
-// its brand colour, large and as a dot, so the generated icons can be checked. TSX is transpiled with the TypeScript we
-// already depend on; React comes from esm.sh via an import map.
+// its brand colour, large and as a dot, so the generated icons can be
+// checked. TSX is transpiled with the TypeScript we already depend on; React
+// comes from esm.sh via an import map.
 //
 //   pnpm brand:preview [--port 4173]
 import {copyFile, mkdir, readFile, readdir, writeFile} from 'node:fs/promises';

@@ -39,8 +39,8 @@ export const FRAMEWORK_ICONS: Record<string, FrameworkIcon> = {
 		large: [' ▗▄██▄▖ ', '▐██████▌', '▐██████▌', ' ▝▀██▀▘ '],
 	},
 	'vite-lit': {
-		hex: '#324fff',
-		large: ['  ▗▟    ', '  ▐█▟▌  ', ' █▌ █▜█ ', ' ▀▌  ▐▀ '],
+		hex: '#8a8a8a',
+		large: ['  ▗▖▗▖  ', ' ▗▘  ▝▖ ', ' ▜▗▘▝▖▛ ', '  ▀▘▝▀  '],
 	},
 	react: {
 		hex: '#61dafb',
@@ -71,8 +71,8 @@ export const FRAMEWORK_ICONS: Record<string, FrameworkIcon> = {
 		large: ['▐█████▙▖', '     ▟█▌', '▝▀▀▀▜█▙ ', '▗▄▄▖ ██▖'],
 	},
 	'react-router': {
-		hex: '#ca4245',
-		large: ['        ', '  ▄▝▜▄  ', '▄▖▀▗▟▀▗▄', '        '],
+		hex: '#8a8a8a',
+		large: ['   ▗▖   ', '▗▛▀▀▀▀▀▖', ' ▀▀▜▛▀▀ ', '   ▝▘   '],
 	},
 	hydrogen: {
 		hex: '#7ab55c',
@@ -119,8 +119,8 @@ export const FRAMEWORK_ICONS: Record<string, FrameworkIcon> = {
 		large: ['  ▄▀▀▀▙ ', ' ▄▘ █▘▐▌', '▐▌▗█ ▗▀ ', ' ▜▄▄▄▀  '],
 	},
 	electron: {
-		hex: '#47848f',
-		large: ['   ▝▘▖  ', '▐    ▐ ▌', '▗▘ ▝▘▐  ', '    ▗▝▝ '],
+		hex: '#8a8a8a',
+		large: [' ▄▄▖▗▄▄ ', ' ▚▄▀▀▄▞ ', ' ▞▀▄▄▀▚ ', ' ▀▀▘▝▀▀ '],
 	},
 	ember: {
 		hex: '#e04e39',
@@ -135,20 +135,20 @@ export const FRAMEWORK_ICONS: Record<string, FrameworkIcon> = {
 		large: [' ▗▄▄▟█▖ ', '▜█████▟▙', '  ▖▐████', '  ▀▀▐▛▀ '],
 	},
 	express: {
-		hex: '#0a0a0a',
-		large: ['▖  ▗    ', '▌▖ ▚▀▗  ', '▌▚▖▞ ▘▚ ', '▘      ▘'],
+		hex: '#8a8a8a',
+		large: ['        ', '▐    ▐█▙', '▐▜█▛▀█▄▐', ' ▝▀▘ ▀▀ '],
 	},
 	fastify: {
-		hex: '#000000',
-		large: ['        ', ' ▄████▙ ', '▝▀▝██▘▘ ', '  ▝     '],
+		hex: '#8a8a8a',
+		large: ['    ▗▄▄ ', ' ▟▜▛▘▗▞ ', ' ▗▝▚▞▜  ', ' ▀▀ ▀▘  '],
 	},
 	hono: {
-		hex: '#e36002',
-		large: ['   ▟▙▖  ', ' ▟▛  ▜▖ ', ' █    █ ', ' ▝█▄▄█▀ '],
+		hex: '#8a8a8a',
+		large: ['   ▄▄   ', '  ▞▄▄▚  ', ' ▄▟▌▐▙▄ ', '  ▀▀▀▀  '],
 	},
 	koa: {
-		hex: '#33333d',
-		large: ['        ', '▌      ▖', '▌▖▗ ▐▗ ▌', '        '],
+		hex: '#8a8a8a',
+		large: ['   ▗▄▄▄ ', ' ▗▀ ▄ ▐ ', ' ▜▄▀ ▗▘ ', ' ▀▝▀▀   '],
 	},
 	'salesforce-dx': {
 		hex: '#8a8a8a',
