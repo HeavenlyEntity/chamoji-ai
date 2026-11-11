@@ -44,7 +44,11 @@ import {
 	syncFiles,
 	type Upstream,
 } from './upstream.js';
-import {editVersionFiles, readEasRemote} from './version-files.js';
+import {
+	editVersionFiles,
+	readEasRemote,
+	readUnitVersion,
+} from './version-files.js';
 import {alignFixed, nextUnitVersion, type NextVersion} from './versions.js';
 import {
 	ownerOf,
@@ -199,10 +203,15 @@ export async function planUnitReleases(
 	const named = new Set<string>();
 	let reasons = decide(windows, settings, options, held);
 	let releasing = windows.filter(window => reasons.has(window.unit.name));
+	const manifestVersions = new Map<string, string | null>();
+	for (const {unit} of windows) {
+		manifestVersions.set(unit.name, await readUnitVersion(root, unit));
+	}
+
 	const current = new Map(
 		windows.map(window => [
 			window.unit.name,
-			window.last?.version ?? window.unit.pkg?.version ?? null,
+			window.last?.version ?? manifestVersions.get(window.unit.name) ?? null,
 		]),
 	);
 	let versions = new Map<string, Exclude<NextVersion, null>>();
@@ -213,6 +222,7 @@ export async function planUnitReleases(
 			reasons,
 			units,
 			current,
+			manifestVersions,
 			settings,
 			options,
 			today,
@@ -718,6 +728,7 @@ function workOutVersions(
 	reasons: Map<string, Reason>,
 	units: ResolvedUnit[],
 	current: Map<string, string | null>,
+	manifestVersions: Map<string, string | null>,
 	settings: ReleaseSettings,
 	options: UnitReleaseOptions,
 	today: string,
@@ -742,7 +753,7 @@ function workOutVersions(
 		const version = nextUnitVersion({
 			unit,
 			last,
-			manifestVersion: unit.pkg?.version ?? null,
+			manifestVersion: manifestVersions.get(unit.name) ?? null,
 			commits: [...own, ...shared, ...(floor ? [PATCH_FLOOR] : [])],
 			today,
 			releasesThisMonth: history.filter(tag => tag.version.startsWith(month))

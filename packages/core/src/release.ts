@@ -10,6 +10,7 @@ import {
 	runGit,
 } from './git.js';
 import {renderMarkdown} from './render/markdown.js';
+import {findSdfProjects, setManifestVersion} from './units/sdf.js';
 import type {
 	ChamojiConfig,
 	CommitClassifier,
@@ -328,6 +329,25 @@ export async function planRelease(
 		const bumped = bumpManifest(file, text, previous, version);
 		if (bumped !== null) {
 			changes.push({file, text: bumped, how: `version ${version}`});
+		}
+	}
+
+	for (const project of await findSdfProjects(root)) {
+		if (
+			project.version === null ||
+			(previous ? project.version !== previous : project.version === version)
+		) {
+			continue;
+		}
+
+		const text = await readFile(path.join(root, project.manifest), 'utf8');
+		const edited = setManifestVersion(text, version);
+		if (edited !== null) {
+			changes.push({
+				file: project.manifest,
+				text: edited.text,
+				how: `version ${version}`,
+			});
 		}
 	}
 
