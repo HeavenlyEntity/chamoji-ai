@@ -172,6 +172,8 @@ export const FRAMEWORKS: readonly Framework[] = [
 		packages: ['@solidjs/start'],
 		configFiles: ['app.config.ts', 'app.config.js'],
 		basedOn: ['vite'],
+		// app.config.* is Expo's name too, so the file alone is a guess.
+		requires: {configPackage: '@solidjs/start'},
 	},
 	{
 		id: 'tanstack-start',
@@ -209,6 +211,8 @@ export const FRAMEWORKS: readonly Framework[] = [
 		packages: ['expo'],
 		configFiles: ['app.config.js', 'app.config.ts'],
 		basedOn: ['react-native'],
+		// app.config.* is SolidStart's name too, so the file alone is a guess.
+		requires: {configPackage: 'expo'},
 	},
 	{
 		id: 'react-native',

@@ -39,18 +39,18 @@ export function iconColor(hex: string): string | undefined {
 	return hex;
 }
 
-/** Each detected framework with the units that use it, in first-seen order. */
+/**
+ * Each detected framework with the units that use it, in first-seen order.
+ * Units on different versions of one framework get a row each.
+ */
 export function frameworksOf(layout: LayoutDetection): FrameworkRow[] {
 	const rows = new Map<string, FrameworkRow>();
 	for (const unit of layout.units) {
 		if (!unit.framework) continue;
-		const row = rows.get(unit.framework.id);
+		const key = `${unit.framework.id}\u0000${unit.framework.version ?? ''}`;
+		const row = rows.get(key);
 		if (row) row.units.push(unit.name);
-		else
-			rows.set(unit.framework.id, {
-				framework: unit.framework,
-				units: [unit.name],
-			});
+		else rows.set(key, {framework: unit.framework, units: [unit.name]});
 	}
 
 	return [...rows.values()];
@@ -109,7 +109,7 @@ export function FrameworkSummary({
 				const where = clean(units.join(', '));
 				if (small || !icon) {
 					return (
-						<Text key={framework.id}>
+						<Text key={`${framework.id}${framework.version}`}>
 							<Text color={paint(colors.icon)}>●</Text>{' '}
 							<Text bold color={paint(colors.name)}>
 								{label}
@@ -120,7 +120,7 @@ export function FrameworkSummary({
 				}
 
 				return (
-					<Box key={framework.id} columnGap={GAP}>
+					<Box key={`${framework.id}${framework.version}`} columnGap={GAP}>
 						<Box flexDirection="column" width={ICON_COLUMNS}>
 							{icon.large.map((row, index) => (
 								<Text key={index} color={paint(colors.icon)}>

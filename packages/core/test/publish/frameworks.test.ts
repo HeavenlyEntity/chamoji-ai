@@ -1,3 +1,6 @@
+import {mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
 import {afterAll, beforeAll, expect, test} from 'vitest';
 import {
 	classifyPackage,
@@ -119,4 +122,33 @@ test('a huge manifest.yml with no app.id is rejected quickly', async () => {
 	const started = Date.now();
 	expect(await detectFramework(repo.dir, 'apps/forge-huge')).toBeNull();
 	expect(Date.now() - started).toBeLessThan(1000);
+});
+
+test('an app.config.ts alone is no framework; with @solidjs/start it is SolidStart', async () => {
+	const dir = await mkdtemp(path.join(tmpdir(), 'chamoji-appconfig-'));
+	try {
+		await mkdir(path.join(dir, 'bare'));
+		await writeFile(
+			path.join(dir, 'bare', 'package.json'),
+			'{"name":"bare","version":"1.0.0"}\n',
+		);
+		await writeFile(
+			path.join(dir, 'bare', 'app.config.ts'),
+			'export default {};\n',
+		);
+		expect(await detectFramework(dir, 'bare')).toBeNull();
+
+		await mkdir(path.join(dir, 'solid'));
+		await writeFile(
+			path.join(dir, 'solid', 'package.json'),
+			'{"name":"solid","version":"1.0.0","dependencies":{"@solidjs/start":"1.0.0"}}\n',
+		);
+		await writeFile(
+			path.join(dir, 'solid', 'app.config.ts'),
+			'export default {};\n',
+		);
+		expect((await detectFramework(dir, 'solid'))?.id).toBe('solid-start');
+	} finally {
+		await rm(dir, {recursive: true, force: true});
+	}
 });
