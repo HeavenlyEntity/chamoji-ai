@@ -1,5 +1,3 @@
-import {readFile} from 'node:fs/promises';
-import path from 'node:path';
 import semver from 'semver';
 import {CONFIG_FILE} from '../config.js';
 import {defaultBranch, getRemoteWebUrl, repoSlug} from '../git.js';
@@ -9,7 +7,7 @@ import {registryFor} from '../publish/registry.js';
 import {parseReleaseSettings, type Mention} from '../units/settings.js';
 import {matchesTagPattern} from '../units/tags.js';
 import {
-	readPackage,
+	readRootPackage,
 	unitNameOf,
 	type WorkspacePackage,
 } from '../units/workspace.js';
@@ -57,16 +55,10 @@ export type Detection = {
 	mentions: Mention[];
 };
 
-/** The root package.json as a package, for a repo with no workspace. */
+/** The root package.json as the only package, for a repo with no workspace. */
 async function rootPackage(root: string): Promise<WorkspacePackage[]> {
 	try {
-		const manifest: unknown = JSON.parse(
-			await readFile(path.join(root, 'package.json'), 'utf8'),
-		);
-		const pkg =
-			typeof manifest === 'object' && manifest !== null
-				? readPackage('', manifest as Record<string, unknown>)
-				: null;
+		const pkg = await readRootPackage(root);
 		return pkg ? [pkg] : [];
 	} catch {
 		return [];

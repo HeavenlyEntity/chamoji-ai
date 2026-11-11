@@ -12,7 +12,7 @@ import type {PublishSettings, ReleaseSettings} from '../units/settings.js';
 import {unitTagHistory} from '../units/tags.js';
 import {
 	isExcluded,
-	readPackage,
+	readRootPackage,
 	readWorkspace,
 	resolveUnits,
 	type ResolvedUnit,
@@ -245,7 +245,7 @@ async function planIn(
 	if (!options.versions && !worktree) await checkClean(root);
 
 	const packages = await readWorkspace(root);
-	const top = await rootPackage(root);
+	const top = await readRootPackage(root);
 	const all = top ? [...packages, top] : packages;
 	const releases = await releasesFor(root, options, settings, packages);
 	const {chosen, skipped} = await choose(root, releases, all, options);
@@ -370,12 +370,6 @@ async function readManifest(file: string): Promise<Manifest | null> {
 	return typeof parsed === 'object' && parsed !== null
 		? (parsed as Manifest)
 		: {};
-}
-
-/** The repo root's own package, which a single repo publishes when public. */
-async function rootPackage(root: string): Promise<WorkspacePackage | null> {
-	const manifest = await readManifest(path.join(root, 'package.json'));
-	return manifest ? readPackage('', manifest) : null;
 }
 
 /** The releases to publish: from `versions`, `--from`, or the tags at HEAD. */
