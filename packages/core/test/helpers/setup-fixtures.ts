@@ -713,3 +713,76 @@ export async function libraryAndApp(): Promise<FixtureRepo> {
 		},
 	]);
 }
+
+/**
+ * A repo that is itself a Next.js app, with a public Expo app and a Vite
+ * site under `packages/`, an Expo module and a React component library whose
+ * `react` is a peer. Nothing in it is `private` but the workspace root of
+ * the packages below, which is the app itself.
+ */
+export async function appsAndLibraries(): Promise<FixtureRepo> {
+	return createRepo([
+		{
+			commit: '🎉 Start the apps and libraries',
+			files: {
+				'package.json': manifest('shop', {
+					version: '1.0.0',
+					workspaces: ['packages/*'],
+					dependencies: {next: '^15.2.0', react: '^19.0.0'},
+				}),
+				'next.config.mjs': 'export default {};\n',
+				'packages/mobile/package.json': manifest('@shop/mobile', {
+					version: '1.0.0',
+					dependencies: {expo: '^52.0.0', 'react-native': '^0.76.0'},
+				}),
+				'packages/mobile/app.json': json({expo: {name: 'Shop'}}),
+				'packages/site/package.json': manifest('@shop/site', {
+					version: '1.0.0',
+					devDependencies: {vite: '^6.1.0'},
+				}),
+				'packages/site/index.html': '<div id="root"></div>\n',
+				'packages/camera/package.json': manifest('@shop/camera', {
+					version: '1.0.0',
+					main: 'index.js',
+					dependencies: {expo: '^52.0.0'},
+				}),
+				'packages/camera/expo-module.config.json': json({platforms: ['ios']}),
+				'packages/camera/index.js': 'export {};\n',
+				'packages/ui/package.json': manifest('@shop/ui', {
+					version: '1.0.0',
+					exports: {'.': './index.js'},
+					peerDependencies: {react: '^19.0.0'},
+				}),
+				'packages/ui/index.js': 'export {};\n',
+			},
+		},
+	]);
+}
+
+/**
+ * Two published libraries tagged at 1.0.0 whose readme pins each version, as
+ * `npm i @acme/ui@1.0.0` does.
+ */
+export async function readmePins(): Promise<FixtureRepo> {
+	return createRepo([
+		{
+			commit: '🎉 Start the libraries',
+			files: {
+				'package.json': manifest('acme', {private: true}),
+				'pnpm-workspace.yaml': "packages:\n  - 'packages/*'\n",
+				'README.md':
+					'# Acme\n\nInstall with `npm i @acme/ui@1.0.0` or `npm i @acme/core@1.0.0`.\n',
+				'packages/ui/package.json': manifest('@acme/ui', {
+					version: '1.0.0',
+					exports: {'.': './dist/index.js'},
+				}),
+				'packages/core/package.json': manifest('@acme/core', {
+					version: '1.0.0',
+					exports: {'.': './dist/index.js'},
+				}),
+			},
+		},
+		{tag: '@acme/ui@1.0.0', annotated: true},
+		{tag: '@acme/core@1.0.0', annotated: true},
+	]);
+}

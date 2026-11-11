@@ -408,6 +408,24 @@ That was an `app.config.ts` with `version: pkg.version`. It exits 2. The rules f
 - **An `Info.plist` that uses `$(MARKETING_VERSION)`** isn’t supported yet, since chamoji doesn’t bump the marketing version in the Xcode project. Bump it in Xcode yourself. If you list that `Info.plist` in `versionFiles`, the release stops and tells you to remove it.
 - **Build numbers** (`CFBundleVersion`, `versionCode`, Expo’s `ios.buildNumber` and `android.versionCode`) are left alone unless the unit sets `"buildNumber": "increment"`, which raises them by one. That does nothing when the app uses EAS remote versioning, with `appVersionSource` set to `remote`.
 
+## NetSuite projects {{ icon: 'package' }}
+
+A NetSuite SuiteCloud (SDF) project is an app unit, with or without a `package.json`. Setup finds one in either of two ways:
+
+- **A `suitecloud.config.js`.** The project is the folder its `defaultProjectFolder` names, `src` when it doesn’t say.
+- **A tracked `manifest.xml` next to a `deploy.xml`.** This finds projects that have no `suitecloud.config.js`, such as a templated SuiteApp whose `src` is generated and git-ignored. The tracked `template` folder counts, and the generated one doesn’t.
+
+The unit is the folder above the project folder, so `apps/backend` for a project in `apps/backend/src`. Setup shows it as a NetSuite SuiteApp, with its application ID and version, or as a NetSuite Account Customization Project. Nothing NetSuite is offered for npm. `chamoji publish` refuses a SuiteApp package, as it does any app.
+
+How the version works depends on the kind of project:
+
+- **A SuiteApp** carries its version in the `<projectversion>` of its `manifest.xml`. Each release bumps it, together with the `package.json` when there is one, in the same release commit.
+- **An Account Customization Project** has no version of its own. Its versions come from its tags, so its first release needs a version: `chamoji release 1.0.0`.
+
+When a SuiteApp’s `package.json` and `manifest.xml` hold different versions, setup points it out and asks which one is current. With no tag yet, it starts from the manifest’s version.
+
+Deploying and distributing are separate from versioning. A release bumps the versions and makes the tag and the changelog; getting the project into a NetSuite account, and shipping a SuiteApp to other accounts, are steps of their own.
+
 ## Template history {{ icon: 'git-merge' }}
 
 If the repo began as a clone of a template you started from, and keeps pulling from it, chamoji can keep the template’s history out of your notes. The third example is a storefront that began as a clone of a made-up Acme Starter template, at its tag `4.0.0`. The template’s remote is `upstream`, and the storefront then made two commits of its own. Setup found the template:

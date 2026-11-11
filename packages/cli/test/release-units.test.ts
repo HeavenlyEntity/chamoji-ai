@@ -1,5 +1,5 @@
 import {existsSync} from 'node:fs';
-import {mkdir, mkdtemp, rm} from 'node:fs/promises';
+import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {afterEach, describe, expect, test} from 'vitest';
@@ -8,6 +8,10 @@ import {
 	gitOutput,
 	type RepoStep,
 } from '../../core/test/helpers/fixture-repo.js';
+import {
+	readmePins,
+	suiteAppMonorepo,
+} from '../../core/test/helpers/setup-fixtures.js';
 import {run, type GhRunner} from '../src/run.js';
 import {recordingFace} from './helpers/recording-face.js';
 import {chamojiPublishing, fakeTools, has} from './helpers/release-publish.js';
@@ -110,6 +114,8 @@ async function chamoji(
 		today: '2026-11-04',
 		fetchTags: false,
 		gh: options.gh,
+		// Never the real registry, whatever a test runs.
+		npm: async () => ({ok: false, stdout: '', stderr: 'offline'}),
 		env: options.env ?? {},
 	});
 	return {code, stdout, stderr};
@@ -1104,4 +1110,115 @@ describe('release --on-merge with units', () => {
 		expect(code).toBe(3);
 		expect(stderr).toContain('releases are manual here (release.trigger)');
 	});
+});
+
+/** setup and release with no gh CLI; the helper's npm never answers. */
+const offline = {
+	gh: (async () => ({ok: false, message: 'no gh CLI'})) as GhRunner,
+};
+
+async function commitAll(dir: string, message: string): Promise<void> {
+	await gitOutput(dir, ['add', '-A']);
+	await gitOutput(dir, ['commit', '-q', '-m', message]);
+}
+
+const releasedFiles = (stdout: string): string[] =>
+	(JSON.parse(stdout) as {files: string[]}).files;
+
+test('a SuiteApp release bumps manifest.xml and package.json together', async () => {
+	const repo = await suiteAppMonorepo();
+	cleanups.push(repo.cleanup);
+	const dir = repo.dir;
+	const setup = await chamoji(['setup', '--yes'], dir, offline);
+	expect(setup.code).toBe(0);
+	await commitAll(dir, '🔧 Set up releases');
+	// The apps are at 2.10.34 and 0.1.0, as their files say.
+	await gitOutput(dir, ['tag', 'backend/v2.10.34']);
+	await gitOutput(dir, ['tag', 'web/v0.1.0']);
+	await writeFile(path.join(dir, 'apps/backend/src/script.js'), 'script\n');
+	await commitAll(dir, '✨ Add a script');
+
+	const result = await chamoji(
+		['release', '--json', '--any-branch'],
+		dir,
+		offline,
+	);
+	expect(result.stderr).toBe('');
+	expect(result.code).toBe(0);
+	const released = JSON.parse(result.stdout) as {
+		units: Array<{unit: string; version: string; tag: string}>;
+		files: string[];
+	};
+	expect(released.units).toMatchObject([
+		{unit: 'backend', version: '2.11.0', tag: 'backend/v2.11.0'},
+	]);
+	expect(released.files).toEqual([
+		'apps/backend/CHANGELOG.md',
+		'apps/backend/package.json',
+		'apps/backend/src/manifest.xml',
+	]);
+	// Both files hold the new version, in the one release commit.
+	const manifest = await readFile(
+		path.join(dir, 'apps/backend/src/manifest.xml'),
+		'utf8',
+	);
+	expect(manifest).toContain('<projectversion>2.11.0</projectversion>');
+	expect(
+		(
+			JSON.parse(
+				await readFile(path.join(dir, 'apps/backend/package.json'), 'utf8'),
+			) as {version: string}
+		).version,
+	).toBe('2.11.0');
+	const committed = await gitOutput(dir, [
+		'show',
+		'--name-only',
+		'--format=%s',
+		'HEAD',
+	]);
+	expect(committed).toContain('apps/backend/src/manifest.xml');
+	expect(committed).toContain('apps/backend/package.json');
+	expect(await gitOutput(dir, ['tag', '--list', 'backend/*'])).toContain(
+		'backend/v2.11.0',
+	);
+});
+
+test('mentions: a release updates readme pins in the release commit', async () => {
+	const repo = await readmePins();
+	cleanups.push(repo.cleanup);
+	const dir = repo.dir;
+	// Setup finds the readme's pins and keeps each with its package's unit.
+	expect((await chamoji(['setup', '--yes'], dir, offline)).code).toBe(0);
+	expect(
+		(
+			JSON.parse(
+				await readFile(path.join(dir, 'chamoji.config.json'), 'utf8'),
+			) as {
+				release: {mentions: unknown};
+			}
+		).release.mentions,
+	).toEqual([
+		{pattern: '@acme/core@{version}', files: ['README.md'], unit: 'core'},
+		{pattern: '@acme/ui@{version}', files: ['README.md'], unit: 'ui'},
+	]);
+	await commitAll(dir, '🔧 Set up releases');
+	await writeFile(path.join(dir, 'packages/ui/search.js'), 'search\n');
+	await commitAll(dir, '✨ Add search');
+
+	const result = await chamoji(
+		['release', '--json', '--any-branch'],
+		dir,
+		offline,
+	);
+	expect(result.stderr).toBe('');
+	expect(result.code).toBe(0);
+	expect(releasedFiles(result.stdout)).toContain('README.md');
+	// The pin moves in the release commit; the other package's pin stays.
+	expect(
+		await gitOutput(dir, ['show', '--name-only', '--format=%s', 'HEAD']),
+	).toContain('README.md');
+	expect(await gitOutput(dir, ['show', 'HEAD:README.md'])).toBe(
+		'# Acme\n\nInstall with `npm i @acme/ui@1.1.0` or `npm i @acme/core@1.0.0`.\n',
+	);
+	expect(await gitOutput(dir, ['status', '--porcelain'])).toBe('');
 });
