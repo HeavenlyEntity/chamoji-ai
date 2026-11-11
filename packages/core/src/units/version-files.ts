@@ -1,7 +1,13 @@
 import {lstat, readdir, readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {ReleaseError} from '../release.js';
-import {sdfProjectAt, setManifestVersion} from './sdf.js';
+import {
+	readManifest,
+	PROJECT_VERSION,
+	sdfProjectAt,
+	setManifestVersion,
+	stripComments,
+} from './sdf.js';
 import type {ResolvedUnit} from './workspace.js';
 
 export type VersionFileEdit = {
@@ -541,13 +547,6 @@ function setPlist(text: string, settings: Settings): Edited | string {
 	return {text: next, from};
 }
 
-/** An SDF manifest.xml: only the text of `<projectversion>` changes. */
-function setProjectVersion(text: string, settings: Settings): Edited | string {
-	return (
-		setManifestVersion(text, settings.to) ?? 'it has no <projectversion> to set'
-	);
-}
-
 function setGradle(text: string, settings: Settings): Edited | string {
 	const match = GRADLE_NAME.exec(text);
 	if (!match) return 'it has no versionName "…" to set';
@@ -601,7 +600,13 @@ function setKnownVersion(
 		);
 	}
 
-	if (name === 'manifest.xml') return setProjectVersion(text, settings);
+	if (name === 'manifest.xml') {
+		// An SDF manifest changes only its <projectversion>; any other
+		// manifest.xml takes the generic replace below, as before 0.16.
+		const edited = setManifestVersion(text, settings.to);
+		if (edited) return edited;
+	}
+
 	if (name === 'Info.plist') return setPlist(text, settings);
 	if (name === 'build.gradle') return setGradle(text, settings);
 	const {current} = settings;
@@ -753,8 +758,6 @@ export async function detectVersionFiles(
 	return found;
 }
 
-const MANIFEST_VERSION = /<projectversion>([^<]*)<\/projectversion>/;
-
 /**
  * The unit's current version: its package.json version, else the
  * `<projectversion>` of the first `manifest.xml` in its `versionFiles`.
@@ -766,10 +769,9 @@ export async function readUnitVersion(
 	if (unit.pkg?.version) return unit.pkg.version;
 	for (const file of unit.versionFiles) {
 		if (path.posix.basename(file) !== 'manifest.xml') continue;
-		const text = await readFileText(root, file);
-		const value = text
-			?.replace(/<!--[\s\S]*?-->/g, '')
-			.match(MANIFEST_VERSION)?.[1]
+		const text = await readManifest(root, file);
+		const value = (text === null ? undefined : stripComments(text))
+			?.match(PROJECT_VERSION)?.[1]
 			?.trim();
 		if (value) return value;
 	}

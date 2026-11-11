@@ -1,4 +1,4 @@
-import {lstat, readFile} from 'node:fs/promises';
+import {lstat, readFile, stat} from 'node:fs/promises';
 import path from 'node:path';
 import {runGit} from '../git.js';
 
@@ -18,9 +18,50 @@ export type SdfProject = {
 const DEFAULT_FOLDER = 'src';
 const CONFIG_FILE = 'suitecloud.config.js';
 const FOLDER = /defaultProjectFolder\s*:\s*["'`]([^"'`]+)["'`]/;
-const COMMENTS = /<!--[\s\S]*?-->/g;
-const PROJECT_TYPE =
-	/<manifest\b[^>]*?\bprojecttype\s*=\s*["']([^"']+)["'][^>]*>/;
+/** The most of a `manifest.xml` chamoji reads; a larger file isn't an SDF project. */
+export const MANIFEST_READ_LIMIT = 1_048_576;
+/** The most of the root `<manifest …>` tag looked at for its `projecttype`. */
+const ROOT_TAG_LIMIT = 4096;
+const PROJECT_TYPE = /\bprojecttype\s*=\s*["']([^"']+)["']/;
+export const PROJECT_VERSION = /<projectversion>([^<]*)<\/projectversion>/;
+
+/**
+ * `text` with each `<!-- … -->` blanked to spaces of the same length, so
+ * offsets still match `text`. An unclosed comment blanks to the end. It walks
+ * with `indexOf`, so a hostile file costs one pass.
+ */
+export function stripComments(text: string): string {
+	let from = text.indexOf('<!--');
+	if (from === -1) return text;
+	const parts: string[] = [];
+	let copied = 0;
+	while (from !== -1) {
+		const close = text.indexOf('-->', from + 4);
+		const end = close === -1 ? text.length : close + 3;
+		parts.push(text.slice(copied, from), ' '.repeat(end - from));
+		copied = end;
+		from = text.indexOf('<!--', end);
+	}
+
+	parts.push(text.slice(copied));
+	return parts.join('');
+}
+
+/** The `projecttype` of the root `<manifest>` element in comment-free `text`, or undefined. */
+function rootProjectType(text: string): string | undefined {
+	let at = text.indexOf('<manifest');
+	// `<manifestx` is another element; the root is the first real `<manifest`.
+	while (at !== -1 && !/[\s>/]/.test(text[at + '<manifest'.length] ?? '')) {
+		at = text.indexOf('<manifest', at + 1);
+	}
+
+	if (at === -1) return undefined;
+	const head = text.slice(at, at + ROOT_TAG_LIMIT);
+	const close = head.indexOf('>');
+	return close === -1
+		? undefined
+		: PROJECT_TYPE.exec(head.slice(0, close))?.[1];
+}
 
 const parent = (folder: string): string =>
 	path.posix.dirname(folder) === '.' ? '' : path.posix.dirname(folder);
@@ -34,6 +75,20 @@ const element = (text: string, name: string): string | null => {
 async function read(root: string, file: string): Promise<string | null> {
 	try {
 		return await readFile(path.join(root, file), 'utf8');
+	} catch {
+		return null;
+	}
+}
+
+/** A `manifest.xml`'s text, or null when it's missing, unreadable or over MANIFEST_READ_LIMIT. */
+export async function readManifest(
+	root: string,
+	file: string,
+): Promise<string | null> {
+	try {
+		const full = path.join(root, file);
+		if ((await stat(full)).size > MANIFEST_READ_LIMIT) return null;
+		return await readFile(full, 'utf8');
 	} catch {
 		return null;
 	}
@@ -115,8 +170,8 @@ export async function findSdfProjects(root: string): Promise<SdfProject[]> {
 			continue;
 		}
 
-		const text = ((await read(root, manifest)) ?? '').replace(COMMENTS, '');
-		const projectType = PROJECT_TYPE.exec(text)?.[1]?.trim().toUpperCase();
+		const text = stripComments((await readManifest(root, manifest)) ?? '');
+		const projectType = rootProjectType(text)?.trim().toUpperCase();
 		if (projectType !== 'SUITEAPP' && projectType !== 'ACCOUNTCUSTOMIZATION') {
 			continue;
 		}
@@ -150,8 +205,6 @@ export async function sdfProjectAt(
 	);
 }
 
-const PROJECT_VERSION = /<projectversion>([^<]*)<\/projectversion>/;
-
 /**
  * `text` with the text of `<projectversion>` set to `to`, and the version it
  * carried; null when there is no such element outside a comment. Nothing else
@@ -161,8 +214,9 @@ export function setManifestVersion(
 	text: string,
 	to: string,
 ): {text: string; from: string} | null {
+	if (text.length > MANIFEST_READ_LIMIT) return null;
 	// Blank the comments out, same length, so offsets still match `text`.
-	const visible = text.replace(COMMENTS, comment => ' '.repeat(comment.length));
+	const visible = stripComments(text);
 	const match = PROJECT_VERSION.exec(visible);
 	if (!match) return null;
 	const start = match.index + '<projectversion>'.length;

@@ -296,8 +296,10 @@ Each entry in `release.units`, such as `"web": {"path": "apps/web"}`.
 	</Property>
 	<Property name="versionFiles" type="list of paths">
 		Other files that carry the version, such as `apps/mobile/app.config.ts`, an
-		`Info.plist` or an `android/app/build.gradle`. The unit’s `package.json` is
-		always bumped. A path outside the repo, or a symlink, is refused, and a
+		`Info.plist`, an `android/app/build.gradle` or a `manifest.xml`. A
+		NetSuite `manifest.xml` has its `<projectversion>` set; any other one has
+		the current version replaced where it appears, like a plain text file. The
+		unit’s `package.json` is always bumped. A path outside the repo, or a symlink, is refused, and a
 		listed file where chamoji can’t find the version stops the release before
 		anything changes. Default: none.
 	</Property>

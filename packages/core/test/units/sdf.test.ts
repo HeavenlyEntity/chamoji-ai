@@ -2,7 +2,13 @@ import {mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {afterEach, expect, test} from 'vitest';
-import {findSdfProjects, sdfProjectAt} from '../../src/units/sdf.js';
+import {
+	findSdfProjects,
+	MANIFEST_READ_LIMIT,
+	sdfProjectAt,
+	setManifestVersion,
+	stripComments,
+} from '../../src/units/sdf.js';
 import {createRepo, type FixtureRepo} from '../helpers/fixture-repo.js';
 import {
 	acpSingle,
@@ -148,4 +154,68 @@ test('sdfProjectAt returns the project at a unit path, or null', async () => {
 	const acp = keep(await acpSingle());
 	expect((await sdfProjectAt(acp, ''))?.type).toBe('acp');
 	expect((await sdfProjectAt(acp, '.'))?.type).toBe('acp');
+});
+
+/** Runs `work`, and expects it to take under a second. */
+async function quick<T>(work: () => Promise<T> | T): Promise<T> {
+	const started = performance.now();
+	const result = await work();
+	expect(performance.now() - started).toBeLessThan(1000);
+	return result;
+}
+
+test('stripComments blanks to the same length, an unclosed comment to the end', () => {
+	const text = 'a<!-- x -->b<!-- y --><c/>d<!-- open';
+	const blanked = stripComments(text);
+	expect(blanked).toHaveLength(text.length);
+	expect(blanked).toBe(
+		`a${' '.repeat(10)}b${' '.repeat(10)}<c/>d${' '.repeat(9)}`,
+	);
+	expect(stripComments('<m/>')).toBe('<m/>');
+});
+
+test('an unclosed comment of 200,000 characters is handled in under a second', async () => {
+	const hostile = `<!--${'x'.repeat(200_000)}`;
+	const repo = await createRepo([
+		{
+			commit: '🎉 Start',
+			files: {
+				'src/manifest.xml': `${hostile}\n${sdfManifest({version: '1.0.0'})}`,
+				'src/deploy.xml': SDF_DEPLOY,
+			},
+		},
+	]);
+	// The manifest is all comment: not a project.
+	expect(await quick(async () => findSdfProjects(keep(repo)))).toEqual([]);
+	expect(await quick(() => setManifestVersion(hostile, '2.0.0'))).toBeNull();
+	const many = '<!--'.repeat(50_000);
+	expect(await quick(() => setManifestVersion(many, '2.0.0'))).toBeNull();
+});
+
+test('many repeated <manifest tags are handled in under a second', async () => {
+	const hostile = '<manifest '.repeat(100_000);
+	const repo = await createRepo([
+		{
+			commit: '🎉 Start',
+			files: {'src/manifest.xml': hostile, 'src/deploy.xml': SDF_DEPLOY},
+		},
+	]);
+	expect(await quick(async () => findSdfProjects(keep(repo)))).toEqual([]);
+	expect(
+		await quick(() => setManifestVersion(`${hostile}<projectversion>`, 'x')),
+	).toBeNull();
+});
+
+test('a manifest.xml over the read limit is not a project', async () => {
+	const padding = `<!--${'x'.repeat(MANIFEST_READ_LIMIT)}-->`;
+	const repo = await createRepo([
+		{
+			commit: '🎉 Start',
+			files: {
+				'src/manifest.xml': `${padding}${sdfManifest({version: '1.0.0'})}`,
+				'src/deploy.xml': SDF_DEPLOY,
+			},
+		},
+	]);
+	expect(await findSdfProjects(keep(repo))).toEqual([]);
 });
