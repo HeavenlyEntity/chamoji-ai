@@ -35,12 +35,15 @@ export type {ScreenResult} from './setup.js';
  * How the screen looks. The face wears the foil and looks around only when
  * `animate` is on, which cli.ts decides under the terminal-face rules; `level`
  * is chalk's, already 0 where the foil isn't drawn (a light background).
+ * `iconLevel` is chalk's real level, 0 only under NO_COLOR, so icons keep their
+ * colour on a light or still terminal; it defaults to `level`.
  * `icons` is on where `shouldDrawIcons` says so: the summary then draws each
  * framework's icon, and elsewhere setup says the frameworks in words.
  */
 export type ScreenLook = {
 	animate: boolean;
 	level: 0 | 1 | 2 | 3;
+	iconLevel?: 0 | 1 | 2 | 3;
 	ascii: boolean;
 	icons: boolean;
 };
@@ -341,6 +344,7 @@ export function SetupScreen({
 	const wide = columns >= WIDE;
 	const left = wide ? Math.floor(columns * 0.55) : columns - 2;
 	const right = wide ? columns - left - 4 : columns - 2;
+	const iconLevel = look.iconLevel ?? look.level;
 	const frameworks = look.icons ? frameworksOf(detection.layout) : [];
 	// Where the model asks which units get versions, a ● in each one's colour.
 	const marks = look.icons
@@ -349,7 +353,7 @@ export function SetupScreen({
 					.filter(facts => facts.framework)
 					.map(facts => [
 						facts.path,
-						look.level === 0 ? undefined : colorsFor(facts.framework!.id).icon,
+						iconLevel === 0 ? undefined : colorsFor(facts.framework!.id).icon,
 					]),
 			)
 		: undefined;
@@ -358,7 +362,7 @@ export function SetupScreen({
 			<Summary
 				frameworks={frameworks}
 				width={left}
-				level={look.level}
+				level={iconLevel}
 				text={clean(summary(detection, answers))}
 				replayed={replayed}
 				asked={all.filter(question => question.needsAnswer)}
@@ -536,6 +540,7 @@ export function terminalSetupScreen({
 				{
 					animate,
 					level: theme === 'dark' ? level : 0,
+					iconLevel: env['NO_COLOR'] ? 0 : level,
 					ascii: useAscii(env, platform),
 					icons: shouldDrawIcons({
 						env,
