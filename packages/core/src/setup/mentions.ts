@@ -1,12 +1,10 @@
-import {lstat, readFile} from 'node:fs/promises';
 import path from 'node:path';
+import {readBoundedText} from '../fs-read.js';
 import {runGit} from '../git.js';
 import {mentionRegex} from '../units/mentions.js';
 import type {Mention} from '../units/settings.js';
 import {unitNameOf, type WorkspacePackage} from '../units/workspace.js';
-
-const MAX_FILES = 500;
-const MAX_FILE_BYTES = 256 * 1024;
+import {MAX_FILE_BYTES, MAX_LISTED_FILES} from './limits.js';
 
 /** A glob that matches `file` and nothing else. */
 const literalGlob = (file: string): string =>
@@ -22,19 +20,7 @@ async function markdownFiles(root: string): Promise<string[]> {
 		.split('\0')
 		.filter(Boolean)
 		.filter(file => file.split('/').pop()?.toLowerCase() !== 'changelog.md')
-		.slice(0, MAX_FILES);
-}
-
-/** The text of a regular file of a sensible size, else null. */
-async function readText(root: string, file: string): Promise<string | null> {
-	try {
-		const full = path.join(root, ...file.split('/'));
-		const info = await lstat(full);
-		if (!info.isFile() || info.size > MAX_FILE_BYTES) return null;
-		return await readFile(full, 'utf8');
-	} catch {
-		return null;
-	}
+		.slice(0, MAX_LISTED_FILES);
 }
 
 /** Whether the pattern has a match in `text` that doesn't continue a longer name. */
@@ -74,7 +60,10 @@ export async function detectMentions(
 	);
 	for (const file of await markdownFiles(root)) {
 		// eslint-disable-next-line no-await-in-loop
-		const text = await readText(root, file);
+		const text = await readBoundedText(
+			path.join(root, ...file.split('/')),
+			MAX_FILE_BYTES,
+		);
 		if (text === null) continue;
 		for (const item of wanted) {
 			if (mentions(text, item.pattern)) found.get(item.pattern)!.push(file);
