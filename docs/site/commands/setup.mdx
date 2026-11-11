@@ -30,7 +30,10 @@ export const metadata = {
 	<Step title="Looks at the repo.">
 		Its apps and packages, version files, tags and remotes, from git and the
 		files, with no AI. With the `gh` CLI and a GitHub `origin`, it also reads
-		the repo’s squash-merge setting, and gives up on that after 5 seconds.
+		the repo’s squash-merge setting and the rules on the release branch. With
+		publishing on, it asks the npm registry which packages were never published.
+		It gives up on each of these after 5 seconds and drops that line of advice;
+		a failed lookup never fails setup.
 	</Step>
 	<Step title="Says where each step stands.">
 		With no step named, a line for releases, memory sharing, Claude Code and the
@@ -51,6 +54,15 @@ export const metadata = {
 		The preview lists each one before anything is saved: the release workflow
 		and the `package.json` edits, as set out in [Files setup
 		writes](#files-setup-writes).
+	</Step>
+	<Step title="Prints what to do on GitHub and npm.">
+		Setup never changes repo or npm settings, so it tells you. When rules on the
+		release branch block direct pushes and releases run on merge, it says so and
+		names the ways around. With publishing on, it prints the trusted publisher
+		to add on npmjs.com for each package (owner, repository and workflow file),
+		or the `NPM_TOKEN` secret to add when CI signs in with a token. A package
+		that was never published gets a note to publish its first version locally.
+		`--json` lists these lines as `advice`.
 	</Step>
 	<Step title="Runs the per-clone steps.">
 		Memory sharing, Claude Code and the commit composer hook, the ones you
@@ -183,8 +195,8 @@ Setup refuses to write through a symlink: if `package.json`, the workflow file o
 		Print what setup found and did as JSON on stdout, and nothing else. It never
 		opens the screen. Without `--yes` it writes nothing and reports what it
 		would do. With `--yes` it does it, then reports. The keys are `found`,
-		`answers`, `why`, `steps`, `wrote`, `squashMerge`, `existingWorkflow` and
-		`workflowAdvice`.
+		`answers`, `why`, `steps`, `wrote`, `squashMerge`, `existingWorkflow`,
+		`workflowAdvice` and `advice`.
 	</Property>
 	<Property name="--explain" type="boolean">
 		Print each value of the release section and where it came from: detected in
@@ -313,7 +325,8 @@ With `--json`, the report is JSON. This is `shop` before its first setup, trimme
   "wrote": [],
   "squashMerge": null,
   "existingWorkflow": null,
-  "workflowAdvice": []
+  "workflowAdvice": [],
+  "advice": []
 }
 ```
 
