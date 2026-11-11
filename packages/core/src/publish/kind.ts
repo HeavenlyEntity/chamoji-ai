@@ -119,6 +119,9 @@ async function readManifestOrEmpty(file: string): Promise<Obj> {
 	}
 }
 
+/** How much of a config file `configMatch` reads, so a crafted file can't stall detection. */
+const CONFIG_MATCH_LIMIT = 65_536;
+
 /** Does the config file exist, and where the row asks for it, say what it should? */
 async function configFileCounts(
 	folder: string,
@@ -128,7 +131,10 @@ async function configFileCounts(
 	const pattern = framework.configMatch?.[file];
 	if (pattern === undefined) return exists(path.join(folder, file));
 	const text = await readText(path.join(folder, file));
-	return text !== undefined && new RegExp(pattern, 'm').test(text);
+	return (
+		text !== undefined &&
+		new RegExp(pattern, 'm').test(text.slice(0, CONFIG_MATCH_LIMIT))
+	);
 }
 
 /** Runs the framework table against one package folder. */

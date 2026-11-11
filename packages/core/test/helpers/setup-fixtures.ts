@@ -449,6 +449,29 @@ const ZOO: Record<string, ZooCase> = {
 	},
 	qwik: {dependencies: {'@builder.io/qwik-city': '1.12.1', vite: '6.1.0'}},
 	expo: {dependencies: {expo: '52.0.11', 'react-native': '0.76.3'}},
+	'ionic-angular': {
+		dependencies: {
+			'@ionic/angular': '8.4.1',
+			'@angular/core': '19.1.0',
+		},
+		files: {'angular.json': '{}\n'},
+	},
+	'ionic-react': {
+		dependencies: {
+			'@ionic/react': '8.4.1',
+			'react-dom': '19.0.0',
+		},
+		files: {'index.html': '<div id="root"></div>\n'},
+	},
+	'forge-crlf': {
+		files: {
+			'manifest.yml':
+				'modules:\r\n  function: []\r\napp:\r\n  runtime:\r\n    name: nodejs22.x\r\n  id: ari:cloud:ecosystem::app/1\r\n',
+		},
+	},
+	'forge-huge': {
+		files: {'manifest.yml': `app:\n${' \n'.repeat(200_000)}`},
+	},
 	'peer-only': {peerDependencies: {next: '^15.0.0'}},
 	nothing: {dependencies: {lodash: '4.17.21'}},
 	'sfdx-project': {

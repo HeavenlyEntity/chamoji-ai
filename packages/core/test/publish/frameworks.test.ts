@@ -99,3 +99,24 @@ test('classifyPackage keeps the framework name and adds the whole match', async 
 		basedOn: ['react'],
 	});
 });
+
+test('Ionic is reported over Angular and React', async () => {
+	expect((await detectFramework(repo.dir, 'apps/ionic-angular'))?.id).toBe(
+		'ionic',
+	);
+	expect((await detectFramework(repo.dir, 'apps/ionic-react'))?.id).toBe(
+		'ionic',
+	);
+});
+
+test('a CRLF manifest.yml with app.id as its second child is Forge', async () => {
+	expect((await detectFramework(repo.dir, 'apps/forge-crlf'))?.id).toBe(
+		'forge',
+	);
+});
+
+test('a huge manifest.yml with no app.id is rejected quickly', async () => {
+	const started = Date.now();
+	expect(await detectFramework(repo.dir, 'apps/forge-huge')).toBeNull();
+	expect(Date.now() - started).toBeLessThan(1000);
+});
