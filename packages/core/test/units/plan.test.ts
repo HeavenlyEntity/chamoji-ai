@@ -988,3 +988,53 @@ test('holdMajors with only a major unit is a nothing plan that names it', async 
 	const result = await plan(dir, {holdMajors: true});
 	expect(result).toMatchObject({status: 'nothing', held: ['mobile']});
 });
+
+test('a unit with no package.json releases from its manifest version', async () => {
+	const config = {
+		release: {
+			schema: 1,
+			shape: 'apps',
+			units: {
+				suiteapp: {
+					path: 'apps/suiteapp',
+					tag: 'suiteapp/v{version}',
+					versionFiles: ['apps/suiteapp/template/manifest.xml'],
+				},
+			},
+		},
+	};
+	const manifest = (version: string) =>
+		`<manifest projecttype="SUITEAPP">\n\t<publisherid>com.example</publisherid>\n\t<projectid>myapp</projectid>\n\t<projectversion>${version}</projectversion>\n</manifest>\n`;
+	const repo = await createRepo([
+		{
+			commit: '🎉 Start the SuiteApp',
+			files: {
+				'package.json': json({name: 'suite', private: true}),
+				'pnpm-workspace.yaml': "packages:\n  - 'apps/suiteapp'\n",
+				'chamoji.config.json': json(config),
+				'apps/suiteapp/template/manifest.xml': manifest('0.1.0'),
+				'apps/suiteapp/template/deploy.xml': '<deploy/>\n',
+			},
+		},
+		{commit: '🐛 Fix the script', files: {'apps/suiteapp/src/a.js': 'a\n'}},
+	]);
+	cleanups.push(repo.cleanup);
+	const first = unitOf(await plan(repo.dir), 'suiteapp');
+	expect(first).toMatchObject({version: '0.1.0', lastTag: null});
+
+	await git(repo.dir, [
+		'tag',
+		'-a',
+		'suiteapp/v0.1.0',
+		'-m',
+		'suiteapp/v0.1.0',
+	]);
+	await commitFiles(repo.dir, '✨ Add a saved search', {
+		'apps/suiteapp/src/b.js': 'b\n',
+	});
+	const next = await plan(repo.dir);
+	expect(unitOf(next, 'suiteapp')).toMatchObject({version: '0.2.0'});
+	expect(changeOf(next, 'apps/suiteapp/template/manifest.xml')).toBe(
+		manifest('0.2.0'),
+	);
+});

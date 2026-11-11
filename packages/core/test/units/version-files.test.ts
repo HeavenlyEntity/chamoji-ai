@@ -3,11 +3,17 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {afterEach, expect, test} from 'vitest';
 import {ReleaseError} from '../../src/release.js';
+import {createRepo} from '../helpers/fixture-repo.js';
+import {
+	suiteAppMonorepo,
+	templatedSuiteApp,
+} from '../helpers/setup-fixtures.js';
 import type {ResolvedUnit} from '../../src/units/workspace.js';
 import {
 	detectVersionFiles,
 	editVersionFiles,
 	readEasRemote,
+	readUnitVersion,
 	setJsonString,
 } from '../../src/units/version-files.js';
 
@@ -504,3 +510,92 @@ test.skipIf(process.platform === 'win32')(
 		);
 	},
 );
+
+test('manifest.xml: only <projectversion> changes', async () => {
+	const text =
+		'<?xml version="1.0"?>\r\n<!-- <projectversion>9.9.9</projectversion> -->\r\n<manifest projecttype="SUITEAPP">\r\n\t<publisherid>com.example</publisherid>\r\n\t<projectid>myapp</projectid>\r\n\t<projectversion>2.10.34</projectversion>\r\n\t<frameworkversion>1.0</frameworkversion>\r\n</manifest>\r\n';
+	const root = await repo({'apps/backend/src/manifest.xml': text});
+	const [edit] = await editVersionFiles(
+		root,
+		unit('apps/backend', {versionFiles: ['apps/backend/src/manifest.xml']}),
+		'2.11.0',
+		options,
+	);
+	expect(edit).toEqual({
+		file: 'apps/backend/src/manifest.xml',
+		text: text.replace('<projectversion>2.10.34<', '<projectversion>2.11.0<'),
+		from: '2.10.34',
+	});
+});
+
+test('manifest.xml with no <projectversion> cannot be set', async () => {
+	const root = await repo({
+		'src/manifest.xml': '<manifest projecttype="ACCOUNTCUSTOMIZATION"/>\n',
+	});
+	const attempt = editVersionFiles(
+		root,
+		unit('', {versionFiles: ['src/manifest.xml']}),
+		'1.0.0',
+		options,
+	);
+	await expect(attempt).rejects.toBeInstanceOf(ReleaseError);
+	await expect(attempt).rejects.toThrow(
+		"can't set the version in src/manifest.xml: it has no <projectversion> to set",
+	);
+});
+
+test('detectVersionFiles finds the SDF manifest', async () => {
+	const fixture = await suiteAppMonorepo();
+	try {
+		expect(await detectVersionFiles(fixture.dir, 'apps/backend')).toEqual([
+			'apps/backend/package.json',
+			'apps/backend/src/manifest.xml',
+		]);
+	} finally {
+		await fixture.cleanup();
+	}
+});
+
+test('detectVersionFiles skips an SDF manifest with no <projectversion>', async () => {
+	const fixture = await createRepo([
+		{
+			commit: '🎉 Start',
+			files: {
+				'src/manifest.xml': '<manifest projecttype="ACCOUNTCUSTOMIZATION"/>\n',
+				'src/deploy.xml': '<deploy/>\n',
+			},
+		},
+	]);
+	try {
+		expect(await detectVersionFiles(fixture.dir, '')).toEqual([]);
+	} finally {
+		await fixture.cleanup();
+	}
+});
+
+test('readUnitVersion falls back to the manifest', async () => {
+	const fixture = await templatedSuiteApp();
+	try {
+		const bare = unit('apps/suiteapp', {
+			versionFiles: ['apps/suiteapp/template/manifest.xml'],
+		});
+		expect(await readUnitVersion(fixture.dir, bare)).toBe('0.1.0');
+		expect(
+			await readUnitVersion(fixture.dir, unit('apps/suiteapp')),
+		).toBeNull();
+		const withPackage = unit('apps/backend', {
+			pkg: {
+				name: 'b',
+				path: 'apps/backend',
+				version: '2.5.20',
+				private: false,
+				runtimeDeps: [],
+				ranges: {},
+			},
+			versionFiles: ['apps/backend/src/manifest.xml'],
+		});
+		expect(await readUnitVersion(fixture.dir, withPackage)).toBe('2.5.20');
+	} finally {
+		await fixture.cleanup();
+	}
+});

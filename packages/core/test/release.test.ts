@@ -666,3 +666,39 @@ test('holdMajors turns a major release into a nothing plan naming the package', 
 	const free = await ready(repo.dir);
 	expect(free.bump).toBe('major');
 });
+
+test('single path bumps a tracked SuiteApp manifest with package.json', async () => {
+	const manifest = (version: string) =>
+		`<manifest projecttype="SUITEAPP">\n\t<publisherid>com.example</publisherid>\n\t<projectid>myapp</projectid>\n\t<projectversion>${version}</projectversion>\n</manifest>\n`;
+	const repo = await createRepo([
+		{
+			...(widgets[0] as {commit: string}),
+			files: {
+				'package.json': '{\n\t"version": "1.2.0"\n}\n',
+				'src/manifest.xml': manifest('1.2.0'),
+				'src/deploy.xml': '<deploy/>\n',
+				'other/src/manifest.xml': manifest('7.0.0'),
+				'other/src/deploy.xml': '<deploy/>\n',
+			},
+		},
+		...widgets.slice(1),
+	]);
+	plans.push(repo);
+	await gitOutput(repo.dir, ['config', 'user.name', 'Dev']);
+	await gitOutput(repo.dir, ['config', 'user.email', 'dev@example.com']);
+	const result = await ready(repo.dir);
+	const change = result.changes.find(item => item.file === 'src/manifest.xml');
+	expect(change).toEqual({
+		file: 'src/manifest.xml',
+		text: manifest('1.3.0'),
+		how: 'version 1.3.0',
+	});
+	// A manifest that doesn't carry the previous version is left alone.
+	expect(
+		result.changes.some(item => item.file === 'other/src/manifest.xml'),
+	).toBe(false);
+	await applyRelease(result);
+	expect(await readFile(path.join(repo.dir, 'src/manifest.xml'), 'utf8')).toBe(
+		manifest('1.3.0'),
+	);
+});

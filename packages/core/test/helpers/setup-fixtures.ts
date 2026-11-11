@@ -533,3 +533,99 @@ export async function frameworkZoo(): Promise<FixtureRepo> {
 		`lockfileVersion: '9.0'\n\nimporters:\n  .: {}\n${importers}`;
 	return createRepo([{commit: '🎉 Start the zoo', files}]);
 }
+
+/** An SDF `manifest.xml` of the shape `suitecloud project:create` writes. */
+export function sdfManifest(
+	options: {type?: 'SUITEAPP' | 'ACCOUNTCUSTOMIZATION'; version?: string} = {},
+): string {
+	const type = options.type ?? 'SUITEAPP';
+	const suiteApp =
+		`\t<publisherid>com.example</publisherid>\n\t<projectid>myapp</projectid>\n` +
+		`\t<projectname>My App</projectname>\n` +
+		(options.version
+			? `\t<projectversion>${options.version}</projectversion>\n`
+			: '');
+	return (
+		`<manifest projecttype="${type}">\n` +
+		(type === 'SUITEAPP' ? suiteApp : '\t<projectname>My App</projectname>\n') +
+		`\t<frameworkversion>1.0</frameworkversion>\n</manifest>\n`
+	);
+}
+
+export const SDF_DEPLOY = '<deploy>\n\t<objects>\n\t</objects>\n</deploy>\n';
+
+/**
+ * A npm workspace shaped like a NetSuite SuiteApp template: `apps/backend`
+ * is a package whose SuiteCloud project lives in `src/` (SuiteApp
+ * `com.example.myapp` at 2.10.34), next to `apps/web`, a Next.js app.
+ */
+export async function suiteAppMonorepo(): Promise<FixtureRepo> {
+	return createRepo([
+		{
+			commit: '🎉 Start the SuiteApp monorepo',
+			files: {
+				'package.json': manifest('suiteapp-monorepo', {
+					private: true,
+					workspaces: ['apps/*'],
+				}),
+				'apps/backend/package.json': manifest('@example/backend', {
+					version: '2.5.20',
+					main: 'suitecloud.config.js',
+				}),
+				'apps/backend/suitecloud.config.js':
+					'module.exports = {\n\tdefaultProjectFolder: "src",\n\tcommands: {},\n};\n',
+				'apps/backend/src/manifest.xml': sdfManifest({version: '2.10.34'}),
+				'apps/backend/src/deploy.xml': SDF_DEPLOY,
+				'apps/web/package.json': manifest('@example/web', {
+					private: true,
+					version: '0.1.0',
+					dependencies: {next: '^15.2.0', react: '^19.0.0'},
+				}),
+				'apps/web/next.config.mjs': 'export default {};\n',
+			},
+		},
+	]);
+}
+
+/**
+ * A pnpm workspace shaped like a templated SuiteApp: `apps/suiteapp` has no
+ * package.json and no suitecloud.config.js; its `template/` is tracked at
+ * 0.1.0 and its generated `src/` is git-ignored (on disk at 9.9.9).
+ */
+export async function templatedSuiteApp(): Promise<FixtureRepo> {
+	const repo = await createRepo([
+		{
+			commit: '🎉 Start the templated SuiteApp',
+			files: {
+				'package.json': manifest('templated', {private: true}),
+				'pnpm-workspace.yaml': "packages:\n  - 'apps/suiteapp'\n",
+				'.gitignore': 'apps/suiteapp/src/\n',
+				'apps/suiteapp/template/manifest.xml': sdfManifest({version: '0.1.0'}),
+				'apps/suiteapp/template/deploy.xml': SDF_DEPLOY,
+			},
+		},
+	]);
+	const src = path.join(repo.dir, 'apps', 'suiteapp', 'src');
+	await mkdir(src, {recursive: true});
+	await writeFile(
+		path.join(src, 'manifest.xml'),
+		sdfManifest({version: '9.9.9'}),
+	);
+	await writeFile(path.join(src, 'deploy.xml'), SDF_DEPLOY);
+	return repo;
+}
+
+/** A single repo whose root is an Account Customization Project in `src/`. */
+export async function acpSingle(): Promise<FixtureRepo> {
+	return createRepo([
+		{
+			commit: '🎉 Start the account customization',
+			files: {
+				'suitecloud.config.js':
+					'module.exports = {\n\tdefaultProjectFolder: "src",\n};\n',
+				'src/manifest.xml': sdfManifest({type: 'ACCOUNTCUSTOMIZATION'}),
+				'src/deploy.xml': SDF_DEPLOY,
+			},
+		},
+	]);
+}
