@@ -249,7 +249,7 @@ The logos are their owners' trademarks. Setup uses them only to name the framewo
 
 These are from real runs in two small repos: `widgets`, a single package, and `shop`, with two apps and a shared package. The first run in `shop`, without `--yes` and with `--explain`, is on [Set up a repo](/set-up-a-repo#what-it-found).
 
-A single package gets a release section too, holding when a release happens. Without a terminal, setup says what it would write and what else it would do, and exits 2:
+A single package gets a release section too, holding when a release happens. Without a terminal, setup says what it would write, the release workflow it would add, and what else it would do, and exits 2:
 
 ```txt {{ title: 'chamoji setup' }}
 ○ releases aren't set up yet
@@ -265,6 +265,39 @@ Setup would write this release section to chamoji.config.json:
   "shape": "single",
   "trigger": "merge"
 }
+
+Setup would also write:
+  .github/workflows/chamoji-release.yml: new file; releases on every push to main and on "Run workflow"
+
+.github/workflows/chamoji-release.yml would read:
+name: release
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: The version to release; empty picks it from the commits
+        required: false
+concurrency:
+  group: chamoji-release
+  cancel-in-progress: false
+permissions:
+  contents: write
+  id-token: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: HeavenlyEntity/chamoji-ai@v0.15.0
+        with:
+          chamoji-version: '0.15.0'
+          release-version: ${{ inputs.version }}
+          # npm-token: ${{ secrets.NPM_TOKEN }}
 
 Setup would also connect Claude Code here, as chamoji init --agents does.
 Setup would also offer the commit composer hook for this clone.
