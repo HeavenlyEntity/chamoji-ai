@@ -187,6 +187,14 @@ async function findManifests(
 	return found;
 }
 
+/** A unit's name is its folder's last segment: 'apps/e2e' -> 'e2e', 'tooling/*' -> 'tooling'. */
+export const unitNameOf = (folder: string): string =>
+	folder
+		.replace(/\/\*+$/, '')
+		.split('/')
+		.filter(Boolean)
+		.pop() ?? folder;
+
 /** The package a manifest describes, or null without a name. */
 export function readPackage(
 	folder: string,

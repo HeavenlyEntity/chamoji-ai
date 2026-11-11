@@ -8,7 +8,11 @@ import {detectPackageManager} from '../publish/pack.js';
 import {registryFor} from '../publish/registry.js';
 import {parseReleaseSettings, type Mention} from '../units/settings.js';
 import {matchesTagPattern} from '../units/tags.js';
-import {readPackage, type WorkspacePackage} from '../units/workspace.js';
+import {
+	readPackage,
+	unitNameOf,
+	type WorkspacePackage,
+} from '../units/workspace.js';
 import {detectLayout, type LayoutDetection, type UnitFacts} from './detect.js';
 import {detectMentions} from './mentions.js';
 import {checkCommand} from './package-scripts.js';
@@ -18,7 +22,6 @@ import {
 	baseName,
 	factsOf,
 	isObject,
-	lastSegment,
 	questions,
 	recommendedShape,
 	SHARED_TAG,
@@ -470,7 +473,7 @@ export function applyAnswer(
 			for (const path of paths) {
 				if (stay.some(each => each.path === path)) continue;
 				const facts = candidateAt(detection.layout, path);
-				const name = lastSegment(path);
+				const name = unitNameOf(path);
 				// A pattern that would hide the new unit's own tags goes.
 				const last = facts && factsOf(detection, facts).formats?.last;
 				if (last) {

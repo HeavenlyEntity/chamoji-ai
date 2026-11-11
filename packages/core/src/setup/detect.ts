@@ -7,7 +7,11 @@ import {inspectPackage, sdfKind, type PackageKind} from '../publish/kind.js';
 import {findSdfProjects, type SdfProject} from '../units/sdf.js';
 import {escapeRegExp} from '../units/tags.js';
 import {detectVersionFiles, readEasRemote} from '../units/version-files.js';
-import {readWorkspace, type WorkspacePackage} from '../units/workspace.js';
+import {
+	readWorkspace,
+	unitNameOf,
+	type WorkspacePackage,
+} from '../units/workspace.js';
 
 export type AppCandidate = {
 	/** Short name: the folder's last segment. */
@@ -86,9 +90,6 @@ const MAX_EXAMPLES = 3;
 const LOCKFILE =
 	/(^|\/)(package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|bun\.lockb?|pnpm-lock\.yaml|[^/]+\.lock)$/;
 
-const lastSegment = (folder: string): string =>
-	folder.split('/').filter(Boolean).pop() ?? folder;
-
 /** Does folder `dir` hold `file`, on a segment boundary? */
 const holds = (dir: string, file: string): boolean =>
 	file === dir || file.startsWith(`${dir}/`);
@@ -162,7 +163,7 @@ async function factsFor(
 	);
 	const version = pkg?.version ?? sdf?.version ?? null;
 	return {
-		name: lastSegment(unit.path),
+		name: unitNameOf(unit.path),
 		path: unit.path,
 		version,
 		kind: unit.kind,
@@ -280,7 +281,7 @@ export async function detectLayout(root: string): Promise<LayoutDetection> {
 	const apps: AppCandidate[] =
 		kind === 'apps' || kind === 'mixed'
 			? appUnits.map(unit => {
-					const name = lastSegment(unit.path);
+					const name = unitNameOf(unit.path);
 					return {...unit, name, ticked: !TOOL_NAMES.includes(name)};
 				})
 			: [];

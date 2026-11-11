@@ -2,7 +2,7 @@ import {CONFIG_FILE} from '../config.js';
 import {sdfFramework} from '../publish/frameworks.js';
 import {parseReleaseSettings} from '../units/settings.js';
 import {matchesTagPattern, versionFromTag} from '../units/tags.js';
-import {ownerOf, resolveUnits} from '../units/workspace.js';
+import {ownerOf, resolveUnits, unitNameOf} from '../units/workspace.js';
 import type {Detection, SetupAnswers} from './answers.js';
 import {MAX_COMMITS, type LayoutDetection, type UnitFacts} from './detect.js';
 import {
@@ -35,13 +35,6 @@ export const SHARED_TAG = 'v{version}';
 export const isObject = (value: unknown): value is Obj =>
 	typeof value === 'object' && value !== null && !Array.isArray(value);
 export const unique = <T>(values: T[]): T[] => [...new Set(values)];
-/** 'apps/e2e' -> 'e2e', 'tooling/*' -> 'tooling'. */
-export const lastSegment = (folder: string): string =>
-	folder
-		.replace(/\/\*+$/, '')
-		.split('/')
-		.filter(Boolean)
-		.pop() ?? folder;
 /** ' · Next.js' for a candidate with a known framework, else ''. */
 const frameworkSuffix = (layout: LayoutDetection, folder: string): string => {
 	const framework = candidateAt(layout, folder)?.framework;
@@ -221,7 +214,7 @@ function unitQuestions(
 	const asked: Question[] = [];
 	const add = (question: Omit<Question, 'needsAnswer'>, needsAnswer = false) =>
 		asked.push({...question, needsAnswer});
-	const folder = lastSegment(unit.path);
+	const folder = unitNameOf(unit.path);
 	add({
 		id: `name:${name}`,
 		title: `What should ${name} be called?`,
@@ -529,18 +522,18 @@ export function questions(
 		: layout.apps;
 	const tools = candidates
 		.filter(app => !app.ticked)
-		.map(app => lastSegment(app.path));
+		.map(app => unitNameOf(app.path));
 	add({
 		id: 'units',
 		title: `Which ${word}s get their own versions?`,
-		found: `Found ${list(candidates.map(app => lastSegment(app.path)))}${tools.length > 0 ? `; ${list(tools)} look like tests or tools` : ''}`,
+		found: `Found ${list(candidates.map(app => unitNameOf(app.path)))}${tools.length > 0 ? `; ${list(tools)} look like tests or tools` : ''}`,
 		kind: 'ticks',
 		options: unique([
 			...candidates.map(app => app.path),
 			...answers.units.map(unit => unit.path),
 		]).map(path => ({
 			value: path,
-			label: `${lastSegment(path)} (${path})${frameworkSuffix(layout, path)}`,
+			label: `${unitNameOf(path)} (${path})${frameworkSuffix(layout, path)}`,
 			...(candidates.some(app => app.path === path && app.ticked)
 				? {recommended: true}
 				: {}),
@@ -752,7 +745,7 @@ function foundSentence({layout}: Detection, answers: SetupAnswers): string {
 		...answers.units.map(unit => sdfLabel(layout, unit.name, unit.path)),
 		...candidates
 			.filter(path => !unitPaths.includes(path))
-			.map(path => sdfLabel(layout, lastSegment(path), path)),
+			.map(path => sdfLabel(layout, unitNameOf(path), path)),
 	];
 	const internal = layout.packages.filter(
 		pkg =>
@@ -832,7 +825,7 @@ export function summary(detection: Detection, answers: SetupAnswers): string {
 		const own = answers.units
 			.map(unit => unit.name)
 			.filter(name => !grouped.includes(name));
-		const left = answers.exclude.map(lastSegment);
+		const left = answers.exclude.map(unitNameOf);
 		const clauses = [
 			own.length > 0 &&
 				`${list(own)} ${own.length === 1 ? 'gets its own version' : 'get their own versions'}`,
