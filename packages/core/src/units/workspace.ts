@@ -236,6 +236,27 @@ export function readPackage(
 }
 
 /**
+ * The root `package.json` as a package, or null when there is none or it has
+ * no name. A file that can't be read or parsed throws.
+ */
+export async function readRootPackage(
+	root: string,
+): Promise<WorkspacePackage | null> {
+	let text: string;
+	try {
+		text = await readFile(path.join(root, 'package.json'), 'utf8');
+	} catch (error) {
+		if (isMissing(error)) return null;
+		throw error;
+	}
+
+	const parsed: unknown = JSON.parse(text);
+	return typeof parsed === 'object' && parsed !== null
+		? readPackage('', parsed as Obj)
+		: null;
+}
+
+/**
  * Folders holding a package.json. In a git repo they come from git's file
  * list, so ignored build output never counts; otherwise the folders are walked.
  */
