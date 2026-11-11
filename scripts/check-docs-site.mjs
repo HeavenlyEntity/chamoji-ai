@@ -54,6 +54,7 @@ const COMPONENT_ATTRIBUTES = {
 	Resource: ['name', 'icon', 'href', 'code'],
 	Tag: ['variant', 'size', 'className'],
 	Button: ['href', 'variant', 'arrow', 'className'],
+	MonorepoDiagram: [],
 	p: ['className'],
 };
 const COMPONENTS = Object.keys(COMPONENT_ATTRIBUTES);
