@@ -44,6 +44,12 @@ export const metadata = {
 		that carries the previous version. On a first release, every one that says
 		another version.
 	</Step>
+	<Step title="Version mentions.">
+		With `release.mentions` set, each version pin it names, such as
+		`owner/repo@v1.3.0` in a readme, moves to the new version in the files it
+		lists. They go in the release commit. See
+		[mentions](/reference/config#the-release-section).
+	</Step>
 	<Step title="Commit and tag.">
 		A release commit in your repo’s style, such as `🔖 Release v1.4.0`, which
 		later changelogs leave out, and an annotated tag. If anything fails before

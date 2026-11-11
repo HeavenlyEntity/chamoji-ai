@@ -10,6 +10,7 @@ import {
 	runGit,
 } from './git.js';
 import {renderMarkdown} from './render/markdown.js';
+import {editMentions} from './units/mentions.js';
 import {findSdfProjects, setManifestVersion} from './units/sdf.js';
 import type {
 	ChamojiConfig,
@@ -37,7 +38,8 @@ export class ReleaseError extends Error {
 			| 'not-newer'
 			| 'tag-exists'
 			| 'invalid-version'
-			| 'publish-check',
+			| 'publish-check'
+			| 'invalid-mention',
 		message: string,
 	) {
 		super(message);
@@ -349,6 +351,15 @@ export async function planRelease(
 				how: `version ${version}`,
 			});
 		}
+	}
+
+	const mentions = config.release?.mentions ?? [];
+	if (mentions.length > 0) {
+		changes.splice(
+			0,
+			changes.length,
+			...(await editMentions(root, mentions, null, version, changes)),
+		);
 	}
 
 	return {
