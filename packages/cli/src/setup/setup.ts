@@ -153,15 +153,8 @@ type ReleasesPlan = {
 	configChanged: boolean;
 	/** The config file's new text when `configChanged`. */
 	text: string;
-	/** The other files setup writes: the release workflow, then each privatized package.json. */
-	files: FileChange[];
-	/** What an existing workflow that runs chamoji lacks, said as advice, instead of a new file. */
-	advice: string | null;
-	/** The lines `advice` names; empty when nothing is missing. */
-	adviceLines: string[];
-	/** The file that stands in for a new workflow, for `--json`. */
-	existingWorkflow: string | null;
-};
+	/** The other files setup writes, and the advice for a workflow that exists. */
+} & Awaited<ReturnType<typeof planSetupFiles>>;
 
 /** What the releases step writes for these answers; a single package gets a section too. */
 async function planReleases(
