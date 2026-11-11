@@ -20,10 +20,12 @@ export {
 } from './config.js';
 export {
 	assertGitRepo,
+	defaultBranch,
 	getRemoteWebUrl,
 	isAuthFailure,
 	listReleaseTags,
 	listTags,
+	originHeadBranch,
 	quietGitEnv,
 	readCommitFiles,
 	readCommits,
@@ -221,17 +223,16 @@ export {
 export {questions, summary, type Question} from './setup/questions.js';
 export {detectMentions} from './setup/mentions.js';
 export {assertNoSymlinks} from './links.js';
+export {checkCommand} from './setup/package-scripts.js';
 export {
-	checkCommand,
-	defaultBranch,
 	findReleaseWorkflow,
-	pnpmSetupVersion,
-	privatizeEdit,
 	releaseWorkflow,
 	RELEASE_WORKFLOW_FILE,
 	workflowAdvice,
 	workflowLacking,
 } from './setup/workflow.js';
+export {privatizeEdit} from './setup/privatize.js';
+export {pnpmSetupVersion} from './publish/lockfile.js';
 export {
 	readReleaseSection,
 	releaseSection,

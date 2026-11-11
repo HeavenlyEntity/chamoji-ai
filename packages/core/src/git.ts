@@ -308,6 +308,44 @@ export async function listTags(cwd: string, to: string): Promise<ReleaseTag[]> {
 		);
 }
 
+/** `origin`'s HEAD as `git symbolic-ref --short` names it, or null when there is none. */
+async function originHead(root: string): Promise<string | null> {
+	try {
+		return (
+			await runGit(
+				['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'],
+				root,
+			)
+		).trim();
+	} catch {
+		// No origin, or it has no HEAD yet.
+		return null;
+	}
+}
+
+/** The branch `origin`'s HEAD points at, without its `origin/` prefix; null when origin has no HEAD. */
+export async function originHeadBranch(root: string): Promise<string | null> {
+	const head = await originHead(root);
+	return head === null ? null : head.replace(/^origin\//, '');
+}
+
+/** The branch a merge release runs on: origin's HEAD, else the current branch, else main. */
+export async function defaultBranch(root: string): Promise<string> {
+	const head = await originHead(root);
+	if (head?.startsWith('origin/') && head.length > 'origin/'.length) {
+		return head.slice('origin/'.length);
+	}
+
+	try {
+		const current = (await runGit(['branch', '--show-current'], root)).trim();
+		if (current) return current;
+	} catch {
+		// Not a repo we can read; main is the usual name.
+	}
+
+	return 'main';
+}
+
 /** `origin` as an https web URL, or undefined when there is none. */
 export async function getRemoteWebUrl(
 	cwd: string,

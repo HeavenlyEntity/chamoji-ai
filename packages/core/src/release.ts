@@ -7,6 +7,7 @@ import {
 	assertRevision,
 	isAuthFailure,
 	listReleaseTags,
+	originHeadBranch,
 	runGit,
 } from './git.js';
 import {renderMarkdown} from './render/markdown.js';
@@ -152,12 +153,7 @@ export async function preflight(
 	}
 
 	const branch = await git('branch', '--show-current');
-	const originHead = await tryGit(
-		'symbolic-ref',
-		'--short',
-		'refs/remotes/origin/HEAD',
-	);
-	const defaultBranch = originHead?.replace(/^origin\//, '');
+	const defaultBranch = await originHeadBranch(root);
 	if (defaultBranch && branch !== defaultBranch && !options.anyBranch) {
 		throw new ReleaseError(
 			'branch',

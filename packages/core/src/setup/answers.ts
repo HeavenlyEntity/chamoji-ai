@@ -2,7 +2,7 @@ import {readFile} from 'node:fs/promises';
 import path from 'node:path';
 import semver from 'semver';
 import {CONFIG_FILE} from '../config.js';
-import {getRemoteWebUrl} from '../git.js';
+import {defaultBranch, getRemoteWebUrl} from '../git.js';
 import {classifyPackage, type PackageKind} from '../publish/kind.js';
 import {DEFAULT_REGISTRY} from '../publish/npm.js';
 import {detectPackageManager} from '../publish/pack.js';
@@ -12,6 +12,7 @@ import {matchesTagPattern} from '../units/tags.js';
 import {readPackage, type WorkspacePackage} from '../units/workspace.js';
 import {detectLayout, type LayoutDetection, type UnitFacts} from './detect.js';
 import {detectMentions} from './mentions.js';
+import {checkCommand} from './package-scripts.js';
 import {
 	current,
 	defaultTag,
@@ -27,7 +28,7 @@ import {
 import {releaseSection, unasked} from './section.js';
 import {detectTags, findUpstreamRemote, type TagDetection} from './tags.js';
 import {detectUpstream, type UpstreamDetection} from './upstream.js';
-import {checkCommand, defaultBranch, findReleaseWorkflow} from './workflow.js';
+import {findReleaseWorkflow} from './workflow.js';
 
 export type Detection = {
 	layout: LayoutDetection;
