@@ -1,5 +1,6 @@
 import {afterEach, expect, test} from 'vitest';
-import {detectMentions, readWorkspace} from '../../src/index.js';
+import {detectMentions} from '../../src/setup/mentions.js';
+import {readWorkspace} from '../../src/index.js';
 import {createRepo, type FixtureRepo} from '../helpers/fixture-repo.js';
 
 let current: FixtureRepo | undefined;

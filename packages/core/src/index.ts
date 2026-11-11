@@ -20,12 +20,10 @@ export {
 } from './config.js';
 export {
 	assertGitRepo,
-	defaultBranch,
 	getRemoteWebUrl,
 	isAuthFailure,
 	listReleaseTags,
 	listTags,
-	originHeadBranch,
 	quietGitEnv,
 	readCommitFiles,
 	readCommits,
@@ -52,6 +50,7 @@ export {
 } from './units/notes.js';
 export {
 	parseReleaseSettings,
+	type Mention,
 	type ReleaseSettings,
 	type Shape,
 	type UnitSettings,
@@ -80,6 +79,7 @@ export {
 	type UnitReleaseOptions,
 	type UnitReleasePlan,
 } from './units/plan.js';
+export type {SdfProject} from './units/sdf.js';
 export {
 	readUpstream,
 	sinceRange,
@@ -222,9 +222,7 @@ export {
 } from './setup/answers.js';
 export {questions, summary, type Question} from './setup/questions.js';
 export {effectiveTrigger} from './setup/rules.js';
-export {detectMentions} from './setup/mentions.js';
 export {assertNoSymlinks} from './links.js';
-export {checkCommand} from './setup/package-scripts.js';
 export {planSetupFiles, publishTargets} from './setup/files.js';
 export {RELEASE_WORKFLOW_FILE} from './setup/workflow.js';
 export {
