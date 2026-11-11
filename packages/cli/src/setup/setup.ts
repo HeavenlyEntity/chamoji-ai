@@ -432,6 +432,14 @@ export async function runSetup(
 	const results: Array<{step: StepName; result: StepResult}> = [];
 	const wrote: string[] = [];
 	let code = 0;
+	// The workflow and privatize edits are shown only by the releases questions
+	// (or chosen with --yes), so a run that didn't ask them never writes them.
+	const writesFiles =
+		args.yes || (screening && asksReleases(detection!, screened));
+	if (plan && !writesFiles && plan.files.length > 0) {
+		plan.result = plan.configChanged ? 'written' : 'unchanged';
+	}
+
 	if (plan) {
 		describeReleases(plan, true);
 		if (plan.configChanged) {
@@ -440,11 +448,17 @@ export async function runSetup(
 			out(`${WROTE}\n`);
 		}
 
-		for (const change of plan.files) {
-			// eslint-disable-next-line no-await-in-loop -- files go one at a time
-			await writeFileChange(root, change);
-			wrote.push(change.file);
-			out(`${change.file}: ${change.how}. Review it and commit it.\n`);
+		if (writesFiles) {
+			for (const change of plan.files) {
+				// eslint-disable-next-line no-await-in-loop -- files go one at a time
+				await writeFileChange(root, change);
+				wrote.push(change.file);
+				out(`${change.file}: ${change.how}. Review it and commit it.\n`);
+			}
+		} else if (plan.files.length > 0) {
+			out(
+				`Setup would also write: ${plan.files.map(change => change.file).join(', ')}; run chamoji setup releases to review them.\n`,
+			);
 		}
 
 		if (plan.advice) out(`${plan.advice}\n`);

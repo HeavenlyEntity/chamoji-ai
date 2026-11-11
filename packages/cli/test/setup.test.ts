@@ -869,6 +869,30 @@ test('in a terminal, a set-up repo opens the screen for the per-clone steps only
 
 const WORKFLOW = '.github/workflows/chamoji-release.yml';
 
+test("a re-run that doesn't ask releases writes no workflow and says so (F-b)", async () => {
+	const dir = await made(singlePackage());
+	await writeFile(
+		path.join(dir, 'chamoji.config.json'),
+		`${JSON.stringify({release: {schema: 2, shape: 'single', trigger: 'merge'}}, null, '\t')}\n`,
+	);
+	asTerminal();
+	const seen: SetupScreenProps[] = [];
+	const {code, stdout} = await chamoji(['setup'], dir, {
+		async setupScreen(props) {
+			seen.push(props);
+			return {saved: true, answers: props.initial, steps: []};
+		},
+	});
+	expect(code).toBe(0);
+	// The screen opened for a per-clone step only; releases was done.
+	expect(seen).toHaveLength(1);
+	expect(seen[0]!.states[0]).toMatchObject({step: 'releases', done: true});
+	expect(existsSync(path.join(dir, WORKFLOW))).toBe(false);
+	expect(stdout).toContain(
+		`Setup would also write: ${WORKFLOW}; run chamoji setup releases to review them.\n`,
+	);
+});
+
 test('--yes writes the config and chamoji-release.yml, both listed in --json wrote', async () => {
 	const dir = await made(singlePackage());
 	const {code, stdout, stderr} = await chamoji(
