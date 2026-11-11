@@ -1,6 +1,13 @@
 import {lstat, readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {listTags, runGit} from '../git.js';
+import type {DetectedFramework} from '../publish/frameworks.js';
+import {
+	classifyPackage,
+	detectFramework,
+	type PackageKind,
+} from '../publish/kind.js';
+import {findSdfProjects, type SdfProject} from '../units/sdf.js';
 import {escapeRegExp} from '../units/tags.js';
 import {detectVersionFiles, readEasRemote} from '../units/version-files.js';
 import {readWorkspace, type WorkspacePackage} from '../units/workspace.js';
@@ -9,16 +16,25 @@ export type AppCandidate = {
 	/** Short name: the folder's last segment. */
 	name: string;
 	path: string;
-	pkg: WorkspacePackage;
+	/** Null for a NetSuite SDF project with no `package.json`. */
+	pkg: WorkspacePackage | null;
 	/** False for test/tool names. */
 	ticked: boolean;
+	kind: PackageKind;
+	framework: DetectedFramework | null;
+	sdf: SdfProject | null;
 };
 
 export type UnitFacts = {
 	name: string;
 	path: string;
-	/** From its manifest. */
+	/** From its `package.json`, else its SDF `manifest.xml`. */
 	version: string | null;
+	kind: PackageKind;
+	framework: DetectedFramework | null;
+	sdf: SdfProject | null;
+	/** Set when the `package.json` and the SDF `manifest.xml` hold different versions. */
+	versionMismatch: {packageJson: string; manifest: string} | null;
 	/** From detectVersionFiles, without its package.json. */
 	versionFiles: string[];
 	/**
@@ -36,6 +52,8 @@ export type LayoutDetection = {
 	root: string;
 	kind: 'single' | 'apps' | 'libraries' | 'mixed';
 	packages: WorkspacePackage[];
+	/** Every NetSuite SDF project in the repo, sorted by path. */
+	sdf: SdfProject[];
 	/** Empty unless kind is apps or mixed. */
 	apps: AppCandidate[];
 	/** Non-private packages that aren't apps, for libraries. */
@@ -100,7 +118,7 @@ async function readEasLocal(root: string, unitPath: string): Promise<boolean> {
 
 async function findOtherVersionFiles(
 	root: string,
-	unit: WorkspacePackage,
+	unit: {path: string; version: string | null},
 	known: string[],
 ): Promise<string[]> {
 	if (unit.version === null || unit.path === '') return [];
@@ -131,22 +149,36 @@ async function findOtherVersionFiles(
 	return found;
 }
 
-async function factsFor(
-	root: string,
-	pkg: WorkspacePackage,
-): Promise<UnitFacts> {
-	const detected = await detectVersionFiles(root, pkg.path);
+type Candidate = Pick<AppCandidate, 'path' | 'kind' | 'framework' | 'sdf'> & {
+	pkg: WorkspacePackage | null;
+};
+
+async function factsFor(root: string, unit: Candidate): Promise<UnitFacts> {
+	const {pkg, sdf} = unit;
+	const detected = await detectVersionFiles(root, unit.path);
 	const versionFiles = detected.filter(
-		file => file !== `${pkg.path}/package.json`,
+		file => file !== `${unit.path}/package.json`,
 	);
+	const version = pkg?.version ?? sdf?.version ?? null;
 	return {
-		name: lastSegment(pkg.path),
-		path: pkg.path,
-		version: pkg.version,
+		name: lastSegment(unit.path),
+		path: unit.path,
+		version,
+		kind: unit.kind,
+		framework: unit.framework,
+		sdf,
+		versionMismatch:
+			pkg?.version && sdf?.version && pkg.version !== sdf.version
+				? {packageJson: pkg.version, manifest: sdf.version}
+				: null,
 		versionFiles,
-		otherVersionFiles: await findOtherVersionFiles(root, pkg, detected),
-		easRemote: await readEasRemote(root, pkg.path),
-		easLocal: await readEasLocal(root, pkg.path),
+		otherVersionFiles: await findOtherVersionFiles(
+			root,
+			{path: unit.path, version},
+			detected,
+		),
+		easRemote: await readEasRemote(root, unit.path),
+		easLocal: await readEasLocal(root, unit.path),
 	};
 }
 
@@ -195,31 +227,75 @@ async function readRootOnly(
 /** Works out a repo's apps, packages and version files from git and disk. */
 export async function detectLayout(root: string): Promise<LayoutDetection> {
 	const packages = (await readWorkspace(root)).filter(pkg => pkg.path !== '');
+	const sdf = await findSdfProjects(root);
 	const dependedOn = new Set(packages.flatMap(pkg => pkg.runtimeDeps));
-	const isApp = (pkg: WorkspacePackage): boolean =>
-		pkg.path.startsWith('apps/') ||
-		(!pkg.path.includes('/') && pkg.private && !dependedOn.has(pkg.name));
+	const classified: Array<Candidate & {pkg: WorkspacePackage}> = [];
+	for (const pkg of packages) {
+		// eslint-disable-next-line no-await-in-loop
+		const kind = await classifyPackage(root, pkg, dependedOn);
+		// eslint-disable-next-line no-await-in-loop
+		const framework = kind.detected ?? (await detectFramework(root, pkg.path));
+		classified.push({
+			path: pkg.path,
+			pkg,
+			kind,
+			framework,
+			sdf: sdf.find(project => project.path === pkg.path) ?? null,
+		});
+	}
 
-	const appPackages = packages.filter(isApp);
-	const libraries = packages.filter(pkg => !isApp(pkg) && !pkg.private);
+	// SDF projects with no workspace package are app units of their own.
+	const sdfOnly: Candidate[] = sdf
+		.filter(
+			project =>
+				project.path !== '' && !packages.some(pkg => pkg.path === project.path),
+		)
+		.map(project => {
+			const name =
+				project.type === 'suiteapp'
+					? 'NetSuite SuiteApp'
+					: 'NetSuite Account Customization Project';
+			const detected = {
+				id: project.framework,
+				name,
+				version: project.version,
+				basedOn: [],
+			};
+			return {
+				path: project.path,
+				pkg: null,
+				kind: {
+					kind: 'app',
+					reasons: [`${name} (\`${project.manifest}\`)`],
+					framework: name,
+					detected,
+				},
+				framework: detected,
+				sdf: project,
+			};
+		});
+
+	const appUnits = [
+		...classified.filter(unit => unit.kind.kind === 'app'),
+		...sdfOnly,
+	];
+	const libraryUnits = classified.filter(
+		unit => unit.kind.kind !== 'app' && !unit.pkg.private,
+	);
+	const libraries = libraryUnits.map(unit => unit.pkg);
 
 	let kind: LayoutDetection['kind'];
-	if (packages.length <= 1) kind = 'single';
-	else if (appPackages.length > 0 && libraries.length > 0) kind = 'mixed';
-	else if (appPackages.length > 0) kind = 'apps';
+	if (packages.length <= 1 && sdfOnly.length === 0) kind = 'single';
+	else if (appUnits.length > 0 && libraries.length > 0) kind = 'mixed';
+	else if (appUnits.length > 0) kind = 'apps';
 	else if (libraries.length > 0) kind = 'libraries';
 	else kind = 'single';
 
 	const apps: AppCandidate[] =
 		kind === 'apps' || kind === 'mixed'
-			? appPackages.map(pkg => {
-					const name = lastSegment(pkg.path);
-					return {
-						name,
-						path: pkg.path,
-						pkg,
-						ticked: !TOOL_NAMES.includes(name),
-					};
+			? appUnits.map(unit => {
+					const name = lastSegment(unit.path);
+					return {...unit, name, ticked: !TOOL_NAMES.includes(name)};
 				})
 			: [];
 
@@ -230,23 +306,27 @@ export async function detectLayout(root: string): Promise<LayoutDetection> {
 
 	excluded.sort();
 
-	const unitPackages =
+	const unitPaths = new Set(
 		kind === 'libraries'
-			? libraries
-			: apps.filter(app => app.ticked).map(app => app.pkg);
+			? libraries.map(pkg => pkg.path)
+			: apps.filter(app => app.ticked).map(app => app.path),
+	);
 	const candidates: UnitFacts[] = [];
-	const everyCandidate = [...apps.map(app => app.pkg), ...libraries].sort(
-		(a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0),
+	const everyCandidate = [...apps, ...libraryUnits].sort((a, b) =>
+		a.path < b.path ? -1 : a.path > b.path ? 1 : 0,
 	);
-	for (const pkg of everyCandidate) candidates.push(await factsFor(root, pkg));
-	const units = candidates.filter(facts =>
-		unitPackages.some(pkg => pkg.path === facts.path),
-	);
+	for (const unit of everyCandidate) {
+		// eslint-disable-next-line no-await-in-loop
+		candidates.push(await factsFor(root, unit));
+	}
+
+	const units = candidates.filter(facts => unitPaths.has(facts.path));
 
 	return {
 		root,
 		kind,
 		packages,
+		sdf,
 		apps,
 		libraries,
 		excluded,

@@ -559,7 +559,9 @@ export const SDF_DEPLOY = '<deploy>\n\t<objects>\n\t</objects>\n</deploy>\n';
  * is a package whose SuiteCloud project lives in `src/` (SuiteApp
  * `com.example.myapp` at 2.10.34), next to `apps/web`, a Next.js app.
  */
-export async function suiteAppMonorepo(): Promise<FixtureRepo> {
+export async function suiteAppMonorepo(
+	options: {extraSteps?: RepoStep[]} = {},
+): Promise<FixtureRepo> {
 	return createRepo([
 		{
 			commit: '🎉 Start the SuiteApp monorepo',
@@ -584,6 +586,7 @@ export async function suiteAppMonorepo(): Promise<FixtureRepo> {
 				'apps/web/next.config.mjs': 'export default {};\n',
 			},
 		},
+		...(options.extraSteps ?? []),
 	]);
 }
 

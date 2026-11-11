@@ -34,6 +34,28 @@ export const lastSegment = (folder: string): string =>
 		.split('/')
 		.filter(Boolean)
 		.pop() ?? folder;
+/** ' · Next.js' for a candidate with a known framework, else ''. */
+const frameworkSuffix = (layout: LayoutDetection, folder: string): string => {
+	const framework = layout.candidates.find(
+		facts => facts.path === folder,
+	)?.framework;
+	return framework ? ` · ${framework.name}` : '';
+};
+
+/** A NetSuite project's label: 'backend (NetSuite SuiteApp · com.example.myapp 2.10.34)'. */
+function sdfLabel(layout: LayoutDetection, name: string, folder: string) {
+	const project = layout.candidates.find(facts => facts.path === folder)?.sdf;
+	if (!project) return name;
+	const framework =
+		project.type === 'suiteapp'
+			? 'NetSuite SuiteApp'
+			: 'NetSuite Account Customization Project';
+	const detail = [project.applicationId, project.version]
+		.filter(Boolean)
+		.join(' ');
+	return `${name} (${framework}${detail ? ` · ${detail}` : ''})`;
+}
+
 const count = (n: number, one: string, many: string): string =>
 	`${n} ${n === 1 ? one : many}`;
 
@@ -174,27 +196,58 @@ function unitQuestions(
 	});
 	if (!formats?.last) {
 		const manifest = facts?.version;
+		const mismatch = facts?.versionMismatch ?? null;
+		const hasPackage = detection.layout.packages.some(
+			pkg => pkg.path === unit.path,
+		);
+		const source = hasPackage
+			? 'package.json'
+			: (facts?.sdf?.manifest.split('/').pop() ?? 'manifest.xml');
 		add(
-			{
-				id: `firstVersion:${name}`,
-				title: !manifest
-					? `What version should ${name} start at?`
-					: manifest === '1.0.0'
-						? `${name} is ${manifest} in package.json; start there?`
-						: `${name} is ${manifest} in package.json; start there or at 1.0.0?`,
-				found: manifest
-					? `${name} has no tags yet, and ${unit.path}/package.json says ${manifest}`
-					: `${name} has no tags yet and no version in ${unit.path}/package.json`,
-				kind: 'text',
-				options: [
-					...(manifest
-						? [{value: '', label: `Start at ${manifest}`, recommended: true}]
-						: []),
-					...(manifest === '1.0.0'
-						? []
-						: [{value: '1.0.0', label: 'Start at 1.0.0'}]),
-				],
-			},
+			mismatch
+				? {
+						id: `firstVersion:${name}`,
+						title: `${name} is ${mismatch.manifest} in manifest.xml but ${mismatch.packageJson} in package.json; which is current?`,
+						found: `${name} has no tags yet, ${facts?.sdf?.manifest ?? 'its manifest.xml'} says ${mismatch.manifest}, and ${unit.path}/package.json says ${mismatch.packageJson}`,
+						kind: 'text',
+						options: [
+							{
+								value: mismatch.manifest,
+								label: `Start at ${mismatch.manifest}`,
+								recommended: true,
+							},
+							{
+								value: mismatch.packageJson,
+								label: `Start at ${mismatch.packageJson}`,
+							},
+						],
+					}
+				: {
+						id: `firstVersion:${name}`,
+						title: !manifest
+							? `What version should ${name} start at?`
+							: manifest === '1.0.0'
+								? `${name} is ${manifest} in ${source}; start there?`
+								: `${name} is ${manifest} in ${source}; start there or at 1.0.0?`,
+						found: manifest
+							? `${name} has no tags yet, and ${hasPackage ? `${unit.path}/package.json` : (facts?.sdf?.manifest ?? source)} says ${manifest}`
+							: `${name} has no tags yet and no version in ${unit.path}/package.json`,
+						kind: 'text',
+						options: [
+							...(manifest
+								? [
+										{
+											value: '',
+											label: `Start at ${manifest}`,
+											recommended: true,
+										},
+									]
+								: []),
+							...(manifest === '1.0.0'
+								? []
+								: [{value: '1.0.0', label: 'Start at 1.0.0'}]),
+						],
+					},
 			true,
 		);
 	}
@@ -326,7 +379,7 @@ export function questions(
 			...answers.units.map(unit => unit.path),
 		]).map(path => ({
 			value: path,
-			label: `${lastSegment(path)} (${path})`,
+			label: `${lastSegment(path)} (${path})${frameworkSuffix(layout, path)}`,
 			...(candidates.some(app => app.path === path && app.ticked)
 				? {recommended: true}
 				: {}),
@@ -526,8 +579,10 @@ function foundSentence({layout}: Detection, answers: SetupAnswers): string {
 	);
 	const unitPaths = answers.units.map(unit => unit.path);
 	const names = [
-		...answers.units.map(unit => unit.name),
-		...candidates.filter(path => !unitPaths.includes(path)).map(lastSegment),
+		...answers.units.map(unit => sdfLabel(layout, unit.name, unit.path)),
+		...candidates
+			.filter(path => !unitPaths.includes(path))
+			.map(path => sdfLabel(layout, lastSegment(path), path)),
 	];
 	const internal = layout.packages.filter(
 		pkg =>
@@ -619,8 +674,18 @@ export function summary(detection: Detection, answers: SetupAnswers): string {
 	for (const unit of answers.units) {
 		const {facts, formats} = factsOf(detection, unit);
 		if (formats?.manifestDisagrees && formats.last && facts?.version) {
+			const hasPackage = detection.layout.packages.some(
+				pkg => pkg.path === unit.path,
+			);
+			const file = hasPackage
+				? `${unit.path}/package.json`
+				: (facts.sdf?.manifest ?? `${unit.path}/package.json`);
+			const files =
+				hasPackage && facts.sdf?.version
+					? 'sets both files to'
+					: 'sets the file to';
 			sentences.push(
-				`${unit.name}'s last tag says ${formats.last.version} but ${unit.path}/package.json says ${facts.version}; the tag wins, and the release sets the file to the new version.`,
+				`${unit.name}'s last tag says ${formats.last.version} but ${file} says ${facts.version}; the tag wins, and the release ${files} the new version.`,
 			);
 		}
 	}
