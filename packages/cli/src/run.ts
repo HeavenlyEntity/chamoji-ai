@@ -94,7 +94,8 @@ import {
 	type JevClient,
 } from './jev-classifier.js';
 import {runInit} from './init.js';
-import {githubRepo, runSetup, type SetupScreen} from './setup/setup.js';
+import {githubRepo} from './setup/advice.js';
+import {runSetup, type SetupScreen} from './setup/setup.js';
 import {isStepName, nothingSetUp, setUpHook} from './setup/steps.js';
 import {runMcp} from './mcp.js';
 import {

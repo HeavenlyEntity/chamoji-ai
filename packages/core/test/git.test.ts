@@ -8,6 +8,7 @@ import {
 	listTags,
 	quietGitEnv,
 	readCommits,
+	repoSlug,
 	runGit,
 	toWebUrl,
 } from '../src/git.js';
@@ -22,6 +23,24 @@ let repo: FixtureRepo | undefined;
 afterEach(async () => {
 	await repo?.cleanup();
 	repo = undefined;
+});
+
+test('repoSlug reads owner/name, on any host or only the one named', () => {
+	expect(repoSlug('https://gitlab.com/owner/repo')).toBe('owner/repo');
+	expect(repoSlug('http://example.com/owner/repo')).toBe('owner/repo');
+	expect(repoSlug('https://github.com/owner/repo', {host: 'github.com'})).toBe(
+		'owner/repo',
+	);
+	expect(repoSlug('https://gitlab.com/owner/repo', {host: 'github.com'})).toBe(
+		null,
+	);
+	expect(repoSlug('http://github.com/owner/repo', {host: 'github.com'})).toBe(
+		null,
+	);
+	expect(
+		repoSlug('https://github.com/owner/repo/tree', {host: 'github.com'}),
+	).toBe(null);
+	expect(repoSlug(undefined)).toBeNull();
 });
 
 test('toWebUrl handles common remote formats', () => {

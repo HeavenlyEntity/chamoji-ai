@@ -385,6 +385,23 @@ export function toWebUrl(remote: string): string | undefined {
 	return `${protocol}://${host}/${stripGitSuffix(url.pathname.replace(/^\/+/, ''))}`;
 }
 
+/**
+ * `owner/name` from a repository's web URL (see `getRemoteWebUrl`), or null
+ * when it isn't one. With `host`, only an https URL on that host counts;
+ * without it, an http(s) URL on any host does.
+ */
+export function repoSlug(
+	webUrl: string | undefined,
+	options: {host?: string} = {},
+): string | null {
+	const origin = options.host
+		? `https://${options.host.replaceAll(/[$()*+.?[\\\]^{|}]/g, String.raw`\$&`)}`
+		: 'https?://[^/]+';
+	return (
+		new RegExp(`^${origin}/([^/]+/[^/]+)$`).exec(webUrl ?? '')?.[1] ?? null
+	);
+}
+
 function stripGitSuffix(repoPath: string): string {
 	return repoPath.replace(/\/+$/, '').replace(/\.git$/, '');
 }

@@ -124,8 +124,6 @@ const SETTLED = new Set<StepResult>([
 	'offered',
 ]);
 
-export {githubRepo};
-
 /**
  * The advice line when this repo's squash merges keep only the PR title or
  * description, which drops the commit lines chamoji reads. Null with no gh, no GitHub origin,
@@ -273,7 +271,7 @@ export async function runSetup(
 			void unpublished();
 	}
 
-	const states = await stepStates(io, detection, existing);
+	const states = await stepStates(io, existing);
 	const scope = args.step ? [args.step] : [...STEP_NAMES];
 	/** The releases plan for the answers as they stand. */
 	const planned = async () =>
@@ -298,7 +296,7 @@ export async function runSetup(
 		!args.json &&
 		terminal &&
 		releases &&
-		(asksReleases(detection!, screened) || stepPrompts(screened).length > 0);
+		(asksReleases(screened) || stepPrompts(screened).length > 0);
 
 	if (!args.step && !screening) {
 		out(`${states.map(state => state.line).join('\n')}\n\n`);
@@ -349,8 +347,7 @@ export async function runSetup(
 	let code = 0;
 	// The workflow and privatize edits are shown only by the releases questions
 	// (or chosen with --yes), so a run that didn't ask them never writes them.
-	const writesFiles =
-		args.yes || (screening && asksReleases(detection!, screened));
+	const writesFiles = args.yes || (screening && asksReleases(screened));
 	if (plan && !writesFiles && plan.files.length > 0) {
 		plan.result = plan.configChanged ? 'written' : 'unchanged';
 	}

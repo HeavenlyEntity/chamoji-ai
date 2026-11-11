@@ -422,7 +422,7 @@ test('a single package with no section needs answers: not done, the screen asks,
 	});
 	expect(seen).toHaveLength(1);
 	expect(seen[0]!.states[0]).toMatchObject({step: 'releases', done: false});
-	expect(asksReleases(seen[0]!.detection, seen[0]!.states)).toBe(true);
+	expect(asksReleases(seen[0]!.states)).toBe(true);
 	expect(existsSync(path.join(dir, 'chamoji.config.json'))).toBe(false);
 
 	const json = await chamoji(['setup', '--yes', '--json'], dir);

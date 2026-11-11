@@ -29,6 +29,7 @@ export {
 	quietGitEnv,
 	readCommitFiles,
 	readCommits,
+	repoSlug,
 	runGit,
 	runGitWithInput,
 	toWebUrl,

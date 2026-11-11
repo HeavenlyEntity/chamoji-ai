@@ -2,7 +2,7 @@ import {readFile} from 'node:fs/promises';
 import path from 'node:path';
 import semver from 'semver';
 import {CONFIG_FILE} from '../config.js';
-import {defaultBranch, getRemoteWebUrl} from '../git.js';
+import {defaultBranch, getRemoteWebUrl, repoSlug} from '../git.js';
 import {classifyPackage, type PackageKind} from '../publish/kind.js';
 import {detectPackageManager} from '../publish/pack.js';
 import {registryFor} from '../publish/registry.js';
@@ -98,10 +98,7 @@ async function detectPublishing(
 		}
 	}
 
-	const web = await getRemoteWebUrl(root);
-	const repo = web
-		? (/^https?:\/\/[^/]+\/([^/]+\/[^/]+)$/.exec(web)?.[1] ?? null)
-		: null;
+	const repo = repoSlug(await getRemoteWebUrl(root));
 	return {
 		publishable,
 		publicApps,
