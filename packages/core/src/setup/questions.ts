@@ -3,6 +3,7 @@ import {parseReleaseSettings} from '../units/settings.js';
 import {matchesTagPattern, versionFromTag} from '../units/tags.js';
 import {ownerOf, resolveUnits} from '../units/workspace.js';
 import {
+	effectiveTrigger,
 	mentionFor,
 	tokenRegistry,
 	type Detection,
@@ -793,7 +794,7 @@ function authorsClause(detection: Detection, answers: SetupAnswers): string {
 /** "Releases happen on merge to main. 2 packages publish to npm after their checks pass." */
 function releasesSentence(detection: Detection, answers: SetupAnswers): string {
 	const when =
-		answers.trigger === 'merge'
+		effectiveTrigger(answers) === 'merge'
 			? `Releases happen on merge to ${detection.branch}.`
 			: 'Releases happen when someone runs them.';
 	if (!answers.publish) return when;

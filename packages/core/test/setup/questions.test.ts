@@ -1,6 +1,7 @@
 import {expect, test} from 'vitest';
 import {
 	answersFromSection,
+	effectiveTrigger,
 	applyAnswer,
 	releaseSection,
 	questions,
@@ -501,4 +502,23 @@ test('the summary says when releases happen and how many packages publish', asyn
 	expect(summary(libs, one)).toContain(
 		'1 package publishes to npm after its check passes.',
 	);
+});
+
+test('an untouched section with no trigger says releases run manually, until answered', async () => {
+	const detection = await detected(gearzLayout({template: true}));
+	const answers = answersFromSection(
+		{schema: 1, shape: 'apps', units: {web: {path: 'apps/web'}}},
+		detection,
+	);
+	expect(effectiveTrigger(answers)).toBe('manual');
+	expect(summary(detection, answers)).toContain(
+		'Releases happen when someone runs them.',
+	);
+	expect(summary(detection, answers)).not.toContain('on merge');
+	const answered = applyAnswer(detection, answers, 'trigger', 'merge');
+	expect(effectiveTrigger(answered)).toBe('merge');
+	expect(summary(detection, answered)).toContain(
+		'Releases happen on merge to main.',
+	);
+	expect(effectiveTrigger(recommend(detection))).toBe('merge');
 });

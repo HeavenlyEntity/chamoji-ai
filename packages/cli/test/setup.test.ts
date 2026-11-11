@@ -30,6 +30,7 @@ import {
 } from '../../core/test/helpers/setup-fixtures.js';
 import {hookPath, readHookState} from '../src/hook.js';
 import {run, type GhRunner, type Io} from '../src/run.js';
+import {asksReleases} from '../src/setup/steps.js';
 import {checkSquashMerge, type SetupScreenProps} from '../src/setup/setup.js';
 
 /** Native Windows has no unprivileged symlinks. */
@@ -44,8 +45,6 @@ const WROTE =
 	'Wrote chamoji.config.json. Review it and commit it; git restore chamoji.config.json undoes this.';
 const NO_TERMINAL =
 	'chamoji: setup needs a terminal to ask; run chamoji setup --yes to take every recommended answer';
-const SINGLE =
-	"One package, so chamoji release already knows what to do; there's nothing to set up for releases.";
 const SQUASH_ADVICE =
 	'Squash merges here keep only the PR title or its description, which drops the commits\' Release:, Workstream: and intent-card lines. In the repo\'s Settings → General → Pull Requests, set "Default commit message" for squash merges to "Default message" or "Pull request title and commit details".';
 const SQUASH_QUERY = [
@@ -380,7 +379,7 @@ test('a single package: --yes writes when to release; memory still runs', async 
 	const {code, stdout} = await chamoji(['setup', '--yes'], dir);
 	expect(code).toBe(0);
 	expect(stdout).toContain(`${WROTE}\n`);
-	expect(stdout).not.toContain(`${SINGLE}\n`);
+	expect(stdout).not.toContain('need no setup');
 	// Ruling 2: a single package gets a section, so the trigger is written
 	// down; solo is public and has no check script, so publish is a bare true.
 	expect((await readConfig(dir)).release).toEqual({
@@ -397,7 +396,33 @@ test('a single package: --yes writes when to release; memory still runs', async 
 	expect(report.steps).toEqual([{step: 'releases', result: 'unchanged'}]);
 });
 
-test('a single package is only written when setup is asked to', async () => {
+test('a single package with no section needs answers: not done, the screen asks, and --yes --json writes it', async () => {
+	const dir = await made(singlePackage());
+	const bare = await chamoji(['setup'], dir);
+	expect(bare.stdout).toContain("○ releases aren't set up yet\n");
+	expect(bare.stdout).not.toContain('need no setup');
+	asTerminal();
+	const seen: SetupScreenProps[] = [];
+	await chamoji(['setup'], dir, {
+		async setupScreen(props) {
+			seen.push(props);
+			return {saved: false};
+		},
+	});
+	expect(seen).toHaveLength(1);
+	expect(seen[0]!.states[0]).toMatchObject({step: 'releases', done: false});
+	expect(asksReleases(seen[0]!.detection, seen[0]!.states)).toBe(true);
+	expect(existsSync(path.join(dir, 'chamoji.config.json'))).toBe(false);
+
+	const json = await chamoji(['setup', '--yes', '--json'], dir);
+	expect(json.stdout).not.toContain('need no setup');
+	const report = JSON.parse(json.stdout) as Report;
+	expect(report.steps[0]).toEqual({step: 'releases', result: 'written'});
+	expect(report.answers).toMatchObject({shape: 'single', trigger: 'merge'});
+	expect(existsSync(path.join(dir, 'chamoji.config.json'))).toBe(true);
+});
+
+test('a single package is reported as written, not saved, without --yes', async () => {
 	const dir = await made(singlePackage());
 	const {code, stdout} = await chamoji(['setup', 'releases', '--json'], dir);
 	expect(code).toBe(2);
@@ -791,14 +816,6 @@ test('in a terminal, a set-up repo with no per-clone prompt left never opens the
 	// With no screen, the step states are printed as before.
 	expect(stdout).toContain('✓ releases are set up in chamoji.config.json\n');
 	expect(stdout).toContain('chamoji.config.json is already up to date.\n');
-
-	const solo = await made(singlePackage());
-	expect((await chamoji(['setup', 'hook', '--yes'], solo)).code).toBe(0);
-	const alone = await chamoji(['setup'], solo, {setupScreen: screen});
-	expect(screen).not.toHaveBeenCalled();
-	expect(alone.code).toBe(0);
-	expect(alone.stdout).toContain(`${SINGLE}\n`);
-	expect(existsSync(path.join(solo, 'chamoji.config.json'))).toBe(false);
 });
 
 test('in a terminal, a set-up repo opens the screen for the per-clone steps only', async () => {

@@ -52,7 +52,7 @@ export type ScreenResult =
  * detected, since the same values are matched against tags and paths.
  *
  * `states` holds only the steps in scope. The releases state is done when the
- * config already has a section or a single package needs none; then releases
+ * config already has a section; then releases
  * has nothing to ask and the screen offers only the per-clone steps that
  * aren't done (ruling R16). `chamoji setup releases` asks it again, so there
  * the releases state comes as not done. With nothing to ask at all, setup
@@ -72,8 +72,6 @@ export type SetupScreen = (props: SetupScreenProps) => Promise<ScreenResult>;
 
 const NO_TERMINAL =
 	'chamoji: setup needs a terminal to ask; run chamoji setup --yes to take every recommended answer';
-const SINGLE =
-	"One package, so chamoji release already knows what to do; there's nothing to set up for releases.";
 const WROTE = `Wrote ${CONFIG_FILE}. Review it and commit it; git restore ${CONFIG_FILE} undoes this.`;
 const UP_TO_DATE = `${CONFIG_FILE} is already up to date.`;
 const CANCELLED = 'Setup cancelled; nothing was saved.';
@@ -153,29 +151,18 @@ export async function checkSquashMerge(
 }
 
 type ReleasesPlan = {
-	result: Extract<StepResult, 'written' | 'unchanged' | 'nothing-to-do'>;
+	result: Extract<StepResult, 'written' | 'unchanged'>;
 	section: Record<string, unknown>;
 	/** The config file's new text when `result` is written. */
 	text: string;
 };
 
-/**
- * What the releases step writes for these answers. A single package with no
- * section gets one too (it says when to release), but only when asked for:
- * with --yes, or by naming the step. Otherwise it gets nothing, as before.
- */
+/** What the releases step writes for these answers; a single package gets a section too. */
 function planReleases(
 	original: string | null,
-	existing: unknown,
-	detection: Detection,
 	answers: SetupAnswers,
-	asked: boolean,
 ): ReleasesPlan {
 	const section = releaseSection(answers);
-	if (existing === undefined && detection.layout.kind === 'single' && !asked) {
-		return {result: 'nothing-to-do', section, text: original ?? ''};
-	}
-
 	const {text, changed} = writeReleaseSection(original, section);
 	return {result: changed ? 'written' : 'unchanged', section, text};
 }
@@ -227,7 +214,6 @@ export async function runSetup(
 			? recommend(detection)
 			: answersFromSection(existing, detection));
 	const states = await stepStates(io, detection, existing);
-	const asked = args.yes || args.step === 'releases';
 	const scope = args.step ? [args.step] : [...STEP_NAMES];
 	// Names, versions and paths come from the repo; none reaches the terminal raw.
 	const out = args.json
@@ -294,9 +280,7 @@ export async function runSetup(
 	const squash = await squashing;
 
 	// Doing it.
-	const plan = releases
-		? planReleases(original, existing, detection!, answers!, asked)
-		: null;
+	const plan = releases ? planReleases(original, answers!) : null;
 	const results: Array<{step: StepName; result: StepResult}> = [];
 	const wrote: string[] = [];
 	let code = 0;
@@ -335,9 +319,7 @@ export async function runSetup(
 
 	/** No --yes and no terminal, or --json without --yes: say what setup would do. */
 	function report(squash: string | null): number {
-		const plan = releases
-			? planReleases(original, existing, detection!, answers!, asked)
-			: null;
+		const plan = releases ? planReleases(original, answers!) : null;
 		const results: Array<{step: StepName; result: StepResult}> = [];
 		if (plan) {
 			describeReleases(plan, false);
@@ -366,11 +348,6 @@ export async function runSetup(
 
 	/** The summary and, before writing, the section; or why there's nothing to write. */
 	function describeReleases(plan: ReleasesPlan, doing: boolean): void {
-		if (plan.result === 'nothing-to-do') {
-			out(`${SINGLE}\n`);
-			return;
-		}
-
 		if (plan.result === 'written') {
 			out(`${summary(detection!, answers!)}\n\n`);
 			if (!doing) {
@@ -413,9 +390,7 @@ export async function runSetup(
 								},
 							}
 						: null,
-					// A single package's section is never written.
-					answers:
-						plan && plan.result !== 'nothing-to-do' ? plan.section : null,
+					answers: plan ? plan.section : null,
 					why: answers?.why ?? {},
 					steps,
 					wrote,
