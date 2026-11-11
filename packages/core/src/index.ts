@@ -214,13 +214,13 @@ export {
 	applyAnswer,
 	currentAnswer,
 	detect,
-	effectiveTrigger,
 	recommend,
 	type Detection,
 	type SetupAnswers,
 	type Source,
 } from './setup/answers.js';
 export {questions, summary, type Question} from './setup/questions.js';
+export {effectiveTrigger} from './setup/rules.js';
 export {detectMentions} from './setup/mentions.js';
 export {assertNoSymlinks} from './links.js';
 export {checkCommand} from './setup/package-scripts.js';

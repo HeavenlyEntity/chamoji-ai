@@ -4,7 +4,6 @@ import semver from 'semver';
 import {CONFIG_FILE} from '../config.js';
 import {defaultBranch, getRemoteWebUrl} from '../git.js';
 import {classifyPackage, type PackageKind} from '../publish/kind.js';
-import {DEFAULT_REGISTRY} from '../publish/npm.js';
 import {detectPackageManager} from '../publish/pack.js';
 import {registryFor} from '../publish/registry.js';
 import {parseReleaseSettings, type Mention} from '../units/settings.js';
@@ -25,6 +24,7 @@ import {
 	SHARED_TAG,
 	unique,
 } from './questions.js';
+import {mentionFor, tokenRegistry} from './rules.js';
 import {releaseSection, unasked} from './section.js';
 import {detectTags, findUpstreamRemote, type TagDetection} from './tags.js';
 import {detectUpstream, type UpstreamDetection} from './upstream.js';
@@ -318,39 +318,12 @@ function recommendFor(detection: Detection, shape: Shape): SetupAnswers {
 	return answers;
 }
 
-/** What a release does now: a section with no trigger runs manually until it's answered. */
-export const effectiveTrigger = (
-	answers: Pick<SetupAnswers, 'trigger' | 'triggerUnset'>,
-): 'merge' | 'manual' => (answers.triggerUnset ? 'manual' : answers.trigger);
-
-/** The first public package that doesn't publish to npmjs, which needs an npm token. */
-export const tokenRegistry = (
-	detection: Detection,
-): Detection['publishable'][number] | undefined =>
-	detection.publishable.find(pkg => pkg.registry !== DEFAULT_REGISTRY);
-
 const needsToken = (detection: Detection): boolean =>
 	tokenRegistry(detection) !== undefined;
 
 /** The npm sign-in: the token a registry needs, else what the existing workflow uses, else trusted publishing. */
 const ciAuthFor = (detection: Detection): 'oidc' | 'token' =>
 	needsToken(detection) ? 'token' : (detection.workflow?.ciAuth ?? 'oidc');
-
-/**
- * `mention` as these answers can hold it: with no unit in a single repo, else
- * with the unit it names or, for a pin of the repo, the only unit there is.
- * Null when no unit can own it.
- */
-export function mentionFor(
-	answers: SetupAnswers,
-	mention: Mention,
-): Mention | null {
-	const {pattern, files} = mention;
-	if (answers.shape === 'single') return {pattern, files};
-	const names = answers.units.map(unit => unit.name);
-	const unit = mention.unit ?? (names.length === 1 ? names[0] : undefined);
-	return unit && names.includes(unit) ? {pattern, files, unit} : null;
-}
 
 const whyFor = (
 	detection: Detection,

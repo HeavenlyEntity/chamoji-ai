@@ -3,14 +3,9 @@ import {sdfFramework} from '../publish/frameworks.js';
 import {parseReleaseSettings} from '../units/settings.js';
 import {matchesTagPattern, versionFromTag} from '../units/tags.js';
 import {ownerOf, resolveUnits} from '../units/workspace.js';
-import {
-	effectiveTrigger,
-	mentionFor,
-	tokenRegistry,
-	type Detection,
-	type SetupAnswers,
-} from './answers.js';
+import type {Detection, SetupAnswers} from './answers.js';
 import {MAX_COMMITS, type LayoutDetection, type UnitFacts} from './detect.js';
+import {effectiveTrigger, mentionFor, tokenRegistry} from './rules.js';
 import {releaseSection} from './section.js';
 import type {UnitTagFormats} from './tags.js';
 
