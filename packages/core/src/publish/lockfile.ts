@@ -103,6 +103,41 @@ function npmVersion(
 	return null;
 }
 
+/** The text of the lockfiles chamoji reads, each when the repo has it. */
+export type Lockfiles = {pnpm?: string; npm?: string};
+
+/** Reads `pnpm-lock.yaml` and `package-lock.json` once, for `installedVersionIn`. */
+export async function readLockfiles(root: string): Promise<Lockfiles> {
+	const pnpm = await readText(path.join(root, 'pnpm-lock.yaml'));
+	const npm = await readText(path.join(root, 'package-lock.json'));
+	return {
+		...(pnpm === undefined ? {} : {pnpm}),
+		...(npm === undefined ? {} : {npm}),
+	};
+}
+
+/**
+ * The version of `dependency` that the lockfiles say is installed for the
+ * package at `pkgPath`: from the pnpm lockfile, else the npm one. Null when
+ * there's no answer.
+ */
+export function installedVersionIn(
+	lockfiles: Lockfiles,
+	pkgPath: string,
+	dependency: string,
+): string | null {
+	if (lockfiles.pnpm !== undefined) {
+		const found = pnpmVersion(lockfiles.pnpm, pkgPath, dependency);
+		if (found) return found;
+	}
+
+	if (lockfiles.npm !== undefined) {
+		return npmVersion(lockfiles.npm, pkgPath, dependency);
+	}
+
+	return null;
+}
+
 /**
  * The version of `dependency` that the repo's lockfile says is installed for
  * the package at `pkgPath`: from `pnpm-lock.yaml`, else `package-lock.json`.
@@ -113,15 +148,7 @@ export async function installedVersion(
 	pkgPath: string,
 	dependency: string,
 ): Promise<string | null> {
-	const pnpm = await readText(path.join(root, 'pnpm-lock.yaml'));
-	if (pnpm !== undefined) {
-		const found = pnpmVersion(pnpm, pkgPath, dependency);
-		if (found) return found;
-	}
-
-	const npm = await readText(path.join(root, 'package-lock.json'));
-	if (npm !== undefined) return npmVersion(npm, pkgPath, dependency);
-	return null;
+	return installedVersionIn(await readLockfiles(root), pkgPath, dependency);
 }
 
 /**

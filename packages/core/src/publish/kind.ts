@@ -8,7 +8,12 @@ import {
 	type DetectedFramework,
 	type Framework,
 } from './frameworks.js';
-import {displayVersion, installedVersion} from './lockfile.js';
+import {
+	displayVersion,
+	installedVersion,
+	installedVersionIn,
+	type Lockfiles,
+} from './lockfile.js';
 
 export type PackageKind = {
 	kind: 'app' | 'library';
@@ -108,18 +113,6 @@ type Matches = {
 	/** Weaker signs: a framework only in peer or dev dependencies. */
 	weak: string[];
 };
-
-/** Reads the package's own manifest, or an empty one when it has none. */
-async function readManifestOrEmpty(file: string): Promise<Obj> {
-	const text = await readText(file);
-	if (text === undefined) return {};
-	try {
-		const value: unknown = JSON.parse(text);
-		return isObject(value) ? value : {};
-	} catch {
-		return {};
-	}
-}
 
 /** How much of a config file `configMatch` reads, so a crafted file can't stall detection. */
 const CONFIG_MATCH_LIMIT = 65_536;
@@ -221,6 +214,7 @@ async function describeFramework(
 	pkgPath: string,
 	manifest: Obj,
 	framework: Framework,
+	lockfiles?: Lockfiles,
 ): Promise<DetectedFramework> {
 	const found = (field: string): string | undefined =>
 		framework.packages.find(name => namesIn(manifest, field).has(name));
@@ -228,7 +222,9 @@ async function describeFramework(
 		found('dependencies') ?? DEPENDENCY_FIELDS.map(found).find(Boolean);
 	let version: string | null = null;
 	if (name) {
-		const locked = await installedVersion(root, pkgPath, name);
+		const locked = lockfiles
+			? installedVersionIn(lockfiles, pkgPath, name)
+			: await installedVersion(root, pkgPath, name);
 		const ranges = DEPENDENCY_FIELDS.map(field => {
 			const value = isObject(manifest[field])
 				? manifest[field][name]
@@ -256,7 +252,9 @@ export async function detectFramework(
 	pkgPath: string,
 ): Promise<DetectedFramework | null> {
 	const folder = path.join(root, pkgPath);
-	const manifest = await readManifestOrEmpty(path.join(folder, 'package.json'));
+	const manifest = await readManifest(path.join(folder, 'package.json')).catch(
+		(): Obj => ({}),
+	);
 	const {matched} = await matchFrameworks(folder, manifest);
 	const best = mostSpecific(matched);
 	return best ? describeFramework(root, pkgPath, manifest, best) : null;
@@ -290,14 +288,40 @@ export async function classifyPackage(
 	dependedOn: ReadonlySet<string> = new Set(),
 	options?: {sdf?: SdfProject[]},
 ): Promise<PackageKind> {
+	return (await inspectPackage(root, pkg, dependedOn, options ?? {})).kind;
+}
+
+/** What detection has already read, so inspecting many packages reads it once. */
+export type InspectContext = {
+	/** The repo's SDF projects. */
+	sdf?: SdfProject[];
+	/** The repo's lockfiles. */
+	lockfiles?: Lockfiles;
+};
+
+/**
+ * `classifyPackage` and `detectFramework` in one pass: the package's kind and
+ * its framework, from one read of its manifest and one run of the framework
+ * table. The framework is what `detectFramework` gives, `kind.detected` when
+ * the kind already holds it.
+ */
+export async function inspectPackage(
+	root: string,
+	pkg: WorkspacePackage,
+	dependedOn: ReadonlySet<string>,
+	context: InspectContext,
+): Promise<{kind: PackageKind; framework: DetectedFramework | null}> {
 	const folder = path.join(root, pkg.path);
 	const manifest = await readManifest(path.join(folder, 'package.json'));
 	const at = (file: string): string => path.join(folder, file);
 
 	// A NetSuite SDF project is an app whatever else its package.json says:
 	// nothing NetSuite is offered for npm.
-	const sdf = await sdfProjectAt(root, pkg.path, {projects: options?.sdf});
-	if (sdf) return sdfKind(sdf);
+	const sdf = await sdfProjectAt(root, pkg.path, {projects: context.sdf});
+	if (sdf) {
+		const kind = sdfKind(sdf);
+		return {kind, framework: kind.detected ?? null};
+	}
 
 	const strong: string[] = [];
 	for (const field of [...ENTRY_FIELDS, ...PUBLISH_FIELDS]) {
@@ -325,7 +349,24 @@ export async function classifyPackage(
 		strong.push('`dependency` in `react-native.config.js`');
 	}
 
-	if (strong.length > 0) return {kind: 'library', reasons: strong};
+	if (strong.length > 0) {
+		// Library signals win, but the framework is still reported.
+		const best = mostSpecific(
+			(await matchFrameworks(folder, manifest)).matched,
+		);
+		return {
+			kind: {kind: 'library', reasons: strong},
+			framework: best
+				? await describeFramework(
+						root,
+						pkg.path,
+						manifest,
+						best,
+						context.lockfiles,
+					)
+				: null,
+		};
+	}
 
 	const anyDependency = new Set(
 		DEPENDENCY_FIELDS.flatMap(field => [...namesIn(manifest, field)]),
@@ -360,29 +401,40 @@ export async function classifyPackage(
 
 	if (app.length > 0) {
 		const detected = best
-			? await describeFramework(root, pkg.path, manifest, best)
+			? await describeFramework(
+					root,
+					pkg.path,
+					manifest,
+					best,
+					context.lockfiles,
+				)
 			: undefined;
 		return {
-			kind: 'app',
-			reasons: app,
-			...(framework ? {framework} : {}),
-			...(detected ? {detected} : {}),
+			kind: {
+				kind: 'app',
+				reasons: app,
+				...(framework ? {framework} : {}),
+				...(detected ? {detected} : {}),
+			},
+			framework: detected ?? null,
 		};
 	}
 
+	// No framework matched from here on, so there's none to report.
+	const plain = (kind: PackageKind) => ({kind, framework: null});
 	if (manifest['main'] !== undefined) push(weak, '`main` field');
-	if (weak.length > 0) return {kind: 'library', reasons: weak};
+	if (weak.length > 0) return plain({kind: 'library', reasons: weak});
 
 	if (pkg.path.startsWith('apps/')) {
-		return {kind: 'app', reasons: ['under `apps/`']};
+		return plain({kind: 'app', reasons: ['under `apps/`']});
 	}
 
 	if (!pkg.path.includes('/') && pkg.private && !dependedOn.has(pkg.name)) {
-		return {
+		return plain({
 			kind: 'app',
 			reasons: ['private top-level package that nothing depends on'],
-		};
+		});
 	}
 
-	return {kind: 'library', reasons: ['no app signals found']};
+	return plain({kind: 'library', reasons: ['no app signals found']});
 }
