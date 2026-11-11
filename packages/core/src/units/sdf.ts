@@ -1,4 +1,4 @@
-import {readFile} from 'node:fs/promises';
+import {lstat, readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {runGit} from '../git.js';
 
@@ -38,6 +38,14 @@ async function read(root: string, file: string): Promise<string | null> {
 		return null;
 	}
 }
+
+const isLink = async (root: string, file: string): Promise<boolean> => {
+	try {
+		return (await lstat(path.join(root, file))).isSymbolicLink();
+	} catch {
+		return false;
+	}
+};
 
 /** The tracked and untracked-but-not-ignored files; empty outside a repo. */
 async function listFiles(root: string): Promise<string[]> {
@@ -86,6 +94,8 @@ export async function findSdfProjects(root: string): Promise<SdfProject[]> {
 		const configFile = unit ? `${unit}/${CONFIG_FILE}` : CONFIG_FILE;
 		let chosen: string | undefined;
 		if (tracked.has(configFile)) {
+			// A linked config could point anywhere; chamoji reads none of it.
+			if (await isLink(root, configFile)) continue;
 			const config = (await read(root, configFile)) ?? '';
 			const named = normalizeFolder(FOLDER.exec(config)?.[1] ?? DEFAULT_FOLDER);
 			chosen = candidates.find(
@@ -100,6 +110,11 @@ export async function findSdfProjects(root: string): Promise<SdfProject[]> {
 
 		if (chosen === undefined) continue;
 		const manifest = chosen ? `${chosen}/manifest.xml` : 'manifest.xml';
+		const deploy = chosen ? `${chosen}/deploy.xml` : 'deploy.xml';
+		if ((await isLink(root, manifest)) || (await isLink(root, deploy))) {
+			continue;
+		}
+
 		const text = ((await read(root, manifest)) ?? '').replace(COMMENTS, '');
 		const projectType = PROJECT_TYPE.exec(text)?.[1]?.trim().toUpperCase();
 		if (projectType !== 'SUITEAPP' && projectType !== 'ACCOUNTCUSTOMIZATION') {
