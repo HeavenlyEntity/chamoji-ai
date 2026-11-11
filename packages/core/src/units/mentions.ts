@@ -8,7 +8,7 @@ import type {Mention} from './settings.js';
 const VERSION = String.raw`(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)`;
 
 /** The pattern as a regex: its text literal, `{version}` a semver. */
-function mentionRegex(pattern: string): RegExp {
+export function mentionRegex(pattern: string): RegExp {
 	const [before = '', after = ''] = pattern.split('{version}');
 	const literal = (text: string) =>
 		text.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);

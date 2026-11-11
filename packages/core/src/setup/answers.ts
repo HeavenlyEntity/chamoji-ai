@@ -1,8 +1,17 @@
+import {readFile} from 'node:fs/promises';
+import path from 'node:path';
 import semver from 'semver';
 import {CONFIG_FILE} from '../config.js';
-import {parseReleaseSettings} from '../units/settings.js';
+import {getRemoteWebUrl} from '../git.js';
+import {classifyPackage, type PackageKind} from '../publish/kind.js';
+import {DEFAULT_REGISTRY} from '../publish/npm.js';
+import {detectPackageManager} from '../publish/pack.js';
+import {registryFor} from '../publish/registry.js';
+import {parseReleaseSettings, type Mention} from '../units/settings.js';
 import {matchesTagPattern} from '../units/tags.js';
+import {readPackage, type WorkspacePackage} from '../units/workspace.js';
 import {detectLayout, type LayoutDetection, type UnitFacts} from './detect.js';
+import {detectMentions} from './mentions.js';
 import {
 	current,
 	defaultTag,
@@ -18,14 +27,86 @@ import {
 import {releaseSection, unasked} from './section.js';
 import {detectTags, findUpstreamRemote, type TagDetection} from './tags.js';
 import {detectUpstream, type UpstreamDetection} from './upstream.js';
+import {checkCommand, defaultBranch} from './workflow.js';
 
 export type Detection = {
 	layout: LayoutDetection;
 	tags: TagDetection;
 	upstream: UpstreamDetection;
+	/** The branch merge releases run on (ruling 11). */
+	branch: string;
+	/** The recommended check before publishing, from the root scripts; null with none (ruling 10). */
+	check: string | null;
+	/** Public libraries, with where each publishes. */
+	publishable: Array<{
+		path: string;
+		name: string;
+		registry: string;
+		/** Why it counts as a library, as classifyPackage says. */
+		reasons: string[];
+	}>;
+	/** Public packages that are apps, which a release never publishes. */
+	publicApps: Array<{path: string; name: string; kind: PackageKind}>;
+	/** Version pins found in tracked Markdown, offered for `mentions`. */
+	mentions: Mention[];
 };
 
-/** Everything setup reads from the repo: layout, tags, then upstream history. */
+/** The root package.json as a package, for a repo with no workspace. */
+async function rootPackage(root: string): Promise<WorkspacePackage[]> {
+	try {
+		const manifest: unknown = JSON.parse(
+			await readFile(path.join(root, 'package.json'), 'utf8'),
+		);
+		const pkg =
+			typeof manifest === 'object' && manifest !== null
+				? readPackage('', manifest as Record<string, unknown>)
+				: null;
+		return pkg ? [pkg] : [];
+	} catch {
+		return [];
+	}
+}
+
+/** What publishing needs: public libraries and apps, their registries, the pins in docs. */
+async function detectPublishing(
+	root: string,
+	layout: LayoutDetection,
+): Promise<Pick<Detection, 'publishable' | 'publicApps' | 'mentions'>> {
+	const packages =
+		layout.packages.length > 0 ? layout.packages : await rootPackage(root);
+	const dependedOn = new Set(packages.flatMap(pkg => pkg.runtimeDeps));
+	const publishable: Detection['publishable'] = [];
+	const publicApps: Detection['publicApps'] = [];
+	for (const pkg of packages.filter(each => !each.private)) {
+		const kind =
+			layout.candidates.find(facts => facts.path === pkg.path)?.kind ??
+			// eslint-disable-next-line no-await-in-loop
+			(await classifyPackage(root, pkg, dependedOn));
+		if (kind.kind === 'app') {
+			publicApps.push({path: pkg.path, name: pkg.name, kind});
+		} else {
+			publishable.push({
+				path: pkg.path,
+				name: pkg.name,
+				// eslint-disable-next-line no-await-in-loop
+				registry: await registryFor(root, pkg),
+				reasons: kind.reasons,
+			});
+		}
+	}
+
+	const web = await getRemoteWebUrl(root);
+	const repo = web
+		? (/^https?:\/\/[^/]+\/([^/]+\/[^/]+)$/.exec(web)?.[1] ?? null)
+		: null;
+	return {
+		publishable,
+		publicApps,
+		mentions: await detectMentions(root, repo, packages),
+	};
+}
+
+/** Everything setup reads from the repo: layout, tags, upstream history, then what publishing needs. */
 export async function detect(root: string): Promise<Detection> {
 	const layout = await detectLayout(root);
 	const remote = await findUpstreamRemote(root);
@@ -33,7 +114,14 @@ export async function detect(root: string): Promise<Detection> {
 	const upstream = await detectUpstream(root, remote, tags.inherited.tags, {
 		canonical: tags.canonical,
 	});
-	return {layout, tags, upstream};
+	return {
+		layout,
+		tags,
+		upstream,
+		branch: await defaultBranch(root),
+		check: await checkCommand(root, await detectPackageManager(root)),
+		...(await detectPublishing(root, layout)),
+	};
 }
 
 /** Where an answer came from, for `--explain`. */
@@ -67,6 +155,19 @@ export type SetupAnswers = {
 	};
 	ignore: string[];
 	rootChangelog: boolean;
+	/** What starts a release. */
+	trigger: 'merge' | 'manual';
+	/** Set for a section that has no `trigger`: it is asked again, and written only once answered. */
+	triggerUnset?: true;
+	majors: 'auto' | 'manual';
+	/** Null when releases aren't published; `packages` is carried through as written, never asked. */
+	publish: {check: string | null; packages: string[]} | null;
+	/** Version pins in docs that a release moves. */
+	mentions: Mention[];
+	/** Paths of public apps to mark `"private": true`; never written to the config. */
+	privatize: string[];
+	/** How CI signs in to npm; never written to the config (ruling 9). */
+	ciAuth: 'oidc' | 'token';
 	/** Hand-written keys setup doesn't ask about, carried through as written. */
 	kept: Record<string, unknown>;
 	/** Keyed by question id. */
@@ -86,6 +187,11 @@ const DETECTED = new Set([
 	'tag',
 	'versionFiles',
 	'upstream.authors',
+	'publish',
+	'publish.check',
+	'privatize',
+	'ciAuth',
+	'mentions',
 ]);
 /** Unit questions, answered in this order when answers are replayed. */
 const UNIT_KINDS = new Set([
@@ -177,9 +283,21 @@ function recommendFor(detection: Detection, shape: Shape): SetupAnswers {
 				? []
 				: [...tags.inherited.patterns, ...tags.stray.patterns],
 		rootChangelog: false,
+		trigger: 'merge',
+		majors: 'auto',
+		publish:
+			detection.publishable.length > 0
+				? {check: detection.check, packages: []}
+				: null,
+		mentions: [],
+		privatize: detection.publicApps.map(app => app.path),
+		ciAuth: needsToken(detection) ? 'token' : 'oidc',
 		kept: {},
 		why: {},
 	};
+	answers.mentions = detection.mentions.flatMap(
+		mention => mentionFor(answers, mention) ?? [],
+	);
 	answers.why = whyFor(detection, answers, id =>
 		DETECTED.has(id.split(':')[0]!) ||
 		(id === 'fixed' && shared) ||
@@ -191,6 +309,31 @@ function recommendFor(detection: Detection, shape: Shape): SetupAnswers {
 			: 'recommended',
 	);
 	return answers;
+}
+
+/** The first public package that doesn't publish to npmjs, which needs an npm token. */
+export const tokenRegistry = (
+	detection: Detection,
+): Detection['publishable'][number] | undefined =>
+	detection.publishable.find(pkg => pkg.registry !== DEFAULT_REGISTRY);
+
+const needsToken = (detection: Detection): boolean =>
+	tokenRegistry(detection) !== undefined;
+
+/**
+ * `mention` as these answers can hold it: with no unit in a single repo, else
+ * with the unit it names or, for a pin of the repo, the only unit there is.
+ * Null when no unit can own it.
+ */
+export function mentionFor(
+	answers: SetupAnswers,
+	mention: Mention,
+): Mention | null {
+	const {pattern, files} = mention;
+	if (answers.shape === 'single') return {pattern, files};
+	const names = answers.units.map(unit => unit.name);
+	const unit = mention.unit ?? (names.length === 1 ? names[0] : undefined);
+	return unit && names.includes(unit) ? {pattern, files, unit} : null;
 }
 
 const whyFor = (
@@ -211,6 +354,7 @@ export function answersFromSection(
 	detection: Detection,
 ): SetupAnswers {
 	const settings = parseReleaseSettings(section, CONFIG_FILE);
+	const unset = isObject(section) && section.trigger === undefined;
 	const answers: SetupAnswers = {
 		shape: settings.shape,
 		units: settings.units.map(unit => ({
@@ -241,10 +385,23 @@ export function answersFromSection(
 			: {}),
 		ignore: settings.tags.ignore,
 		rootChangelog: settings.rootChangelog,
+		// With no trigger written, the engine runs manually; setup recommends merge.
+		trigger: unset ? 'merge' : settings.trigger,
+		...(unset ? {triggerUnset: true as const} : {}),
+		majors: settings.majors,
+		publish: settings.publish && {
+			check: settings.publish.check,
+			packages: settings.publish.packages,
+		},
+		mentions: settings.mentions,
+		// What an earlier run left public is its own to decide, so nothing is ticked.
+		privatize: [],
+		ciAuth: needsToken(detection) ? 'token' : 'oidc',
 		kept: unasked(section as Record<string, unknown>),
 		why: {},
 	};
 	answers.why = whyFor(detection, answers, () => 'kept');
+	if (unset) answers.why.trigger = 'recommended';
 	return answers;
 }
 
@@ -299,6 +456,12 @@ export function applyAnswer(
 			next = recommendFor(detection, shape);
 			next.kept = structuredClone(answers.kept);
 			next = replay(detection, answers, next);
+			// Neither is asked, so a new shape keeps them as they were.
+			if (answers.triggerUnset) next.triggerUnset = true;
+			if (answers.publish && next.publish) {
+				next.publish.packages = answers.publish.packages;
+			}
+
 			break;
 		}
 
@@ -463,6 +626,74 @@ export function applyAnswer(
 		case 'rootChangelog':
 			next.rootChangelog = oneOf(id, value, ['true', 'false']) === 'true';
 			break;
+		case 'trigger':
+			next.trigger = oneOf(id, value, ['merge', 'manual']);
+			delete next.triggerUnset;
+			break;
+		case 'majors':
+			next.majors = oneOf(id, value, ['auto', 'manual']);
+			break;
+		case 'publish':
+			if (oneOf(id, value, ['on', 'off']) === 'off') {
+				next.publish = null;
+			} else if (!next.publish) {
+				if (detection.publishable.length === 0) {
+					throw new Error(`${id}: no public library was found to publish`);
+				}
+
+				next.publish = {check: detection.check, packages: []};
+			}
+
+			break;
+		case 'publish.check': {
+			if (!next.publish) throw new Error(`${id} needs publishing turned on`);
+			next.publish.check = text(id, value) || null;
+			break;
+		}
+
+		case 'privatize': {
+			const paths = ticks(id, value);
+			const unknown = paths.find(
+				each => !detection.publicApps.some(app => app.path === each),
+			);
+			if (unknown !== undefined) {
+				throw new Error(`${id}: ${unknown} isn't a public app`);
+			}
+
+			next.privatize = paths;
+			break;
+		}
+
+		case 'ciAuth': {
+			const method = oneOf(id, value, ['oidc', 'token']);
+			const other = tokenRegistry(detection);
+			if (method === 'oidc' && other) {
+				throw new Error(
+					`${id}: ${other.name} publishes to ${other.registry}, which needs an npm token`,
+				);
+			}
+
+			next.ciAuth = method;
+			break;
+		}
+
+		case 'mentions': {
+			const known = [...detection.mentions, ...next.mentions];
+			next.mentions = ticks(id, value).map(pattern => {
+				const held = next.mentions.find(each => each.pattern === pattern);
+				if (held) return held;
+				const offered = known.find(each => each.pattern === pattern);
+				if (!offered) {
+					throw new Error(`${id}: ${pattern} wasn't found in the docs`);
+				}
+
+				const mention = mentionFor(next, offered);
+				if (!mention) throw new Error(`${id}: no unit owns ${pattern}`);
+				return mention;
+			});
+			break;
+		}
+
 		case 'alias':
 			setAlias(detection, next, target, text(id, value));
 			break;
@@ -512,6 +743,20 @@ function answerOf(
 			return answers.fixed[0] ?? [];
 		case 'rootChangelog':
 			return String(answers.rootChangelog);
+		case 'trigger':
+			return answers.trigger;
+		case 'majors':
+			return answers.majors;
+		case 'publish':
+			return answers.publish ? 'on' : 'off';
+		case 'publish.check':
+			return answers.publish?.check ?? '';
+		case 'privatize':
+			return answers.privatize;
+		case 'ciAuth':
+			return answers.ciAuth;
+		case 'mentions':
+			return answers.mentions.map(mention => mention.pattern);
 		default:
 			// Aliases live in `kept`, which is carried over whole.
 			return undefined;

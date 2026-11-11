@@ -4,7 +4,8 @@ import {
 	releaseSection,
 	writeReleaseSection,
 } from '../../src/index.js';
-import {useDetection} from '../helpers/setup-detection.js';
+import {recommend} from '../../src/index.js';
+import {useDetection, valid} from '../helpers/setup-detection.js';
 import {gearzLayout} from '../helpers/setup-fixtures.js';
 
 const {detected} = useDetection();
@@ -88,4 +89,79 @@ test('writing keeps other keys, the indent and the missing trailing newline', ()
 		text: '{\n  "release": {\n    "schema": 1,\n    "shape": "single"\n  }\n}\n',
 		changed: true,
 	});
+});
+
+test('schema is 2 when trigger, majors, publish or mentions is set, 1 otherwise', async () => {
+	const detection = await detected(gearzLayout({template: true}));
+	const base = answersFromSection(
+		{schema: 1, shape: 'apps', units: {web: {path: 'apps/web'}}},
+		detection,
+	);
+	// A section from before triggers existed stays as it is.
+	expect(releaseSection(base)).toMatchObject({schema: 1});
+	const keys = Object.keys(releaseSection(base));
+	for (const key of ['trigger', 'majors', 'publish', 'mentions']) {
+		expect(keys).not.toContain(key);
+	}
+
+	const set = (patch: Partial<typeof base>) =>
+		releaseSection({...base, ...patch}).schema;
+	expect(set({triggerUnset: undefined})).toBe(2);
+	expect(set({majors: 'manual'})).toBe(2);
+	expect(set({majors: 'auto'})).toBe(1);
+	expect(set({publish: {check: null, packages: []}})).toBe(2);
+	expect(
+		set({
+			mentions: [{pattern: 'a/b@v{version}', files: ['a.md'], unit: 'web'}],
+		}),
+	).toBe(2);
+	expect(releaseSection({...base, majors: 'manual'})).toMatchObject({
+		majors: 'manual',
+	});
+});
+
+test('publish true when only the check is default, object when check or packages are set', async () => {
+	const detection = await detected(gearzLayout({template: true}));
+	const base = recommend(detection);
+	const publish = (value: (typeof base)['publish']) =>
+		releaseSection({...base, publish: value}).publish;
+	expect(publish({check: null, packages: []})).toBe(true);
+	expect(publish({check: 'pnpm check', packages: []})).toEqual({
+		check: 'pnpm check',
+	});
+	expect(publish({check: null, packages: ['@acme/ui']})).toEqual({
+		packages: ['@acme/ui'],
+	});
+	expect(publish({check: 'make', packages: ['@acme/ui']})).toEqual({
+		check: 'make',
+		packages: ['@acme/ui'],
+	});
+	expect(publish(null)).toBeUndefined();
+});
+
+test('privatize and ciAuth never reach the section', async () => {
+	const detection = await detected(gearzLayout({template: true}));
+	const answers = {
+		...recommend(detection),
+		privatize: ['apps/mobile'],
+		ciAuth: 'token' as const,
+	};
+	const text = JSON.stringify(releaseSection(answers));
+	expect(text).not.toContain('privatize');
+	expect(text).not.toContain('ciAuth');
+	expect(text).not.toContain('apps/mobile"]');
+});
+
+test('mentions are written when ticked and left out when empty', async () => {
+	const detection = await detected(gearzLayout({template: true}));
+	const answers = recommend(detection);
+	expect(releaseSection(answers)).not.toHaveProperty('mentions');
+	const mention = {
+		pattern: 'acme/gearz@v{version}',
+		files: ['README.md'],
+		unit: 'web',
+	};
+	const section = releaseSection({...answers, mentions: [mention]});
+	expect(section.mentions).toEqual([mention]);
+	expect(valid(section).mentions).toEqual([mention]);
 });

@@ -20,6 +20,9 @@ const keys = (...names: string[]): Obj =>
 const ASKED: Obj = {
 	...keys('schema', 'shape', 'exclude', 'sharedChanges', 'rootFiles'),
 	...keys('zeroMajor', 'fixed', 'upstream', 'rootChangelog'),
+	...keys('trigger', 'majors', 'mentions'),
+	// prereleaseTag and registries stay as written.
+	publish: {check: true, packages: true},
 	units: {
 		'*': keys(
 			'path',
@@ -53,7 +56,10 @@ export function unasked(value: Obj, asked: Obj = ASKED): Obj {
 
 /** The `release` section for chamoji.config.json, defaults left out. */
 export function releaseSection(answers: SetupAnswers): Record<string, unknown> {
+	// The schema is set last, once it's known whether a version-2 key is used.
 	const section: Obj = {schema: 1, shape: answers.shape};
+	if (!answers.triggerUnset) section.trigger = answers.trigger;
+	if (answers.majors === 'manual') section.majors = 'manual';
 	if (answers.shape !== 'single') {
 		const units: Obj = {};
 		for (const unit of answers.units) {
@@ -87,7 +93,30 @@ export function releaseSection(answers: SetupAnswers): Record<string, unknown> {
 		});
 	}
 
-	return merge(section, keptFor(answers));
+	const publish = publishValue(answers.publish);
+	if (publish !== undefined) section.publish = publish;
+	if (answers.mentions.length > 0) section.mentions = answers.mentions;
+	section.schema =
+		'trigger' in section ||
+		'majors' in section ||
+		'publish' in section ||
+		'mentions' in section
+			? 2
+			: 1;
+	const kept = keptFor(answers);
+	// Settings kept from `publish: {...}` stay when setup writes it as `true`.
+	if (section.publish === true && isObject(kept.publish)) section.publish = {};
+	return merge(section, kept);
+}
+
+/** `true` when publishing has nothing set, else only what is set; undefined when off. */
+function publishValue(publish: SetupAnswers['publish']): unknown {
+	if (!publish) return undefined;
+	const set: Obj = {
+		...(publish.check === null ? {} : {check: publish.check}),
+		...(publish.packages.length > 0 ? {packages: publish.packages} : {}),
+	};
+	return Object.keys(set).length === 0 ? true : set;
 }
 
 /**
@@ -96,6 +125,11 @@ export function releaseSection(answers: SetupAnswers): Record<string, unknown> {
  */
 function keptFor(answers: SetupAnswers): Obj {
 	const copy = structuredClone(answers.kept);
+	// Off drops the rest of a publish object, and a spelled-out `true` is redundant.
+	if (copy.publish !== false) {
+		if (!answers.publish || !isObject(copy.publish)) delete copy.publish;
+	}
+
 	const names = new Set(answers.units.map(unit => unit.name));
 	if (answers.shape === 'single') {
 		for (const key of [...UNIT_ONLY, 'units']) delete copy[key];
