@@ -8,13 +8,27 @@ import {EventEmitter} from 'node:events';
 import {readFile, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {stripVTControlCharacters} from 'node:util';
-import {detect, recommend, releaseSection} from '@chamoji/core';
-import {afterEach, expect, test} from 'vitest';
+import {existsSync} from 'node:fs';
+import {
+	detect,
+	questions,
+	recommend,
+	releaseSection,
+	type NpmRunner,
+} from '@chamoji/core';
+import {afterEach, describe, expect, test} from 'vitest';
 import {
 	gitOutput,
 	type FixtureRepo,
 } from '../../core/test/helpers/fixture-repo.js';
-import {gearzLayout} from '../../core/test/helpers/setup-fixtures.js';
+import {
+	acpSingle,
+	appsAndLibraries,
+	gearzLayout,
+	suiteAppMonorepo,
+	templatedSuiteApp,
+} from '../../core/test/helpers/setup-fixtures.js';
+import {has} from './helpers/release-publish.js';
 import {readHookState} from '../src/hook.js';
 import {run, type GhRunner, type Io} from '../src/run.js';
 import {runSetupScreen} from '../src/setup/screen.js';
@@ -359,4 +373,305 @@ test("after setup, web's first release leaves the template out and shows the syn
 	expect(web.notes).not.toContain('Update the kit');
 	expect(web.notes).not.toContain('Merge upstream');
 	expect(web.notes.split(SYNC_LINE)).toHaveLength(2);
+});
+
+/** The merge workflow is written only when the CLI knows its own version. */
+const WITH_VERSION: Partial<Io> = {cliVersion: '0.16.0'};
+const WORKFLOW = '.github/workflows/chamoji-release.yml';
+
+type Found = {
+	path: string;
+	name: string;
+	kind: string;
+	reasons: string[];
+	framework: {id: string; name: string; version: string | null} | null;
+};
+type SetupReport = {
+	found: {kind: string; units: string[]; packages: Found[]};
+	answers: {
+		shape: string;
+		trigger: string;
+		publish?: unknown;
+		units?: Record<
+			string,
+			{path: string; versionFiles?: string[]; firstVersion?: string}
+		>;
+	};
+	wrote: string[];
+};
+
+/** A repo from a fixture, cleaned up after the test. */
+async function made(make: () => Promise<FixtureRepo>): Promise<string> {
+	const repo = await make();
+	cleanups.push(async () => repo.cleanup());
+	return repo.dir;
+}
+
+const readJson = async (dir: string, file: string) =>
+	JSON.parse(await readFile(path.join(dir, file), 'utf8')) as {
+		private?: boolean;
+		version?: string;
+		release?: unknown;
+	};
+
+test('suiteAppMonorepo: backend and web are app units, nothing is offered for npm', async () => {
+	const dir = await made(suiteAppMonorepo);
+	const setup = await chamoji(['setup', '--yes', '--json'], dir, WITH_VERSION);
+	expect(setup.stderr).toBe('');
+	expect(setup.code).toBe(0);
+	const report = JSON.parse(setup.stdout) as SetupReport;
+	expect(report.found.kind).toBe('apps');
+	const byName = Object.fromEntries(
+		report.found.packages.map(pkg => [pkg.name, pkg]),
+	);
+	expect(byName.backend).toMatchObject({
+		path: 'apps/backend',
+		kind: 'app',
+		reasons: ['NetSuite SuiteApp (`apps/backend/src/manifest.xml`)'],
+		framework: {id: 'netsuite-suiteapp', name: 'NetSuite SuiteApp'},
+	});
+	expect(byName.web).toMatchObject({
+		kind: 'app',
+		framework: {id: 'next', name: 'Next.js'},
+	});
+	expect(report.found.units).toEqual(['backend', 'web']);
+	// Apps are never offered for npm: no publish answer, in the report or the file.
+	expect(report.answers.publish).toBeUndefined();
+	expect(
+		'publish' in ((await readJson(dir, 'chamoji.config.json')).release as {}),
+	).toBe(false);
+	// The merge workflow (T6-a) and the privatize tick (T5-d) are written too,
+	// and the release engine finds the SuiteApp's manifest.xml.
+	expect(report.wrote).toEqual([
+		'chamoji.config.json',
+		WORKFLOW,
+		'apps/backend/package.json',
+	]);
+	expect(report.answers.units?.backend?.versionFiles).toEqual([
+		'apps/backend/src/manifest.xml',
+	]);
+	expect((await readJson(dir, 'apps/backend/package.json')).private).toBe(true);
+	// The text view names the NetSuite project with its id and version.
+	const text = await chamoji(
+		['setup', '--yes'],
+		await made(suiteAppMonorepo),
+		WITH_VERSION,
+	);
+	expect(text.stdout).toContain(
+		'backend (NetSuite SuiteApp · com.example.myapp 2.10.34)',
+	);
+});
+
+test('suiteAppMonorepo: setup points out 2.5.20 versus 2.10.34', async () => {
+	const dir = await made(suiteAppMonorepo);
+	const detection = await detect(dir);
+	const asked = questions(detection, recommend(detection));
+	const first = asked.find(question => question.id === 'firstVersion:backend');
+	expect(first?.title).toBe(
+		'backend is 2.10.34 in manifest.xml but 2.5.20 in package.json; which is current?',
+	);
+	// The manifest is offered first, and --yes starts there.
+	expect(first?.options).toMatchObject([
+		{value: '2.10.34', recommended: true},
+		{value: '2.5.20'},
+	]);
+	const setup = await chamoji(['setup', '--yes', '--json'], dir);
+	expect(
+		(JSON.parse(setup.stdout) as SetupReport).answers.units?.backend,
+	).toMatchObject({firstVersion: '2.10.34'});
+});
+
+test('templatedSuiteApp: setup finds apps/suiteapp with no package.json', async () => {
+	const dir = await made(templatedSuiteApp);
+	const setup = await chamoji(['setup', '--yes', '--json'], dir, WITH_VERSION);
+	expect(setup.stderr).toBe('');
+	expect(setup.code).toBe(0);
+	const report = JSON.parse(setup.stdout) as SetupReport;
+	expect(report.found.units).toEqual(['suiteapp']);
+	expect(report.found.packages).toMatchObject([
+		{
+			path: 'apps/suiteapp',
+			kind: 'app',
+			reasons: ['NetSuite SuiteApp (`apps/suiteapp/template/manifest.xml`)'],
+			framework: {id: 'netsuite-suiteapp', version: '0.1.0'},
+		},
+	]);
+	// The tracked template is the version file, not the git-ignored src/.
+	expect(report.answers.units?.suiteapp?.versionFiles).toEqual([
+		'apps/suiteapp/template/manifest.xml',
+	]);
+	// With no package.json there is nothing to privatize, and none is made.
+	expect(report.wrote).toEqual(['chamoji.config.json', WORKFLOW]);
+	expect(existsSync(path.join(dir, 'apps/suiteapp/package.json'))).toBe(false);
+});
+
+test('acpSingle: shown as an Account Customization Project, first release asks for a version', async () => {
+	const dir = await made(acpSingle);
+	const setup = await chamoji(['setup', '--yes'], dir, WITH_VERSION);
+	expect(setup.code).toBe(0);
+	expect(setup.stdout).toContain(
+		'Found a single NetSuite Account Customization Project',
+	);
+	await commitAll(dir, '🔧 Set up releases');
+	await writeFile(path.join(dir, 'src/script.js'), 'script\n');
+	await commitAll(dir, '✨ Add a script');
+	// An ACP has no version of its own: the first release is told, not guessed.
+	const first = await chamoji(['release', '--json', '--any-branch'], dir);
+	expect(first.code).toBe(2);
+	expect(first.stderr).toContain('give the version');
+	const given = await chamoji(
+		['release', '1.0.0', '--json', '--any-branch'],
+		dir,
+	);
+	expect(given.code).toBe(0);
+	const released = JSON.parse(given.stdout) as {
+		units?: unknown;
+		files: string[];
+	};
+	expect(released.files).toEqual(['CHANGELOG.md']);
+	expect(await gitOutput(dir, ['tag', '--list'])).toBe('v1.0.0\n');
+	// From then on the version comes from the tag.
+	await writeFile(path.join(dir, 'src/more.js'), 'more\n');
+	await commitAll(dir, '✨ Add more');
+	const next = await chamoji(['release', '--json', '--any-branch'], dir);
+	expect(next.code).toBe(0);
+	expect(await gitOutput(dir, ['tag', '--list', '--sort=v:refname'])).toBe(
+		'v1.0.0\nv1.1.0\n',
+	);
+});
+
+describe('Next.js at the root, Expo under packages/ and a Vite app, none private', () => {
+	test('setup finds apps with reasons and libraries with theirs', async () => {
+		const dir = await made(appsAndLibraries);
+		const setup = await chamoji(['setup', '--yes', '--json'], dir);
+		expect(setup.stderr).toBe('');
+		expect(setup.code).toBe(0);
+		const report = JSON.parse(setup.stdout) as SetupReport;
+		const byName = Object.fromEntries(
+			report.found.packages.map(pkg => [pkg.name, pkg]),
+		);
+		expect(byName.mobile).toMatchObject({
+			kind: 'app',
+			reasons: expect.arrayContaining(['`expo` in dependencies']),
+			framework: {name: 'Expo'},
+		});
+		expect(byName.site).toMatchObject({
+			kind: 'app',
+			reasons: ['`vite` in devDependencies', '`index.html`'],
+			framework: {name: 'Vite'},
+		});
+		// An Expo module and a React library with react as a peer are libraries.
+		expect(byName.camera).toMatchObject({
+			kind: 'library',
+			reasons: ['`expo-module.config.json`'],
+		});
+		expect(byName.ui).toMatchObject({
+			kind: 'library',
+			reasons: ['`exports` field'],
+			framework: null,
+		});
+		// Only the apps are units, and the public ones are marked private.
+		expect(report.found.units).toEqual(['mobile', 'site']);
+		expect(report.wrote).toEqual([
+			'chamoji.config.json',
+			'packages/mobile/package.json',
+			'packages/site/package.json',
+		]);
+		expect((await readJson(dir, 'packages/mobile/package.json')).private).toBe(
+			true,
+		);
+		expect(
+			(await readJson(dir, 'packages/camera/package.json')).private,
+		).toBeUndefined();
+	});
+
+	/** A fake npm that records what it is asked, and never publishes. */
+	const recorder = () => {
+		const calls: string[][] = [];
+		const npm: NpmRunner = async args => {
+			calls.push(args);
+			if (args[0] === '--version') {
+				return {ok: true, stdout: '11.6.0', stderr: ''};
+			}
+
+			return {ok: false, stdout: '', stderr: 'npm error code E404'};
+		};
+
+		return {npm, calls};
+	};
+
+	test.skipIf(!has('npm'))(
+		'publish names only the libraries, and skips every app with its reason',
+		async () => {
+			const dir = await made(appsAndLibraries);
+			await gitOutput(dir, ['tag', 'v1.0.0']);
+			const fake = recorder();
+			const result = await chamoji(['publish', '--dry-run'], dir, {
+				npm: fake.npm,
+			});
+			expect(result.code).toBe(0);
+			expect(result.stdout).toBe(
+				'@shop/camera 1.0.0 → latest: would publish\n@shop/ui 1.0.0 → latest: would publish\n',
+			);
+			expect(result.stderr).toContain('skipped shop: Next.js app');
+			expect(result.stderr).toContain('skipped @shop/mobile: Expo app');
+			expect(result.stderr).toContain('skipped @shop/site: Vite app');
+			// No app is even looked up on the registry.
+			const looked = fake.calls
+				.filter(call => call[0] === 'view')
+				.map(call => call[1]);
+			expect(looked).toEqual(['@shop/camera', '@shop/ui']);
+		},
+	);
+
+	test('publishing an app stops before any tag, and nothing is published', async () => {
+		const dir = await made(appsAndLibraries);
+		await writeFile(
+			path.join(dir, 'chamoji.config.json'),
+			JSON.stringify({
+				release: {
+					schema: 2,
+					shape: 'apps',
+					units: {mobile: {path: 'packages/mobile'}},
+				},
+			}),
+		);
+		await commitAll(dir, '🔧 Set up releases');
+		await gitOutput(dir, ['tag', 'mobile/v1.0.0']);
+		const fake = recorder();
+		const result = await chamoji(['publish', '--from', 'mobile/v1.0.0'], dir, {
+			npm: fake.npm,
+		});
+		expect(result.code).toBe(2);
+		expect(result.stderr).toContain('packages/mobile looks like a Expo app');
+		expect(result.stderr).toContain("apps aren't published");
+		expect(fake.calls.filter(call => call[0] === 'publish')).toEqual([]);
+		// No release commit or tag came of it.
+		expect(await gitOutput(dir, ['tag', '--list'])).toBe('mobile/v1.0.0\n');
+	});
+});
+
+test('chamoji publish refuses a SuiteApp package: nothing NetSuite is offered for npm', async () => {
+	const dir = await made(suiteAppMonorepo);
+	await chamoji(['setup', '--yes'], dir);
+	// Whatever the package.json says, a SuiteApp is an app.
+	await writeFile(
+		path.join(dir, 'apps/backend/package.json'),
+		JSON.stringify({
+			name: '@example/backend',
+			version: '2.10.34',
+			main: 'x.js',
+		}),
+	);
+	await commitAll(dir, '🔧 Set up releases');
+	await gitOutput(dir, ['tag', 'backend/v2.10.34']);
+	const result = await chamoji(['publish', '--from', 'backend/v2.10.34'], dir, {
+		npm: async args =>
+			args[0] === '--version'
+				? {ok: true, stdout: '11.6.0', stderr: ''}
+				: {ok: false, stdout: '', stderr: 'npm error code E404'},
+	});
+	expect(result.code).toBe(2);
+	expect(result.stderr).toContain('NetSuite SuiteApp');
+	expect(result.stderr).toContain("apps aren't published");
 });
