@@ -30,8 +30,9 @@ test('each hex is #rrggbb', () => {
 	}
 });
 
-test('no icon is blank', () => {
+test('no icon is blank or too faint to read', () => {
 	for (const [id, icon] of Object.entries(FRAMEWORK_ICONS)) {
-		expect(icon.large.join('').trim(), id).not.toBe('');
+		const filled = [...icon.large.join('')].filter(c => c !== ' ').length;
+		expect(filled, id).toBeGreaterThanOrEqual(16);
 	}
 });

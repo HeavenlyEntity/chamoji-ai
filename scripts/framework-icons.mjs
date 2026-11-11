@@ -33,6 +33,7 @@ const ICON_ROWS = 4;
 const SCALE = 12; // supersampling
 const THRESHOLDS = [0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.15, 0.1];
 const AREA_SHARE = 0.9;
+const MIN_FILLED_CELLS = 16; // fewer and the brand mark is switched for a Phosphor icon
 const PHOSPHOR_HEX = '#8a8a8a';
 const QUADRANTS = ' ▗▖▄▝▐▞▟▘▚▌▙▀▜▛█'; // indexed by bits TL, TR, BL, BR
 
@@ -82,6 +83,18 @@ const ICON_SOURCES = {
 	forge: 'si:atlassian',
 	'netsuite-suiteapp': 'ph:cube',
 	'netsuite-acp': 'ph:package',
+};
+
+// Phosphor stand-ins for the marks that are too thin to read at 8x4: used when
+// a simple-icons mark fills fewer than MIN_FILLED_CELLS cells.
+const ICON_FALLBACKS = {
+	koa: 'ph:leaf',
+	'react-router': 'ph:signpost',
+	electron: 'ph:atom',
+	express: 'ph:truck',
+	'vite-lit': 'ph:flame',
+	fastify: 'ph:rocket-launch',
+	hono: 'ph:campfire',
 };
 
 const bySlug = new Map(
@@ -185,16 +198,40 @@ function render({paths, size}) {
 	return lines;
 }
 
+const countFilled = lines => [...lines.join('')].filter(c => c !== ' ').length;
+
 const icons = {};
+const switched = [];
 for (const [id, source] of Object.entries(ICON_SOURCES)) {
-	const icon = load(id, source);
-	const large = render(icon);
-	if (large.join('').trim() === '') {
-		console.error(`${id} (${source}) has no filled cells; fix the source`);
+	let icon = load(id, source);
+	let large = render(icon);
+	let used = source;
+	if (source.startsWith('si:') && countFilled(large) < MIN_FILLED_CELLS) {
+		used = ICON_FALLBACKS[id];
+		if (!used) {
+			console.error(
+				`${id} (${source}) fills ${countFilled(large)} cells, under ${MIN_FILLED_CELLS}, and has no Phosphor fallback`,
+			);
+			process.exit(1);
+		}
+
+		icon = load(id, used);
+		large = render(icon);
+		switched.push(`${id} (${source} -> ${used})`);
+	}
+
+	if (countFilled(large) < MIN_FILLED_CELLS) {
+		console.error(
+			`${id} (${used}) fills ${countFilled(large)} cells, under ${MIN_FILLED_CELLS}; fix the source`,
+		);
 		process.exit(1);
 	}
 
 	icons[id] = {hex: icon.hex, large};
+}
+
+if (switched.length > 0) {
+	console.log(`Too faint, using a Phosphor icon: ${switched.join(', ')}`);
 }
 
 const key = id => (/^[a-z]+$/.test(id) ? id : `'${id}'`);
