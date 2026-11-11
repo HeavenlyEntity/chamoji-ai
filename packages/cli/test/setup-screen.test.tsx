@@ -1,4 +1,5 @@
 import {EventEmitter} from 'node:events';
+import chalk from 'chalk';
 import {
 	detect,
 	questions,
@@ -652,6 +653,7 @@ const PROPS = (): SetupScreenProps => ({
 async function onTerminal(
 	env: Record<string, string | undefined>,
 	answer: {r: number; g: number; b: number} | undefined,
+	props: SetupScreenProps = PROPS(),
 ) {
 	const stdin = new FakeStdin();
 	const stderr = new FakeStdout();
@@ -671,11 +673,17 @@ async function onTerminal(
 		}),
 		ask,
 	});
-	const done = screen(PROPS());
+	const done = screen(props);
 	await sleep(150);
 	stdin.write(ENTER);
 	const result = await done;
-	return {result, ask, close, foil: stderr.written.includes('\u001B[38;2;')};
+	return {
+		result,
+		ask,
+		close,
+		foil: stderr.written.includes('\u001B[38;2;'),
+		written: stderr.written,
+	};
 }
 
 test('the terminal screen asks for the background before it draws, and wears the foil only on dark', async () => {
@@ -706,6 +714,43 @@ test('the terminal screen asks for the background before it draws, and wears the
 		expect(still.result).toMatchObject({saved: true});
 	}
 });
+
+test('icons keep their colour on a light terminal, and NO_COLOR draws them plain', async () => {
+	const zoo = await frameworkZoo();
+	// Ink paints with chalk, which finds no colour under a test runner.
+	const before = chalk.level;
+	chalk.level = 3;
+	try {
+		const found = await detect(zoo.dir);
+		const props = (): SetupScreenProps => ({
+			...PROPS(),
+			detection: found,
+			initial: recommend(found),
+		});
+		// A light background: no foil, but the brand colours are still drawn.
+		const light = await onTerminal({}, {r: 255, g: 255, b: 255}, props());
+		expect(light.written).toContain('Next.js 15.2');
+		expect(light.written).toMatch(/\u001B\[38;2;/);
+		// Nothing animates here, so any colour is an icon's.
+		const still = await onTerminal(
+			{CHAMOJI_NO_ANIMATION: '1'},
+			undefined,
+			props(),
+		);
+		expect(still.written).toMatch(/\u001B\[38;2;/);
+		// NO_COLOR: the icons are drawn, with no colour.
+		const plain = await onTerminal(
+			{NO_COLOR: '1', CHAMOJI_NO_ANIMATION: '1'},
+			undefined,
+			props(),
+		);
+		expect(plain.written).toContain('Next.js 15.2');
+		expect(plain.written).not.toMatch(/\u001B\[38;/);
+	} finally {
+		chalk.level = before;
+		await zoo.cleanup();
+	}
+}, 30_000);
 
 test('a newline, as an Enter pressed before raw mode reads, is Enter everywhere and never typed', async () => {
 	const LF = '\n';
