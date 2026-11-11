@@ -394,7 +394,7 @@ Tags that match nothing stay in git, untouched. chamoji never moves, deletes or 
 - **Date versions.** `"versioning": "calver"` gives a unit versions such as `2026.11.0`: the year, the month and a count of that unit’s releases in the month, with no zero padding so the version stays valid semver. Its manifest version is ignored, and its first release is a date version too, unless `firstVersion` says otherwise.
 - **While at 0.x.** `"zeroMajor": "minor"` makes a breaking change raise the minor version instead of the major.
 
-Each unit’s `package.json` is bumped, with its formatting kept. List any other file that carries the version in `versionFiles`, by its path from the repo root. chamoji edits Expo’s `app.json` and `app.config.ts` or `.js`, an `Info.plist`, an `android/app/build.gradle`, and any other text file where it finds the current version. In the shop, the release bumped mobile’s `app.config.ts` to `version: '1.1.0'`.
+Each unit’s `package.json` is bumped, with its formatting kept. List any other file that carries the version in `versionFiles`, by its path from the repo root. chamoji edits Expo’s `app.json` and `app.config.ts` or `.js`, an `Info.plist`, an `android/app/build.gradle`, a `manifest.xml`, and any other text file where it finds the current version. A NetSuite `manifest.xml` has its `<projectversion>` set; one with no `<projectversion>` is treated like any other text file. In the shop, the release bumped mobile’s `app.config.ts` to `version: '1.1.0'`.
 
 If it can’t find the version in a listed file, it stops before changing anything, even in a dry run:
 

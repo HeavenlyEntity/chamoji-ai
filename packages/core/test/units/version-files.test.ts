@@ -528,7 +528,37 @@ test('manifest.xml: only <projectversion> changes', async () => {
 	});
 });
 
-test('manifest.xml with no <projectversion> cannot be set', async () => {
+test('a manifest.xml with no <projectversion> takes the generic replace of the current version (0.15 behaviour)', async () => {
+	// Not an SDF manifest at all: the version is only text in it.
+	const text = '<manifest package="com.example.app" versionName="0.1.0"/>\n';
+	const root = await repo({'app/manifest.xml': text});
+	const [edit] = await editVersionFiles(
+		root,
+		unit('app', {versionFiles: ['app/manifest.xml']}),
+		'0.2.0',
+		options,
+	);
+	expect(edit).toEqual({
+		file: 'app/manifest.xml',
+		text: text.replace('0.1.0', '0.2.0'),
+		from: '0.1.0',
+	});
+
+	// An SDF manifest with <projectversion> still uses the setter.
+	const sdf =
+		'<manifest projecttype="SUITEAPP">\n\t<projectversion>3.0.0</projectversion>\n\t<note>0.1.0</note>\n</manifest>\n';
+	const sdfRoot = await repo({'src/manifest.xml': sdf});
+	const [setter] = await editVersionFiles(
+		sdfRoot,
+		unit('', {versionFiles: ['src/manifest.xml']}),
+		'3.1.0',
+		options,
+	);
+	expect(setter?.text).toBe(sdf.replace('3.0.0', '3.1.0'));
+	expect(setter?.from).toBe('3.0.0');
+});
+
+test('a manifest.xml with neither a <projectversion> nor the current version still fails', async () => {
 	const root = await repo({
 		'src/manifest.xml': '<manifest projecttype="ACCOUNTCUSTOMIZATION"/>\n',
 	});
@@ -540,7 +570,7 @@ test('manifest.xml with no <projectversion> cannot be set', async () => {
 	);
 	await expect(attempt).rejects.toBeInstanceOf(ReleaseError);
 	await expect(attempt).rejects.toThrow(
-		"can't set the version in src/manifest.xml: it has no <projectversion> to set",
+		"can't set the version in src/manifest.xml: it doesn't contain the current version 0.1.0",
 	);
 });
 
