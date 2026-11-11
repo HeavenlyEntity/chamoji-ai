@@ -7,7 +7,6 @@ import {
 	loadConfig,
 	MemoryError,
 	runGit,
-	type Detection,
 } from '@chamoji/core';
 import {HookError, hookPath, installHook, readHookState} from '../hook.js';
 import {
@@ -57,11 +56,10 @@ const repoRoot = async (cwd: string): Promise<string> =>
 
 /**
  * Each step's state. `existing` is the config's `release` section, undefined
- * when it has none; `detection` is null when setup didn't look at the layout.
+ * when it has none.
  */
 export async function stepStates(
 	io: Io,
-	_detection: Detection | null,
 	existing: unknown,
 ): Promise<StepState[]> {
 	const root = await repoRoot(io.cwd);
@@ -122,7 +120,7 @@ export async function stepStates(
 export async function nothingSetUp(io: Io): Promise<boolean> {
 	try {
 		const config = await loadConfig(io.cwd);
-		const states = await stepStates(io, null, config.release);
+		const states = await stepStates(io, config.release);
 		return states.every(state => !state.done);
 	} catch {
 		return false;
@@ -130,10 +128,7 @@ export async function nothingSetUp(io: Io): Promise<boolean> {
 }
 
 /** Whether the setup screen asks the releases questions: not once releases are done (ruling R16). */
-export function asksReleases(
-	_detection: Detection,
-	states: StepState[],
-): boolean {
+export function asksReleases(states: StepState[]): boolean {
 	const releases = states.find(state => state.step === 'releases');
 	return releases !== undefined && !releases.done;
 }

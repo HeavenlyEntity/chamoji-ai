@@ -95,7 +95,7 @@ export function SetupScreen({
 	onDone,
 	look = PLAIN,
 }: SetupScreenComponentProps) {
-	const asking = asksReleases(detection, states);
+	const asking = asksReleases(states);
 	const prompts = stepPrompts(states);
 	const [answers, setAnswers] = useState(initial);
 	const [phase, setPhase] = useState<Phase>(asking ? 'summary' : 'prompts');

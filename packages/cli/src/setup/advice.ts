@@ -2,6 +2,7 @@ import {
 	getRemoteWebUrl,
 	processEnv,
 	publishedVersions,
+	repoSlug,
 	type NpmRunner,
 } from '@chamoji/core';
 import type {GhRunner} from '../run.js';
@@ -14,8 +15,9 @@ export const SETUP_NETWORK_TIMEOUT_MS = 5000;
 
 /** `owner/name` from an origin on github.com, or undefined for anywhere else. */
 export async function githubRepo(cwd: string): Promise<string | undefined> {
-	const url = await getRemoteWebUrl(cwd);
-	return /^https:\/\/github\.com\/([^/]+\/[^/]+)$/.exec(url ?? '')?.[1];
+	return (
+		repoSlug(await getRemoteWebUrl(cwd), {host: 'github.com'}) ?? undefined
+	);
 }
 
 /**
