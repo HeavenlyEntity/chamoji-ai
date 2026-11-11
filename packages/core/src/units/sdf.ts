@@ -120,14 +120,10 @@ const normalizeFolder = (value: string): string =>
  * next to a `deploy.xml`, marks a project folder; its unit is that folder's
  * parent. With a `suitecloud.config.js` there, only its `defaultProjectFolder`
  * counts; without one a folder named `src` wins, else the first in path order.
- * Ignored files are never read, and nothing is run. `options.files` is the
- * repo's file list when the caller already has it; without it, git lists them.
+ * Ignored files are never read, and nothing is run.
  */
-export async function findSdfProjects(
-	root: string,
-	options?: {files?: string[]},
-): Promise<SdfProject[]> {
-	const files = options?.files ?? (await listFiles(root));
+export async function findSdfProjects(root: string): Promise<SdfProject[]> {
+	const files = await listFiles(root);
 	const tracked = new Set(files);
 	const folders = new Map<string, string[]>();
 	for (const file of files) {
