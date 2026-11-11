@@ -1,6 +1,8 @@
 import {expect, test} from 'vitest';
 import {
+	answersFromSection,
 	applyAnswer,
+	releaseSection,
 	questions,
 	recommend,
 	summary,
@@ -354,4 +356,29 @@ test('the units question labels each app with its framework', async () => {
 		'backend (apps/backend) · NetSuite SuiteApp',
 		'web (apps/web) · Next.js',
 	]);
+});
+
+test('recommend starts a mismatched, untagged unit at its manifest version', async () => {
+	const detection = await detected(suiteAppMonorepo());
+	const answers = recommend(detection);
+	const backend = answers.units.find(unit => unit.name === 'backend')!;
+	expect(backend.firstVersion).toBe('2.10.34');
+	expect(answers.why['firstVersion:backend']).toBe('detected');
+	expect(JSON.stringify(releaseSection(answers))).toContain(
+		'"firstVersion":"2.10.34"',
+	);
+	// Reading the section back keeps it.
+	const again = answersFromSection(releaseSection(answers), detection);
+	expect(again.units.find(unit => unit.name === 'backend')?.firstVersion).toBe(
+		'2.10.34',
+	);
+});
+
+test('a unit with no version mismatch gets no firstVersion', async () => {
+	const detection = await detected(gearzLayout());
+	const answers = recommend(detection);
+	expect(answers.units.some(unit => unit.firstVersion !== undefined)).toBe(
+		false,
+	);
+	expect(answers.why['firstVersion:web']).toBe('recommended');
 });
