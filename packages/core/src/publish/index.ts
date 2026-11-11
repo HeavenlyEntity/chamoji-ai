@@ -3,8 +3,7 @@ export {
 	type DetectedFramework,
 	type Framework,
 } from './frameworks.js';
-export {classifyPackage, detectFramework, type PackageKind} from './kind.js';
-export {displayVersion, installedVersion} from './lockfile.js';
+export {classifyPackage, type PackageKind} from './kind.js';
 export {
 	detectPackageManager,
 	packArgs,

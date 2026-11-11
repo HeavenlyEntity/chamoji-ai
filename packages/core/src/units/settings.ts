@@ -55,9 +55,6 @@ export type ReleaseSettings = {
 	mentions?: Mention[];
 };
 
-/** The oldest CLI that reads `release.mentions`. */
-export const MENTIONS_MIN_VERSION = '0.16.0';
-
 /** A version pin in the docs that each release moves to the new version. */
 export type Mention = {
 	/** Text with one `{version}`, such as `owner/repo@v{version}`. */

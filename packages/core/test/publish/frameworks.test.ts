@@ -4,12 +4,11 @@ import path from 'node:path';
 import {afterAll, beforeAll, expect, test} from 'vitest';
 import {
 	classifyPackage,
-	detectFramework,
 	FRAMEWORKS,
 	readWorkspace,
 	type WorkspacePackage,
 } from '../../src/index.js';
-import {inspectPackage} from '../../src/publish/kind.js';
+import {detectFramework, inspectPackage} from '../../src/publish/kind.js';
 import {type FixtureRepo} from '../helpers/fixture-repo.js';
 import {frameworkZoo} from '../helpers/setup-fixtures.js';
 

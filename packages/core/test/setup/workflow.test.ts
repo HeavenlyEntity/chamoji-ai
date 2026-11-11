@@ -9,8 +9,9 @@ import {
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {afterEach, expect, test} from 'vitest';
-import {checkCommand, defaultBranch} from '../../src/index.js';
+import {defaultBranch} from '../../src/git.js';
 import {pnpmSetupVersion} from '../../src/publish/lockfile.js';
+import {checkCommand} from '../../src/setup/package-scripts.js';
 import {privatizeEdit} from '../../src/setup/privatize.js';
 import {
 	findReleaseWorkflow,
