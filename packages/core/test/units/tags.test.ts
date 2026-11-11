@@ -44,7 +44,6 @@ function settings(
 		trigger: 'manual',
 		majors: 'auto',
 		publish: null,
-		mentions: [],
 	};
 }
 

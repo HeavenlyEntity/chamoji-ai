@@ -117,10 +117,14 @@ export function npmSignInSteps(input: {
 	return lines.join('\n');
 }
 
+/** The most `npm view` lookups setup runs at once. */
+export const NPM_LOOKUP_CONCURRENCY = 6;
+
 /**
  * The packages the registry has no record of. A package npm can't answer for
- * is left out rather than guessed at. Null when npm doesn't answer within
- * `timeoutMs`.
+ * is left out rather than guessed at. At most NPM_LOOKUP_CONCURRENCY lookups
+ * run at once, and none starts once `timeoutMs` has passed. Null when npm
+ * doesn't answer within `timeoutMs`.
  */
 export async function neverPublished(
 	npm: NpmRunner,
@@ -128,24 +132,39 @@ export async function neverPublished(
 	cwd: string,
 	timeoutMs = SETUP_NETWORK_TIMEOUT_MS,
 ): Promise<string[] | null> {
+	const deadline = Date.now() + timeoutMs;
 	return soft(async () => {
-		const found = await Promise.all(
-			packages.map(async pkg => {
+		const found: Array<string | null> = Array.from(
+			{length: packages.length},
+			() => null,
+		);
+		let next = 0;
+		const worker = async () => {
+			while (next < packages.length && Date.now() < deadline) {
+				const index = next++;
+				const pkg = packages[index]!;
 				try {
-					return (await publishedVersions(
+					// eslint-disable-next-line no-await-in-loop -- one lookup per worker at a time
+					const versions = await publishedVersions(
 						npm,
 						pkg.name,
 						pkg.registry,
 						cwd,
 						processEnv(),
 						timeoutMs,
-					)) === null
-						? pkg.name
-						: null;
+					);
+					if (versions === null) found[index] = pkg.name;
 				} catch {
-					return null;
+					// npm couldn't answer for this package; it's left out.
 				}
-			}),
+			}
+		};
+
+		await Promise.all(
+			Array.from(
+				{length: Math.min(NPM_LOOKUP_CONCURRENCY, packages.length)},
+				async () => worker(),
+			),
 		);
 		return found.filter((name): name is string => name !== null);
 	}, timeoutMs);

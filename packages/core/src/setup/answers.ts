@@ -409,7 +409,7 @@ export function answersFromSection(
 			check: settings.publish.check,
 			packages: settings.publish.packages,
 		},
-		mentions: settings.mentions,
+		mentions: settings.mentions ?? [],
 		// What an earlier run left public is its own to decide, so nothing is ticked.
 		privatize: [],
 		ciAuth: ciAuthFor(detection),
