@@ -7,6 +7,7 @@ import {
 } from '@chamoji/core';
 import {Box, Text} from 'ink';
 import {stripControlLines} from '../text.js';
+import {FrameworkSummary, type FrameworkRow} from './frameworks-view.js';
 import type {Loaded} from './preview-pane.js';
 
 /** Repo text (names, paths, tags, notes) never reaches the terminal raw. */
@@ -90,11 +91,17 @@ function QuestionHead({question}: {question: Question}) {
 
 /** The first screen: what setup found, the replay and the questions that need an answer. */
 export function Summary({
+	frameworks,
+	width,
+	level,
 	text,
 	replayed,
 	asked,
 	answers,
 }: {
+	frameworks: FrameworkRow[];
+	width: number;
+	level: 0 | 1 | 2 | 3;
 	text: string;
 	replayed: Loaded<ReplayLine[]>;
 	asked: Question[];
@@ -102,6 +109,15 @@ export function Summary({
 }) {
 	return (
 		<Box flexDirection="column" marginTop={1}>
+			{frameworks.length > 0 && (
+				<Box marginBottom={1}>
+					<FrameworkSummary
+						frameworks={frameworks}
+						width={width}
+						level={level}
+					/>
+				</Box>
+			)}
 			<Words text={text} />
 			<Box flexDirection="column" marginTop={1}>
 				<Text bold>Past releases under these answers</Text>
@@ -158,7 +174,14 @@ export function Picker({all, cursor}: {all: Question[]; cursor: number}) {
 }
 
 /** One question's answers: pick one, tick several, or for text type another. */
-export function Answer({view}: {view: AnswerView}) {
+export function Answer({
+	view,
+	marks,
+}: {
+	view: AnswerView;
+	/** A ● before an option, in this colour (or the default); keyed by option value. */
+	marks?: Record<string, string | undefined>;
+}) {
 	const {question, row, ticked, typed, error} = view;
 	return (
 		<Box flexDirection="column" marginTop={1}>
@@ -176,6 +199,9 @@ export function Answer({view}: {view: AnswerView}) {
 						<Text key={option.value} color={active ? 'cyan' : undefined}>
 							{active ? '❯ ' : '  '}
 							{box}
+							{marks && option.value in marks && (
+								<Text color={marks[option.value]}>● </Text>
+							)}
 							{clean(option.label)}
 							{option.recommended && <Text dimColor> (recommended)</Text>}
 						</Text>

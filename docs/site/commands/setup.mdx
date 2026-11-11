@@ -194,9 +194,11 @@ Setup refuses to write through a symlink: if `package.json`, the workflow file o
 	<Property name="--json" type="boolean">
 		Print what setup found and did as JSON on stdout, and nothing else. It never
 		opens the screen. Without `--yes` it writes nothing and reports what it
-		would do. With `--yes` it does it, then reports. The keys are `found`,
-		`answers`, `why`, `steps`, `wrote`, `squashMerge`, `existingWorkflow`,
-		`workflowAdvice` and `advice`.
+		would do. With `--yes` it does it, then reports. `found.packages` lists each
+		app and package with its `path`, `name`, `kind`, the `reasons` for that
+		kind, and its `framework` (`id`, `name`, `version` and `basedOn`), or `null`
+		when none was found. The keys are `found`, `answers`, `why`, `steps`,
+		`wrote`, `squashMerge`, `existingWorkflow`, `workflowAdvice` and `advice`.
 	</Property>
 	<Property name="--explain" type="boolean">
 		Print each value of the release section and where it came from: detected in
@@ -209,6 +211,12 @@ Setup refuses to write through a symlink: if `package.json`, the workflow file o
 		notice](/install#the-update-notice).
 	</Property>
 </Properties>
+
+## Framework icons
+
+On a terminal, the summary draws each framework setup found as a small icon in the framework's colour, beside its name, version and the apps or packages that use it. Setup draws the icons on stderr only, and only where it also animates the face: not in CI, with `TERM=dumb`, with `--json`, or when stderr isn't a terminal. There it prints plain lines such as `Next.js 15.2: web` instead. `NO_COLOR` still draws the icons, in your terminal's own colour, and a colour that would be hard to read on a black or white background is drawn that way too.
+
+The logos are their owners' trademarks. Setup uses them only to name the framework a project uses.
 
 ## Common combinations
 

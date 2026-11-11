@@ -62,3 +62,23 @@ export function hasFace(
 		}
 	}
 }
+
+/**
+ * Whether setup may draw framework icons: `shouldAnimate`'s rules without
+ * CHAMOJI_NO_ANIMATION, since an icon doesn't move. NO_COLOR still draws them,
+ * in the default colour. Otherwise setup prints the frameworks as plain text.
+ */
+export function shouldDrawIcons({
+	env,
+	stderrIsTTY,
+	argv,
+}: {
+	env: Record<string, string | undefined>;
+	stderrIsTTY: boolean;
+	argv: readonly string[];
+}): boolean {
+	if (!stderrIsTTY) return false;
+	if (env['CI']) return false;
+	if (env['TERM'] === 'dumb') return false;
+	return !argv.some(arg => arg === '--json' || arg.startsWith('--json='));
+}

@@ -25,6 +25,7 @@ import {
 	type FixtureRepo,
 } from '../../core/test/helpers/fixture-repo.js';
 import {
+	frameworkZoo,
 	gearzLayout,
 	publicApps,
 	publishableLibraries,
@@ -1188,4 +1189,54 @@ test('setup with no gh and no network still writes, exit 0, without advice lines
 		gh: noGh(),
 	});
 	expect((JSON.parse(json.stdout) as {advice: string[]}).advice).toEqual([]);
+});
+
+test('--json gives each package kind, reasons and framework with id, name, version, basedOn', async () => {
+	const dir = await made(frameworkZoo());
+	const {stdout} = await chamoji(['setup', '--json'], dir);
+	const {found} = JSON.parse(stdout) as {
+		found: {
+			packages: Array<{
+				path: string;
+				name: string;
+				kind: string;
+				reasons: string[];
+				framework: {
+					id: string;
+					name: string;
+					version: string | null;
+					basedOn: string[];
+				} | null;
+			}>;
+		};
+	};
+	const web = found.packages.find(pkg => pkg.path === 'apps/next')!;
+	expect(web.kind).toBe('app');
+	expect(web.reasons.length).toBeGreaterThan(0);
+	expect(web.framework).toEqual({
+		id: 'next',
+		name: 'Next.js',
+		version: expect.any(String) as string,
+		basedOn: expect.any(Array) as string[],
+	});
+	for (const pkg of found.packages) {
+		expect(pkg).toHaveProperty('framework');
+		expect(typeof pkg.kind).toBe('string');
+		expect(Array.isArray(pkg.reasons)).toBe(true);
+	}
+});
+
+test('--json and non-TTY output contain no block characters', async () => {
+	const dir = await gearz();
+	const json = await chamoji(['setup', '--json'], dir);
+	const plain = await chamoji(['setup'], dir);
+	for (const text of [json.stdout, json.stderr, plain.stdout, plain.stderr]) {
+		expect(text).not.toMatch(/[▀-▟]/u);
+	}
+});
+
+test('the plain summary names each framework and its version', async () => {
+	const dir = await made(frameworkZoo());
+	const {stdout} = await chamoji(['setup'], dir);
+	expect(stdout).toMatch(/^Next\.js 15\.2: next$/m);
 });

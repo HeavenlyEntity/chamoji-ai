@@ -1,5 +1,5 @@
 import {expect, test} from 'vitest';
-import {hasFace, shouldAnimate} from '../src/face-settings.js';
+import {hasFace, shouldAnimate, shouldDrawIcons} from '../src/face-settings.js';
 
 const tty = {env: {}, stderrIsTTY: true, argv: ['memory', 'sync']};
 
@@ -78,4 +78,20 @@ test('hasFace is false for commands that never wait on anything slow', () => {
 test('hasFace is false for --help and --version', () => {
 	expect(hasFace(['release'], {help: true})).toBe(false);
 	expect(hasFace(['memory', 'sync'], {version: true})).toBe(false);
+});
+
+test('shouldDrawIcons is false in CI, with TERM=dumb, with --json and without a TTY', () => {
+	expect(shouldDrawIcons(tty)).toBe(true);
+	expect(shouldDrawIcons({...tty, env: {CI: 'true'}})).toBe(false);
+	expect(shouldDrawIcons({...tty, env: {TERM: 'dumb'}})).toBe(false);
+	expect(shouldDrawIcons({...tty, argv: ['setup', '--json']})).toBe(false);
+	expect(shouldDrawIcons({...tty, argv: ['setup', '--json=1']})).toBe(false);
+	expect(shouldDrawIcons({...tty, stderrIsTTY: false})).toBe(false);
+});
+
+test('shouldDrawIcons ignores CHAMOJI_NO_ANIMATION and NO_COLOR', () => {
+	expect(shouldDrawIcons({...tty, env: {CHAMOJI_NO_ANIMATION: '1'}})).toBe(
+		true,
+	);
+	expect(shouldDrawIcons({...tty, env: {NO_COLOR: '1'}})).toBe(true);
 });
