@@ -5,12 +5,9 @@ import {assertNoSymlinks} from '../links.js';
 import {pnpmSetupVersion} from '../publish/lockfile.js';
 import {detectPackageManager} from '../publish/pack.js';
 import type {FileChange} from '../release.js';
-import {
-	effectiveTrigger,
-	type Detection,
-	type SetupAnswers,
-} from './answers.js';
+import type {Detection, SetupAnswers} from './answers.js';
 import {privatizeEdit} from './privatize.js';
+import {effectiveTrigger} from './rules.js';
 import {
 	findReleaseWorkflow,
 	RELEASE_WORKFLOW_FILE,
