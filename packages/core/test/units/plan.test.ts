@@ -1038,3 +1038,40 @@ test('a unit with no package.json releases from its manifest version', async () 
 		manifest('0.2.0'),
 	);
 });
+
+test('a unit release updates only its own mentions', async () => {
+	const {upstream: _upstream, ...release} = GEARZ_CONFIG.release;
+	const config = {
+		release: {
+			...release,
+			schema: 2,
+			mentions: [
+				{pattern: 'gearz/web@v{version}', files: ['README.md'], unit: 'web'},
+				{
+					pattern: 'gearz/mobile@v{version}',
+					files: ['README.md'],
+					unit: 'mobile',
+				},
+			],
+		},
+	};
+	const repo = await createRepo([
+		{
+			commit: '🎉 Start the gearz monorepo',
+			files: {
+				...appFiles('0.1.0', config),
+				'README.md': 'web: gearz/web@v0.1.0\nmobile: gearz/mobile@v1.0.0\n',
+			},
+		},
+		{tag: 'web/v0.1.0', annotated: true},
+		{tag: 'mobile/v1.0.0', annotated: true},
+		WEB_FEATURE,
+	]);
+	cleanups.push(repo.cleanup);
+	const result = await plan(repo.dir);
+	const web = unitOf(result, 'web');
+	expect(web.version).toBe('0.2.0');
+	expect(changeOf(result, 'README.md')).toBe(
+		'web: gearz/web@v0.2.0\nmobile: gearz/mobile@v1.0.0\n',
+	);
+});

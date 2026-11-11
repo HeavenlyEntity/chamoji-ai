@@ -51,6 +51,21 @@ export type ReleaseSettings = {
 	majors: 'auto' | 'manual';
 	/** Null when the release isn't published to npm. */
 	publish: PublishSettings | null;
+	/** Pins in docs that a release moves to its version. */
+	mentions: Mention[];
+};
+
+/** The oldest CLI that reads `release.mentions`. */
+export const MENTIONS_MIN_VERSION = '0.16.0';
+
+/** A version pin in the docs that each release moves to the new version. */
+export type Mention = {
+	/** Text with one `{version}`, such as `owner/repo@v{version}`. */
+	pattern: string;
+	/** Globs of tracked files, '/'-separated. */
+	files: string[];
+	/** The unit whose release moves it; none in a single repo. */
+	unit?: string;
 };
 
 export type PublishSettings = {
@@ -124,7 +139,7 @@ export function parseReleaseSettings(
 		}
 	}
 
-	for (const key of ['trigger', 'majors', 'publish']) {
+	for (const key of ['trigger', 'majors', 'publish', 'mentions']) {
 		if (value[key] !== undefined && schema !== 2) {
 			fail(key, 'needs "schema": 2');
 		}
@@ -162,6 +177,7 @@ export function parseReleaseSettings(
 
 	const units = parseUnits(value.units, kind, fail);
 	const names = new Set(units.map(unit => unit.name));
+	const mentions = parseMentions(value.mentions, kind, names, fail);
 
 	const exclude = insideRepo(
 		stringList(value.exclude, 'exclude', fail),
@@ -226,6 +242,7 @@ export function parseReleaseSettings(
 		trigger,
 		majors,
 		publish,
+		mentions,
 	};
 }
 
@@ -247,6 +264,67 @@ function registryList(value: unknown, fail: Fail): string[] {
 
 		const href = url.href;
 		return href.endsWith('/') ? href : `${href}/`;
+	});
+}
+
+function parseMentions(
+	value: unknown,
+	shape: Shape,
+	names: Set<string>,
+	fail: Fail,
+): Mention[] {
+	if (value === undefined) {
+		return [];
+	}
+
+	if (!Array.isArray(value)) {
+		return fail('mentions', 'must be a list of {pattern, files} objects');
+	}
+
+	return value.map((raw: unknown, index) => {
+		const key = `mentions[${index}]`;
+		if (!isObject(raw)) {
+			return fail(key, 'must be an object');
+		}
+
+		for (const field of Object.keys(raw)) {
+			if (!['pattern', 'files', 'unit'].includes(field)) {
+				fail(`${key}.${field}`, "isn't a setting");
+			}
+		}
+
+		const {pattern, files, unit} = raw;
+		if (
+			typeof pattern !== 'string' ||
+			pattern.split('{version}').length !== 2
+		) {
+			fail(`${key}.pattern`, 'must be text containing {version} once');
+		}
+
+		if (
+			!Array.isArray(files) ||
+			files.length === 0 ||
+			!files.every(file => typeof file === 'string' && file.trim())
+		) {
+			fail(`${key}.files`, 'must be a non-empty list of file globs');
+		}
+
+		const globs = insideRepo(files as string[], `${key}.files`, 'a path', fail);
+		if (shape === 'single') {
+			if (unit !== undefined) {
+				fail(`${key}.unit`, 'is only used with apps or libraries');
+			}
+		} else if (typeof unit !== 'string' || !unit) {
+			fail(`${key}.unit`, 'must name the unit whose release moves it');
+		} else if (!names.has(unit)) {
+			fail(`${key}.unit`, `names unknown unit "${unit}"`);
+		}
+
+		return {
+			pattern: pattern as string,
+			files: globs,
+			...(typeof unit === 'string' ? {unit} : {}),
+		};
 	});
 }
 

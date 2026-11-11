@@ -1238,6 +1238,23 @@ process.exit(spawnSync(process.execPath, [${JSON.stringify(real)}, ...process.ar
 			expect(await git('tag', '--list')).toBe('v1.0.0');
 		});
 
+		test('mentions with an older CLI is refused', async () => {
+			const {action, unitCli, git} = await setup(
+				library({
+					mentions: [{pattern: 'acme/lib@v{version}', files: ['README.md']}],
+				}),
+			);
+			const result = await action({
+				CHAMOJI_CLI: unitCli,
+				FAKE_CLI_VERSION: '0.15.0',
+			});
+			expect(result.code).toBe(1);
+			expect(result.stderr).toContain(
+				'version mentions need chamoji 0.16.0 or newer; set chamoji-version',
+			);
+			expect(await git('tag', '--list')).toBe('v1.0.0');
+		});
+
 		test('merge mode needs a CLI that knows --on-merge', async () => {
 			const {action, unitCli, git} = await setup(tagged);
 			const result = await action({

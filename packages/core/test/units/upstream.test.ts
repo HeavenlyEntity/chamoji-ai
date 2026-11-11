@@ -29,6 +29,7 @@ function settings(over: Partial<ReleaseSettings> = {}): ReleaseSettings {
 		trigger: 'manual',
 		majors: 'auto',
 		publish: null,
+		mentions: [],
 		...over,
 	};
 }

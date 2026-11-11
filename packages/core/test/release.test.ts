@@ -749,3 +749,48 @@ test.skipIf(process.platform === 'win32')(
 		}
 	},
 );
+
+test('a single release updates mentions in the same commit', async () => {
+	const repo = await repoWith([
+		{
+			commit: '🎉 Start widgets',
+			files: {'README.md': 'uses: acme/widgets@v1.2.0\n'},
+		},
+		{tag: 'v1.2.0', annotated: true},
+		{commit: '✨ Add CSV export'},
+	]);
+	const release = parseReleaseSettings(
+		{
+			schema: 2,
+			shape: 'single',
+			mentions: [{pattern: 'acme/widgets@v{version}', files: ['README.md']}],
+		},
+		'chamoji.config.json',
+	);
+	const planned = await ready(repo.dir, {
+		config: {groups: DEFAULT_GROUP_CONFIG, release},
+	});
+	expect(planned.version).toBe('1.3.0');
+	expect(planned.changes.find(change => change.file === 'README.md')).toEqual({
+		file: 'README.md',
+		text: 'uses: acme/widgets@v1.3.0\n',
+		how: 'version mentions set to 1.3.0',
+	});
+	await applyRelease(planned);
+	expect(await readFile(path.join(repo.dir, 'README.md'), 'utf8')).toBe(
+		'uses: acme/widgets@v1.3.0\n',
+	);
+	expect(
+		await gitOutput(repo.dir, ['show', '--name-only', '--format=', 'HEAD']),
+	).toContain('README.md');
+});
+
+test('a release without mentions changes the same files as before', async () => {
+	const repo = await repoWith([
+		{commit: '🎉 Start', files: {'README.md': 'acme/widgets@v1.2.0\n'}},
+		{tag: 'v1.2.0', annotated: true},
+		{commit: '✨ Add CSV export'},
+	]);
+	const planned = await ready(repo.dir);
+	expect(planned.changes.map(change => change.file)).toEqual(['CHANGELOG.md']);
+});

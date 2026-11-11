@@ -125,11 +125,12 @@ if [ "$(git rev-parse --is-shallow-repository)" = true ]; then
 	fail 'this is a shallow clone; check out with actions/checkout and fetch-depth: 0 so chamoji sees every commit and tag'
 fi
 
-# What chamoji.config.json says about releases, as two words. The first is
+# What chamoji.config.json says about releases, as up to three words. The first is
 # "none" (no release section, or a file that can't be read; the CLI reports a
 # broken file itself), "single" (shape single) or "units" (any other shape),
 # with "+publish" when release.publish is set. The second is the oldest CLI
-# that knows every setting the section uses (empty for none).
+# that knows every setting the section uses (empty for none). The third is
+# "mentions" when release.mentions is set.
 release_config() {
 	node -e '
 		try {
@@ -140,7 +141,8 @@ release_config() {
 				const shape = release.shape === "single" ? "single" : "units";
 				const publish = release.publish !== undefined && release.publish !== null && release.publish !== false;
 				const newer = ["trigger", "majors", "publish"].some(key => release[key] !== undefined);
-				process.stdout.write(`${shape}${publish ? "+publish" : ""} ${newer ? "0.15.0" : "0.13.0"}`);
+				const mentions = release.mentions !== undefined ? "mentions" : "";
+				process.stdout.write(`${shape}${publish ? "+publish" : ""} ${newer ? "0.15.0" : "0.13.0"} ${mentions}`);
 			}
 		} catch {
 			process.stdout.write("none");
@@ -148,7 +150,7 @@ release_config() {
 	'
 }
 need_cli=
-read -r config_release need_cli <<<"$(release_config)"
+read -r config_release need_cli has_mentions <<<"$(release_config)"
 units=false
 publishing=false
 case "$config_release" in units*) units=true ;; esac
@@ -171,6 +173,11 @@ cli_at_least() {
 # with 0.15.0; an older CLI would ignore them.
 if [ -n "$need_cli" ] && ! cli_at_least "$need_cli"; then
 	fail "this repo's release settings need chamoji $need_cli or newer; set chamoji-version"
+fi
+
+# Version mentions came with 0.16.0; an older CLI would leave the pins alone.
+if [ -n "$has_mentions" ]; then
+	cli_at_least 0.16.0 || fail 'version mentions need chamoji 0.16.0 or newer; set chamoji-version'
 fi
 
 case "${CHAMOJI_PUBLISH:-auto}" in

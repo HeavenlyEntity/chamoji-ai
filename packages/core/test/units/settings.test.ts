@@ -450,3 +450,93 @@ test.each(['--registry=x', '1.2.3', '^1', 'a b'])(
 		).toThrow(/Invalid config .*release\.publish\.prereleaseTag/);
 	},
 );
+
+const mention = {pattern: 'acme/app@v{version}', files: ['README.md']};
+
+test('mentions needs schema 2', () => {
+	expect(() =>
+		parseReleaseSettings(
+			{schema: 1, shape: 'single', mentions: [mention]},
+			FILE,
+		),
+	).toThrow(
+		'Invalid config /repo/chamoji.config.json: release.mentions needs "schema": 2',
+	);
+});
+
+test('parses mentions in a single repo', () => {
+	const settings = parseReleaseSettings(
+		{schema: 2, shape: 'single', mentions: [mention]},
+		FILE,
+	);
+	expect(settings.mentions).toEqual([mention]);
+	expect(
+		parseReleaseSettings({schema: 2, shape: 'single'}, FILE).mentions,
+	).toEqual([]);
+});
+
+test('a pattern must contain {version} once', () => {
+	for (const pattern of ['acme/app', 'a{version}b{version}', 3]) {
+		expect(() =>
+			parseReleaseSettings(
+				{schema: 2, shape: 'single', mentions: [{...mention, pattern}]},
+				FILE,
+			),
+		).toThrow(
+			'release.mentions[0].pattern must be text containing {version} once',
+		);
+	}
+});
+
+test('files must be a non-empty list of strings', () => {
+	for (const files of [[], 'README.md', [1], undefined]) {
+		expect(() =>
+			parseReleaseSettings(
+				{schema: 2, shape: 'single', mentions: [{...mention, files}]},
+				FILE,
+			),
+		).toThrow('release.mentions[0].files must be a non-empty list');
+	}
+});
+
+test('unit is required with units and refused in single', () => {
+	const units = {web: {path: 'apps/web'}};
+	expect(() =>
+		parseReleaseSettings(
+			{schema: 2, shape: 'apps', units, mentions: [mention]},
+			FILE,
+		),
+	).toThrow('release.mentions[0].unit must name the unit');
+	expect(() =>
+		parseReleaseSettings(
+			{schema: 2, shape: 'single', mentions: [{...mention, unit: 'web'}]},
+			FILE,
+		),
+	).toThrow('release.mentions[0].unit is only used with apps or libraries');
+});
+
+test('unit must name a configured unit', () => {
+	const units = {web: {path: 'apps/web'}};
+	expect(() =>
+		parseReleaseSettings(
+			{
+				schema: 2,
+				shape: 'apps',
+				units,
+				mentions: [{...mention, unit: 'api'}],
+			},
+			FILE,
+		),
+	).toThrow('release.mentions[0].unit names unknown unit "api"');
+	expect(
+		parseReleaseSettings(
+			{
+				schema: 2,
+				shape: 'apps',
+				units,
+				mentions: [{...mention, unit: 'web'}],
+			},
+			FILE,
+		).mentions,
+	).toEqual([{...mention, unit: 'web'}]);
+});

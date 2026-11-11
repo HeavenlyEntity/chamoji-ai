@@ -29,6 +29,7 @@ import type {
 } from '../types.js';
 import {bumpFor} from '../version.js';
 import {attribute, releaseTargets, type Attributed} from './attribute.js';
+import {editMentions} from './mentions.js';
 import {readStyle, renderUnitSection, writeUnitChangelog} from './notes.js';
 import {
 	dependencyLine,
@@ -965,6 +966,15 @@ async function planUnit(
 			how: `dependency ranges: ${rangeNote}`,
 		});
 	}
+
+	const withMentions = await editMentions(
+		root,
+		settings.mentions,
+		unit.name,
+		version,
+		changes,
+	);
+	changes.splice(0, changes.length, ...withMentions);
 
 	return {
 		plan: {

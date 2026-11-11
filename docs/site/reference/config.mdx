@@ -102,7 +102,7 @@ export const metadata = {
 
 Every official gitmoji is in exactly one of them.
 
-## The release section {{ tag: 'MONOREPOS', variant: 'mono', label: 'release', icon: 'tree-structure', badge: '12' }}
+## The release section {{ tag: 'MONOREPOS', variant: 'mono', label: 'release', icon: 'tree-structure', badge: '13' }}
 
 Without a `release` section, the repo is one package: one version, one `v*` tag and one `CHANGELOG.md`. That is also right for a monorepo whose packages ship together. With one, every unit (an app or a package) gets its own version, tag, changelog and GitHub release.
 
@@ -143,14 +143,14 @@ Without a `release` section, the repo is one package: one version, one `v*` tag 
 	Pin the CLI to 0.13.0 or newer before you add a `release` section. 0.12.1
 	refuses it, and 0.12.0 ignores it and cuts one release for the whole repo.
 	`trigger`, `majors` and `publish`, and `zeroMajor` with `single`, need 0.15.0
-	or newer.
+	or newer, and `mentions` needs 0.16.0.
 </Note>
 
 <Properties>
 	<Property name="schema" type="1 | 2 · required" since="0.13.0">
-		The section’s format. `trigger`, `majors` and `publish` need `2`. A number
-		above 2 is from a newer chamoji, which stops with “this repo’s release
-		settings need chamoji 0.15.0 or newer” and exit code 2.
+		The section’s format. `trigger`, `majors`, `publish` and `mentions` need
+		`2`. A number above 2 is from a newer chamoji, which stops with “this repo’s
+		release settings need chamoji 0.15.0 or newer” and exit code 2.
 	</Property>
 	<Property
 		name="shape"
@@ -159,7 +159,7 @@ Without a `release` section, the repo is one package: one version, one `v*` tag 
 	>
 		`apps` versions each app, `libraries` each package. `single` is the default
 		behaviour, one release for the whole repo, and takes only `zeroMajor`,
-		`trigger`, `majors` and `publish` besides.
+		`trigger`, `majors`, `publish` and `mentions` besides.
 	</Property>
 	<Property name="trigger" type="'merge' | 'manual'" since="0.15.0">
 		What starts a release. `merge` releases when a change is merged to the
@@ -186,6 +186,17 @@ Without a `release` section, the repo is one package: one version, one `v*` tag 
 		the token only goes to `https://registry.npmjs.org/` and these, and a
 		package that publishes anywhere else is refused. Any other key inside
 		`publish` stops the command. Needs `"schema": 2`. Default: `false`.
+	</Property>
+	<Property name="mentions" type="list of objects" since="0.16.0">
+		Version pins in your docs that each release moves to the new version, such
+		as `HeavenlyEntity/chamoji-ai@v0.14.0` in a readme. Each entry has a
+		`pattern`, which is text with one `{version}`, and `files`, a list of globs.
+		Only files git tracks match, and a glob that matches none stops the release
+		with exit code 2. The text around `{version}` is matched as written. A match
+		moves when its version is older than the one being released. An equal or
+		newer one, or one that isn’t a version, stays. With `apps` or `libraries`,
+		each entry needs `unit`, the unit whose release moves it. The edits go in
+		the release commit. Needs `"schema": 2`. Default: none.
 	</Property>
 	<Property name="units" type="object" since="0.13.0">
 		Each unit by name, with its settings (below). A name can’t be empty or
@@ -237,7 +248,22 @@ Without a `release` section, the repo is one package: one version, one `v*` tag 
 	</Property>
 </Properties>
 
-Every key but `schema`, `shape`, `trigger`, `majors`, `publish` and `zeroMajor` needs `apps` or `libraries`. With `single`, any other key stops the command.
+```json {{ title: 'Moving a pin in the readme' }}
+{
+	"release": {
+		"schema": 2,
+		"shape": "single",
+		"mentions": [
+			{
+				"pattern": "HeavenlyEntity/chamoji-ai@v{version}",
+				"files": ["README.md", "docs/site/**/*.mdx"]
+			}
+		]
+	}
+}
+```
+
+Every key but `schema`, `shape`, `trigger`, `majors`, `publish`, `mentions` and `zeroMajor` needs `apps` or `libraries`. With `single`, any other key stops the command.
 
 ## A unit {{ badge: '8', icon: 'package' }}
 
