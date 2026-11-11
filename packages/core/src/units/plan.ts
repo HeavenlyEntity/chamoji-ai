@@ -337,7 +337,7 @@ export async function planUnitReleases(
 		const before = new Map(changes.map(change => [change.file, change.text]));
 		const edited = await editMentions(
 			root,
-			settings.mentions,
+			settings.mentions ?? [],
 			plan.unit,
 			plan.version,
 			changes,

@@ -198,7 +198,6 @@ export async function detectUpstream(
 		trigger: 'manual',
 		majors: 'auto',
 		publish: null,
-		mentions: [],
 	};
 	const {commits, syncs} = await readUpstream(
 		root,

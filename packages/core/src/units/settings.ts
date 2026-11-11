@@ -52,7 +52,7 @@ export type ReleaseSettings = {
 	/** Null when the release isn't published to npm. */
 	publish: PublishSettings | null;
 	/** Pins in docs that a release moves to its version. */
-	mentions: Mention[];
+	mentions?: Mention[];
 };
 
 /** The oldest CLI that reads `release.mentions`. */

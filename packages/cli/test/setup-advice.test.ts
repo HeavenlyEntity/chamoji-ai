@@ -13,6 +13,7 @@ import {run, type GhRunner, type Io} from '../src/run.js';
 import {
 	checkPushRules,
 	neverPublished,
+	NPM_LOOKUP_CONCURRENCY,
 	npmSignInSteps,
 	SETUP_NETWORK_TIMEOUT_MS,
 } from '../src/setup/advice.js';
@@ -173,6 +174,50 @@ test('neverPublished lists the packages npm has no record of', async () => {
 	expect(await neverPublished(broken, [{name: 'a', registry}], '/')).toEqual(
 		[],
 	);
+});
+
+test('neverPublished runs at most 6 npm lookups at once and still lists them all', async () => {
+	let running = 0;
+	let peak = 0;
+	let calls = 0;
+	const npm: NpmRunner = async args => {
+		calls++;
+		running++;
+		peak = Math.max(peak, running);
+		await new Promise(resolve => {
+			setTimeout(resolve, 5);
+		});
+		running--;
+		// Every third package has never been published.
+		return Number(args[1]!.slice(1)) % 3 === 0
+			? {ok: false, stdout: '', stderr: 'npm error code E404'}
+			: {
+					ok: true,
+					stdout: JSON.stringify({versions: ['1.0.0'], 'dist-tags': {}}),
+					stderr: '',
+				};
+	};
+
+	const registry = 'https://registry.npmjs.org/';
+	const packages = Array.from({length: 20}, (_, index) => ({
+		name: `p${index}`,
+		registry,
+	}));
+	expect(NPM_LOOKUP_CONCURRENCY).toBe(6);
+	const found = await neverPublished(npm, packages, '/');
+	expect(calls).toBe(20);
+	expect(peak).toBe(6);
+	expect(found).toEqual(['p0', 'p3', 'p6', 'p9', 'p12', 'p15', 'p18']);
+
+	// Past the overall timeout, no further lookup starts.
+	let started = 0;
+	const slow: NpmRunner = async () => {
+		started++;
+		return new Promise(() => {});
+	};
+
+	expect(await neverPublished(slow, packages, '/', 50)).toBeNull();
+	expect(started).toBe(6);
 });
 
 test('neverPublished returns null when npm does not answer in time', async () => {
