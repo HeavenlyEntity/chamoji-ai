@@ -1,9 +1,13 @@
-import {mkdir, readFile, writeFile} from 'node:fs/promises';
+import {mkdir, readFile, symlink, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {afterEach, expect, test} from 'vitest';
 import {ReleaseError} from '../../src/release.js';
 import {editMentions} from '../../src/units/mentions.js';
-import {createRepo, type FixtureRepo} from '../helpers/fixture-repo.js';
+import {
+	createRepo,
+	gitOutput,
+	type FixtureRepo,
+} from '../helpers/fixture-repo.js';
 
 const repos: FixtureRepo[] = [];
 afterEach(async () => {
@@ -123,3 +127,64 @@ test('a mention for another unit is skipped', async () => {
 	const changes = await editMentions(dir, mentions, 'web', '2.0.0', []);
 	expect(changes.map(change => change.file)).toEqual(['README.md']);
 });
+
+async function linked(files: Record<string, string>) {
+	const dir = await repoWith(files);
+	await mkdir(path.join(dir, 'elsewhere'), {recursive: true});
+	await writeFile(path.join(dir, 'elsewhere/outside.md'), 'x@v1.0.0\n');
+	await symlink(
+		path.join(dir, 'elsewhere/outside.md'),
+		path.join(dir, 'link.md'),
+	);
+	await mkdir(path.join(dir, 'real'), {recursive: true});
+	await writeFile(path.join(dir, 'real/page.md'), 'x@v1.0.0\n');
+	await symlink(path.join(dir, 'real'), path.join(dir, 'dirlink'));
+	await gitOutput(dir, ['add', '-A']);
+	await gitOutput(dir, [
+		'-c',
+		'user.name=Dev',
+		'-c',
+		'user.email=dev@example.com',
+		'commit',
+		'-q',
+		'-m',
+		'🔧 Add links',
+	]);
+	return dir;
+}
+
+test.skipIf(process.platform === 'win32')(
+	'a symlinked readme is skipped and its target left alone',
+	async () => {
+		const dir = await linked({'README.md': 'x@v1.0.0\n'});
+		const changes = await editMentions(
+			dir,
+			[{pattern: 'x@v{version}', files: ['*.md']}],
+			null,
+			'1.1.0',
+			[],
+		);
+		expect(changes.map(change => change.file)).toEqual(['README.md']);
+		expect(await readFile(path.join(dir, 'elsewhere/outside.md'), 'utf8')).toBe(
+			'x@v1.0.0\n',
+		);
+	},
+);
+
+test.skipIf(process.platform === 'win32')(
+	'a glob that matches only symlinks matches no tracked file',
+	async () => {
+		const dir = await linked({'README.md': 'x\n'});
+		for (const glob of ['link.md', 'dirlink/page.md']) {
+			await expect(
+				editMentions(
+					dir,
+					[{pattern: 'x@v{version}', files: [glob]}],
+					null,
+					'1.1.0',
+					[],
+				),
+			).rejects.toThrow(`"${glob}" matches no tracked file`);
+		}
+	},
+);

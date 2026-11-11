@@ -331,6 +331,28 @@ export async function planUnitReleases(
 		plans.push(plan);
 	}
 
+	// Mentions go last, each unit's edit on top of the others', so one file
+	// can pin several units without counting as a collision.
+	for (const plan of plans) {
+		const before = new Map(changes.map(change => [change.file, change.text]));
+		const edited = await editMentions(
+			root,
+			settings.mentions,
+			plan.unit,
+			plan.version,
+			changes,
+		);
+		changes.splice(0, changes.length, ...edited);
+		for (const change of changes) {
+			if (
+				before.get(change.file) !== change.text &&
+				!plan.files.includes(change.file)
+			) {
+				plan.files.push(change.file);
+			}
+		}
+	}
+
 	if (settings.rootChangelog) {
 		const existing = await readText(root, CHANGELOG_FILE);
 		const link = (file: string) =>
@@ -966,15 +988,6 @@ async function planUnit(
 			how: `dependency ranges: ${rangeNote}`,
 		});
 	}
-
-	const withMentions = await editMentions(
-		root,
-		settings.mentions,
-		unit.name,
-		version,
-		changes,
-	);
-	changes.splice(0, changes.length, ...withMentions);
 
 	return {
 		plan: {
