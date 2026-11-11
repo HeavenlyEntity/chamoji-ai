@@ -731,6 +731,19 @@ export function questions(
 /** "Found 4 apps (web, mobile, e2e, dev-tool) and 39 internal packages." */
 function foundSentence({layout}: Detection, answers: SetupAnswers): string {
 	if (answers.shape === 'single') {
+		// A repo that is one SDF project shows as that, not as a bare package.
+		const root = layout.sdf.find(project => project.path === '');
+		if (root) {
+			const detail = [root.applicationId, root.version]
+				.filter(Boolean)
+				.join(' ');
+			return `Found a single ${
+				root.type === 'suiteapp'
+					? 'NetSuite SuiteApp'
+					: 'NetSuite Account Customization Project'
+			}${detail ? ` (${detail})` : ''}; it keeps one version, as today.`;
+		}
+
 		return 'Found a single package; it keeps one version, as today.';
 	}
 

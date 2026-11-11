@@ -13,6 +13,7 @@ import {
 import type {RepoStep} from '../helpers/fixture-repo.js';
 import {useDetection} from '../helpers/setup-detection.js';
 import {
+	acpSingle,
 	gearzLayout,
 	libraryAndApp,
 	publishableLibraries,
@@ -352,6 +353,14 @@ test('the found sentence shows a SuiteApp with its id and version', async () => 
 	const asked = questions(detection, recommend(detection));
 	expect(asked.find(question => question.id === 'shape')?.found).toContain(
 		'backend (NetSuite SuiteApp · com.example.myapp 2.10.34)',
+	);
+});
+
+test('a repo that is one Account Customization Project is shown as that', async () => {
+	const detection = await detected(acpSingle());
+	const answers = recommend(detection);
+	expect(summary(detection, answers)).toContain(
+		'Found a single NetSuite Account Customization Project; it keeps one version, as today.',
 	);
 });
 
