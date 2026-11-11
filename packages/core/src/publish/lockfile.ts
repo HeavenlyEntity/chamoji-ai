@@ -103,6 +103,54 @@ function npmVersion(
 	return null;
 }
 
+/** The pnpm major `pnpm-lock.yaml`'s `lockfileVersion` was written by. */
+const PNPM_BY_LOCKFILE: Array<[RegExp, number]> = [
+	[/^9\./, 10],
+	[/^6\./, 8],
+	[/^5\./, 7],
+];
+
+/**
+ * The pnpm major `pnpm/action-setup` needs as `version`, or null when the
+ * root `package.json` has a `packageManager` field, which the action reads.
+ * Otherwise it comes from `pnpm-lock.yaml`'s `lockfileVersion`: 9.x is 10,
+ * 6.x is 8, 5.x is 7, and anything else, or no lockfile, is 10.
+ */
+export async function pnpmSetupVersion(root: string): Promise<number | null> {
+	try {
+		const manifest = JSON.parse(
+			await readFile(path.join(root, 'package.json'), 'utf8'),
+		) as {packageManager?: unknown} | null;
+		if (
+			typeof manifest === 'object' &&
+			manifest !== null &&
+			!Array.isArray(manifest) &&
+			typeof manifest.packageManager === 'string' &&
+			manifest.packageManager !== ''
+		) {
+			return null;
+		}
+	} catch {
+		// No readable manifest: the lockfile still says.
+	}
+
+	try {
+		const head = (await readFile(path.join(root, 'pnpm-lock.yaml'), 'utf8'))
+			.split('\n', 20)
+			.find(line => line.startsWith('lockfileVersion:'));
+		const found = /^lockfileVersion:\s*['"]?([0-9][0-9.]*)/.exec(head ?? '');
+		if (found) {
+			for (const [pattern, major] of PNPM_BY_LOCKFILE) {
+				if (pattern.test(found[1]!)) return major;
+			}
+		}
+	} catch {
+		// No lockfile.
+	}
+
+	return 10;
+}
+
 /** The text of the lockfiles chamoji reads, each when the repo has it. */
 export type Lockfiles = {pnpm?: string; npm?: string};
 
