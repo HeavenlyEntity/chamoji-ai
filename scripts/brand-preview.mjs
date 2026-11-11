@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Builds and serves the brand preview: the Iridescence foil, the logo plate
-// and the Marow Block display type. TSX is transpiled with the TypeScript we
+// and the Marow Block display type. It also prints each framework icon in
+// its brand colour, large and as a dot, so the generated icons can be checked. TSX is transpiled with the TypeScript we
 // already depend on; React comes from esm.sh via an import map.
 //
 //   pnpm brand:preview [--port 4173]
@@ -50,6 +51,29 @@ async function build() {
 	}
 }
 
+// The generated icon strings, as the CLI will draw them. The file is
+// TypeScript, so it's transpiled and imported from a data URL.
+async function printIcons() {
+	const file = path.join(root, 'packages/cli/src/framework-icons.ts');
+	const {outputText} = ts.transpileModule(await readFile(file, 'utf8'), {
+		compilerOptions: {
+			module: ts.ModuleKind.ESNext,
+			target: ts.ScriptTarget.ES2022,
+		},
+	});
+	const {FRAMEWORK_ICONS} = await import(
+		`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`
+	);
+	for (const [id, {hex, large}] of Object.entries(FRAMEWORK_ICONS)) {
+		const [r, g, b] = [1, 3, 5].map(i =>
+			Number.parseInt(hex.slice(i, i + 2), 16),
+		);
+		const color = text => `\u001B[38;2;${r};${g};${b}m${text}\u001B[39m`;
+		console.log(`${id} ${hex}  ${color('●')}`);
+		for (const row of large) console.log(`  ${color(row)}`);
+	}
+}
+
 const TYPES = {
 	'.html': 'text/html; charset=utf-8',
 	'.js': 'text/javascript; charset=utf-8',
@@ -59,6 +83,7 @@ const TYPES = {
 };
 
 await build();
+await printIcons();
 createServer(async (request, response) => {
 	const {pathname} = new URL(request.url ?? '/', 'http://localhost');
 	if (pathname === '/') {
