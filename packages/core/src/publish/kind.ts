@@ -1,9 +1,10 @@
 import {access, readdir, readFile} from 'node:fs/promises';
 import path from 'node:path';
-import {sdfProjectAt} from '../units/sdf.js';
+import {sdfProjectAt, type SdfProject} from '../units/sdf.js';
 import type {WorkspacePackage} from '../units/workspace.js';
 import {
 	FRAMEWORKS,
+	sdfFramework,
 	type DetectedFramework,
 	type Framework,
 } from './frameworks.js';
@@ -261,6 +262,17 @@ export async function detectFramework(
 	return best ? describeFramework(root, pkgPath, manifest, best) : null;
 }
 
+/** An SDF project's kind: always an app, named for its project type. */
+export function sdfKind(project: SdfProject): PackageKind {
+	const detected = sdfFramework(project);
+	return {
+		kind: 'app',
+		reasons: [`${detected.name} (\`${project.manifest}\`)`],
+		framework: detected.name,
+		detected,
+	};
+}
+
 /**
  * Tells an app from a library by reading the package's own `package.json` and
  * its files. Strong library signals (`exports`, `module`, `types`, `bin`,
@@ -269,12 +281,14 @@ export async function detectFramework(
  * not undo. Then weaker library signals: a bare `main`, or a framework only in
  * peer or dev dependencies. With none of those, an `apps/` package, or a
  * private top-level one that nothing in `dependedOn` uses, is an app and the
- * rest are libraries.
+ * rest are libraries. `options.sdf` holds the repo's SDF projects when the
+ * caller has already found them; without it they're looked up.
  */
 export async function classifyPackage(
 	root: string,
 	pkg: WorkspacePackage,
 	dependedOn: ReadonlySet<string> = new Set(),
+	options?: {sdf?: SdfProject[]},
 ): Promise<PackageKind> {
 	const folder = path.join(root, pkg.path);
 	const manifest = await readManifest(path.join(folder, 'package.json'));
@@ -282,19 +296,8 @@ export async function classifyPackage(
 
 	// A NetSuite SDF project is an app whatever else its package.json says:
 	// nothing NetSuite is offered for npm.
-	const sdf = await sdfProjectAt(root, pkg.path);
-	if (sdf) {
-		const name =
-			sdf.type === 'suiteapp'
-				? 'NetSuite SuiteApp'
-				: 'NetSuite Account Customization Project';
-		return {
-			kind: 'app',
-			reasons: [`${name} (\`${sdf.manifest}\`)`],
-			framework: name,
-			detected: {id: sdf.framework, name, version: sdf.version, basedOn: []},
-		};
-	}
+	const sdf = await sdfProjectAt(root, pkg.path, {projects: options?.sdf});
+	if (sdf) return sdfKind(sdf);
 
 	const strong: string[] = [];
 	for (const field of [...ENTRY_FIELDS, ...PUBLISH_FIELDS]) {

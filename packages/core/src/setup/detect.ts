@@ -1,10 +1,11 @@
 import {lstat, readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {listTags, runGit} from '../git.js';
-import type {DetectedFramework} from '../publish/frameworks.js';
+import {sdfFramework, type DetectedFramework} from '../publish/frameworks.js';
 import {
 	classifyPackage,
 	detectFramework,
+	sdfKind,
 	type PackageKind,
 } from '../publish/kind.js';
 import {findSdfProjects, type SdfProject} from '../units/sdf.js';
@@ -153,9 +154,13 @@ type Candidate = Pick<AppCandidate, 'path' | 'kind' | 'framework' | 'sdf'> & {
 	pkg: WorkspacePackage | null;
 };
 
-async function factsFor(root: string, unit: Candidate): Promise<UnitFacts> {
+async function factsFor(
+	root: string,
+	unit: Candidate,
+	all: SdfProject[],
+): Promise<UnitFacts> {
 	const {pkg, sdf} = unit;
-	const detected = await detectVersionFiles(root, unit.path);
+	const detected = await detectVersionFiles(root, unit.path, {sdf: all});
 	const versionFiles = detected.filter(
 		file => file !== `${unit.path}/package.json`,
 	);
@@ -232,7 +237,7 @@ export async function detectLayout(root: string): Promise<LayoutDetection> {
 	const classified: Array<Candidate & {pkg: WorkspacePackage}> = [];
 	for (const pkg of packages) {
 		// eslint-disable-next-line no-await-in-loop
-		const kind = await classifyPackage(root, pkg, dependedOn);
+		const kind = await classifyPackage(root, pkg, dependedOn, {sdf});
 		// eslint-disable-next-line no-await-in-loop
 		const framework = kind.detected ?? (await detectFramework(root, pkg.path));
 		classified.push({
@@ -250,30 +255,13 @@ export async function detectLayout(root: string): Promise<LayoutDetection> {
 			project =>
 				project.path !== '' && !packages.some(pkg => pkg.path === project.path),
 		)
-		.map(project => {
-			const name =
-				project.type === 'suiteapp'
-					? 'NetSuite SuiteApp'
-					: 'NetSuite Account Customization Project';
-			const detected = {
-				id: project.framework,
-				name,
-				version: project.version,
-				basedOn: [],
-			};
-			return {
-				path: project.path,
-				pkg: null,
-				kind: {
-					kind: 'app',
-					reasons: [`${name} (\`${project.manifest}\`)`],
-					framework: name,
-					detected,
-				},
-				framework: detected,
-				sdf: project,
-			};
-		});
+		.map(project => ({
+			path: project.path,
+			pkg: null,
+			kind: sdfKind(project),
+			framework: sdfFramework(project),
+			sdf: project,
+		}));
 
 	const appUnits = [
 		...classified.filter(unit => unit.kind.kind === 'app'),
@@ -317,7 +305,7 @@ export async function detectLayout(root: string): Promise<LayoutDetection> {
 	);
 	for (const unit of everyCandidate) {
 		// eslint-disable-next-line no-await-in-loop
-		candidates.push(await factsFor(root, unit));
+		candidates.push(await factsFor(root, unit, sdf));
 	}
 
 	const units = candidates.filter(facts => unitPaths.has(facts.path));

@@ -1,3 +1,5 @@
+import type {SdfProject} from '../units/sdf.js';
+
 /** One app framework: how to spot it in a package. Data only, one row each. */
 export type Framework = {
 	id: string;
@@ -341,3 +343,17 @@ export const FRAMEWORKS: readonly Framework[] = [
 		detectedBy: 'sdf',
 	},
 ];
+
+/** The framework an SDF project is, named from its `FRAMEWORKS` row, with its manifest version. */
+export function sdfFramework(
+	project: Pick<SdfProject, 'framework' | 'version'>,
+): DetectedFramework {
+	const row = FRAMEWORKS.find(framework => framework.id === project.framework);
+	if (!row) throw new Error(`No framework row for ${project.framework}`);
+	return {
+		id: row.id,
+		name: row.name,
+		version: project.version,
+		basedOn: [...row.basedOn],
+	};
+}

@@ -1,4 +1,5 @@
 import {CONFIG_FILE} from '../config.js';
+import {sdfFramework} from '../publish/frameworks.js';
 import {parseReleaseSettings} from '../units/settings.js';
 import {matchesTagPattern, versionFromTag} from '../units/tags.js';
 import {ownerOf, resolveUnits} from '../units/workspace.js';
@@ -52,10 +53,7 @@ const frameworkSuffix = (layout: LayoutDetection, folder: string): string => {
 function sdfLabel(layout: LayoutDetection, name: string, folder: string) {
 	const project = layout.candidates.find(facts => facts.path === folder)?.sdf;
 	if (!project) return name;
-	const framework =
-		project.type === 'suiteapp'
-			? 'NetSuite SuiteApp'
-			: 'NetSuite Account Customization Project';
+	const framework = sdfFramework(project).name;
 	const detail = [project.applicationId, project.version]
 		.filter(Boolean)
 		.join(' ');
@@ -737,11 +735,7 @@ function foundSentence({layout}: Detection, answers: SetupAnswers): string {
 			const detail = [root.applicationId, root.version]
 				.filter(Boolean)
 				.join(' ');
-			return `Found a single ${
-				root.type === 'suiteapp'
-					? 'NetSuite SuiteApp'
-					: 'NetSuite Account Customization Project'
-			}${detail ? ` (${detail})` : ''}; it keeps one version, as today.`;
+			return `Found a single ${sdfFramework(root).name}${detail ? ` (${detail})` : ''}; it keeps one version, as today.`;
 		}
 
 		return 'Found a single package; it keeps one version, as today.';

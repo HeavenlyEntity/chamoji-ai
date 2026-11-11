@@ -24,7 +24,7 @@ export const MANIFEST_READ_LIMIT = 1_048_576;
 /** The most of the root `<manifest …>` tag looked at for its `projecttype`. */
 const ROOT_TAG_LIMIT = 4096;
 const PROJECT_TYPE = /\bprojecttype\s*=\s*["']([^"']+)["']/;
-export const PROJECT_VERSION = /<projectversion>([^<]*)<\/projectversion>/;
+const PROJECT_VERSION = /<projectversion>([^<]*)<\/projectversion>/;
 
 /**
  * `text` with each `<!-- … -->` blanked to spaces of the same length, so
@@ -82,7 +82,7 @@ async function read(root: string, file: string): Promise<string | null> {
 }
 
 /** A `manifest.xml`'s text, or null when it's missing, unreadable or over MANIFEST_READ_LIMIT. */
-export async function readManifest(
+export async function readSdfManifest(
 	root: string,
 	file: string,
 ): Promise<string | null> {
@@ -120,10 +120,14 @@ const normalizeFolder = (value: string): string =>
  * next to a `deploy.xml`, marks a project folder; its unit is that folder's
  * parent. With a `suitecloud.config.js` there, only its `defaultProjectFolder`
  * counts; without one a folder named `src` wins, else the first in path order.
- * Ignored files are never read, and nothing is run.
+ * Ignored files are never read, and nothing is run. `options.files` is the
+ * repo's file list when the caller already has it; without it, git lists them.
  */
-export async function findSdfProjects(root: string): Promise<SdfProject[]> {
-	const files = await listFiles(root);
+export async function findSdfProjects(
+	root: string,
+	options?: {files?: string[]},
+): Promise<SdfProject[]> {
+	const files = options?.files ?? (await listFiles(root));
 	const tracked = new Set(files);
 	const folders = new Map<string, string[]>();
 	for (const file of files) {
@@ -163,7 +167,7 @@ export async function findSdfProjects(root: string): Promise<SdfProject[]> {
 			continue;
 		}
 
-		const text = stripComments((await readManifest(root, manifest)) ?? '');
+		const text = stripComments((await readSdfManifest(root, manifest)) ?? '');
 		const projectType = rootProjectType(text)?.trim().toUpperCase();
 		if (projectType !== 'SUITEAPP' && projectType !== 'ACCOUNTCUSTOMIZATION') {
 			continue;
@@ -186,17 +190,23 @@ export async function findSdfProjects(root: string): Promise<SdfProject[]> {
 	return found.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
 
-/** The SDF project whose unit folder is `unitPath` ('' or '.' for the root), or null. */
+/**
+ * The SDF project whose unit folder is `unitPath` ('' or '.' for the root), or
+ * null. With `options.projects`, the caller's list is searched and git isn't asked.
+ */
 export async function sdfProjectAt(
 	root: string,
 	unitPath: string,
+	options?: {projects?: SdfProject[]},
 ): Promise<SdfProject | null> {
 	const wanted = unitPath === '.' ? '' : unitPath.replace(/\/+$/, '');
-	return (
-		(await findSdfProjects(root)).find(project => project.path === wanted) ??
-		null
-	);
+	const projects = options?.projects ?? (await findSdfProjects(root));
+	return projects.find(project => project.path === wanted) ?? null;
 }
+
+/** The `<projectversion>` of a `manifest.xml`'s text, ignoring comments; null when absent or empty. */
+export const manifestVersion = (text: string): string | null =>
+	element(stripComments(text), 'projectversion');
 
 /**
  * `text` with the text of `<projectversion>` set to `to`, and the version it
