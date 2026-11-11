@@ -257,7 +257,7 @@ export const FRAMEWORKS: readonly Framework[] = [
 		name: 'Ionic',
 		packages: ['@ionic/react', '@ionic/angular', '@ionic/vue'],
 		configFiles: [],
-		basedOn: ['capacitor'],
+		basedOn: ['capacitor', 'react', 'vite-react', 'vite-vue', 'angular'],
 	},
 	// Servers.
 	{
@@ -316,7 +316,9 @@ export const FRAMEWORKS: readonly Framework[] = [
 		packages: [],
 		configFiles: ['manifest.yml'],
 		basedOn: [],
-		configMatch: {'manifest.yml': '^app:\\s*\\n(?:[ \\t]+.*\\n)*?[ \\t]+id:'},
+		configMatch: {
+			'manifest.yml': '^app:[ \\t]*\\r?\\n(?:[ \\t]+\\S[^\\n]*\\n)*?[ \\t]+id:',
+		},
 	},
 	{
 		id: 'netsuite-suiteapp',
