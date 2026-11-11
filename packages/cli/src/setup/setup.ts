@@ -7,6 +7,7 @@ import {
 	assertNoSymlinks,
 	CONFIG_FILE,
 	detect,
+	DEFAULT_REGISTRY,
 	detectPackageManager,
 	effectiveTrigger,
 	findReleaseWorkflow,
@@ -15,7 +16,6 @@ import {
 	releaseWorkflow,
 	workflowAdvice,
 	workflowLacking,
-	getRemoteWebUrl,
 	loadConfig,
 	previewReleases,
 	readReleaseSection,
@@ -23,6 +23,7 @@ import {
 	releaseSection,
 	replayReleases,
 	runGit,
+	runNpm,
 	summary,
 	writeReleaseSection,
 	type Detection,
@@ -35,6 +36,14 @@ import {
 import {writeAtomically} from '../init.js';
 import type {GhRunner, Io} from '../run.js';
 import {stripControlLines} from '../text.js';
+import {
+	checkPushRules,
+	githubRepo,
+	neverPublished,
+	npmSignInSteps,
+	SETUP_NETWORK_TIMEOUT_MS,
+	soft,
+} from './advice.js';
 import {
 	asksReleases,
 	plannedResult,
@@ -97,7 +106,7 @@ const SQUASH_QUERY =
  */
 const BODILESS = new Set(['BLANK', 'PR_BODY']);
 /** How long the squash-merge check may take before setup goes on without it. */
-const SQUASH_TIMEOUT_MS = 5000;
+const SQUASH_TIMEOUT_MS = SETUP_NETWORK_TIMEOUT_MS;
 
 /** What a step would do, said when there's no terminal to ask. */
 const WOULD: Record<Exclude<StepName, 'releases'>, string> = {
@@ -119,11 +128,7 @@ const SETTLED = new Set<StepResult>([
 	'offered',
 ]);
 
-/** `owner/name` from an origin on github.com, or undefined for anywhere else. */
-export async function githubRepo(cwd: string): Promise<string | undefined> {
-	const url = await getRemoteWebUrl(cwd);
-	return /^https:\/\/github\.com\/([^/]+\/[^/]+)$/.exec(url ?? '')?.[1];
-}
+export {githubRepo};
 
 /**
  * The advice line when this repo's squash merges keep only the PR title or
@@ -135,13 +140,7 @@ export async function checkSquashMerge(
 	root: string,
 	timeoutMs = SQUASH_TIMEOUT_MS,
 ): Promise<string | null> {
-	let timer: NodeJS.Timeout | undefined;
-	const late = new Promise<null>(resolve => {
-		timer = setTimeout(() => resolve(null), timeoutMs);
-		// The check never keeps chamoji running on its own.
-		timer.unref();
-	});
-	const ask = async (): Promise<string | null> => {
+	return soft(async () => {
 		const repo = await githubRepo(root);
 		if (!repo) return null;
 		const answer = await gh(['api', `repos/${repo}`, '--jq', SQUASH_QUERY], {
@@ -150,15 +149,7 @@ export async function checkSquashMerge(
 		if (!answer.ok) return null;
 		const [allowed, , message = ''] = answer.message.trim().split('\t');
 		return allowed === 'true' && BODILESS.has(message) ? SQUASH_ADVICE : null;
-	};
-
-	try {
-		return await Promise.race([ask(), late]);
-	} catch {
-		return null;
-	} finally {
-		clearTimeout(timer);
-	}
+	}, timeoutMs);
 }
 
 type ReleasesPlan = {
@@ -328,6 +319,44 @@ export async function runSetup(
 		(existing === undefined
 			? recommend(detection)
 			: answersFromSection(existing, detection));
+	/** The lookups behind the advice, each started once and kept. */
+	const lookups: {
+		push?: Promise<string | null>;
+		never?: Promise<string[] | null>;
+	} = {};
+	const pushRules = async () =>
+		(lookups.push ??=
+			io.gh && detection
+				? checkPushRules(io.gh, root, detection.branch)
+				: Promise.resolve(null));
+	const unpublished = async () =>
+		(lookups.never ??= neverPublished(
+			io.npm ?? runNpm,
+			detection!.publishable.filter(pkg => pkg.registry === DEFAULT_REGISTRY),
+			root,
+		));
+	/** The public packages these answers publish. */
+	const publishing = () => {
+		const named = answers?.publish?.packages ?? [];
+		return answers?.publish
+			? detection!.publishable.filter(
+					pkg =>
+						named.length === 0 ||
+						named.includes(pkg.name) ||
+						named.includes(pkg.path),
+				)
+			: [];
+	};
+
+	// The lookups start as soon as detection is done, on the answers as they
+	// stand, so the network never holds up the screen. A screen that changes the
+	// answers starts the ones it newly needs when it hands them back.
+	if (answers && detection) {
+		if (effectiveTrigger(answers) === 'merge') void pushRules();
+		if (publishing().length > 0 && answers.ciAuth === 'oidc')
+			void unpublished();
+	}
+
 	const states = await stepStates(io, detection, existing);
 	const scope = args.step ? [args.step] : [...STEP_NAMES];
 	/** The releases plan for the answers as they stand. */
@@ -441,8 +470,43 @@ export async function runSetup(
 	}
 
 	if (squash) out(`${squash}\n`);
-	if (args.json) printReport(plan, results, wrote, squash);
+	const advice = await adviceFor(plan);
+	for (const line of advice) out(`${line}\n`);
+	if (args.json) printReport(plan, results, wrote, squash, advice);
 	return code;
+
+	/**
+	 * What to do next on GitHub and npm, which setup never changes itself: the
+	 * push-rule warning for a merge trigger, and with publishing on, how CI
+	 * signs in. A lookup that failed or timed out adds no line.
+	 */
+	async function adviceFor(plan: ReleasesPlan | null): Promise<string[]> {
+		if (!plan || !answers || !detection) return [];
+		const lines: string[] = [];
+		if (effectiveTrigger(answers) === 'merge') {
+			const blocked = await pushRules();
+			if (blocked) lines.push(blocked);
+		}
+
+		const packages = publishing();
+		if (packages.length > 0) {
+			const never =
+				answers.ciAuth === 'oidc' ? ((await unpublished()) ?? []) : [];
+			lines.push(
+				...npmSignInSteps({
+					repo: (await githubRepo(root)) ?? null,
+					workflowFile: path.posix.basename(
+						plan.existingWorkflow ?? RELEASE_WORKFLOW_FILE,
+					),
+					ciAuth: answers.ciAuth,
+					packages,
+					neverPublished: never,
+				}).split('\n'),
+			);
+		}
+
+		return lines;
+	}
 
 	/** No --yes and no terminal, or --json without --yes: say what setup would do. */
 	async function report(squash: string | null): Promise<number> {
@@ -462,10 +526,12 @@ export async function runSetup(
 		}
 
 		if (squash) out(`${squash}\n`);
+		const advice = await adviceFor(plan);
+		for (const line of advice) out(`${line}\n`);
 		// Nothing would change: exit 0 in both modes (ruling R15).
 		const settled = results.every(({result}) => SETTLED.has(result));
 		if (args.json) {
-			printReport(plan, results, [], squash);
+			printReport(plan, results, [], squash, advice);
 		} else if (!settled) {
 			io.stderr(`${NO_TERMINAL}\n`);
 		}
@@ -511,6 +577,7 @@ export async function runSetup(
 		steps: Array<{step: StepName; result: StepResult}>,
 		wrote: string[],
 		squash: string | null,
+		advice: string[],
 	): void {
 		const {layout, tags, upstream} = detection ?? {};
 		io.stdout(
@@ -537,6 +604,7 @@ export async function runSetup(
 					squashMerge: squash,
 					existingWorkflow: plan?.existingWorkflow ?? null,
 					workflowAdvice: plan?.adviceLines ?? [],
+					advice,
 				},
 				null,
 				2,

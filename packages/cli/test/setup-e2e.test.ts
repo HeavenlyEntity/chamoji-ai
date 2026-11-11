@@ -41,6 +41,8 @@ async function chamoji(argv: string[], cwd: string, extra: Partial<Io> = {}) {
 		today: '2026-11-04',
 		fetchTags: false,
 		gh: noGh,
+		// Never the real registry.
+		npm: async () => ({ok: false, stdout: '', stderr: 'offline'}),
 		// No PATH: claude is never "installed", whatever this machine has.
 		env: {},
 		...extra,

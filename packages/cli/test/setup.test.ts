@@ -76,6 +76,8 @@ async function chamoji(argv: string[], cwd: string, extra: Partial<Io> = {}) {
 		cliVersion: '0.16.0',
 		fetchTags: false,
 		gh: noGh(),
+		// Never the real registry.
+		npm: async () => ({ok: false, stdout: '', stderr: 'offline'}),
 		// No PATH: chamoji and claude are never "installed", whatever this machine has.
 		env: {},
 		...extra,
@@ -793,11 +795,15 @@ test("in a terminal, the squash check doesn't hold up the screen", async () => {
 		'https://github.com/acme/gearz.git',
 	]);
 	asTerminal();
-	let answer: () => void = () => {};
+	const waiting: Array<() => void> = [];
+	const answer = () => {
+		for (const resolve of waiting) resolve();
+	};
+
 	// gh answers only once the screen is open.
 	const gh: GhRunner = async () => {
 		await new Promise<void>(resolve => {
-			answer = resolve;
+			waiting.push(resolve);
 		});
 		return {ok: true, message: 'true\tPR_TITLE\tBLANK'};
 	};
@@ -1164,4 +1170,22 @@ test('T6-a: a counted dispatch-only workflow is told about the push trigger, and
 		(JSON.parse(json.stdout) as {workflowAdvice: string[]}).workflowAdvice,
 	).toEqual(['on: push: branches: [main]']);
 	expect(existsSync(path.join(dir, WORKFLOW))).toBe(false);
+});
+
+test('setup with no gh and no network still writes, exit 0, without advice lines', async () => {
+	const dir = await gearz();
+	const {code, stdout} = await chamoji(['setup', 'releases', '--yes'], dir, {
+		gh: noGh(),
+		npm: async () => {
+			throw new Error('offline');
+		},
+	});
+	expect(code).toBe(0);
+	expect(existsSync(path.join(dir, 'chamoji.config.json'))).toBe(true);
+	expect(stdout).not.toContain('blocks direct pushes');
+	expect(stdout).not.toContain('never been published');
+	const json = await chamoji(['setup', 'releases', '--json'], dir, {
+		gh: noGh(),
+	});
+	expect((JSON.parse(json.stdout) as {advice: string[]}).advice).toEqual([]);
 });
