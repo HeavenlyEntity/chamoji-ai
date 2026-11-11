@@ -14,6 +14,7 @@ import {render} from 'ink-testing-library';
 import {afterAll, afterEach, beforeAll, expect, test, vi} from 'vitest';
 import type {FixtureRepo} from '../../core/test/helpers/fixture-repo.js';
 import {
+	frameworkZoo,
 	gearzLayout,
 	singlePackage,
 } from '../../core/test/helpers/setup-fixtures.js';
@@ -510,22 +511,28 @@ test('with no animation the screen draws without the foil, and nothing moves', a
 
 test('the summary draws each framework icon only when icons are on', async () => {
 	const BLOCKS = /[▀-▟]/u;
-	const on = open({
-		look: {animate: false, level: 0, ascii: false, icons: true},
-	});
-	await sleep(200);
-	expect(on.frame()).toMatch(BLOCKS);
-	const named = detection.layout.units.find(unit => unit.framework)?.framework;
-	expect(named).toBeTruthy();
-	expect(on.frame()).toContain(named!.name);
-	on.unmount();
+	const zoo = await frameworkZoo();
+	try {
+		const found = await detect(zoo.dir);
+		const on = open({
+			detection: found,
+			look: {animate: false, level: 0, ascii: false, icons: true},
+		});
+		await sleep(200);
+		expect(on.frame()).toMatch(BLOCKS);
+		expect(on.frame()).toContain('Next.js 15.2');
+		on.unmount();
 
-	const off = open({
-		look: {animate: false, level: 0, ascii: false, icons: false},
-	});
-	await sleep(200);
-	expect(off.frame()).not.toMatch(BLOCKS);
-});
+		const off = open({
+			detection: found,
+			look: {animate: false, level: 0, ascii: false, icons: false},
+		});
+		await sleep(200);
+		expect(off.frame()).not.toMatch(BLOCKS);
+	} finally {
+		await zoo.cleanup();
+	}
+}, 30_000);
 
 /** Just enough of a terminal for Ink, as ink-testing-library builds one. */
 class FakeStdin extends EventEmitter {

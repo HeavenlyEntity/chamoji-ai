@@ -4,6 +4,7 @@ import {render} from 'ink-testing-library';
 import {afterEach, expect, test} from 'vitest';
 import {
 	FrameworkSummary,
+	frameworksOf,
 	frameworkText,
 	iconColor,
 	MIN_ICON_WIDTH,
@@ -106,4 +107,19 @@ test('frameworkText gives one line per framework', () => {
 		]),
 	).toBe('Next.js: web, docs');
 	expect(frameworkText([])).toBe('');
+});
+
+test('units on different versions of one framework get a row each', () => {
+	const layout = {
+		units: [
+			{name: 'docs', framework: {...next, version: '14'}},
+			{name: 'web', framework: next},
+			{name: 'blog', framework: next},
+		],
+	} as unknown as Parameters<typeof frameworksOf>[0];
+	const rows = frameworksOf(layout);
+	expect(frameworkText(rows)).toBe('Next.js 14: docs\nNext.js 15.2: web, blog');
+	const frame = draw(100, 0, rows);
+	expect(frame).toContain('Next.js 14');
+	expect(frame).toContain('Next.js 15.2');
 });
