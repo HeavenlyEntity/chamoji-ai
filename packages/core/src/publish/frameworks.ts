@@ -13,6 +13,19 @@ export type Framework = {
 	 * or (for the config files only) a dependency in any dependency field.
 	 */
 	requires?: {file?: string; configPackage?: string};
+	/** Config file (relative to the package) -> regex source its text must match to count. */
+	configMatch?: Record<string, string>;
+	/** Found by the SDF finder in `units/sdf.ts`; the dependency matcher skips these rows. */
+	detectedBy?: 'sdf';
+};
+
+/** The framework a package is built with, with the version it uses. */
+export type DetectedFramework = {
+	id: string;
+	name: string;
+	/** Major.minor as shown to people, or null when it isn't known. */
+	version: string | null;
+	basedOn: string[];
 };
 
 const viteApp = {file: 'index.html'};
@@ -55,6 +68,22 @@ export const FRAMEWORKS: readonly Framework[] = [
 		id: 'vite-solid',
 		name: 'Vite + Solid',
 		packages: ['vite-plugin-solid'],
+		configFiles: [],
+		basedOn: ['vite'],
+		requires: viteApp,
+	},
+	{
+		id: 'vite-preact',
+		name: 'Vite + Preact',
+		packages: ['@preact/preset-vite'],
+		configFiles: [],
+		basedOn: ['vite'],
+		requires: viteApp,
+	},
+	{
+		id: 'vite-lit',
+		name: 'Vite + Lit',
+		packages: ['lit'],
 		configFiles: [],
 		basedOn: ['vite'],
 		requires: viteApp,
@@ -128,7 +157,7 @@ export const FRAMEWORKS: readonly Framework[] = [
 		name: 'Hydrogen',
 		packages: ['@shopify/hydrogen'],
 		configFiles: [],
-		basedOn: ['react-router', 'vite'],
+		basedOn: ['remix', 'react-router', 'vite'],
 	},
 	{
 		id: 'qwik',
@@ -216,6 +245,20 @@ export const FRAMEWORKS: readonly Framework[] = [
 		],
 		basedOn: [],
 	},
+	{
+		id: 'ember',
+		name: 'Ember',
+		packages: ['ember-source'],
+		configFiles: ['ember-cli-build.js'],
+		basedOn: [],
+	},
+	{
+		id: 'ionic',
+		name: 'Ionic',
+		packages: ['@ionic/react', '@ionic/angular', '@ionic/vue'],
+		configFiles: [],
+		basedOn: ['capacitor'],
+	},
 	// Servers.
 	{
 		id: 'nestjs',
@@ -244,5 +287,51 @@ export const FRAMEWORKS: readonly Framework[] = [
 		packages: ['hono'],
 		configFiles: [],
 		basedOn: [],
+	},
+	{
+		id: 'koa',
+		name: 'Koa',
+		packages: ['koa'],
+		configFiles: [],
+		basedOn: [],
+	},
+	// Enterprise platforms, found from their files.
+	{
+		id: 'salesforce-dx',
+		name: 'Salesforce DX',
+		packages: [],
+		configFiles: ['sfdx-project.json'],
+		basedOn: [],
+	},
+	{
+		id: 'shopify-app',
+		name: 'Shopify app',
+		packages: [],
+		configFiles: ['shopify.app.toml'],
+		basedOn: [],
+	},
+	{
+		id: 'forge',
+		name: 'Forge',
+		packages: [],
+		configFiles: ['manifest.yml'],
+		basedOn: [],
+		configMatch: {'manifest.yml': '^app:\\s*\\n(?:[ \\t]+.*\\n)*?[ \\t]+id:'},
+	},
+	{
+		id: 'netsuite-suiteapp',
+		name: 'NetSuite SuiteApp',
+		packages: [],
+		configFiles: [],
+		basedOn: [],
+		detectedBy: 'sdf',
+	},
+	{
+		id: 'netsuite-acp',
+		name: 'NetSuite Account Customization Project',
+		packages: [],
+		configFiles: [],
+		basedOn: [],
+		detectedBy: 'sdf',
 	},
 ];

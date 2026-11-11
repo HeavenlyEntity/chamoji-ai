@@ -414,3 +414,99 @@ export async function forkWorkflow(options: {
 		},
 	};
 }
+
+const lockLine = (name: string, version: string): string =>
+	`      ${name}:\n        specifier: ^${version}\n        version: ${version}\n`;
+
+type ZooCase = {
+	/** Dependencies with the version the lockfile says is installed. */
+	dependencies?: Record<string, string>;
+	peerDependencies?: Record<string, string>;
+	files?: Record<string, string>;
+};
+
+const ZOO: Record<string, ZooCase> = {
+	'vite-react': {
+		dependencies: {
+			'@vitejs/plugin-react': '6.1.2',
+			vite: '6.1.0',
+			'react-dom': '19.0.0',
+		},
+		files: {'index.html': '<div id="root"></div>\n'},
+	},
+	next: {dependencies: {next: '15.2.3', react: '19.0.0'}},
+	astro: {dependencies: {astro: '5.3.0', vite: '6.1.0'}},
+	gatsby: {dependencies: {gatsby: '5.14.1', react: '18.3.1'}},
+	remix: {dependencies: {'@remix-run/react': '2.15.2', react: '18.3.1'}},
+	nestjs: {dependencies: {'@nestjs/core': '11.0.5'}},
+	hydrogen: {
+		dependencies: {
+			'@shopify/hydrogen': '2025.1.3',
+			'@remix-run/react': '2.15.2',
+			'@react-router/node': '7.1.0',
+			vite: '6.1.0',
+		},
+	},
+	qwik: {dependencies: {'@builder.io/qwik-city': '1.12.1', vite: '6.1.0'}},
+	expo: {dependencies: {expo: '52.0.11', 'react-native': '0.76.3'}},
+	'peer-only': {peerDependencies: {next: '^15.0.0'}},
+	nothing: {dependencies: {lodash: '4.17.21'}},
+	'sfdx-project': {
+		files: {'sfdx-project.json': '{"packageDirectories": []}\n'},
+	},
+	'shopify-app': {files: {'shopify.app.toml': 'name = "example"\n'}},
+	forge: {
+		files: {
+			'manifest.yml':
+				'modules:\n  function: []\napp:\n  id: ari:cloud:ecosystem::app/1\n',
+		},
+	},
+	'forge-plain': {
+		files: {'manifest.yml': 'name: not a forge app\nid: something\n'},
+	},
+};
+
+/**
+ * One package per case under `apps/`, named for the case, each with the
+ * dependencies and files of that framework. A `pnpm-lock.yaml` at the root
+ * gives the installed version of every dependency, as a real install would.
+ */
+export async function frameworkZoo(): Promise<FixtureRepo> {
+	const files: Record<string, string> = {
+		'package.json': manifest('zoo', {private: true}),
+		'pnpm-workspace.yaml': "packages:\n  - 'apps/*'\n",
+	};
+	let importers = '';
+	for (const [id, entry] of Object.entries(ZOO)) {
+		const declared = (versions: Record<string, string> | undefined) =>
+			versions
+				? Object.fromEntries(
+						Object.entries(versions).map(([name, v]) => [
+							name,
+							v.startsWith('^') ? v : `^${v}`,
+						]),
+					)
+				: undefined;
+		files[`apps/${id}/package.json`] = manifest(`@zoo/${id}`, {
+			private: true,
+			...(entry.dependencies && {dependencies: declared(entry.dependencies)}),
+			...(entry.peerDependencies && {
+				peerDependencies: entry.peerDependencies,
+			}),
+		});
+		for (const [file, text] of Object.entries(entry.files ?? {})) {
+			files[`apps/${id}/${file}`] = text;
+		}
+
+		if (entry.dependencies) {
+			importers += `  apps/${id}:\n    dependencies:\n`;
+			for (const [name, version] of Object.entries(entry.dependencies)) {
+				importers += lockLine(name, version);
+			}
+		}
+	}
+
+	files['pnpm-lock.yaml'] =
+		`lockfileVersion: '9.0'\n\nimporters:\n  .: {}\n${importers}`;
+	return createRepo([{commit: '🎉 Start the zoo', files}]);
+}

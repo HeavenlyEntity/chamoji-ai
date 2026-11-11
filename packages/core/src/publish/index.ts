@@ -1,5 +1,10 @@
-export {FRAMEWORKS, type Framework} from './frameworks.js';
-export {classifyPackage, type PackageKind} from './kind.js';
+export {
+	FRAMEWORKS,
+	type DetectedFramework,
+	type Framework,
+} from './frameworks.js';
+export {classifyPackage, detectFramework, type PackageKind} from './kind.js';
+export {displayVersion, installedVersion} from './lockfile.js';
 export {
 	detectPackageManager,
 	packArgs,
