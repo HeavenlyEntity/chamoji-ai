@@ -225,6 +225,7 @@ export {
 	checkCommand,
 	defaultBranch,
 	findReleaseWorkflow,
+	pnpmSetupVersion,
 	privatizeEdit,
 	releaseWorkflow,
 	RELEASE_WORKFLOW_FILE,

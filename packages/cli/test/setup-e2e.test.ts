@@ -26,6 +26,7 @@ import {
 	appsAndLibraries,
 	gearzLayout,
 	nextRootApp,
+	publishableLibraries,
 	suiteAppMonorepo,
 	templatedSuiteApp,
 } from '../../core/test/helpers/setup-fixtures.js';
@@ -707,4 +708,26 @@ test('a single package that is a public Next.js app: an app with reasons, never 
 	).toBe(false);
 	expect((await readJson(dir, 'package.json')).private).toBe(true);
 	expect(report.wrote).toContain('package.json');
+});
+
+test('a pnpm library: setup releases --yes writes the install step and a pnpm version', async () => {
+	const dir = await made(publishableLibraries);
+	const setup = await chamoji(['setup', 'releases', '--yes'], dir, {
+		cliVersion: '0.16.0',
+	});
+	expect(setup.stderr).toBe('');
+	expect(setup.code).toBe(0);
+	const text = await readFile(
+		path.join(dir, '.github/workflows/chamoji-release.yml'),
+		'utf8',
+	);
+	expect(text).toContain(
+		'      - uses: pnpm/action-setup@v4\n        with:\n          version: 10\n',
+	);
+	expect(text).toContain('cache: pnpm');
+	expect(text).toContain('      - run: pnpm install --frozen-lockfile\n');
+	expect(text).toContain("chamoji-version: '0.16.0'");
+	expect(text.indexOf('pnpm install')).toBeLessThan(
+		text.indexOf('HeavenlyEntity/chamoji-ai@'),
+	);
 });
