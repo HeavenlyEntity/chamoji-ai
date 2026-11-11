@@ -55,6 +55,7 @@ import {
 	type StepResult,
 	type StepState,
 } from './steps.js';
+import {frameworksOf, frameworkText} from './frameworks-view.js';
 
 /** What the screen hands back: the answers to save and the steps picked, or a cancel. */
 export type ScreenResult =
@@ -542,6 +543,9 @@ export async function runSetup(
 	/** The summary and, before writing, the section; or why there's nothing to write. */
 	function describeReleases(plan: ReleasesPlan, doing: boolean): void {
 		if (plan.configChanged) {
+			// Where icons aren't drawn, the frameworks are said in words.
+			const frameworks = frameworkText(frameworksOf(detection!.layout));
+			if (frameworks) out(`${frameworks}\n\n`);
 			out(`${summary(detection!, answers!)}\n\n`);
 			if (!doing) {
 				out(
@@ -588,6 +592,13 @@ export async function runSetup(
 								kind: layout.kind,
 								units: layout.units.map(unit => unit.name),
 								excluded: layout.excluded,
+								packages: layout.candidates.map(facts => ({
+									path: facts.path,
+									name: facts.name,
+									kind: facts.kind.kind,
+									reasons: facts.kind.reasons,
+									framework: facts.framework,
+								})),
 								inheritedTags: tags!.inherited.tags,
 								upstream: {
 									remote: upstream!.remote,

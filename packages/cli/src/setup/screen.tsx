@@ -8,11 +8,12 @@ import {
 import {Box, render, Text, useInput} from 'ink';
 import {useEffect, useRef, useState} from 'react';
 import type {ComposeStreams} from '../composer.js';
-import {shouldAnimate} from '../face-settings.js';
+import {shouldAnimate, shouldDrawIcons} from '../face-settings.js';
 import {ASCII_FACES, FACES, IDLE_LOOP, useAscii} from '../faces.js';
 import {detectTheme, paintFoil, queryBackground, type Rgb} from '../foil.js';
 import {stripControlLines} from '../text.js';
 import type {Terminal} from '../tty.js';
+import {colorsFor, frameworksOf} from './frameworks-view.js';
 import {PreviewPane, type Loaded} from './preview-pane.js';
 import {
 	Answer,
@@ -34,14 +35,22 @@ export type {ScreenResult} from './setup.js';
  * How the screen looks. The face wears the foil and looks around only when
  * `animate` is on, which cli.ts decides under the terminal-face rules; `level`
  * is chalk's, already 0 where the foil isn't drawn (a light background).
+ * `icons` is on where `shouldDrawIcons` says so: the summary then draws each
+ * framework's icon, and elsewhere setup says the frameworks in words.
  */
 export type ScreenLook = {
 	animate: boolean;
 	level: 0 | 1 | 2 | 3;
 	ascii: boolean;
+	icons: boolean;
 };
 
-const PLAIN: ScreenLook = {animate: false, level: 0, ascii: false};
+const PLAIN: ScreenLook = {
+	animate: false,
+	level: 0,
+	ascii: false,
+	icons: false,
+};
 
 /** Two columns from this width; narrower, the preview goes under the questions. */
 const WIDE = 100;
@@ -332,9 +341,24 @@ export function SetupScreen({
 	const wide = columns >= WIDE;
 	const left = wide ? Math.floor(columns * 0.55) : columns - 2;
 	const right = wide ? columns - left - 4 : columns - 2;
+	const frameworks = look.icons ? frameworksOf(detection.layout) : [];
+	// Where the model asks which units get versions, a ● in each one's colour.
+	const marks = look.icons
+		? Object.fromEntries(
+				detection.layout.candidates
+					.filter(facts => facts.framework)
+					.map(facts => [
+						facts.path,
+						look.level === 0 ? undefined : colorsFor(facts.framework!.id).icon,
+					]),
+			)
+		: undefined;
 	const body =
 		phase === 'summary' ? (
 			<Summary
+				frameworks={frameworks}
+				width={left}
+				level={look.level}
 				text={clean(summary(detection, answers))}
 				replayed={replayed}
 				asked={all.filter(question => question.needsAnswer)}
@@ -343,7 +367,7 @@ export function SetupScreen({
 		) : phase === 'change' ? (
 			<Picker all={all} cursor={cursor} />
 		) : (
-			view && <Answer view={view} />
+			view && <Answer view={view} marks={marks} />
 		);
 	const hint =
 		phase === 'summary'
@@ -513,6 +537,11 @@ export function terminalSetupScreen({
 					animate,
 					level: theme === 'dark' ? level : 0,
 					ascii: useAscii(env, platform),
+					icons: shouldDrawIcons({
+						env,
+						stderrIsTTY: Boolean(stderr.isTTY),
+						argv,
+					}),
 				},
 			);
 		} finally {

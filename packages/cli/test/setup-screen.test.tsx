@@ -486,7 +486,7 @@ test('with no animation the screen draws without the foil, and nothing moves', a
 	const forever = async () => new Promise<Preview>(() => {});
 	const still = open({
 		preview: forever,
-		look: {animate: false, level: 3, ascii: false},
+		look: {animate: false, level: 3, ascii: false, icons: false},
 	});
 	await sleep(200);
 	const drawn = still.frames.length;
@@ -498,7 +498,7 @@ test('with no animation the screen draws without the foil, and nothing moves', a
 
 	const moving = open({
 		preview: forever,
-		look: {animate: true, level: 3, ascii: false},
+		look: {animate: true, level: 3, ascii: false, icons: false},
 	});
 	await sleep(200);
 	const before = moving.frame();
@@ -506,6 +506,25 @@ test('with no animation the screen draws without the foil, and nothing moves', a
 	// While the preview runs, the face looks around.
 	await sleep(1400);
 	expect(moving.frame()).not.toBe(before);
+});
+
+test('the summary draws each framework icon only when icons are on', async () => {
+	const BLOCKS = /[▀-▟]/u;
+	const on = open({
+		look: {animate: false, level: 0, ascii: false, icons: true},
+	});
+	await sleep(200);
+	expect(on.frame()).toMatch(BLOCKS);
+	const named = detection.layout.units.find(unit => unit.framework)?.framework;
+	expect(named).toBeTruthy();
+	expect(on.frame()).toContain(named!.name);
+	on.unmount();
+
+	const off = open({
+		look: {animate: false, level: 0, ascii: false, icons: false},
+	});
+	await sleep(200);
+	expect(off.frame()).not.toMatch(BLOCKS);
 });
 
 /** Just enough of a terminal for Ink, as ink-testing-library builds one. */
