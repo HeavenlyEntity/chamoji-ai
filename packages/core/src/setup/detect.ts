@@ -1,5 +1,6 @@
-import {lstat, readFile} from 'node:fs/promises';
+import {readFile} from 'node:fs/promises';
 import path from 'node:path';
+import {readBoundedText} from '../fs-read.js';
 import {listTags, runGit} from '../git.js';
 import {readLockfiles} from '../publish/lockfile.js';
 import {sdfFramework, type DetectedFramework} from '../publish/frameworks.js';
@@ -12,6 +13,7 @@ import {
 	unitNameOf,
 	type WorkspacePackage,
 } from '../units/workspace.js';
+import {MAX_FILE_BYTES, MAX_LISTED_FILES} from './limits.js';
 
 export type AppCandidate = {
 	/** Short name: the folder's last segment. */
@@ -84,8 +86,6 @@ export const TOOL_NAMES: readonly string[] = [
 ];
 
 export const MAX_COMMITS = 200;
-const MAX_LISTED_FILES = 500;
-const MAX_FILE_BYTES = 256 * 1024;
 const MAX_EXAMPLES = 3;
 const LOCKFILE =
 	/(^|\/)(package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|bun\.lockb?|pnpm-lock\.yaml|[^/]+\.lock)$/;
@@ -132,16 +132,13 @@ async function findOtherVersionFiles(
 		.slice(0, MAX_LISTED_FILES)) {
 		if (skip.has(file) || file.split('/').pop() === 'CHANGELOG.md') continue;
 		if (LOCKFILE.test(file)) continue;
-		try {
-			const full = path.join(root, ...file.split('/'));
-			const info = await lstat(full);
-			if (!info.isFile() || info.size > MAX_FILE_BYTES) continue;
-			const buffer = await readFile(full);
-			if (buffer.includes(0)) continue;
-			if (token.test(buffer.toString('utf8'))) found.push(file);
-		} catch {
-			// Unreadable or removed since it was listed: not offered.
-		}
+		// Unreadable or removed since it was listed: not offered.
+		const text = await readBoundedText(
+			path.join(root, ...file.split('/')),
+			MAX_FILE_BYTES,
+		);
+		if (text === null || text.includes('\0')) continue;
+		if (token.test(text)) found.push(file);
 	}
 
 	return found;
