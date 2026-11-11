@@ -24,7 +24,7 @@ import {
 	SHARED_TAG,
 	unique,
 } from './questions.js';
-import {mentionFor, tokenRegistry} from './rules.js';
+import {candidateAt, mentionFor, tokenRegistry} from './rules.js';
 import {releaseSection, unasked} from './section.js';
 import {detectTags, findUpstreamRemote, type TagDetection} from './tags.js';
 import {detectUpstream, type UpstreamDetection} from './upstream.js';
@@ -82,7 +82,7 @@ async function detectPublishing(
 	const publicApps: Detection['publicApps'] = [];
 	for (const pkg of packages.filter(each => !each.private)) {
 		const kind =
-			layout.candidates.find(facts => facts.path === pkg.path)?.kind ??
+			candidateAt(layout, pkg.path)?.kind ??
 			// eslint-disable-next-line no-await-in-loop
 			(await classifyPackage(root, pkg, dependedOn, {sdf: layout.sdf}));
 		if (kind.kind === 'app') {
@@ -472,9 +472,7 @@ export function applyAnswer(
 			const stay = next.units.filter(each => paths.includes(each.path));
 			for (const path of paths) {
 				if (stay.some(each => each.path === path)) continue;
-				const facts = detection.layout.candidates.find(
-					each => each.path === path,
-				);
+				const facts = candidateAt(detection.layout, path);
 				const name = lastSegment(path);
 				// A pattern that would hide the new unit's own tags goes.
 				const last = facts && factsOf(detection, facts).formats?.last;

@@ -5,7 +5,13 @@ import {matchesTagPattern, versionFromTag} from '../units/tags.js';
 import {ownerOf, resolveUnits} from '../units/workspace.js';
 import type {Detection, SetupAnswers} from './answers.js';
 import {MAX_COMMITS, type LayoutDetection, type UnitFacts} from './detect.js';
-import {effectiveTrigger, mentionFor, tokenRegistry} from './rules.js';
+import {
+	candidateAt,
+	effectiveTrigger,
+	mentionFor,
+	tokenRegistry,
+	versionSource,
+} from './rules.js';
 import {releaseSection} from './section.js';
 import type {UnitTagFormats} from './tags.js';
 
@@ -38,15 +44,13 @@ export const lastSegment = (folder: string): string =>
 		.pop() ?? folder;
 /** ' · Next.js' for a candidate with a known framework, else ''. */
 const frameworkSuffix = (layout: LayoutDetection, folder: string): string => {
-	const framework = layout.candidates.find(
-		facts => facts.path === folder,
-	)?.framework;
+	const framework = candidateAt(layout, folder)?.framework;
 	return framework ? ` · ${framework.name}` : '';
 };
 
 /** A NetSuite project's label: 'backend (NetSuite SuiteApp · com.example.myapp 2.10.34)'. */
 function sdfLabel(layout: LayoutDetection, name: string, folder: string) {
-	const project = layout.candidates.find(facts => facts.path === folder)?.sdf;
+	const project = candidateAt(layout, folder)?.sdf;
 	if (!project) return name;
 	const framework = sdfFramework(project).name;
 	const detail = [project.applicationId, project.version]
@@ -92,8 +96,8 @@ export function factsOf(
 	detection: Detection,
 	unit: {path: string},
 ): {facts?: UnitFacts; formats?: UnitTagFormats} {
-	const {candidates, units} = detection.layout;
-	const facts = candidates.find(each => each.path === unit.path);
+	const {units} = detection.layout;
+	const facts = candidateAt(detection.layout, unit.path);
 	if (!facts) return {};
 	// A detected unit's formats, else the candidate's.
 	const detected = units.some(each => each.path === unit.path);
@@ -158,6 +162,55 @@ function rootFilesFound(detection: Detection, answers: SetupAnswers): string {
 	return `${count(n, 'commit', 'commits')} ${window} touched only ${list(shown, 'or')}`;
 }
 
+/** The question for a unit with no tags: which version its first release starts from. */
+function firstVersionQuestion(
+	name: string,
+	unitPath: string,
+	facts: UnitFacts | undefined,
+	source: ReturnType<typeof versionSource>,
+): Omit<Question, 'needsAnswer'> {
+	const startAt = (version: string, value = version, recommended = false) => ({
+		value,
+		label: `Start at ${version}`,
+		...(recommended ? {recommended} : {}),
+	});
+	const mismatch = facts?.versionMismatch ?? null;
+	const stem = `${name} has no tags yet`;
+	if (mismatch) {
+		return {
+			id: `firstVersion:${name}`,
+			title: `${name} is ${mismatch.manifest} in manifest.xml but ${mismatch.packageJson} in package.json; which is current?`,
+			found: `${stem}, ${facts?.sdf?.manifest ?? 'its manifest.xml'} says ${mismatch.manifest}, and ${unitPath}/package.json says ${mismatch.packageJson}`,
+			kind: 'text',
+			options: [
+				startAt(mismatch.manifest, mismatch.manifest, true),
+				startAt(mismatch.packageJson),
+			],
+		};
+	}
+
+	const manifest = facts?.version;
+	const file = source.hasPackage
+		? 'package.json'
+		: (source.file?.split('/').pop() ?? 'manifest.xml');
+	return {
+		id: `firstVersion:${name}`,
+		title: !manifest
+			? `What version should ${name} start at?`
+			: manifest === '1.0.0'
+				? `${name} is ${manifest} in ${file}; start there?`
+				: `${name} is ${manifest} in ${file}; start there or at 1.0.0?`,
+		found: manifest
+			? `${stem}, and ${source.file ?? 'manifest.xml'} says ${manifest}`
+			: `${stem} and no version in ${unitPath}/package.json`,
+		kind: 'text',
+		options: [
+			...(manifest ? [startAt(manifest, '', true)] : []),
+			...(manifest === '1.0.0' ? [] : [startAt('1.0.0')]),
+		],
+	};
+}
+
 function unitQuestions(
 	detection: Detection,
 	shape: SetupAnswers['shape'],
@@ -194,59 +247,13 @@ function unitQuestions(
 		})),
 	});
 	if (!formats?.last) {
-		const manifest = facts?.version;
-		const mismatch = facts?.versionMismatch ?? null;
-		const hasPackage = detection.layout.packages.some(
-			pkg => pkg.path === unit.path,
-		);
-		const source = hasPackage
-			? 'package.json'
-			: (facts?.sdf?.manifest.split('/').pop() ?? 'manifest.xml');
 		add(
-			mismatch
-				? {
-						id: `firstVersion:${name}`,
-						title: `${name} is ${mismatch.manifest} in manifest.xml but ${mismatch.packageJson} in package.json; which is current?`,
-						found: `${name} has no tags yet, ${facts?.sdf?.manifest ?? 'its manifest.xml'} says ${mismatch.manifest}, and ${unit.path}/package.json says ${mismatch.packageJson}`,
-						kind: 'text',
-						options: [
-							{
-								value: mismatch.manifest,
-								label: `Start at ${mismatch.manifest}`,
-								recommended: true,
-							},
-							{
-								value: mismatch.packageJson,
-								label: `Start at ${mismatch.packageJson}`,
-							},
-						],
-					}
-				: {
-						id: `firstVersion:${name}`,
-						title: !manifest
-							? `What version should ${name} start at?`
-							: manifest === '1.0.0'
-								? `${name} is ${manifest} in ${source}; start there?`
-								: `${name} is ${manifest} in ${source}; start there or at 1.0.0?`,
-						found: manifest
-							? `${name} has no tags yet, and ${hasPackage ? `${unit.path}/package.json` : (facts?.sdf?.manifest ?? source)} says ${manifest}`
-							: `${name} has no tags yet and no version in ${unit.path}/package.json`,
-						kind: 'text',
-						options: [
-							...(manifest
-								? [
-										{
-											value: '',
-											label: `Start at ${manifest}`,
-											recommended: true,
-										},
-									]
-								: []),
-							...(manifest === '1.0.0'
-								? []
-								: [{value: '1.0.0', label: 'Start at 1.0.0'}]),
-						],
-					},
+			firstVersionQuestion(
+				name,
+				unit.path,
+				facts,
+				versionSource(detection, unit),
+			),
 			true,
 		);
 	}
@@ -857,12 +864,10 @@ export function summary(detection: Detection, answers: SetupAnswers): string {
 	for (const unit of answers.units) {
 		const {facts, formats} = factsOf(detection, unit);
 		if (formats?.manifestDisagrees && formats.last && facts?.version) {
-			const hasPackage = detection.layout.packages.some(
-				pkg => pkg.path === unit.path,
+			const {file = `${unit.path}/package.json`, hasPackage} = versionSource(
+				detection,
+				unit,
 			);
-			const file = hasPackage
-				? `${unit.path}/package.json`
-				: (facts.sdf?.manifest ?? `${unit.path}/package.json`);
 			const files =
 				hasPackage && facts.sdf?.version
 					? 'sets both files to'
