@@ -9,7 +9,7 @@ import {
 } from '../../src/index.js';
 import type {RepoStep} from '../helpers/fixture-repo.js';
 import {useDetection} from '../helpers/setup-detection.js';
-import {gearzLayout} from '../helpers/setup-fixtures.js';
+import {gearzLayout, suiteAppMonorepo} from '../helpers/setup-fixtures.js';
 
 const {detected} = useDetection();
 
@@ -312,5 +312,46 @@ test('the first-version title offers 1.0.0 only when the manifest is something e
 	expect(first('web')?.options.map(option => option.label)).toEqual([
 		'Start at 0.1.0',
 		'Start at 1.0.0',
+	]);
+});
+
+test('with no tag and a mismatch, firstVersion offers the manifest version first', async () => {
+	const detection = await detected(suiteAppMonorepo());
+	const asked = questions(detection, recommend(detection));
+	const first = asked.find(question => question.id === 'firstVersion:backend');
+	expect(first?.title).toBe(
+		'backend is 2.10.34 in manifest.xml but 2.5.20 in package.json; which is current?',
+	);
+	expect(first?.options).toMatchObject([
+		{value: '2.10.34', recommended: true},
+		{value: '2.5.20'},
+	]);
+});
+
+test('with a tag and a mismatch, the summary names the manifest', async () => {
+	const detection = await detected(
+		suiteAppMonorepo({extraSteps: [{tag: 'backend/v2.10.34'}]}),
+	);
+	const text = summary(detection, recommend(detection));
+	expect(text).toContain(
+		"backend's last tag says 2.10.34 but apps/backend/package.json says 2.5.20; the tag wins, and the release sets both files to the new version.",
+	);
+});
+
+test('the found sentence shows a SuiteApp with its id and version', async () => {
+	const detection = await detected(suiteAppMonorepo());
+	const asked = questions(detection, recommend(detection));
+	expect(asked.find(question => question.id === 'shape')?.found).toContain(
+		'backend (NetSuite SuiteApp · com.example.myapp 2.10.34)',
+	);
+});
+
+test('the units question labels each app with its framework', async () => {
+	const detection = await detected(suiteAppMonorepo());
+	const asked = questions(detection, recommend(detection));
+	const units = asked.find(question => question.id === 'units');
+	expect(units?.options.map(option => option.label)).toEqual([
+		'backend (apps/backend) · NetSuite SuiteApp',
+		'web (apps/web) · Next.js',
 	]);
 });

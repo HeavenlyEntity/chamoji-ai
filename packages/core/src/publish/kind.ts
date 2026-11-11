@@ -1,5 +1,6 @@
 import {access, readdir, readFile} from 'node:fs/promises';
 import path from 'node:path';
+import {sdfProjectAt} from '../units/sdf.js';
 import type {WorkspacePackage} from '../units/workspace.js';
 import {
 	FRAMEWORKS,
@@ -278,6 +279,22 @@ export async function classifyPackage(
 	const folder = path.join(root, pkg.path);
 	const manifest = await readManifest(path.join(folder, 'package.json'));
 	const at = (file: string): string => path.join(folder, file);
+
+	// A NetSuite SDF project is an app whatever else its package.json says:
+	// nothing NetSuite is offered for npm.
+	const sdf = await sdfProjectAt(root, pkg.path);
+	if (sdf) {
+		const name =
+			sdf.type === 'suiteapp'
+				? 'NetSuite SuiteApp'
+				: 'NetSuite Account Customization Project';
+		return {
+			kind: 'app',
+			reasons: [`${name} (\`${sdf.manifest}\`)`],
+			framework: name,
+			detected: {id: sdf.framework, name, version: sdf.version, basedOn: []},
+		};
+	}
 
 	const strong: string[] = [];
 	for (const field of [...ENTRY_FIELDS, ...PUBLISH_FIELDS]) {

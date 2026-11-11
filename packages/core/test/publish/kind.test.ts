@@ -1,6 +1,7 @@
 import {afterEach, expect, test} from 'vitest';
 import {classifyPackage, readWorkspace} from '../../src/index.js';
 import {createRepo, type FixtureRepo} from '../helpers/fixture-repo.js';
+import {SDF_DEPLOY, sdfManifest} from '../helpers/setup-fixtures.js';
 
 let repo: FixtureRepo | undefined;
 
@@ -401,4 +402,45 @@ test('an app names its most specific framework', async () => {
 
 	const fallback = await classify('apps/x', {});
 	expect(fallback).toEqual({kind: 'app', reasons: ['under `apps/`']});
+});
+
+test('a public SuiteApp package with a main field is an app, so publish refuses it', async () => {
+	const result = await classify(
+		'apps/backend',
+		{main: 'suitecloud.config.js'},
+		{
+			'suitecloud.config.js': 'module.exports = {defaultProjectFolder: "src"};',
+			'src/manifest.xml': sdfManifest({version: '2.10.34'}),
+			'src/deploy.xml': SDF_DEPLOY,
+		},
+	);
+	expect(result.kind).toBe('app');
+	expect(result.reasons).toEqual([
+		'NetSuite SuiteApp (`apps/backend/src/manifest.xml`)',
+	]);
+	expect(result.framework).toBe('NetSuite SuiteApp');
+	expect(result.detected).toEqual({
+		id: 'netsuite-suiteapp',
+		name: 'NetSuite SuiteApp',
+		version: '2.10.34',
+		basedOn: [],
+	});
+});
+
+test('an Account Customization Project package is an app with its own reason', async () => {
+	const result = await classify(
+		'apps/acp',
+		{},
+		{
+			'suitecloud.config.js': 'module.exports = {defaultProjectFolder: "src"};',
+			'src/manifest.xml': sdfManifest({type: 'ACCOUNTCUSTOMIZATION'}),
+			'src/deploy.xml': SDF_DEPLOY,
+		},
+	);
+	expect(result.kind).toBe('app');
+	expect(result.reasons).toEqual([
+		'NetSuite Account Customization Project (`apps/acp/src/manifest.xml`)',
+	]);
+	expect(result.detected?.id).toBe('netsuite-acp');
+	expect(result.detected?.version).toBeNull();
 });

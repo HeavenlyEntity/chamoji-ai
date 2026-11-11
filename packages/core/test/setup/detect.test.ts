@@ -5,6 +5,8 @@ import {
 	gearzLayout,
 	libraryLayout,
 	singlePackage,
+	suiteAppMonorepo,
+	templatedSuiteApp,
 } from '../helpers/setup-fixtures.js';
 
 let repo: FixtureRepo | undefined;
@@ -114,4 +116,142 @@ test('a VERSION constant is offered, a longer version string is not', async () =
 	const found = await detectLayout(repo.dir);
 	const web = found.units.find(unit => unit.name === 'web')!;
 	expect(web.otherVersionFiles).toEqual(['apps/web/src/version.ts']);
+});
+
+const pkgJson = (value: Record<string, unknown>): string =>
+	JSON.stringify(value, null, 2);
+
+test('a Next.js app at packages/web is an app with its reason', async () => {
+	repo = await createRepo([
+		{
+			commit: 'x',
+			files: {
+				'package.json': pkgJson({
+					name: 'root',
+					private: true,
+					workspaces: ['packages/*'],
+				}),
+				'packages/web/package.json': pkgJson({
+					name: 'web',
+					private: true,
+					version: '1.0.0',
+					dependencies: {next: '^15.2.0'},
+				}),
+				'packages/web/next.config.mjs': 'export default {};\n',
+				'packages/ui/package.json': pkgJson({
+					name: 'ui',
+					version: '1.0.0',
+					exports: './index.js',
+				}),
+			},
+		},
+	]);
+	const found = await detectLayout(repo.dir);
+	expect(found.kind).toBe('mixed');
+	expect(found.apps.map(app => app.path)).toEqual(['packages/web']);
+	expect(found.apps[0]!.kind.reasons).toContain('`next` in dependencies');
+	expect(found.apps[0]!.framework?.name).toBe('Next.js');
+	expect(found.libraries.map(pkg => pkg.path)).toEqual(['packages/ui']);
+});
+
+test('the SuiteApp is an app even with a main field', async () => {
+	repo = await suiteAppMonorepo();
+	const found = await detectLayout(repo.dir);
+	expect(found.apps.map(app => app.path)).toEqual(['apps/backend', 'apps/web']);
+	expect(found.libraries).toEqual([]);
+	const backend = found.apps.find(app => app.path === 'apps/backend')!;
+	expect(backend.kind.reasons[0]).toBe(
+		'NetSuite SuiteApp (`apps/backend/src/manifest.xml`)',
+	);
+	expect(backend.framework?.id).toBe('netsuite-suiteapp');
+	expect(backend.sdf?.applicationId).toBe('com.example.myapp');
+	expect(found.sdf.map(project => project.path)).toEqual(['apps/backend']);
+});
+
+test('an SDF folder with no package.json is an app unit', async () => {
+	repo = await templatedSuiteApp();
+	const found = await detectLayout(repo.dir);
+	expect(found.kind).toBe('apps');
+	expect(found.apps).toMatchObject([{path: 'apps/suiteapp', pkg: null}]);
+	const facts = found.units.find(unit => unit.path === 'apps/suiteapp')!;
+	expect(facts.versionFiles).toEqual(['apps/suiteapp/template/manifest.xml']);
+	expect(facts.version).toBe('0.1.0');
+	expect(facts.sdf?.type).toBe('suiteapp');
+});
+
+test('package.json and manifest versions that disagree are recorded', async () => {
+	repo = await suiteAppMonorepo();
+	const found = await detectLayout(repo.dir);
+	const backend = found.units.find(unit => unit.name === 'backend')!;
+	expect(backend.version).toBe('2.5.20');
+	expect(backend.versionMismatch).toEqual({
+		packageJson: '2.5.20',
+		manifest: '2.10.34',
+	});
+	const web = found.units.find(unit => unit.name === 'web')!;
+	expect(web.versionMismatch).toBeNull();
+});
+
+test('a library with react only as a peer stays a library with no framework', async () => {
+	repo = await createRepo([
+		{
+			commit: 'x',
+			files: {
+				'package.json': pkgJson({
+					name: 'root',
+					private: true,
+					workspaces: ['packages/*'],
+				}),
+				'packages/kit/package.json': pkgJson({
+					name: 'kit',
+					version: '1.0.0',
+					peerDependencies: {react: '^19.0.0'},
+				}),
+				'packages/other/package.json': pkgJson({
+					name: 'other',
+					version: '1.0.0',
+					exports: './index.js',
+				}),
+			},
+		},
+	]);
+	const found = await detectLayout(repo.dir);
+	expect(found.kind).toBe('libraries');
+	expect(found.candidates.map(unit => [unit.name, unit.kind.kind])).toEqual([
+		['kit', 'library'],
+		['other', 'library'],
+	]);
+	expect(found.candidates.every(unit => unit.framework === null)).toBe(true);
+});
+
+test('an Expo module is a library', async () => {
+	repo = await createRepo([
+		{
+			commit: 'x',
+			files: {
+				'package.json': pkgJson({
+					name: 'root',
+					private: true,
+					workspaces: ['packages/*'],
+				}),
+				'packages/native/package.json': pkgJson({
+					name: 'native',
+					version: '1.0.0',
+					dependencies: {expo: '^52.0.0'},
+				}),
+				'packages/native/expo-module.config.json': '{}\n',
+				'packages/other/package.json': pkgJson({
+					name: 'other',
+					version: '1.0.0',
+					exports: './index.js',
+				}),
+			},
+		},
+	]);
+	const found = await detectLayout(repo.dir);
+	expect(found.kind).toBe('libraries');
+	expect(found.libraries.map(pkg => pkg.path)).toEqual([
+		'packages/native',
+		'packages/other',
+	]);
 });
