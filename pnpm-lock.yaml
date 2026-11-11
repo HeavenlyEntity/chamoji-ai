@@ -11,6 +11,9 @@ importers:
       '@napi-rs/canvas':
         specifier: ^1.1.0
         version: 1.1.0
+      '@phosphor-icons/core':
+        specifier: 2.1.1
+        version: 2.1.1
       '@types/node':
         specifier: ^22.19.0
         version: 22.20.5
@@ -29,6 +32,9 @@ importers:
       remark-parse:
         specifier: ^11.0.0
         version: 11.0.0
+      simple-icons:
+        specifier: 16.36.0
+        version: 16.36.0
       typescript:
         specifier: ~6.0.3
         version: 6.0.3
@@ -185,6 +191,9 @@ packages:
 
   '@oxc-project/types@0.155.0':
     resolution: {integrity: sha512-SeE8JPwW1xs1tHeNycjUtUBdhorRa8o4jlvjwk49R7/Z291i+4DQa7JJIgOm/TaYQZx+QrPQbVJ/9c8dMIZN8Q==}
+
+  '@phosphor-icons/core@2.1.1':
+    resolution: {integrity: sha512-v4ARvrip4qBCImOE5rmPUylOEK4iiED9ZyKjcvzuezqMaiRASCHKcRIuvvxL/twvLpkfnEODCOJp5dM4eZilxQ==}
 
   '@rolldown/binding-android-arm-eabi@1.2.15':
     resolution: {integrity: sha512-aLcgK9gIJ3YRvrrtfSBbRa27F5WrpiTaPulnFpsHPxpUHgFlSgnU4854MHwoRGEBhfRJDWCS2WQ7lIjskE9Olw==}
@@ -831,6 +840,10 @@ packages:
   signal-exit@3.0.7:
     resolution: {integrity: sha512-wnD2ZE+l+SPC/uoS0vXeE9L1+0wuaMqKlfz9AMUo38JsyLSBWSFcHR1Rri62LZc12vLr1gb3jl7iwQhgwpAbGQ==}
 
+  simple-icons@16.36.0:
+    resolution: {integrity: sha512-+VNPPkqSOLidFeSgBKUWX4n50WPpDC09hav+BgS26anIF1oQOlGBb8LvwGR+6fYRjo+B6CiKzNBceMPkSVXANQ==}
+    engines: {node: '>=0.12.18'}
+
   slice-ansi@9.0.1:
     resolution: {integrity: sha512-aBY19bn/XA+hKOKX0qL7Z0UfdBsbQvc9hn993U8ALUjzxCvDcuZqLoRXjGJrUARWAlwMnsRVD9sw2AFNOYvalA==}
     engines: {node: '>=22'}
@@ -1088,6 +1101,8 @@ snapshots:
       '@napi-rs/canvas-win32-x64-msvc': 1.1.0
 
   '@oxc-project/types@0.155.0': {}
+
+  '@phosphor-icons/core@2.1.1': {}
 
   '@rolldown/binding-android-arm-eabi@1.2.15':
     optional: true
@@ -1801,6 +1816,8 @@ snapshots:
   semver@7.8.5: {}
 
   signal-exit@3.0.7: {}
+
+  simple-icons@16.36.0: {}
 
   slice-ansi@9.0.1:
     dependencies:
