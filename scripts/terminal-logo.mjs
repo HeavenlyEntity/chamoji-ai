@@ -14,6 +14,7 @@ import path from 'node:path';
 import process from 'node:process';
 import {fileURLToPath} from 'node:url';
 import {createCanvas, GlobalFonts} from '@napi-rs/canvas';
+import {boxAverage, toQuadrantLines} from './lib/quadrants.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const fontPath = path.join(root, 'docs/brand/fonts/MarowBlock-Regular.ttf');
@@ -38,7 +39,6 @@ const GAP = 4;
 const O_WIDEN = 3; // added to each side of the O's slot
 const SCALE = 12; // supersampling
 const THRESHOLD = 0.85;
-const QUADRANTS = ' ▗▖▄▝▐▞▟▘▚▌▙▀▜▛█'; // indexed by bits TL, TR, BL, BR
 
 // The faces and their options. The drops are the shades sliding down.
 const FACES = {
@@ -424,48 +424,24 @@ function render(face, options) {
 	}
 
 	// Box-average each 12x12 block to one pixel of coverage.
+	const coverage = boxAverage({
+		width,
+		height,
+		scale: SCALE,
+		at: (x, y) => big[y * bigWidth + x],
+	});
 	const pixels = [];
 	for (let y = 0; y < height; y++) {
-		const row = [];
-		for (let x = 0; x < width; x++) {
-			let sum = 0;
-			for (let dy = 0; dy < SCALE; dy++) {
-				for (let dx = 0; dx < SCALE; dx++) {
-					sum += big[(y * SCALE + dy) * bigWidth + x * SCALE + dx];
-				}
-			}
-
-			row.push(sum / (SCALE * SCALE) / 255 > THRESHOLD);
-		}
-
-		pixels.push(row);
+		pixels.push(
+			coverage.slice(y * width, (y + 1) * width).map(c => c > THRESHOLD),
+		);
 	}
 
 	for (const [name, x, y, on] of TOUCH_UPS) {
 		if (name === face) pixels[y][x] = on;
 	}
 
-	const lines = [];
-	for (let y = 0; y < ROWS; y++) {
-		let line = '';
-		for (let x = 0; x < width; x += 2) {
-			let bits = 0;
-			for (const [i, [dx, dy]] of [
-				[0, 0],
-				[1, 0],
-				[0, 1],
-				[1, 1],
-			].entries()) {
-				if (pixels[2 * y + dy][x + dx]) bits |= 1 << (3 - i);
-			}
-
-			line += QUADRANTS[bits];
-		}
-
-		lines.push(line);
-	}
-
-	return lines;
+	return toQuadrantLines(pixels, ROWS);
 }
 
 const frames = Object.fromEntries(
