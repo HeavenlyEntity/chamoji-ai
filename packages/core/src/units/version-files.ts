@@ -1,7 +1,7 @@
 import {lstat, readdir, readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {ReleaseError} from '../release.js';
-import {findSdfProjects, setManifestVersion} from './sdf.js';
+import {sdfProjectAt, setManifestVersion} from './sdf.js';
 import type {ResolvedUnit} from './workspace.js';
 
 export type VersionFileEdit = {
@@ -736,9 +736,7 @@ export async function detectVersionFiles(
 	}
 
 	candidates.push(joinPath(unitPath, 'android', 'app', 'build.gradle'));
-	const sdf = (await findSdfProjects(root)).find(
-		project => project.path === (joinPath(unitPath) || ''),
-	);
+	const sdf = await sdfProjectAt(root, unitPath);
 	if (sdf) candidates.push(sdf.manifest);
 
 	const found: string[] = [];

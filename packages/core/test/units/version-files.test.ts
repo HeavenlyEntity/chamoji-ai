@@ -599,3 +599,23 @@ test('readUnitVersion falls back to the manifest', async () => {
 		await fixture.cleanup();
 	}
 });
+
+test('detectVersionFiles finds the SDF manifest of a root-level unit', async () => {
+	const fixture = await createRepo([
+		{
+			commit: '🎉 Start',
+			files: {
+				'src/manifest.xml':
+					'<manifest projecttype="SUITEAPP">\n\t<publisherid>com.example</publisherid>\n\t<projectid>myapp</projectid>\n\t<projectversion>1.0.0</projectversion>\n</manifest>\n',
+				'src/deploy.xml': '<deploy/>\n',
+			},
+		},
+	]);
+	try {
+		expect(await detectVersionFiles(fixture.dir, '')).toEqual([
+			'src/manifest.xml',
+		]);
+	} finally {
+		await fixture.cleanup();
+	}
+});

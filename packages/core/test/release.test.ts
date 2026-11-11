@@ -1,8 +1,17 @@
-import {chmod, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
+import {
+	chmod,
+	mkdir,
+	mkdtemp,
+	readFile,
+	rm,
+	symlink,
+	writeFile,
+} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {afterEach, expect, test, vi} from 'vitest';
 import {DEFAULT_GROUP_CONFIG} from '../src/config.js';
+import {findSdfProjects} from '../src/units/sdf.js';
 import {parseReleaseSettings} from '../src/units/settings.js';
 import {
 	applyRelease,
@@ -702,3 +711,41 @@ test('single path bumps a tracked SuiteApp manifest with package.json', async ()
 		manifest('1.3.0'),
 	);
 });
+
+test.skipIf(process.platform === 'win32')(
+	'a symlinked SDF manifest is not a project and a release leaves its target alone',
+	async () => {
+		const manifest = (version: string) =>
+			`<manifest projecttype="SUITEAPP">\n\t<publisherid>com.example</publisherid>\n\t<projectid>myapp</projectid>\n\t<projectversion>${version}</projectversion>\n</manifest>\n`;
+		const outside = await mkdtemp(path.join(tmpdir(), 'chamoji-outside-'));
+		try {
+			const target = path.join(outside, 'manifest.xml');
+			await writeFile(target, manifest('1.2.0'));
+			const repo = await repoWith(widgets, {
+				'package.json': '{\n\t"version": "1.2.0"\n}\n',
+			});
+			await mkdir(path.join(repo.dir, 'src'));
+			await symlink(target, path.join(repo.dir, 'src', 'manifest.xml'));
+			await writeFile(path.join(repo.dir, 'src', 'deploy.xml'), '<deploy/>\n');
+			await gitOutput(repo.dir, ['add', '-A']);
+			await gitOutput(repo.dir, [
+				'-c',
+				'user.name=Dev',
+				'-c',
+				'user.email=dev@example.com',
+				'commit',
+				'-q',
+				'-m',
+				'🔧 Link a manifest',
+			]);
+			expect(await findSdfProjects(repo.dir)).toEqual([]);
+			const result = await ready(repo.dir);
+			expect(result.changes.map(item => item.file)).not.toContain(
+				'src/manifest.xml',
+			);
+			expect(await readFile(target, 'utf8')).toBe(manifest('1.2.0'));
+		} finally {
+			await rm(outside, {recursive: true, force: true});
+		}
+	},
+);
