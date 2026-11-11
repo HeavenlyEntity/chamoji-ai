@@ -17,6 +17,7 @@ import {
 	workflowAdvice,
 	workflowLacking,
 	loadConfig,
+	pnpmSetupVersion,
 	previewReleases,
 	readReleaseSection,
 	recommend,
@@ -209,17 +210,22 @@ async function planFiles(
 				ciAuth: answers.ciAuth,
 				branch,
 				merge: effectiveTrigger(answers) === 'merge',
+				publishing: answers.publish !== null,
 			});
 			advice =
 				adviceLines.length > 0 ? workflowAdvice(present, adviceLines) : null;
 		} else {
+			const packageManager = await detectPackageManager(root);
 			files.push({
 				file: RELEASE_WORKFLOW_FILE,
 				text: releaseWorkflow({
 					branch,
 					cliVersion,
 					ciAuth: answers.ciAuth,
-					packageManager: await detectPackageManager(root),
+					packageManager,
+					publishing: answers.publish !== null,
+					pnpmVersion:
+						packageManager === 'pnpm' ? await pnpmSetupVersion(root) : null,
 				}),
 				how:
 					effectiveTrigger(answers) === 'merge'

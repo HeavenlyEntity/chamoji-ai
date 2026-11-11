@@ -14,6 +14,7 @@ import {
 	defaultBranch,
 	findReleaseWorkflow,
 	privatizeEdit,
+	pnpmSetupVersion,
 	releaseWorkflow,
 	workflowLacking,
 } from '../../src/index.js';
@@ -113,6 +114,7 @@ jobs:
           fetch-depth: 0
       - uses: HeavenlyEntity/chamoji-ai@v0.16.0
         with:
+          chamoji-version: '0.16.0'
           release-version: \${{ inputs.version }}
           # npm-token: \${{ secrets.NPM_TOKEN }}
 `;
@@ -124,6 +126,7 @@ test('the generated workflow matches the spec shape', () => {
 			cliVersion: '0.16.0',
 			ciAuth: 'oidc',
 			packageManager: 'npm',
+			publishing: false,
 		}),
 	).toBe(OIDC_WORKFLOW);
 });
@@ -134,6 +137,7 @@ test('a branch that is not plainly safe is quoted, a bad version refused', () =>
 		cliVersion: '0.16.0',
 		ciAuth: 'oidc',
 		packageManager: 'npm',
+		publishing: false,
 	});
 	expect(text).toContain('branches: ["release/2026 #1"]');
 	expect(text).toContain('ref: "release/2026 #1"');
@@ -143,6 +147,7 @@ test('a branch that is not plainly safe is quoted, a bad version refused', () =>
 			cliVersion: '1\n  evil: true',
 			ciAuth: 'oidc',
 			packageManager: 'npm',
+			publishing: false,
 		}),
 	).toThrow("can't pin");
 });
@@ -153,34 +158,130 @@ test('token method writes npm-token uncommented and keeps id-token: write', () =
 		cliVersion: '0.16.0',
 		ciAuth: 'token',
 		packageManager: 'npm',
+		publishing: false,
 	});
 	expect(text).toContain('          npm-token: ${{ secrets.NPM_TOKEN }}\n');
 	expect(text).not.toContain('# npm-token');
 	expect(text).toContain('  id-token: write\n');
 });
 
-test('pnpm adds pnpm/action-setup@v4 before the Action; bun adds oven-sh/setup-bun@v2; yarn adds `corepack enable`', () => {
-	const make = (packageManager: 'npm' | 'pnpm' | 'yarn' | 'bun') =>
-		releaseWorkflow({
-			branch: 'main',
-			cliVersion: '0.16.0',
-			ciAuth: 'oidc',
-			packageManager,
-		});
-	const before = (text: string, step: string) => {
-		expect(text).toContain(step);
-		expect(text.indexOf(step)).toBeLessThan(
-			text.indexOf('HeavenlyEntity/chamoji-ai@v0.16.0'),
-		);
-		expect(text.indexOf(step)).toBeGreaterThan(
-			text.indexOf('actions/checkout@v4'),
-		);
+/** The steps the generated workflow runs between checkout and the Action. */
+function stepsBeforeAction(text: string): string {
+	const from = text.indexOf('      - uses: actions/checkout@v4');
+	const to = text.indexOf('      - uses: HeavenlyEntity/chamoji-ai@');
+	return text.slice(from, to);
+}
+
+const CHECKOUT = `      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+`;
+
+const setupNode = (cache?: string) =>
+	`      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+${cache ? `          cache: ${cache}\n` : ''}`;
+
+test.each([
+	['npm', `${setupNode('npm')}      - run: npm ci\n`, undefined],
+	[
+		'pnpm',
+		`      - uses: pnpm/action-setup@v4\n${setupNode('pnpm')}      - run: pnpm install --frozen-lockfile\n`,
+		null,
+	],
+	[
+		'yarn',
+		`      - run: corepack enable\n${setupNode('yarn')}      - run: yarn install --immutable\n`,
+		undefined,
+	],
+	[
+		'bun',
+		'      - uses: oven-sh/setup-bun@v2\n      - run: bun install --frozen-lockfile\n',
+		undefined,
+	],
+] as const)(
+	'with publishing on, %s sets up its manager and Node, then installs frozen; with it off, none of that',
+	(packageManager, steps, pnpmVersion) => {
+		const make = (publishing: boolean) =>
+			releaseWorkflow({
+				branch: 'main',
+				cliVersion: '0.16.0',
+				ciAuth: 'oidc',
+				packageManager,
+				publishing,
+				pnpmVersion,
+			});
+		expect(stepsBeforeAction(make(true))).toBe(`${CHECKOUT}${steps}`);
+		// Off: chamoji alone, whatever the package manager.
+		expect(stepsBeforeAction(make(false))).toBe(CHECKOUT);
+		expect(make(false)).toBe(OIDC_WORKFLOW);
+		expect(make(true)).toContain("chamoji-version: '0.16.0'");
+	},
+);
+
+test('pnpm/action-setup gets the version given when package.json has no packageManager', () => {
+	const text = releaseWorkflow({
+		branch: 'main',
+		cliVersion: '0.16.0',
+		ciAuth: 'oidc',
+		packageManager: 'pnpm',
+		publishing: true,
+		pnpmVersion: 8,
+	});
+	expect(text).toContain(
+		'      - uses: pnpm/action-setup@v4\n        with:\n          version: 8\n      - uses: actions/setup-node@v4',
+	);
+});
+
+test('pnpmSetupVersion: none with packageManager, else from the lockfile version, else 10', async () => {
+	const withFiles = async (files: Record<string, string>) => {
+		const dir = await mkdtemp(path.join(tmpdir(), 'chamoji-pnpm-'));
+		made.push({cleanup: async () => rm(dir, {recursive: true, force: true})});
+		for (const [name, text] of Object.entries(files)) {
+			// eslint-disable-next-line no-await-in-loop
+			await writeFile(path.join(dir, name), text);
+		}
+
+		return dir;
 	};
 
-	before(make('pnpm'), '- uses: pnpm/action-setup@v4');
-	before(make('bun'), '- uses: oven-sh/setup-bun@v2');
-	before(make('yarn'), '- run: corepack enable');
-	expect(make('npm')).toBe(OIDC_WORKFLOW);
+	const lock = (version: string) => `lockfileVersion: '${version}'\n`;
+	expect(
+		await pnpmSetupVersion(
+			await withFiles({
+				'package.json': '{"packageManager":"pnpm@9.1.0"}',
+				'pnpm-lock.yaml': lock('9.0'),
+			}),
+		),
+	).toBeNull();
+	for (const [version, major] of [
+		['9.0', 10],
+		['6.0', 8],
+		['6.1', 8],
+		['5.4', 7],
+		['7.0', 10],
+		['10.0', 10],
+	] as const) {
+		expect(
+			// eslint-disable-next-line no-await-in-loop
+			await pnpmSetupVersion(
+				// eslint-disable-next-line no-await-in-loop
+				await withFiles({
+					'package.json': '{"name":"x"}',
+					'pnpm-lock.yaml': lock(version),
+				}),
+			),
+		).toBe(major);
+	}
+
+	expect(await pnpmSetupVersion(await withFiles({}))).toBe(10);
+	expect(
+		await pnpmSetupVersion(
+			await withFiles({'pnpm-lock.yaml': 'lockfileVersion: 9.0\n'}),
+		),
+	).toBe(10);
 });
 
 async function withWorkflows(files: Record<string, string>): Promise<string> {
@@ -319,7 +420,7 @@ test.skipIf(process.platform === 'win32')(
 	},
 );
 
-const LACK = {branch: 'main', merge: true};
+const LACK = {branch: 'main', merge: true, publishing: true};
 
 test('workflowLacking: the generated file has it all; a bare Action step lacks the rest', () => {
 	expect(workflowLacking(OIDC_WORKFLOW, {...LACK, ciAuth: 'oidc'})).toEqual([]);
@@ -355,6 +456,15 @@ test('workflowLacking: the generated file has it all; a bare Action step lacks t
 			},
 		),
 	).toEqual([]);
+	// Without publishing, id-token: write isn't asked for.
+	const bare =
+		'on: workflow_dispatch\njobs:\n  r:\n    steps:\n      - uses: HeavenlyEntity/chamoji-ai@v0.15.0\n';
+	expect(
+		workflowLacking(bare, {...LACK, publishing: false, ciAuth: 'oidc'}),
+	).not.toContain('permissions: id-token: write');
+	expect(workflowLacking(bare, {...LACK, ciAuth: 'oidc'})).toContain(
+		'permissions: id-token: write',
+	);
 });
 
 const NOTES = `name: changelog

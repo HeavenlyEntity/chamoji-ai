@@ -198,17 +198,96 @@ export const RELEASE_WORKFLOW_FILE = '.github/workflows/chamoji-release.yml';
 const yamlString = (value: string): string =>
 	/^[A-Za-z0-9_][A-Za-z0-9._/-]*$/.test(value) ? value : JSON.stringify(value);
 
-/** The step that sets up the project's package manager, or none for npm. */
-function managerStep(pm: PackageManager): string[] {
-	if (pm === 'pnpm') return ['      - uses: pnpm/action-setup@v4'];
-	if (pm === 'bun') return ['      - uses: oven-sh/setup-bun@v2'];
-	if (pm === 'yarn') return ['      - run: corepack enable'];
-	return [];
+/** The steps that set up the package manager and Node, then install, for publishing. */
+function installSteps(
+	pm: PackageManager,
+	pnpmVersion: number | null,
+): string[] {
+	const steps: string[] = [];
+	if (pm === 'pnpm') {
+		steps.push('      - uses: pnpm/action-setup@v4');
+		if (pnpmVersion !== null) {
+			steps.push('        with:', `          version: ${pnpmVersion}`);
+		}
+	} else if (pm === 'bun') {
+		steps.push('      - uses: oven-sh/setup-bun@v2');
+	} else if (pm === 'yarn') {
+		steps.push('      - run: corepack enable');
+	}
+
+	// No registry-url: the .npmrc it writes would stand in for the credentials
+	// chamoji passes, and trusted publishing would fail.
+	if (pm !== 'bun') {
+		steps.push(
+			'      - uses: actions/setup-node@v4',
+			'        with:',
+			'          node-version: 24',
+			`          cache: ${pm}`,
+		);
+	}
+
+	const install: Record<PackageManager, string> = {
+		npm: 'npm ci',
+		pnpm: 'pnpm install --frozen-lockfile',
+		yarn: 'yarn install --immutable',
+		bun: 'bun install --frozen-lockfile',
+	};
+	steps.push(`      - run: ${install[pm]}`);
+	return steps;
+}
+
+/** The pnpm major `pnpm-lock.yaml`'s `lockfileVersion` was written by. */
+const PNPM_BY_LOCKFILE: Array<[RegExp, number]> = [
+	[/^9\./, 10],
+	[/^6\./, 8],
+	[/^5\./, 7],
+];
+
+/**
+ * The pnpm major `pnpm/action-setup` needs as `version`, or null when the
+ * root `package.json` has a `packageManager` field, which the action reads.
+ * Otherwise it comes from `pnpm-lock.yaml`'s `lockfileVersion`: 9.x is 10,
+ * 6.x is 8, 5.x is 7, and anything else, or no lockfile, is 10.
+ */
+export async function pnpmSetupVersion(root: string): Promise<number | null> {
+	try {
+		const manifest: unknown = JSON.parse(
+			await readFile(path.join(root, 'package.json'), 'utf8'),
+		);
+		if (
+			isObject(manifest) &&
+			typeof manifest['packageManager'] === 'string' &&
+			manifest['packageManager'] !== ''
+		) {
+			return null;
+		}
+	} catch {
+		// No readable manifest: the lockfile still says.
+	}
+
+	try {
+		const head = (await readFile(path.join(root, 'pnpm-lock.yaml'), 'utf8'))
+			.split('\n', 20)
+			.find(line => line.startsWith('lockfileVersion:'));
+		const found = /^lockfileVersion:\s*['"]?([0-9][0-9.]*)/.exec(head ?? '');
+		if (found) {
+			for (const [pattern, major] of PNPM_BY_LOCKFILE) {
+				if (pattern.test(found[1]!)) return major;
+			}
+		}
+	} catch {
+		// No lockfile.
+	}
+
+	return 10;
 }
 
 /**
  * The workflow that releases on a push to `branch` and on "Run workflow".
- * The Action is pinned to `cliVersion`, the CLI that writes the file.
+ * The Action and the CLI it runs are pinned to `cliVersion`, the CLI that
+ * writes the file. With `publishing`, the job sets up the package manager and
+ * Node and installs first, since packing needs the dependencies; `pnpmVersion`
+ * is the `version` for pnpm/action-setup, or null when `packageManager` says.
  * `id-token: write` stays with the token method, for provenance.
  */
 export function releaseWorkflow(options: {
@@ -216,8 +295,10 @@ export function releaseWorkflow(options: {
 	cliVersion: string;
 	ciAuth: 'oidc' | 'token';
 	packageManager: PackageManager;
+	publishing: boolean;
+	pnpmVersion?: number | null;
 }): string {
-	const {branch, cliVersion, ciAuth, packageManager} = options;
+	const {branch, cliVersion, ciAuth, packageManager, publishing} = options;
 	if (!/^[0-9A-Za-z][0-9A-Za-z.+-]*$/.test(cliVersion)) {
 		throw new Error(`can't pin the Action to version "${cliVersion}"`);
 	}
@@ -247,9 +328,12 @@ export function releaseWorkflow(options: {
 		'        with:',
 		`          ref: ${branchName}`,
 		'          fetch-depth: 0',
-		...managerStep(packageManager),
+		...(publishing
+			? installSteps(packageManager, options.pnpmVersion ?? null)
+			: []),
 		`      - uses: HeavenlyEntity/chamoji-ai@v${cliVersion}`,
 		'        with:',
+		`          chamoji-version: '${cliVersion}'`,
 		'          release-version: ${{ inputs.version }}',
 		ciAuth === 'token'
 			? '          npm-token: ${{ secrets.NPM_TOKEN }}'
@@ -260,15 +344,20 @@ export function releaseWorkflow(options: {
 /**
  * What an existing workflow lacks for a release, as lines to add: the push
  * trigger (only when `merge`) and `workflow_dispatch`, write access to
- * contents, `id-token: write`, the `release-version` input, and with the
+ * contents, `id-token: write` (only when publishing), the `release-version` input, and with the
  * token method an uncommented `npm-token:`. A file that doesn't parse is
  * never said to lack a trigger.
  */
 export function workflowLacking(
 	text: string,
-	options: {ciAuth: 'oidc' | 'token'; branch: string; merge: boolean},
+	options: {
+		ciAuth: 'oidc' | 'token';
+		branch: string;
+		merge: boolean;
+		publishing: boolean;
+	},
 ): string[] {
-	const {ciAuth, branch, merge} = options;
+	const {ciAuth, branch, merge, publishing} = options;
 	const facts = triggersOf(text, branch);
 	const lines: string[] = [];
 	if (facts && merge && !facts.push) {
@@ -280,7 +369,7 @@ export function workflowLacking(
 		lines.push('permissions: contents: write');
 	}
 
-	if (!/id-token:[ \t]*write/.test(text)) {
+	if (publishing && !/id-token:[ \t]*write/.test(text)) {
 		lines.push('permissions: id-token: write');
 	}
 
