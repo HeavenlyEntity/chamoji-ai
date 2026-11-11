@@ -1,10 +1,20 @@
+import {existsSync} from 'node:fs';
 import {lstat, readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {
 	answersFromSection,
 	assertGitRepo,
+	assertNoSymlinks,
 	CONFIG_FILE,
 	detect,
+	detectPackageManager,
+	effectiveTrigger,
+	findReleaseWorkflow,
+	privatizeEdit,
+	RELEASE_WORKFLOW_FILE,
+	releaseWorkflow,
+	workflowAdvice,
+	workflowLacks,
 	getRemoteWebUrl,
 	loadConfig,
 	previewReleases,
@@ -16,6 +26,7 @@ import {
 	summary,
 	writeReleaseSection,
 	type Detection,
+	type FileChange,
 	type Preview,
 	type ReplayLine,
 	type SetupAnswers,
@@ -153,18 +164,113 @@ export async function checkSquashMerge(
 type ReleasesPlan = {
 	result: Extract<StepResult, 'written' | 'unchanged'>;
 	section: Record<string, unknown>;
-	/** The config file's new text when `result` is written. */
+	/** Whether chamoji.config.json changes. */
+	configChanged: boolean;
+	/** The config file's new text when `configChanged`. */
 	text: string;
+	/** The other files setup writes: the release workflow, then each privatized package.json. */
+	files: FileChange[];
+	/** A workflow that already runs chamoji and the sign-in it should use, instead of a new file. */
+	advice: string | null;
+	/** The file that stands in for a new workflow, for `--json`. */
+	existingWorkflow: string | null;
 };
 
+/** Whether the answers need a release workflow: a merge trigger that is set, or publishing on. */
+const wantsWorkflow = (answers: SetupAnswers): boolean =>
+	effectiveTrigger(answers) === 'merge' || answers.publish !== null;
+
+/**
+ * The files besides the config that these answers write. A workflow that
+ * already runs chamoji, or a file already at the new one's path, is never
+ * replaced: `advice` says what the existing one needs instead. Refuses a
+ * symlink in the way of any of them.
+ */
+async function planFiles(
+	root: string,
+	answers: SetupAnswers,
+	branch: string,
+	cliVersion: string | undefined,
+): Promise<Pick<ReleasesPlan, 'files' | 'advice' | 'existingWorkflow'>> {
+	const files: FileChange[] = [];
+	let advice: string | null = null;
+	let existingWorkflow: string | null = null;
+	if (wantsWorkflow(answers) && cliVersion !== undefined) {
+		const found = await findReleaseWorkflow(root);
+		const target = path.join(root, RELEASE_WORKFLOW_FILE);
+		await assertNoSymlinks(root, RELEASE_WORKFLOW_FILE);
+		// An untracked file at the new path counts too: it's someone's to keep.
+		const present =
+			found?.file ?? (existsSync(target) ? RELEASE_WORKFLOW_FILE : null);
+		if (present) {
+			existingWorkflow = present;
+			const body = await readFile(path.join(root, present), 'utf8').catch(
+				() => '',
+			);
+			// One that has it all, as setup's own file does, needs no advice.
+			advice = workflowLacks(body, answers.ciAuth)
+				? workflowAdvice(present, answers.ciAuth)
+				: null;
+		} else {
+			files.push({
+				file: RELEASE_WORKFLOW_FILE,
+				text: releaseWorkflow({
+					branch,
+					cliVersion,
+					ciAuth: answers.ciAuth,
+					packageManager: await detectPackageManager(root),
+				}),
+				how:
+					effectiveTrigger(answers) === 'merge'
+						? `new file; releases on every push to ${branch} and on "Run workflow"`
+						: 'new file; releases on "Run workflow"',
+			});
+		}
+	}
+
+	for (const pkgPath of answers.privatize) {
+		// eslint-disable-next-line no-await-in-loop -- one file at a time, in the answers' order
+		const change = await privatizeEdit(root, pkgPath);
+		// eslint-disable-next-line no-await-in-loop
+		const before = await readFile(path.join(root, change.file), 'utf8');
+		if (change.text !== before) files.push(change);
+	}
+
+	return {files, advice, existingWorkflow};
+}
+
 /** What the releases step writes for these answers; a single package gets a section too. */
-function planReleases(
+async function planReleases(
+	root: string,
 	original: string | null,
 	answers: SetupAnswers,
-): ReleasesPlan {
+	branch: string,
+	cliVersion: string | undefined,
+): Promise<ReleasesPlan> {
 	const section = releaseSection(answers);
 	const {text, changed} = writeReleaseSection(original, section);
-	return {result: changed ? 'written' : 'unchanged', section, text};
+	const planned = await planFiles(root, answers, branch, cliVersion);
+	return {
+		result: changed || planned.files.length > 0 ? 'written' : 'unchanged',
+		section,
+		configChanged: changed,
+		text,
+		...planned,
+	};
+}
+
+/**
+ * Writes one of setup's other files in place, keeping an existing file's
+ * permissions. Refuses a symlink in the way, as for the config.
+ */
+async function writeFileChange(
+	root: string,
+	change: FileChange,
+): Promise<void> {
+	await assertNoSymlinks(root, change.file);
+	const target = path.join(root, change.file);
+	const found = await lstat(target).catch(() => null);
+	await writeAtomically(target, change.text, found?.mode);
 }
 
 /**
@@ -215,6 +321,9 @@ export async function runSetup(
 			: answersFromSection(existing, detection));
 	const states = await stepStates(io, detection, existing);
 	const scope = args.step ? [args.step] : [...STEP_NAMES];
+	/** The releases plan for the answers as they stand. */
+	const planned = async () =>
+		planReleases(root, original, answers!, detection!.branch, io.cliVersion);
 	// Names, versions and paths come from the repo; none reaches the terminal raw.
 	const out = args.json
 		? () => {}
@@ -262,7 +371,7 @@ export async function runSetup(
 				detection: detection!,
 				initial: answers!,
 				states: screened,
-				...previews(root, io),
+				...previews(root, io, detection!.branch),
 				columns: process.stderr.columns ?? 80,
 			});
 			if (!result.saved) {
@@ -280,17 +389,26 @@ export async function runSetup(
 	const squash = await squashing;
 
 	// Doing it.
-	const plan = releases ? planReleases(original, answers!) : null;
+	const plan = releases ? await planned() : null;
 	const results: Array<{step: StepName; result: StepResult}> = [];
 	const wrote: string[] = [];
 	let code = 0;
 	if (plan) {
 		describeReleases(plan, true);
-		if (plan.result === 'written') {
+		if (plan.configChanged) {
 			await writeAtomically(file, plan.text, mode);
 			wrote.push(CONFIG_FILE);
 			out(`${WROTE}\n`);
 		}
+
+		for (const change of plan.files) {
+			// eslint-disable-next-line no-await-in-loop -- files go one at a time
+			await writeFileChange(root, change);
+			wrote.push(change.file);
+			out(`${change.file}: ${change.how}. Review it and commit it.\n`);
+		}
+
+		if (plan.advice) out(`${plan.advice}\n`);
 
 		results.push({step: 'releases', result: plan.result});
 	}
@@ -318,8 +436,8 @@ export async function runSetup(
 	return code;
 
 	/** No --yes and no terminal, or --json without --yes: say what setup would do. */
-	function report(squash: string | null): number {
-		const plan = releases ? planReleases(original, answers!) : null;
+	async function report(squash: string | null): Promise<number> {
+		const plan = releases ? await planned() : null;
 		const results: Array<{step: StepName; result: StepResult}> = [];
 		if (plan) {
 			describeReleases(plan, false);
@@ -348,7 +466,7 @@ export async function runSetup(
 
 	/** The summary and, before writing, the section; or why there's nothing to write. */
 	function describeReleases(plan: ReleasesPlan, doing: boolean): void {
-		if (plan.result === 'written') {
+		if (plan.configChanged) {
 			out(`${summary(detection!, answers!)}\n\n`);
 			if (!doing) {
 				out(
@@ -356,6 +474,19 @@ export async function runSetup(
 				);
 			}
 		}
+
+		if (!doing && plan.files.length > 0) {
+			out(
+				`Setup would also write:\n${plan.files.map(change => `  ${change.file}: ${change.how}`).join('\n')}\n\n`,
+			);
+			for (const change of plan.files) {
+				if (change.file === RELEASE_WORKFLOW_FILE) {
+					out(`${change.file} would read:\n${change.text}\n`);
+				}
+			}
+		}
+
+		if (!doing && plan.advice) out(`${plan.advice}\n\n`);
 
 		if (args.explain) {
 			out(
@@ -395,6 +526,7 @@ export async function runSetup(
 					steps,
 					wrote,
 					squashMerge: squash,
+					existingWorkflow: plan?.existingWorkflow ?? null,
 				},
 				null,
 				2,
@@ -407,17 +539,34 @@ export async function runSetup(
 function previews(
 	root: string,
 	io: Io,
+	branch: string,
 ): Pick<SetupScreenProps, 'preview' | 'replay'> {
 	let config: ReturnType<typeof loadConfig> | undefined;
 	const loaded = async () => (config ??= loadConfig(root));
 	return {
-		preview: async answers =>
-			previewReleases(
+		preview: async answers => {
+			const preview = await previewReleases(
 				root,
 				await loaded(),
 				answers,
 				io.today ?? new Date().toISOString().slice(0, 10),
-			),
+			);
+			try {
+				const {files} = await planFiles(root, answers, branch, io.cliVersion);
+				return {
+					...preview,
+					files: files.map(({file, how}) => ({file, how})),
+				};
+			} catch (error) {
+				return {
+					...preview,
+					warnings: [
+						...preview.warnings,
+						`Setup can't write its other files: ${(error as Error).message}`,
+					],
+				};
+			}
+		},
 		replay: async answers => replayReleases(root, await loaded(), answers),
 	};
 }

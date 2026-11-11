@@ -720,3 +720,41 @@ test('a newline on the summary saves, as Enter does', async () => {
 		steps: [],
 	});
 });
+
+test('the preview pane shows each extra file with its how', async () => {
+	const app = open({
+		preview: async () => ({
+			heading: HEADING,
+			units: [releasing('web', '0.1.0', '0.2.0')],
+			warnings: [],
+			files: [
+				{
+					file: '.github/workflows/chamoji-release.yml',
+					how: 'new file; runs on every push',
+				},
+				{file: 'apps/web/package.json', how: 'marked private'},
+			],
+		}),
+	});
+	await tick();
+	const frame = app.frame();
+	expect(frame).toContain('Setup would also write');
+	expect(frame).toContain('.github/workflows/chamoji-release.yml');
+	expect(frame).toContain('new file; runs on every push');
+	expect(frame).toContain('apps/web/package.json');
+	expect(frame).toContain('marked private');
+});
+
+test('control characters in an extra file reach the pane stripped', async () => {
+	const app = open({
+		preview: async () => ({
+			heading: HEADING,
+			units: [],
+			warnings: [],
+			files: [{file: `apps/we\u001b[31mb/package.json`, how: 'private\u0007'}],
+		}),
+	});
+	await tick();
+	expect(app.frame()).not.toContain('\u001b[31m');
+	expect(app.frame()).not.toContain('\u0007');
+});

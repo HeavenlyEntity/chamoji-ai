@@ -119,6 +119,12 @@ export type Io = {
 	stderr: (text: string) => void;
 	/** `YYYY-MM-DD` used for `--release`; defaults to today. */
 	today?: string;
+	/**
+	 * This CLI's version, which setup pins the release workflow's Action to.
+	 * cli.ts passes the real one, tests a fixed one. Without it setup writes
+	 * no workflow, since it has nothing to pin.
+	 */
+	cliVersion?: string;
 	/** Newer-version notice; cli.ts passes the real one, tests a fake or none. */
 	updateCheck?: UpdateCheck;
 	/** Runs the GitHub CLI for `release --push`; tests pass a fake. */

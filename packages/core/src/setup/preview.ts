@@ -27,6 +27,8 @@ export type Preview = {
 	heading: string;
 	units: PreviewUnit[];
 	warnings: string[];
+	/** The other files setup would write, which the CLI adds; the engine's preview has none. */
+	files?: Array<{file: string; how: string}>;
 };
 
 const NOTE_LINES = 6;

@@ -26,6 +26,8 @@ import {
 } from '../../core/test/helpers/fixture-repo.js';
 import {
 	gearzLayout,
+	publicApps,
+	publishableLibraries,
 	singlePackage,
 } from '../../core/test/helpers/setup-fixtures.js';
 import {hookPath, readHookState} from '../src/hook.js';
@@ -71,6 +73,7 @@ async function chamoji(argv: string[], cwd: string, extra: Partial<Io> = {}) {
 		stdout: text => (stdout += text),
 		stderr: text => (stderr += text),
 		today: '2026-11-04',
+		cliVersion: '0.16.0',
 		fetchTags: false,
 		gh: noGh(),
 		// No PATH: chamoji and claude are never "installed", whatever this machine has.
@@ -288,7 +291,12 @@ test('--json without --yes reports and exits 2; with --yes it reports written st
 		agents: 'skipped',
 		hook: 'offered',
 	});
-	expect(report.wrote).toEqual(['chamoji.config.json']);
+	// The recommended privatize tick and the merge workflow are written too (T5-d, T5-c).
+	expect(report.wrote).toEqual([
+		'chamoji.config.json',
+		'.github/workflows/chamoji-release.yml',
+		'apps/mobile/package.json',
+	]);
 	expect(report.answers).toEqual(await gearzSection(dir));
 	expect(report.answers).toEqual((await readConfig(dir)).release);
 	expect(report.why).toMatchObject({
@@ -441,6 +449,8 @@ test("a re-run with nothing new is already up to date and shows each step's stat
 	expect(results(report).agents).toBe('written');
 	expect(report.wrote).toEqual([
 		'chamoji.config.json',
+		'.github/workflows/chamoji-release.yml',
+		'apps/mobile/package.json',
 		'.mcp.json',
 		'.claude/settings.json',
 	]);
@@ -848,4 +858,257 @@ test('in a terminal, a set-up repo opens the screen for the per-clone steps only
 	expect(named[0]!.states).toEqual([
 		expect.objectContaining({step: 'releases', done: false}),
 	]);
+});
+
+const WORKFLOW = '.github/workflows/chamoji-release.yml';
+
+test('--yes writes the config and chamoji-release.yml, both listed in --json wrote', async () => {
+	const dir = await made(singlePackage());
+	const {code, stdout, stderr} = await chamoji(
+		['setup', 'releases', '--yes', '--json'],
+		dir,
+	);
+	expect(stderr).toBe('');
+	expect(code).toBe(0);
+	const report = JSON.parse(stdout) as Report;
+	expect(report.wrote).toEqual(['chamoji.config.json', WORKFLOW]);
+	expect(results(report).releases).toBe('written');
+	const text = await readFile(path.join(dir, WORKFLOW), 'utf8');
+	expect(text).toContain('HeavenlyEntity/chamoji-ai@v0.16.0');
+	expect(text).toContain('branches: [main]');
+	expect(text).toContain('# npm-token: ${{ secrets.NPM_TOKEN }}');
+	// Left uncommitted.
+	const status = await gitOutput(dir, ['status', '--porcelain']);
+	expect(status).toContain('?? .github/');
+	expect(status).toContain('?? chamoji.config.json');
+
+	// Written once: a re-run finds it and has nothing to do.
+	await gitOutput(dir, ['add', '-A']);
+	await gitOutput(dir, [
+		'-c',
+		'user.name=Dev',
+		'-c',
+		'user.email=dev@example.com',
+		'commit',
+		'-q',
+		'-m',
+		'🔧 Set up releases',
+	]);
+	const again = await chamoji(['setup', 'releases', '--yes', '--json'], dir);
+	const rerun = JSON.parse(again.stdout) as Report;
+	expect(rerun.wrote).toEqual([]);
+	expect(results(rerun).releases).toBe('unchanged');
+});
+
+test('the plain output says what it wrote, and a file written earlier is never replaced', async () => {
+	const dir = await made(singlePackage());
+	const first = await chamoji(['setup', 'releases', '--yes'], dir);
+	expect(first.stdout).toContain(`${WORKFLOW}: `);
+	await writeFile(path.join(dir, WORKFLOW), '# mine\n');
+	const second = await chamoji(['setup', 'releases', '--yes', '--json'], dir);
+	expect((JSON.parse(second.stdout) as Report).wrote).toEqual([]);
+	expect(await readFile(path.join(dir, WORKFLOW), 'utf8')).toBe('# mine\n');
+});
+
+test('an existing chamoji workflow is never overwritten; the lines to add are printed', async () => {
+	const dir = await made(singlePackage());
+	const mine = `name: release
+on:
+  push:
+    branches: [main]
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: HeavenlyEntity/chamoji-ai@v0.15.0
+`;
+	await mkdir(path.join(dir, '.github/workflows'), {recursive: true});
+	await writeFile(path.join(dir, '.github/workflows/release.yml'), mine);
+	await gitOutput(dir, ['add', '-A']);
+	await gitOutput(dir, [
+		'-c',
+		'user.name=Dev',
+		'-c',
+		'user.email=dev@example.com',
+		'commit',
+		'-q',
+		'-m',
+		'👷 Add a release workflow',
+	]);
+	const {code, stdout} = await chamoji(['setup', 'releases', '--yes'], dir);
+	expect(code).toBe(0);
+	expect(stdout).toContain(
+		'A workflow already runs chamoji (.github/workflows/release.yml); it needs:',
+	);
+	expect(stdout).toContain('with:');
+	expect(stdout).toContain('release-version: ${{ inputs.version }}');
+	expect(stdout).not.toContain('npm-token');
+	expect(existsSync(path.join(dir, WORKFLOW))).toBe(false);
+	expect(
+		await readFile(path.join(dir, '.github/workflows/release.yml'), 'utf8'),
+	).toBe(mine);
+});
+
+test('an existing workflow with a token keeps the token method in what it prints', async () => {
+	const dir = await made(singlePackage());
+	await mkdir(path.join(dir, '.github/workflows'), {recursive: true});
+	await writeFile(
+		path.join(dir, '.github/workflows/release.yml'),
+		'steps:\n  - uses: HeavenlyEntity/chamoji-ai@v0.15.0\n    with:\n      npm-token: ${{ secrets.NPM_TOKEN }}\n',
+	);
+	await gitOutput(dir, ['add', '-A']);
+	await gitOutput(dir, [
+		'-c',
+		'user.name=Dev',
+		'-c',
+		'user.email=dev@example.com',
+		'commit',
+		'-q',
+		'-m',
+		'👷 Add a release workflow',
+	]);
+	const {stdout} = await chamoji(['setup', 'releases', '--yes'], dir);
+	expect(stdout).toContain('npm-token: ${{ secrets.NPM_TOKEN }}');
+});
+
+test('trigger manual and publish off: no workflow is written', async () => {
+	const dir = await made(singlePackage());
+	await writeFile(
+		path.join(dir, 'chamoji.config.json'),
+		`${JSON.stringify({release: {schema: 2, shape: 'single', trigger: 'manual'}}, null, '\t')}\n`,
+	);
+	const {code, stdout} = await chamoji(
+		['setup', 'releases', '--yes', '--json'],
+		dir,
+	);
+	expect(code).toBe(0);
+	expect((JSON.parse(stdout) as Report).wrote).toEqual([]);
+	expect(existsSync(path.join(dir, WORKFLOW))).toBe(false);
+});
+
+test('an untouched section with no trigger stays manual: --yes writes no workflow (T5-c)', async () => {
+	const dir = await made(singlePackage());
+	await writeFile(
+		path.join(dir, 'chamoji.config.json'),
+		`${JSON.stringify({release: {schema: 1, shape: 'single'}}, null, '\t')}\n`,
+	);
+	const {stdout} = await chamoji(['setup', 'releases', '--yes', '--json'], dir);
+	const report = JSON.parse(stdout) as Report;
+	expect(existsSync(path.join(dir, WORKFLOW))).toBe(false);
+	expect(report.wrote.filter(file => file.endsWith('.yml'))).toEqual([]);
+});
+
+test('publishing on writes the workflow even with a manual trigger, with the token method when a registry needs it', async () => {
+	const dir = await made(
+		publishableLibraries({registry: 'https://npm.example.com/'}),
+	);
+	await writeFile(
+		path.join(dir, 'chamoji.config.json'),
+		`${JSON.stringify({release: {schema: 2, shape: 'libraries', units: {ui: {path: 'packages/ui', tag: 'ui/v{version}'}, core: {path: 'packages/core', tag: 'core/v{version}'}}, exclude: [], sharedChanges: 'ride-along', rootFiles: 'none', trigger: 'manual', publish: true}}, null, '\t')}\n`,
+	);
+	const {code, stdout} = await chamoji(
+		['setup', 'releases', '--yes', '--json'],
+		dir,
+	);
+	expect(code).toBe(0);
+	expect((JSON.parse(stdout) as Report).wrote).toContain(WORKFLOW);
+	const text = await readFile(path.join(dir, WORKFLOW), 'utf8');
+	expect(text).toContain('          npm-token: ${{ secrets.NPM_TOKEN }}');
+	// pnpm-lock.yaml is there, so the pnpm step is too.
+	expect(text).toContain('pnpm/action-setup@v4');
+});
+
+test('privatize writes only the ticked package.json files', async () => {
+	const dir = await made(publicApps());
+	const {stdout} = await chamoji(['setup', 'releases', '--yes', '--json'], dir);
+	const report = JSON.parse(stdout) as Report;
+	// --yes applies the recommended tick (T5-d), and each edit is listed.
+	expect(report.wrote).toContain('apps/web/package.json');
+	expect(report.wrote).not.toContain('apps/admin/package.json');
+	const web = JSON.parse(
+		await readFile(path.join(dir, 'apps/web/package.json'), 'utf8'),
+	) as {private?: boolean; version: string};
+	expect(web.private).toBe(true);
+	const keys = Object.keys(web);
+	expect(keys.indexOf('private')).toBe(keys.indexOf('version') + 1);
+	expect(await gitOutput(dir, ['diff', '--stat'])).toContain(
+		'apps/web/package.json',
+	);
+});
+
+test('an unticked app is left as it was', async () => {
+	const dir = await made(publicApps());
+	const before = await readFile(
+		path.join(dir, 'apps/web/package.json'),
+		'utf8',
+	);
+	asTerminal();
+	const screen = vi.fn(async (props: SetupScreenProps) => ({
+		saved: true as const,
+		answers: {...props.initial, privatize: []},
+		steps: [],
+	}));
+	await chamoji(['setup', 'releases'], dir, {setupScreen: screen});
+	expect(screen).toHaveBeenCalled();
+	expect(await readFile(path.join(dir, 'apps/web/package.json'), 'utf8')).toBe(
+		before,
+	);
+});
+
+test('without --yes and no terminal, the report lists the files it would write', async () => {
+	const dir = await made(publicApps());
+	const {code, stdout} = await chamoji(['setup', 'releases'], dir);
+	expect(code).toBe(2);
+	expect(stdout).toContain('Setup would also write');
+	expect(stdout).toContain(WORKFLOW);
+	expect(stdout).toContain('apps/web/package.json');
+	expect(existsSync(path.join(dir, WORKFLOW))).toBe(false);
+	expect(
+		await readFile(path.join(dir, 'apps/web/package.json'), 'utf8'),
+	).not.toContain('"private"');
+	const json = await chamoji(['setup', 'releases', '--json'], dir);
+	expect((JSON.parse(json.stdout) as Report).wrote).toEqual([]);
+});
+
+test.skipIf(WINDOWS)(
+	'a symlinked package.json, workflow folder or workflow file is refused, nothing written',
+	async () => {
+		const dir = await made(publicApps());
+		await writeFile(path.join(dir, 'elsewhere.json'), '{"name":"web"}\n');
+		await rm(path.join(dir, 'apps/web/package.json'));
+		await symlink(
+			path.join(dir, 'elsewhere.json'),
+			path.join(dir, 'apps/web/package.json'),
+		);
+		const first = await chamoji(['setup', 'releases', '--yes'], dir);
+		expect(first.code).toBe(1);
+		expect(first.stderr).toContain('apps/web/package.json is a symlink');
+		expect(await readFile(path.join(dir, 'elsewhere.json'), 'utf8')).toBe(
+			'{"name":"web"}\n',
+		);
+
+		const other = await made(singlePackage());
+		await mkdir(path.join(other, 'real'));
+		await symlink(path.join(other, 'real'), path.join(other, '.github'));
+		const second = await chamoji(['setup', 'releases', '--yes'], other);
+		expect(second.code).toBe(1);
+		expect(second.stderr).toContain('.github is a symlink');
+		expect(existsSync(path.join(other, 'real/workflows'))).toBe(false);
+		expect(existsSync(path.join(other, 'chamoji.config.json'))).toBe(false);
+	},
+);
+
+test('the screen preview lists the extra files', async () => {
+	const dir = await made(publicApps());
+	asTerminal();
+	let shown: unknown;
+	const screen = vi.fn(async (props: SetupScreenProps) => {
+		shown = await props.preview(props.initial);
+		return {saved: false as const};
+	});
+	await chamoji(['setup', 'releases'], dir, {setupScreen: screen});
+	expect(
+		(shown as {files: Array<{file: string}>}).files.map(f => f.file),
+	).toEqual([WORKFLOW, 'apps/web/package.json']);
 });

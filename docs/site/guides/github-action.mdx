@@ -217,6 +217,43 @@ jobs:
           chamoji-version: '0.15.0'
 ```
 
+`chamoji setup releases` writes a starting version of this file for you, as `.github/workflows/chamoji-release.yml`, when `release.trigger` is `merge` or publishing is on and no tracked workflow already runs chamoji. It shows the file in the preview first and leaves it uncommitted for you to review. Here is what it writes for npm and trusted publishing, with the CLI version that wrote it in the pin and your default branch in `branches` and `ref`:
+
+```yaml {{ title: '.github/workflows/chamoji-release.yml' }}
+name: release
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: The version to release; empty picks it from the commits
+        required: false
+concurrency:
+  group: chamoji-release
+  cancel-in-progress: false
+permissions:
+  contents: write
+  id-token: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: HeavenlyEntity/chamoji-ai@v0.16.0
+        with:
+          release-version: ${{ inputs.version }}
+          # npm-token: ${{ secrets.NPM_TOKEN }}
+```
+
+- **With the token method,** the `npm-token` line is written uncommented, and `id-token: write` stays for provenance.
+- **Your package manager** gets its setup step before the Action: `pnpm/action-setup@v4` for pnpm, `oven-sh/setup-bun@v2` for Bun, and `corepack enable` for Yarn. npm needs none.
+- **It never overwrites a workflow.** If a tracked workflow already runs chamoji, or a file is already at that path, setup leaves it alone. When that workflow lacks the permissions or inputs above, setup prints what it needs. Add an install step and Node settings as in the example above if packing needs them.
+- **A symlink is refused.** If `.github`, `.github/workflows` or the file is a symlink, setup stops and writes nothing through it.
+
 chamoji packs each package with your package manager, so the job installs your dependencies first. With npm, leave out `pnpm/action-setup`, set `cache: npm` and run `npm ci`; with Yarn, `cache: yarn` and `yarn install --immutable`; with Bun, use `oven-sh/setup-bun` and `bun install --frozen-lockfile`. A package that needs building is built by its `prepack` script, which packing runs, or by a build step you add before chamoji.
 
 - **`concurrency`** runs one release at a time, and `cancel-in-progress: false` lets a queued run wait instead of cancelling one halfway through a publish.

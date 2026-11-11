@@ -113,7 +113,11 @@ test('setup --yes finds web and mobile, excludes e2e, dev-tool and tooling, igno
 		new Set(['apps/e2e', 'apps/dev-tool', 'tooling/*']),
 	);
 	expect([...report.found.inheritedTags].sort()).toEqual(MAKERKIT_TAGS);
-	expect(report.wrote).toEqual(['chamoji.config.json']);
+	// The recommended privatize tick marks the public mobile app (T5-d).
+	expect(report.wrote).toEqual([
+		'chamoji.config.json',
+		'apps/mobile/package.json',
+	]);
 
 	const release = await readRelease(dir);
 	expect(Object.keys(release.units).sort()).toEqual(['mobile', 'web']);
@@ -132,7 +136,7 @@ test('setup --yes finds web and mobile, excludes e2e, dev-tool and tooling, igno
 
 	// Setup never commits; the developer does.
 	expect(await gitOutput(dir, ['status', '--porcelain'])).toBe(
-		'?? chamoji.config.json\n',
+		' M apps/mobile/package.json\n?? chamoji.config.json\n',
 	);
 	await commitAll(dir, '🔧 Set up releases');
 	// web has the sync to release; mobile gets a feature of its own.
