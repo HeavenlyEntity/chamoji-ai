@@ -155,6 +155,8 @@ export type SetupAnswers = {
 	};
 	ignore: string[];
 	rootChangelog: boolean;
+	/** The schema of the section these came from; a rewrite never lowers it. */
+	schema?: 1 | 2;
 	/** What starts a release. */
 	trigger: 'merge' | 'manual';
 	/** Set for a section that has no `trigger`: it is asked again, and written only once answered. */
@@ -311,6 +313,11 @@ function recommendFor(detection: Detection, shape: Shape): SetupAnswers {
 	return answers;
 }
 
+/** What a release does now: a section with no trigger runs manually until it's answered. */
+export const effectiveTrigger = (
+	answers: Pick<SetupAnswers, 'trigger' | 'triggerUnset'>,
+): 'merge' | 'manual' => (answers.triggerUnset ? 'manual' : answers.trigger);
+
 /** The first public package that doesn't publish to npmjs, which needs an npm token. */
 export const tokenRegistry = (
 	detection: Detection,
@@ -385,6 +392,7 @@ export function answersFromSection(
 			: {}),
 		ignore: settings.tags.ignore,
 		rootChangelog: settings.rootChangelog,
+		schema: settings.schema,
 		// With no trigger written, the engine runs manually; setup recommends merge.
 		trigger: unset ? 'merge' : settings.trigger,
 		...(unset ? {triggerUnset: true as const} : {}),

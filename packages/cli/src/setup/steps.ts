@@ -61,7 +61,7 @@ const repoRoot = async (cwd: string): Promise<string> =>
  */
 export async function stepStates(
 	io: Io,
-	detection: Detection | null,
+	_detection: Detection | null,
 	existing: unknown,
 ): Promise<StepState[]> {
 	const root = await repoRoot(io.cwd);
@@ -72,17 +72,14 @@ export async function stepStates(
 		onPath('claude', io.env ?? process.env);
 	const agents = await agentsConnected(io);
 	const hook = (await readHookState(io.cwd)) === 'installed';
-	const single = existing === undefined && detection?.layout.kind === 'single';
 	return [
 		{
 			step: 'releases',
-			done: existing !== undefined || single,
+			done: existing !== undefined,
 			line:
 				existing !== undefined
 					? '✓ releases are set up in chamoji.config.json'
-					: single
-						? '✓ releases need no setup in a single package'
-						: "○ releases aren't set up yet",
+					: "○ releases aren't set up yet",
 			offered: true,
 		},
 		{
@@ -132,20 +129,13 @@ export async function nothingSetUp(io: Io): Promise<boolean> {
 	}
 }
 
-/**
- * Whether the setup screen asks the releases questions: not for a single
- * package, and not once releases are done (ruling R16).
- */
+/** Whether the setup screen asks the releases questions: not once releases are done (ruling R16). */
 export function asksReleases(
-	detection: Detection,
+	_detection: Detection,
 	states: StepState[],
 ): boolean {
 	const releases = states.find(state => state.step === 'releases');
-	return (
-		releases !== undefined &&
-		!releases.done &&
-		detection.layout.kind !== 'single'
-	);
+	return releases !== undefined && !releases.done;
 }
 
 /** The per-clone steps the setup screen offers: those offered and not done. */

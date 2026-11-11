@@ -69,9 +69,8 @@ The four steps:
 <Properties>
 	<Property name="releases">
 		Writes the `release` section. Named, it asks the release questions again,
-		even when the section exists. A single package gets a section too, once you
-		name the step or pass `--yes`: it holds `trigger` and, for a public package,
-		`publish`.
+		even when the section exists. A single package with no section is asked too,
+		and gets one holding `trigger` and, for a public package, `publish`.
 	</Property>
 	<Property name="memory">
 		Makes this clone share memory through `origin`, as `chamoji init` does. It’s
@@ -97,7 +96,8 @@ Every repo, whatever its shape, is asked these, right after what it releases. Ea
 		When a release happens: on merge to the default branch (the recommendation),
 		or only when someone runs it. Setup reads the default branch from
 		`origin/HEAD`, else the branch you’re on, else `main`. A section with no
-		`trigger` is asked again on a re-run, and written only once you answer.
+		`trigger` is asked again on a re-run and counts as manual until you answer;
+		nothing is written for it before then.
 	</Property>
 	<Property name="majors" type="auto | manual">
 		Whether a breaking change releases on merge like any other change (`auto`,
@@ -192,17 +192,25 @@ These keys need `"schema": 2`, so setup writes it with `trigger`, `majors` (when
 
 These are from real runs in two small repos: `widgets`, a single package, and `shop`, with two apps and a shared package. The first run in `shop`, without `--yes` and with `--explain`, is on [Set up a repo](/set-up-a-repo#what-it-found).
 
-Without `--yes`, setup leaves a single package’s releases alone. With no terminal, it says what else it would do and exits 2:
+A single package gets a release section too, holding when a release happens. Without a terminal, setup says what it would write and what else it would do, and exits 2:
 
 ```txt {{ title: 'chamoji setup' }}
-✓ releases need no setup in a single package
-○ memory sharing is off in this clone
+○ releases aren't set up yet
+– memory sharing needs a remote named origin
 ○ Claude Code isn't connected here yet
-✓ the commit composer hook is installed in this clone
+○ the commit composer hook isn't installed in this clone; chamoji setup hook --yes installs it
 
-One package, so chamoji release already knows what to do; there's nothing to set up for releases.
-Setup would also share memory through origin, as chamoji init does.
+Found a single package; it keeps one version, as today. Releases happen on merge to main.
+
+Setup would write this release section to chamoji.config.json:
+{
+  "schema": 2,
+  "shape": "single",
+  "trigger": "merge"
+}
+
 Setup would also connect Claude Code here, as chamoji init --agents does.
+Setup would also offer the commit composer hook for this clone.
 chamoji: setup needs a terminal to ask; run chamoji setup --yes to take every recommended answer
 ```
 

@@ -212,6 +212,7 @@ export {
 	applyAnswer,
 	currentAnswer,
 	detect,
+	effectiveTrigger,
 	recommend,
 	type Detection,
 	type SetupAnswers,

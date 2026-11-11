@@ -96,17 +96,18 @@ export function releaseSection(answers: SetupAnswers): Record<string, unknown> {
 	const publish = publishValue(answers.publish);
 	if (publish !== undefined) section.publish = publish;
 	if (answers.mentions.length > 0) section.mentions = answers.mentions;
-	section.schema =
-		'trigger' in section ||
-		'majors' in section ||
-		'publish' in section ||
-		'mentions' in section
-			? 2
-			: 1;
 	const kept = keptFor(answers);
 	// Settings kept from `publish: {...}` stay when setup writes it as `true`.
 	if (section.publish === true && isObject(kept.publish)) section.publish = {};
-	return merge(section, kept);
+	const merged = merge(section, kept);
+	// Set last, from every version-2 key in the result (kept ones too, such as
+	// `publish: false`), and never below the section's own schema.
+	merged.schema =
+		answers.schema === 2 ||
+		['trigger', 'majors', 'publish', 'mentions'].some(key => key in merged)
+			? 2
+			: 1;
+	return merged;
 }
 
 /** `true` when publishing has nothing set, else only what is set; undefined when off. */

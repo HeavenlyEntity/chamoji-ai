@@ -6,7 +6,7 @@ import {
 } from '../../src/index.js';
 import {recommend} from '../../src/index.js';
 import {useDetection, valid} from '../helpers/setup-detection.js';
-import {gearzLayout} from '../helpers/setup-fixtures.js';
+import {gearzLayout, singlePackage} from '../helpers/setup-fixtures.js';
 
 const {detected} = useDetection();
 
@@ -164,4 +164,33 @@ test('mentions are written when ticked and left out when empty', async () => {
 	const section = releaseSection({...answers, mentions: [mention]});
 	expect(section.mentions).toEqual([mention]);
 	expect(valid(section).mentions).toEqual([mention]);
+});
+
+test('a no-op re-run of a schema 2 section never lowers it, and what is written always parses', async () => {
+	const detection = await detected(singlePackage());
+	for (const original of [
+		'{"release": {"schema": 2, "shape": "single", "publish": false}}',
+		'{"release": {"schema": 2, "shape": "single"}}',
+		'{"release": {"schema": 2, "shape": "single", "majors": "auto"}}',
+	]) {
+		const release = (JSON.parse(original) as {release: unknown}).release;
+		const answers = answersFromSection(release, detection);
+		const section = releaseSection(answers);
+		expect(section.schema).toBe(2);
+		expect(() => valid(section)).not.toThrow();
+		expect(writeReleaseSection(original, section)).toEqual({
+			text: original,
+			changed: false,
+		});
+	}
+
+	// A kept publish:false needs schema 2 even from an answers value with none.
+	const answers = answersFromSection(
+		{schema: 2, shape: 'single', publish: false},
+		detection,
+	);
+	const lowered = {...answers, schema: undefined, triggerUnset: true as const};
+	const section = releaseSection(lowered);
+	expect(section).toMatchObject({schema: 2, publish: false});
+	expect(() => valid(section)).not.toThrow();
 });
