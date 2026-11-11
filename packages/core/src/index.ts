@@ -220,8 +220,8 @@ export {
 } from './setup/answers.js';
 export {questions, summary, type Question} from './setup/questions.js';
 export {detectMentions} from './setup/mentions.js';
+export {assertNoSymlinks} from './links.js';
 export {
-	assertNoSymlinks,
 	checkCommand,
 	defaultBranch,
 	findReleaseWorkflow,

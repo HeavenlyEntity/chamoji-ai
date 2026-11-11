@@ -1,7 +1,8 @@
-import {lstat, readFile} from 'node:fs/promises';
+import {readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {parse} from 'yaml';
 import {runGit} from '../git.js';
+import {assertNoSymlinks} from '../links.js';
 import type {FileChange} from '../release.js';
 import type {PackageManager} from '../publish/pack.js';
 
@@ -390,32 +391,6 @@ export function workflowAdvice(file: string, lines: string[]): string {
 		`A workflow already runs chamoji (${file}); it needs:`,
 		...lines.map(line => `  ${line}`),
 	].join('\n');
-}
-
-/**
- * Refuses when `rel` or a folder above it, under `root`, is a symlink: git
- * commits the link, so writing through it would change a file the repo
- * doesn't hold. A part that doesn't exist yet ends the check.
- */
-export async function assertNoSymlinks(
-	root: string,
-	rel: string,
-): Promise<void> {
-	let current = root;
-	for (const part of rel.split('/').filter(Boolean)) {
-		current = path.join(current, part);
-		// eslint-disable-next-line no-await-in-loop -- each part sits under the last
-		const found = await lstat(current).catch((error: NodeJS.ErrnoException) => {
-			if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return null;
-			throw error;
-		});
-		if (!found) return;
-		if (found.isSymbolicLink()) {
-			throw new Error(
-				`${path.relative(root, current).split(path.sep).join('/')} is a symlink; chamoji won't write through links`,
-			);
-		}
-	}
 }
 
 const isObject = (value: unknown): value is Record<string, unknown> =>

@@ -1,7 +1,8 @@
-import {lstat, readFile} from 'node:fs/promises';
+import {readFile} from 'node:fs/promises';
 import path from 'node:path';
 import semver from 'semver';
 import {runGit} from '../git.js';
+import {firstLinkOnPath} from '../links.js';
 import {ReleaseError, type FileChange} from '../release.js';
 import type {Mention} from './settings.js';
 
@@ -19,21 +20,6 @@ export function mentionRegex(pattern: string): RegExp {
 async function trackedFiles(root: string, glob: string): Promise<string[]> {
 	const out = await runGit(['ls-files', '-z', '--', `:(glob)${glob}`], root);
 	return out.split('\0').filter(Boolean);
-}
-
-/** Whether the file or a folder above it is a symlink; a write would leave the repo's files. */
-async function viaLink(root: string, file: string): Promise<boolean> {
-	let at = root;
-	for (const part of file.split('/')) {
-		at = path.join(at, part);
-		try {
-			if ((await lstat(at)).isSymbolicLink()) return true;
-		} catch {
-			return false;
-		}
-	}
-
-	return false;
 }
 
 /**
@@ -57,7 +43,9 @@ export async function editMentions(
 		for (const glob of mention.files) {
 			const found: string[] = [];
 			for (const file of await trackedFiles(root, glob)) {
-				if (!(await viaLink(root, file))) found.push(file);
+				if ((await firstLinkOnPath(root, file, {onError: 'stop'})) === null) {
+					found.push(file);
+				}
 			}
 
 			if (found.length === 0) {
