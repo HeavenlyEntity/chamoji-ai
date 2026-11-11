@@ -1,4 +1,3 @@
-import {existsSync} from 'node:fs';
 import {lstat, readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {
@@ -8,18 +7,13 @@ import {
 	CONFIG_FILE,
 	detect,
 	DEFAULT_REGISTRY,
-	detectPackageManager,
 	effectiveTrigger,
-	findReleaseWorkflow,
-	privatizeEdit,
-	RELEASE_WORKFLOW_FILE,
-	releaseWorkflow,
-	workflowAdvice,
-	workflowLacking,
 	loadConfig,
-	pnpmSetupVersion,
+	planSetupFiles,
 	previewReleases,
+	publishTargets,
 	readReleaseSection,
+	RELEASE_WORKFLOW_FILE,
 	recommend,
 	releaseSection,
 	replayReleases,
@@ -171,81 +165,6 @@ type ReleasesPlan = {
 	existingWorkflow: string | null;
 };
 
-/** Whether the answers need a release workflow: a merge trigger that is set, or publishing on. */
-const wantsWorkflow = (answers: SetupAnswers): boolean =>
-	effectiveTrigger(answers) === 'merge' || answers.publish !== null;
-
-/**
- * The files besides the config that these answers write. A workflow that
- * already runs chamoji, or a file already at the new one's path, is never
- * replaced: `advice` says what the existing one needs instead. Refuses a
- * symlink in the way of any of them.
- */
-async function planFiles(
-	root: string,
-	answers: SetupAnswers,
-	branch: string,
-	cliVersion: string | undefined,
-): Promise<
-	Pick<ReleasesPlan, 'files' | 'advice' | 'adviceLines' | 'existingWorkflow'>
-> {
-	const files: FileChange[] = [];
-	let advice: string | null = null;
-	let adviceLines: string[] = [];
-	let existingWorkflow: string | null = null;
-	if (wantsWorkflow(answers) && cliVersion !== undefined) {
-		const found = await findReleaseWorkflow(root, branch);
-		const target = path.join(root, RELEASE_WORKFLOW_FILE);
-		await assertNoSymlinks(root, RELEASE_WORKFLOW_FILE);
-		// An untracked file at the new path counts too: it's someone's to keep.
-		const present =
-			found?.file ?? (existsSync(target) ? RELEASE_WORKFLOW_FILE : null);
-		if (present) {
-			existingWorkflow = present;
-			const body = await readFile(path.join(root, present), 'utf8').catch(
-				() => '',
-			);
-			// One that has it all, as setup's own file does, needs no advice.
-			adviceLines = workflowLacking(body, {
-				ciAuth: answers.ciAuth,
-				branch,
-				merge: effectiveTrigger(answers) === 'merge',
-				publishing: answers.publish !== null,
-			});
-			advice =
-				adviceLines.length > 0 ? workflowAdvice(present, adviceLines) : null;
-		} else {
-			const packageManager = await detectPackageManager(root);
-			files.push({
-				file: RELEASE_WORKFLOW_FILE,
-				text: releaseWorkflow({
-					branch,
-					cliVersion,
-					ciAuth: answers.ciAuth,
-					packageManager,
-					publishing: answers.publish !== null,
-					pnpmVersion:
-						packageManager === 'pnpm' ? await pnpmSetupVersion(root) : null,
-				}),
-				how:
-					effectiveTrigger(answers) === 'merge'
-						? `new file; releases on every push to ${branch} and on "Run workflow"`
-						: 'new file; releases on "Run workflow"',
-			});
-		}
-	}
-
-	for (const pkgPath of answers.privatize) {
-		// eslint-disable-next-line no-await-in-loop -- one file at a time, in the answers' order
-		const change = await privatizeEdit(root, pkgPath);
-		// eslint-disable-next-line no-await-in-loop
-		const before = await readFile(path.join(root, change.file), 'utf8');
-		if (change.text !== before) files.push(change);
-	}
-
-	return {files, advice, adviceLines, existingWorkflow};
-}
-
 /** What the releases step writes for these answers; a single package gets a section too. */
 async function planReleases(
 	root: string,
@@ -256,7 +175,7 @@ async function planReleases(
 ): Promise<ReleasesPlan> {
 	const section = releaseSection(answers);
 	const {text, changed} = writeReleaseSection(original, section);
-	const planned = await planFiles(root, answers, branch, cliVersion);
+	const planned = await planSetupFiles(root, answers, branch, cliVersion);
 	return {
 		result: changed || planned.files.length > 0 ? 'written' : 'unchanged',
 		section,
@@ -343,17 +262,7 @@ export async function runSetup(
 			root,
 		));
 	/** The public packages these answers publish. */
-	const publishing = () => {
-		const named = answers?.publish?.packages ?? [];
-		return answers?.publish
-			? detection!.publishable.filter(
-					pkg =>
-						named.length === 0 ||
-						named.includes(pkg.name) ||
-						named.includes(pkg.path),
-				)
-			: [];
-	};
+	const publishing = () => (answers ? publishTargets(detection!, answers) : []);
 
 	// The lookups start as soon as detection is done, on the answers as they
 	// stand, so the network never holds up the screen. A screen that changes the
@@ -661,7 +570,12 @@ function previews(
 				io.today ?? new Date().toISOString().slice(0, 10),
 			);
 			try {
-				const {files} = await planFiles(root, answers, branch, io.cliVersion);
+				const {files} = await planSetupFiles(
+					root,
+					answers,
+					branch,
+					io.cliVersion,
+				);
 				return {
 					...preview,
 					files: files.map(({file, how}) => ({file, how})),

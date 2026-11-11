@@ -9,15 +9,14 @@ import {
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {afterEach, expect, test} from 'vitest';
+import {checkCommand, defaultBranch} from '../../src/index.js';
+import {pnpmSetupVersion} from '../../src/publish/lockfile.js';
+import {privatizeEdit} from '../../src/setup/privatize.js';
 import {
-	checkCommand,
-	defaultBranch,
 	findReleaseWorkflow,
-	privatizeEdit,
-	pnpmSetupVersion,
 	releaseWorkflow,
 	workflowLacking,
-} from '../../src/index.js';
+} from '../../src/setup/workflow.js';
 import {
 	createRepo,
 	gitOutput,
