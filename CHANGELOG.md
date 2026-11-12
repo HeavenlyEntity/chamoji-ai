@@ -1,5 +1,64 @@
 # Changelog
 
+## [v0.16.0](https://github.com/HeavenlyEntity/chamoji-ai/compare/v0.15.0...v0.16.0) - 2026-11-12
+
+### Highlights
+
+- 📦 **Publishing to npm**
+  - ✨ Draw each framework's icon in setup's summary ([5d3cd17](https://github.com/HeavenlyEntity/chamoji-ai/commit/5d3cd17ec2ad30a6ab1307e9b64db53a92d2bcb6))
+  - ✨ Tell setup users about blocked pushes and how CI signs in to npm ([7349ac7](https://github.com/HeavenlyEntity/chamoji-ai/commit/7349ac7623e3e3f9447525a4b9e352b6567cfce8))
+  - ✨ Write the release workflow from setup, and offer to mark public apps private ([5e6c0f9](https://github.com/HeavenlyEntity/chamoji-ai/commit/5e6c0f9534382c4d78169da3178bdb3bac7f4d1d))
+  - ✨ Ask when to release, about breaking changes and about publishing in setup ([fad9dec](https://github.com/HeavenlyEntity/chamoji-ai/commit/fad9decda509e6e24b6ca0d5e226ea1bb0519d8b))
+  - ✨ Update version mentions in docs with each release ([1bd5db7](https://github.com/HeavenlyEntity/chamoji-ai/commit/1bd5db74a0056c896a091e6a2366e40916b8dfec))
+  - ✨ Show each package's kind and framework in setup, with SDF projects as apps ([6bc46c3](https://github.com/HeavenlyEntity/chamoji-ai/commit/6bc46c39c76658ac3d87f0ab416003c8409eb8a7))
+  - ✨ Find NetSuite SDF projects and bump their manifest.xml version ([277a29b](https://github.com/HeavenlyEntity/chamoji-ai/commit/277a29b358276a68a5f8e7de85a3ac6e9d46f437))
+  - ✨ Detect each package's framework and its version ([02e9c94](https://github.com/HeavenlyEntity/chamoji-ai/commit/02e9c94d9abe438aef2470d7acdc3f91fb033527))
+  - ♻️ Small batch 2 leftovers: repoSlug escape, ReleasesPlan type, symlink test ([737452d](https://github.com/HeavenlyEntity/chamoji-ai/commit/737452df2e28ba970c0565c8cd1bad57813f926c))
+  - ♻️ Share the quadrant packing between the icon and logo scripts ([f1d286d](https://github.com/HeavenlyEntity/chamoji-ai/commit/f1d286da76ddac5ce9447e6a1085299d2f25e05b))
+  - ♻️ Keep framework display rules out of the Ink view ([07e6ec9](https://github.com/HeavenlyEntity/chamoji-ai/commit/07e6ec92c2f467e960bad8cbeffc8e044c60add0))
+  - ♻️ Trim exports only one internal caller uses; export the types the API shows ([473eb94](https://github.com/HeavenlyEntity/chamoji-ai/commit/473eb944281a6091ecb5041e3d3a653c1cc78e68))
+  - ♻️ Read the root package.json once: readRootPackage in units/workspace.ts ([a5a2b34](https://github.com/HeavenlyEntity/chamoji-ai/commit/a5a2b34876444674c29090665935f7d9f2c03c02))
+  - ♻️ Share the bounded text reader and the setup scan limits ([1377fa2](https://github.com/HeavenlyEntity/chamoji-ai/commit/1377fa2af272153e00d472e81f6dcb461db1ecbe))
+  - ♻️ One unitNameOf for a unit's name from its folder ([6584d65](https://github.com/HeavenlyEntity/chamoji-ai/commit/6584d6536552d8c7804edf94aeb09eb34d03a8e1))
+  - ♻️ Drop the unused files option from findSdfProjects ([b4ac3a3](https://github.com/HeavenlyEntity/chamoji-ai/commit/b4ac3a303bf756ae604d3efeebfd62f16536fd28))
+  - ♻️ Share the owner/repo parse as repoSlug; drop unused step parameters ([750a409](https://github.com/HeavenlyEntity/chamoji-ai/commit/750a409b4dad1eb2929c0da04e7749b793a6652e))
+  - ♻️ Build the firstVersion question once; one helper for where a version lives ([538eda8](https://github.com/HeavenlyEntity/chamoji-ai/commit/538eda85f772c1feca3514605686577b13620a74))
+  - ♻️ Break the answers/questions runtime cycle with setup/rules.ts ([fda092d](https://github.com/HeavenlyEntity/chamoji-ai/commit/fda092db2d22e64b03e719f554ac42d846c59973))
+  - ♻️ Plan setup's other files in core: planSetupFiles and publishTargets ([1cb4380](https://github.com/HeavenlyEntity/chamoji-ai/commit/1cb43808d36f63fcfaca8abc2c909233a2909030))
+  - ♻️ Split setup/workflow.ts by job; share the origin HEAD lookup with release ([08e13d2](https://github.com/HeavenlyEntity/chamoji-ai/commit/08e13d2f2b8649a10cf4ae99d5b3116fd6c581cd))
+  - ♻️ Inspect each package once: one manifest read, one framework match, one lockfile read ([150ce3a](https://github.com/HeavenlyEntity/chamoji-ai/commit/150ce3afb97064915716a45920166e098ccb3146))
+  - ♻️ Share SDF detection: one framework identity, one listing, one version reader ([b3ef81e](https://github.com/HeavenlyEntity/chamoji-ai/commit/b3ef81ecc2d17a17990322176cbf81dbb9bf5bb8))
+  - ♻️ Move the symlink guard to links.ts and reuse it in mentions and sdf ([2ecc037](https://github.com/HeavenlyEntity/chamoji-ai/commit/2ecc0377f1853cd533e1be52d74920443e8840a5))
+  - 🍱 Swap faint framework marks for a neutral Phosphor icon ([890c06e](https://github.com/HeavenlyEntity/chamoji-ai/commit/890c06e315ac6bf4f59a80f1b5be322647dd6ef2))
+  - 🍱 Generate terminal icons for each detected framework ([f5831c0](https://github.com/HeavenlyEntity/chamoji-ai/commit/f5831c07f7e41f7b93041fc5755c646dd91380cf))
+  - 🐛 Make mentions optional in the settings type and cap npm lookups ([fb2fe5c](https://github.com/HeavenlyEntity/chamoji-ai/commit/fb2fe5c7bbf8b6c70d4224c4a535af9762e48378))
+  - 🐛 Bound the manifest.xml reads and keep non-SDF manifests working ([d11087c](https://github.com/HeavenlyEntity/chamoji-ai/commit/d11087c47da74fd20289b5b8ec007a9589cc7231))
+  - 🐛 Keep framework icons coloured off dark, animating terminals ([65f1e25](https://github.com/HeavenlyEntity/chamoji-ai/commit/65f1e25364cf74ee778c11b46c68ddb933beb49f))
+  - 🐛 Make the generated release workflow run out of the box ([d651e0b](https://github.com/HeavenlyEntity/chamoji-ai/commit/d651e0b666dc4a664ecf432f5118ac2fff5a057a))
+  - 🐛 Write setup's other files only where the releases step was asked ([89dea59](https://github.com/HeavenlyEntity/chamoji-ai/commit/89dea591280416878d8c7e7784e3be910dc25e90))
+  - 🐛 Show a repo that is one NetSuite project as that in setup ([00f29ca](https://github.com/HeavenlyEntity/chamoji-ai/commit/00f29ca6ff441e99fb515e723056e5fe8023d345))
+  - 🐛 Show each framework version in setup, and stop guessing from app.config ([7ee2c2e](https://github.com/HeavenlyEntity/chamoji-ai/commit/7ee2c2e183666eddaeee5806ed2627825df75b83))
+  - 🐛 Kill a timed-out npm lookup in setup instead of abandoning it ([a975ddb](https://github.com/HeavenlyEntity/chamoji-ai/commit/a975ddbbc9aa6c57bc9e0b7e53bd281470b6705c))
+  - 🐛 Fix privatize edits of nested private keys and count only a workflow that runs the release ([f7e90fe](https://github.com/HeavenlyEntity/chamoji-ai/commit/f7e90fe16eb6e60044ec0e42c2a6ca580054ab0e))
+  - 🐛 Keep the schema right on a setup re-run, ask single repos, and report an unset trigger as manual ([0501fa4](https://github.com/HeavenlyEntity/chamoji-ai/commit/0501fa468ef0401114124ef3c915374c54edde23))
+  - 🐛 Merge mentions across units and skip symlinked files ([73f6800](https://github.com/HeavenlyEntity/chamoji-ai/commit/73f68005618c848b8e2b76215db31ac35537fb5d))
+  - 🐛 Start a mismatched, untagged unit at its manifest version in setup's recommendation ([69b045b](https://github.com/HeavenlyEntity/chamoji-ai/commit/69b045b2ef8e665923fc616883802348ec4cc06b))
+  - 🐛 Find a root SDF manifest and never follow a symlinked one ([2ec4db8](https://github.com/HeavenlyEntity/chamoji-ai/commit/2ec4db8b76c61596f2d1bad91e4a77dd4f0a4f6c))
+  - 🐛 Report Ionic apps and bound the Forge manifest match ([9136fb0](https://github.com/HeavenlyEntity/chamoji-ai/commit/9136fb079306a186fcb83aa4f8d31f46e79144cc))
+  - 📝 Regenerate setup's single-package example from a real run ([79cc317](https://github.com/HeavenlyEntity/chamoji-ai/commit/79cc317aaff87543b0f7c06576ab15dd50118099))
+  - 📝 Carry Phosphor's copyright line in the generated icons header ([d4765a5](https://github.com/HeavenlyEntity/chamoji-ai/commit/d4765a5026b30261ac8b21c33fdf4420bf55985b))
+  - ✅ Test a public Next.js app at the root of a single package ([51f13d5](https://github.com/HeavenlyEntity/chamoji-ai/commit/51f13d5d86d604b41a90a609d0e1c7f623161a1c))
+  - ✅ Check setup and releases end to end on NetSuite and framework repos ([48f1549](https://github.com/HeavenlyEntity/chamoji-ai/commit/48f1549b480c10ca9ca97623f8de40a0760b963a))
+
+### Changed
+
+- 🔧 Lint with oxlint and format with oxfmt instead of Prettier ([28b1764](https://github.com/HeavenlyEntity/chamoji-ai/commit/28b1764122cb92abea875d7cc5451806cec80e2c))
+- ♻️ Share the small helpers that were copied across core and the CLI ([4d03905](https://github.com/HeavenlyEntity/chamoji-ai/commit/4d0390551a6745ae4909f88c52f2b26d154c78ff))
+
+### Documentation
+
+- 📝 Show the monorepo guide's diagram of how commits find their unit ([8496234](https://github.com/HeavenlyEntity/chamoji-ai/commit/84962340e4e6b2a75d88118eb5e3a88cc1a71d8e))
+
 ## [v0.15.0](https://github.com/HeavenlyEntity/chamoji-ai/compare/v0.14.0...v0.15.0) - 2026-11-09
 
 ### Highlights
