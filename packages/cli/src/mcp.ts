@@ -12,6 +12,7 @@ import {
 } from '@chamoji/core';
 import {MISSING_KEY} from './env.js';
 import {redact, withoutTrailers} from './jev-classifier.js';
+import {isRecord} from './records.js';
 import type {MemoryReranker} from './rerank.js';
 import type {Io} from './run.js';
 import {stripControlLines} from './text.js';
@@ -406,9 +407,6 @@ const serverVersion = (): string => {
 		return 'unknown';
 	}
 };
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-	typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /**
  * One line of JSON. `JSON.stringify` leaves U+2028 and U+2029 raw, and a

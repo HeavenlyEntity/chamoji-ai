@@ -3,6 +3,7 @@ import path from 'node:path';
 import {parse} from 'yaml';
 import {defaultBranch, runGit} from '../git.js';
 import type {PackageManager} from '../publish/pack.js';
+import {isObject} from '../util/object.js';
 
 /** What a step must hold to count as running chamoji's release. */
 const RUNS_CHAMOJI = [
@@ -274,6 +275,3 @@ export function workflowAdvice(file: string, lines: string[]): string {
 		...lines.map(line => `  ${line}`),
 	].join('\n');
 }
-
-const isObject = (value: unknown): value is Record<string, unknown> =>
-	typeof value === 'object' && value !== null && !Array.isArray(value);

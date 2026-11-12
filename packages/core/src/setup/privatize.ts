@@ -2,9 +2,7 @@ import {readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {assertNoSymlinks} from '../links.js';
 import type {FileChange} from '../release.js';
-
-const isObject = (value: unknown): value is Record<string, unknown> =>
-	typeof value === 'object' && value !== null && !Array.isArray(value);
+import {isObject} from '../util/object.js';
 
 const quoted = '"(?:[^"\\\\]|\\\\.)*"';
 

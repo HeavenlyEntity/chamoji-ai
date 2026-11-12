@@ -8,6 +8,7 @@ import {
 	isAuthFailure,
 	listReleaseTags,
 	originHeadBranch,
+	gitIn,
 	runGit,
 } from './git.js';
 import {renderMarkdown} from './render/markdown.js';
@@ -127,7 +128,7 @@ export async function preflight(
 	const root = (
 		await runGit(['rev-parse', '--show-toplevel'], options.cwd)
 	).trim();
-	const git = async (...args: string[]) => (await runGit(args, root)).trim();
+	const git = gitIn(root);
 	const tryGit = async (...args: string[]) => git(...args).catch(() => null);
 	const fetchTags = async (...args: string[]) => {
 		options.onStep?.('fetch-tags');
@@ -188,7 +189,7 @@ export async function planRelease(
 ): Promise<ReleasePlan> {
 	const {config} = options;
 	const {root, warnings} = await preflight(options);
-	const git = async (...args: string[]) => (await runGit(args, root)).trim();
+	const git = gitIn(root);
 
 	const tags = await listReleaseTags(root, 'HEAD');
 	const lastTag = tags[0]?.name ?? null;
@@ -403,8 +404,7 @@ export async function applyRelease(
 	plan: ReadyPlan,
 	options: {trailers?: string[]} = {},
 ): Promise<{commit: string}> {
-	const git = async (...args: string[]) =>
-		(await runGit(args, plan.root)).trim();
+	const git = gitIn(plan.root);
 	try {
 		for (const change of plan.changes) {
 			await writeFile(path.join(plan.root, change.file), change.text);

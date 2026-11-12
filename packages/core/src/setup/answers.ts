@@ -19,17 +19,17 @@ import {
 	defaultTag,
 	baseName,
 	factsOf,
-	isObject,
 	questions,
 	recommendedShape,
 	SHARED_TAG,
-	unique,
 } from './questions.js';
 import {candidateAt, mentionFor, tokenRegistry} from './rules.js';
 import {releaseSection, unasked} from './section.js';
 import {detectTags, findUpstreamRemote, type TagDetection} from './tags.js';
 import {detectUpstream, type UpstreamDetection} from './upstream.js';
 import {findReleaseWorkflow} from './workflow.js';
+import {isObject} from '../util/object.js';
+import {unique} from '../util/array.js';
 
 export type Detection = {
 	layout: LayoutDetection;

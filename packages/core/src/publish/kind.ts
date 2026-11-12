@@ -1,5 +1,6 @@
 import {access, readdir, readFile} from 'node:fs/promises';
 import path from 'node:path';
+import {readTextOrNull} from '../fs-read.js';
 import {sdfProjectAt, type SdfProject} from '../units/sdf.js';
 import type {WorkspacePackage} from '../units/workspace.js';
 import {
@@ -14,6 +15,7 @@ import {
 	installedVersionIn,
 	type Lockfiles,
 } from './lockfile.js';
+import {isObject, type Obj} from '../util/object.js';
 
 export type PackageKind = {
 	kind: 'app' | 'library';
@@ -23,8 +25,6 @@ export type PackageKind = {
 	/** For an app built with a known framework, the whole match, with its version. */
 	detected?: DetectedFramework;
 };
-
-type Obj = Record<string, unknown>;
 
 /** Fields that give a package something to import or run, whatever it uses. */
 const ENTRY_FIELDS = ['module', 'exports', 'bin', 'types'] as const;
@@ -45,23 +45,12 @@ const DEPENDENCY_FIELDS = [
 	'optionalDependencies',
 ] as const;
 
-const isObject = (value: unknown): value is Obj =>
-	typeof value === 'object' && value !== null && !Array.isArray(value);
-
 async function exists(file: string): Promise<boolean> {
 	try {
 		await access(file);
 		return true;
 	} catch {
 		return false;
-	}
-}
-
-async function readText(file: string): Promise<string | undefined> {
-	try {
-		return await readFile(file, 'utf8');
-	} catch {
-		return undefined;
 	}
 }
 
@@ -95,8 +84,8 @@ const push = (list: string[], reason: string): void => {
 
 /** Does the app.json hold an `expo` key? */
 async function hasExpoConfig(folder: string): Promise<boolean> {
-	const text = await readText(path.join(folder, 'app.json'));
-	if (text === undefined) return false;
+	const text = await readTextOrNull(path.join(folder, 'app.json'));
+	if (text === null) return false;
 	try {
 		const value: unknown = JSON.parse(text);
 		return isObject(value) && value['expo'] !== undefined;
@@ -125,9 +114,9 @@ async function configFileCounts(
 ): Promise<boolean> {
 	const pattern = framework.configMatch?.[file];
 	if (pattern === undefined) return exists(path.join(folder, file));
-	const text = await readText(path.join(folder, file));
+	const text = await readTextOrNull(path.join(folder, file));
 	return (
-		text !== undefined &&
+		text !== null &&
 		new RegExp(pattern, 'm').test(text.slice(0, CONFIG_MATCH_LIMIT))
 	);
 }
@@ -344,7 +333,7 @@ export async function inspectPackage(
 		if (entry.endsWith('.podspec')) strong.push(`\`${entry}\``);
 	}
 
-	const nativeConfig = await readText(at('react-native.config.js'));
+	const nativeConfig = await readTextOrNull(at('react-native.config.js'));
 	if (nativeConfig?.includes('dependency')) {
 		strong.push('`dependency` in `react-native.config.js`');
 	}

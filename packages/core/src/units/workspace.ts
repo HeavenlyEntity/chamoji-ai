@@ -2,8 +2,10 @@ import {existsSync} from 'node:fs';
 import {readdir, readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {parse} from 'yaml';
+import {readTextIfExists} from '../fs-read.js';
 import {runGit} from '../git.js';
 import type {ReleaseSettings, UnitSettings} from './settings.js';
+import {isObject, type Obj} from '../util/object.js';
 
 export type WorkspacePackage = {
 	name: string;
@@ -24,11 +26,6 @@ export type ResolvedUnit = UnitSettings & {
 	uses: string[];
 };
 
-type Obj = Record<string, unknown>;
-
-const isObject = (value: unknown): value is Obj =>
-	typeof value === 'object' && value !== null && !Array.isArray(value);
-
 const stringList = (value: unknown): string[] =>
 	Array.isArray(value)
 		? value.filter((item): item is string => typeof item === 'string')
@@ -37,19 +34,9 @@ const stringList = (value: unknown): string[] =>
 const isMissing = (error: unknown): boolean =>
 	(error as NodeJS.ErrnoException).code === 'ENOENT';
 
-/** The file's text, or undefined when it doesn't exist. Other failures throw. */
-async function readText(file: string): Promise<string | undefined> {
-	try {
-		return await readFile(file, 'utf8');
-	} catch (error) {
-		if (isMissing(error)) return undefined;
-		throw new Error(`Can't read ${file}: ${(error as Error).message}`);
-	}
-}
-
 async function readJson(file: string): Promise<Obj | undefined> {
-	const text = await readText(file);
-	if (text === undefined) return undefined;
+	const text = await readTextIfExists(file);
+	if (text === null) return undefined;
 	let value: unknown;
 	try {
 		value = JSON.parse(text);
@@ -63,8 +50,8 @@ async function readJson(file: string): Promise<Obj | undefined> {
 
 async function workspaceGlobs(root: string): Promise<string[]> {
 	const file = path.join(root, 'pnpm-workspace.yaml');
-	const text = await readText(file);
-	if (text !== undefined) {
+	const text = await readTextIfExists(file);
+	if (text !== null) {
 		let yaml: unknown;
 		try {
 			yaml = parse(text);

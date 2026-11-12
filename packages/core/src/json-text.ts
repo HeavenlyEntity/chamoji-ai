@@ -1,3 +1,4 @@
+import {isObject, type Obj} from './util/object.js';
 const JSON_NUMBER = /^(-?)(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/;
 
 /** A number as digits and a power of ten, so `1.50`, `15e-1` and `1.5` compare equal. */
@@ -31,11 +32,6 @@ export function inexactNumber(json: string): string | undefined {
 
 	return undefined;
 }
-
-type Obj = Record<string, unknown>;
-
-const isObject = (value: unknown): value is Obj =>
-	typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /** A number's text as the original file spelled it. */
 class Spelling {
