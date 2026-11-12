@@ -1,3 +1,4 @@
+import {isRecord, own} from './records.js';
 import type {Io} from './run.js';
 
 /** Said to the agent when it commits with no card. */
@@ -450,14 +451,6 @@ export function decideCommit(command: string): 'allow' | 'deny' {
 
 	return 'allow';
 }
-
-/** A JSON object, as opposed to an array, null or a scalar. */
-export const isRecord = (value: unknown): value is Record<string, unknown> =>
-	typeof value === 'object' && value !== null && !Array.isArray(value);
-
-/** A property the object itself has, never one inherited from the prototype. */
-export const own = (record: Record<string, unknown>, key: string): unknown =>
-	Object.hasOwn(record, key) ? record[key] : undefined;
 
 /** Reads the hook's input, or undefined when it is longer than any real one. */
 async function readInput(

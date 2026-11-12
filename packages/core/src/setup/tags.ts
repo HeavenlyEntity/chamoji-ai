@@ -8,6 +8,7 @@ import {
 } from '../units/tags.js';
 import {FIELD, lines, VERSION_LIKE} from '../units/upstream.js';
 import type {LayoutDetection, UnitFacts} from './detect.js';
+import {unique} from '../util/array.js';
 
 export type UnitTagFormats = {
 	/** The recommended template. */
@@ -56,8 +57,6 @@ const exactPattern = (tag: string): string => `^${escapeRegExp(tag)}$`;
 /** '4.0.1' -> '^\d+\.\d+\.\d+$'. */
 const shapeOf = (tag: string): string =>
 	`^${escapeRegExp(tag).replace(/\d+/g, String.raw`\d+`)}$`;
-
-const unique = <T>(values: T[]): T[] => [...new Set(values)];
 
 const matchesAny = (pattern: string, tags: string[]): boolean =>
 	tags.some(tag => matchesTagPattern(tag, pattern));

@@ -21,7 +21,7 @@ import {
 	renderJsonText,
 	runGit,
 } from '@chamoji/core';
-import {isRecord, own} from './agent-hook.js';
+import {isRecord, own} from './records.js';
 import {gitStep, NO_FACE} from './face.js';
 import {entryCount, FORCE_STEP} from './memory.js';
 import type {Io} from './run.js';

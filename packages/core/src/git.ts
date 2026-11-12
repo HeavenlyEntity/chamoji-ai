@@ -28,6 +28,12 @@ export async function runGit(
 	return stdout;
 }
 
+/** `runGit` in `root`, with its output trimmed. */
+export const gitIn =
+	(root: string) =>
+	async (...args: string[]): Promise<string> =>
+		(await runGit(args, root)).trim();
+
 /**
  * The environment that keeps a network git command from asking anything, so a
  * redrawing line can't overwrite a prompt. A missing password then fails the

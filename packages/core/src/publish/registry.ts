@@ -1,18 +1,10 @@
-import {readFile} from 'node:fs/promises';
 import path from 'node:path';
 import type {WorkspacePackage} from '../units/workspace.js';
+import {readTextOrNull} from '../fs-read.js';
 import {DEFAULT_REGISTRY} from './npm.js';
 
 const withSlash = (url: string): string =>
 	url.endsWith('/') ? url : `${url}/`;
-
-async function readText(file: string): Promise<string | null> {
-	try {
-		return await readFile(file, 'utf8');
-	} catch {
-		return null;
-	}
-}
 
 /** `@scope:registry=...` lines of an .npmrc, by scope. */
 function scopedRegistries(npmrc: string): Map<string, string> {
@@ -35,7 +27,9 @@ export async function registryFor(
 	root: string,
 	pkg: WorkspacePackage,
 ): Promise<string> {
-	const manifest = await readText(path.join(root, pkg.path, 'package.json'));
+	const manifest = await readTextOrNull(
+		path.join(root, pkg.path, 'package.json'),
+	);
 	if (manifest) {
 		try {
 			const parsed = JSON.parse(manifest) as {
@@ -51,7 +45,7 @@ export async function registryFor(
 	}
 
 	if (pkg.name.startsWith('@')) {
-		const npmrc = await readText(path.join(root, '.npmrc'));
+		const npmrc = await readTextOrNull(path.join(root, '.npmrc'));
 		const scope = pkg.name.slice(0, pkg.name.indexOf('/'));
 		const scoped = npmrc ? scopedRegistries(npmrc).get(scope) : undefined;
 		if (scoped) return withSlash(scoped);

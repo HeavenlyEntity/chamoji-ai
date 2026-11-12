@@ -4,6 +4,7 @@ import {access, readdir, readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {promisify} from 'node:util';
 import type {WorkspacePackage} from '../units/workspace.js';
+import {isObject} from '../util/object.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -13,11 +14,6 @@ export type TarballFacts = {
 	manifest: Record<string, unknown>;
 	files: string[];
 };
-
-type Obj = Record<string, unknown>;
-
-const isObject = (value: unknown): value is Obj =>
-	typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const MANAGERS: readonly PackageManager[] = ['pnpm', 'yarn', 'bun', 'npm'];
 

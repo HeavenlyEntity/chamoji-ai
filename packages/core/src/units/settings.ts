@@ -1,6 +1,7 @@
 import path from 'node:path';
 import {ConfigVersionError} from '../config.js';
 import {isDistTag} from '../publish/tag-name.js';
+import {isObject, type Obj} from '../util/object.js';
 
 export type Shape = 'single' | 'apps' | 'libraries';
 
@@ -72,8 +73,6 @@ export type PublishSettings = {
 	/** Extra registries (exact https URLs, ending in `/`) that may get the npm token. */
 	registries: string[];
 };
-
-type Obj = Record<string, unknown>;
 
 const SUPPORTED_SHAPES = ['single', 'apps', 'libraries'];
 const UNSUPPORTED_SHAPES = ['train', 'mixed'];
@@ -739,8 +738,4 @@ function oneOf<const T extends string, D extends T | undefined>(
 	}
 
 	return value as T;
-}
-
-function isObject(value: unknown): value is Obj {
-	return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }

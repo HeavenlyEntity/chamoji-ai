@@ -1,13 +1,6 @@
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
-
-async function readText(file: string): Promise<string | undefined> {
-	try {
-		return await readFile(file, 'utf8');
-	} catch {
-		return undefined;
-	}
-}
+import {readTextOrNull} from '../fs-read.js';
 
 /** The importer key pnpm uses for a package folder: `.` for the root. */
 const importerKey = (pkgPath: string): string => {
@@ -156,11 +149,11 @@ export type Lockfiles = {pnpm?: string; npm?: string};
 
 /** Reads `pnpm-lock.yaml` and `package-lock.json` once, for `installedVersionIn`. */
 export async function readLockfiles(root: string): Promise<Lockfiles> {
-	const pnpm = await readText(path.join(root, 'pnpm-lock.yaml'));
-	const npm = await readText(path.join(root, 'package-lock.json'));
+	const pnpm = await readTextOrNull(path.join(root, 'pnpm-lock.yaml'));
+	const npm = await readTextOrNull(path.join(root, 'package-lock.json'));
 	return {
-		...(pnpm === undefined ? {} : {pnpm}),
-		...(npm === undefined ? {} : {npm}),
+		...(pnpm === null ? {} : {pnpm}),
+		...(npm === null ? {} : {npm}),
 	};
 }
 

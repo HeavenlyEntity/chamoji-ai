@@ -14,6 +14,8 @@ import {
 } from './rules.js';
 import {releaseSection} from './section.js';
 import type {UnitTagFormats} from './tags.js';
+import {isObject} from '../util/object.js';
+import {unique} from '../util/array.js';
 
 type Unit = SetupAnswers['units'][number];
 
@@ -28,13 +30,8 @@ export type Question = {
 	needsAnswer: boolean;
 };
 
-type Obj = Record<string, unknown>;
-
 export const SHARED_TAG = 'v{version}';
 
-export const isObject = (value: unknown): value is Obj =>
-	typeof value === 'object' && value !== null && !Array.isArray(value);
-export const unique = <T>(values: T[]): T[] => [...new Set(values)];
 /** ' · Next.js' for a candidate with a known framework, else ''. */
 const frameworkSuffix = (layout: LayoutDetection, folder: string): string => {
 	const framework = candidateAt(layout, folder)?.framework;

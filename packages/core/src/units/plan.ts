@@ -1,4 +1,4 @@
-import {lstat, mkdir, readFile, rm, writeFile} from 'node:fs/promises';
+import {mkdir, rm, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import semver from 'semver';
 import {applyClassifier, buildRelease} from '../changelog.js';
@@ -7,6 +7,7 @@ import {
 	listTags,
 	readCommitFiles,
 	readCommits,
+	gitIn,
 	runGit,
 } from '../git.js';
 import {parseCommit} from '../parse.js';
@@ -27,6 +28,8 @@ import type {
 	Release,
 	SemverBump,
 } from '../types.js';
+import {readTextIfExists} from '../fs-read.js';
+import {firstLinkOnPath} from '../links.js';
 import {bumpFor} from '../version.js';
 import {attribute, releaseTargets, type Attributed} from './attribute.js';
 import {editMentions} from './mentions.js';
@@ -144,7 +147,7 @@ export async function planUnitReleases(
 	]);
 
 	const {root, warnings: checks} = await preflight(options);
-	const git = async (...args: string[]) => (await runGit(args, root)).trim();
+	const git = gitIn(root);
 	const packages = await readWorkspace(root);
 	const resolved = resolveUnits(settings, packages);
 	// Units whose packages another unit depends on come first; otherwise config order.
@@ -354,7 +357,7 @@ export async function planUnitReleases(
 	}
 
 	if (settings.rootChangelog) {
-		const existing = await readText(root, CHANGELOG_FILE);
+		const existing = await readTextIfExists(path.join(root, CHANGELOG_FILE));
 		const link = (file: string) =>
 			encodeURI(file).replaceAll('(', '%28').replaceAll(')', '%29');
 		const section = [
@@ -410,8 +413,7 @@ export async function applyUnitReleases(
 	plan: ReadyUnitPlan,
 	options: {trailers?: string[]} = {},
 ): Promise<{commit: string}> {
-	const git = async (...args: string[]) =>
-		(await runGit(args, plan.root)).trim();
+	const git = gitIn(plan.root);
 	// Checked again here: the tree may have changed since the plan was made.
 	await refuseLinks(
 		plan.root,
@@ -422,7 +424,9 @@ export async function applyUnitReleases(
 	try {
 		for (const change of plan.changes) {
 			const file = path.join(plan.root, change.file);
-			if ((await readText(plan.root, change.file)) === null) {
+			if (
+				(await readTextIfExists(path.join(plan.root, change.file))) === null
+			) {
 				created.push(file);
 			}
 
@@ -917,7 +921,7 @@ async function planUnit(
 	const from = current.get(unit.name) ?? null;
 	const {version, bump} = versions.get(unit.name)!;
 	const manifest = path.posix.join(unit.path, 'package.json');
-	const manifestText = await readText(root, manifest);
+	const manifestText = await readTextIfExists(path.join(root, manifest));
 	const updates = rangeUpdates(
 		unit,
 		context.units,
@@ -945,7 +949,7 @@ async function planUnit(
 			? [releasedWithGroup(releasedWith, config), ...built.groups]
 			: built.groups,
 	};
-	const existing = await readText(root, unit.changelog);
+	const existing = await readTextIfExists(path.join(root, unit.changelog));
 	const notes = renderUnitSection(
 		release,
 		context.repositoryUrl,
@@ -1075,35 +1079,18 @@ async function refuseLinks(root: string, files: string[]): Promise<void> {
 			);
 		}
 
-		let at = root;
-		for (const part of relative.split(path.sep)) {
-			at = path.join(at, part);
-			let isLink: boolean;
-			try {
-				isLink = (await lstat(at)).isSymbolicLink();
-			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code === 'ENOENT') break;
-				throw error;
-			}
-
-			if (isLink) {
-				const link = path.relative(root, at).split(path.sep).join('/');
-				throw new ReleaseError(
-					'invalid-version',
-					link === file
-						? `${file} is a symlink; chamoji won't write through links`
-						: `${file} goes through ${link}, which is a symlink; chamoji won't write through links`,
-				);
-			}
+		const link = await firstLinkOnPath(
+			root,
+			relative.split(path.sep).join('/'),
+			{onError: 'throw'},
+		);
+		if (link !== null) {
+			throw new ReleaseError(
+				'invalid-version',
+				link === file
+					? `${file} is a symlink; chamoji won't write through links`
+					: `${file} goes through ${link}, which is a symlink; chamoji won't write through links`,
+			);
 		}
-	}
-}
-
-async function readText(root: string, file: string): Promise<string | null> {
-	try {
-		return await readFile(path.join(root, file), 'utf8');
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
-		throw error;
 	}
 }

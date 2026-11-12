@@ -7,11 +7,7 @@ import {
 	type ReleaseSettings,
 } from '../units/settings.js';
 import type {SetupAnswers} from './answers.js';
-
-type Obj = Record<string, unknown>;
-
-const isObject = (value: unknown): value is Obj =>
-	typeof value === 'object' && value !== null && !Array.isArray(value);
+import {isObject, type Obj} from '../util/object.js';
 
 const keys = (...names: string[]): Obj =>
 	Object.fromEntries(names.map(name => [name, true]));
