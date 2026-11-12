@@ -8,7 +8,7 @@ import {
 } from '../src/logo-frames.js';
 
 const faces = Object.keys(LOGO_FRAMES) as LogoFace[];
-const allowed = new Set([...' ▗▖▄▝▐▞▟▘▚▌▙▀▜▛█']);
+const allowed = new Set(' ▗▖▄▝▐▞▟▘▚▌▙▀▜▛█');
 
 test('every frame is 8 rows of 68 columns', () => {
 	expect(faces).toHaveLength(9);

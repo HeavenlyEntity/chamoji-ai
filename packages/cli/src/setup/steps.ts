@@ -46,7 +46,12 @@ export type StepState = {
 
 /** What a step did, or with no `--yes`, would do. */
 export type StepResult =
-	'written' | 'unchanged' | 'skipped' | 'offered' | 'nothing-to-do' | 'failed';
+	| 'written'
+	| 'unchanged'
+	| 'skipped'
+	| 'offered'
+	| 'nothing-to-do'
+	| 'failed';
 
 /** `hook install` and `setup hook` exit with this when chamoji won't touch the hook there. */
 const HOOK_REFUSED = 2;

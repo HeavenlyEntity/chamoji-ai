@@ -7,7 +7,9 @@ Thanks for helping. Chamoji writes its own changelog from this repo's history, s
 ```bash
 pnpm install
 pnpm test     # vitest
-pnpm check    # build, type-check (including tests), prettier and the docs check
+pnpm check    # build, type-check (including tests), oxlint, oxfmt and the docs check
+pnpm lint     # oxlint
+pnpm format   # oxfmt, formats in place
 pnpm benchmark # Miscellaneous share on the benchmark repos
 ```
 

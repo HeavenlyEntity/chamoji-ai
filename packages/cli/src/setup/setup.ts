@@ -54,7 +54,8 @@ import {frameworksOf, frameworkText} from './frameworks.js';
 
 /** What the screen hands back: the answers to save and the steps picked, or a cancel. */
 export type ScreenResult =
-	{saved: true; answers: SetupAnswers; steps: StepName[]} | {saved: false};
+	| {saved: true; answers: SetupAnswers; steps: StepName[]}
+	| {saved: false};
 
 /**
  * What `io.setupScreen` gets. The screen shows `detection` through `initial`

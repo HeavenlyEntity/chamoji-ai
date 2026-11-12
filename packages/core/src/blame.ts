@@ -3,7 +3,8 @@ import {parseCommit} from './parse.js';
 import type {ParsedCommit} from './types.js';
 
 export type BlameResult =
-	{kind: 'commit'; commit: ParsedCommit} | {kind: 'uncommitted'};
+	| {kind: 'commit'; commit: ParsedCommit}
+	| {kind: 'uncommitted'};
 
 /** A location can't be blamed: the text says why, in plain words. */
 export class WhyError extends Error {

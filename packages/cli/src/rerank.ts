@@ -117,6 +117,7 @@ function describe({title, card}: MemoryHit): string {
 	// Redact before the final cut, so no address is left half-cut and slips
 	// past. A commit can hold megabytes, so the text is bounded first.
 	const text = redact(readable(lines.join('\n'), SCAN_CHARS));
+	// oxlint-disable-next-line unicorn/no-useless-spread -- a string, spread into code points
 	return [...text.slice(0, MAX_CHARS * 2)].slice(0, MAX_CHARS).join('');
 }
 

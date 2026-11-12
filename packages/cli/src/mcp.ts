@@ -310,6 +310,7 @@ function limitReply(data: unknown): string {
 		if (text.length <= max) return text;
 		truncated = true;
 		// Spread, so a cut never lands inside a surrogate pair.
+		// oxlint-disable-next-line unicorn/no-useless-spread -- a string, spread into code points
 		return [...text.slice(0, max + 1)].slice(0, max).join('');
 	};
 

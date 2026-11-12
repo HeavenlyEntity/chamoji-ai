@@ -10,7 +10,6 @@ import {copyFile, mkdir, readFile, readdir, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {createRequire} from 'node:module';
 import path from 'node:path';
-import process from 'node:process';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
 

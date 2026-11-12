@@ -695,7 +695,7 @@ Commands that wait, such as `memory sync`, show a small face on stderr while the
 ```bash
 pnpm install
 pnpm test     # vitest
-pnpm check    # build (type-check) + prettier
+pnpm check    # build (type-check), oxlint and oxfmt
 ```
 
 `packages/core` is the engine: git reading, parsing, grouping and rendering, with no UI. `packages/cli` is the `chamoji` command. See `docs/research/` for where the project is heading.

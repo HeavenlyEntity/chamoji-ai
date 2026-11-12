@@ -11,8 +11,9 @@
 	"scripts": {
 		"build": "pnpm -r build",
 		"test": "vitest run",
-		"check": "pnpm build && tsc -p tsconfig.test.json && prettier --check . && node scripts/check-docs-site.mjs docs/site",
-		"format": "prettier --write .",
+		"check": "pnpm build && tsc -p tsconfig.test.json && oxlint --deny-warnings && oxfmt --check && node scripts/check-docs-site.mjs docs/site",
+		"lint": "oxlint",
+		"format": "oxfmt",
 		"release": "pnpm build && node packages/cli/dist/cli.js release",
 		"benchmark": "pnpm build && node scripts/benchmark.mjs",
 		"brand:preview": "node scripts/brand-preview.mjs",
@@ -23,15 +24,14 @@
 		"@napi-rs/canvas": "^1.1.0",
 		"@phosphor-icons/core": "2.1.1",
 		"@types/node": "^22.19.0",
-		"@vdemedes/prettier-config": "^2.0.1",
 		"acorn": "8.19.0",
-		"prettier": "^3.6.2",
+		"oxfmt": "^0.78.0",
+		"oxlint": "^1.93.0",
 		"remark-mdx": "^3.1.0",
 		"remark-parse": "^11.0.0",
 		"simple-icons": "16.36.0",
 		"typescript": "~6.0.3",
 		"unified": "^11.0.5",
 		"vitest": "^5.0.5"
-	},
-	"prettier": "@vdemedes/prettier-config"
+	}
 }

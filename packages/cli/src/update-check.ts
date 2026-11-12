@@ -18,7 +18,12 @@ const DAY = 24 * 60 * 60 * 1000;
 
 export type UpdateCache = {checkedAt: number; latest: string};
 export type InstallKind =
-	'npx' | 'dlx' | 'pnpm-global' | 'yarn-global' | 'project' | 'global';
+	| 'npx'
+	| 'dlx'
+	| 'pnpm-global'
+	| 'yarn-global'
+	| 'project'
+	| 'global';
 
 /** Shows a cached "newer version" notice and refreshes the cache when stale. */
 export type UpdateCheck = {

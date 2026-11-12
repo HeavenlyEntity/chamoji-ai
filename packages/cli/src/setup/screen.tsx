@@ -448,7 +448,7 @@ export async function runSetupScreen(
 				look={look}
 				onDone={result => {
 					app.unmount();
-					void Promise.allSettled([...running]).then(() => resolve(result));
+					void Promise.allSettled(running).then(() => resolve(result));
 				}}
 			/>,
 			{
