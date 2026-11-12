@@ -362,11 +362,11 @@ describe.skipIf(!has('npm'))('planPublish', () => {
 		] as const) {
 			await writeFile(
 				path.join(dir, file),
-				lib(name, '1.1.0', {
-					...(name === '@acme/cli'
-						? {dependencies: {'@acme/core': '^1.1.0'}}
-						: {}),
-				}),
+				lib(
+					name,
+					'1.1.0',
+					name === '@acme/cli' ? {dependencies: {'@acme/core': '^1.1.0'}} : {},
+				),
 			);
 		}
 

@@ -7,7 +7,7 @@ import {
 	ICON_ROWS,
 } from '../src/framework-icons.js';
 
-const allowed = new Set([...' ▘▝▀▖▌▞▛▗▚▐▜▄▙▟█']);
+const allowed = new Set(' ▘▝▀▖▌▞▛▗▚▐▜▄▙▟█');
 
 test('every framework id has an icon', () => {
 	for (const {id} of FRAMEWORKS) expect(FRAMEWORK_ICONS[id]).toBeDefined();

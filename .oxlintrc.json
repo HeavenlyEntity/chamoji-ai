@@ -1,0 +1,7 @@
+{
+	"$schema": "./node_modules/oxlint/configuration_schema.json",
+	"ignorePatterns": ["**/dist/**", "docs/brand/components/Iridescence.tsx"],
+	"rules": {
+		"no-control-regex": "off"
+	}
+}

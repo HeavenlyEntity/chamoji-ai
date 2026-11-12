@@ -1,0 +1,18 @@
+{
+	"$schema": "./node_modules/oxfmt/configuration_schema.json",
+	"useTabs": true,
+	"semi": true,
+	"singleQuote": true,
+	"quoteProps": "as-needed",
+	"bracketSpacing": false,
+	"arrowParens": "avoid",
+	"trailingComma": "all",
+	"printWidth": 80,
+	"sortPackageJson": false,
+	"ignorePatterns": [
+		"node_modules",
+		"dist",
+		"pnpm-lock.yaml",
+		"docs/brand/components/Iridescence.tsx"
+	]
+}

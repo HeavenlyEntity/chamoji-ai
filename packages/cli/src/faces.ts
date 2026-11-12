@@ -1,5 +1,12 @@
 export type FaceName =
-	'rest' | 'left' | 'right' | 'blink' | 'wink' | 'done' | 'warn' | 'fail';
+	| 'rest'
+	| 'left'
+	| 'right'
+	| 'blink'
+	| 'wink'
+	| 'done'
+	| 'warn'
+	| 'fail';
 
 /** The one-line faces. Every frame is 7 columns wide. */
 export const FACES: Record<FaceName, string> = {
