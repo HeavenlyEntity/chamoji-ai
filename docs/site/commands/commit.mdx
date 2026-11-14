@@ -61,9 +61,13 @@ export const metadata = {
 	<Property name="Body" type="optional">
 		More lines after the subject. Skipped when `messagePrompt` is false.
 	</Property>
-	<Property name="Why?" type="optional">
+	<Property
+		name="What would break, or come back, if someone undid this?"
+		type="optional"
+	>
 		Kept as a `Why:` trailer, so `chamoji why` and project memory can find it
-		later.
+		later. If the answer is thin, like "fix bug", a yellow line says what to
+		add. It never blocks you: press Enter again to keep it as written.
 	</Property>
 	<Property name="Breaking change?" type="y/N">
 		No by default. Yes asks what breaks, and adds a `BREAKING CHANGE:` trailer
