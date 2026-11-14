@@ -4,10 +4,15 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {PassThrough, Readable} from 'node:stream';
 import {fileURLToPath} from 'node:url';
-import {parseCommit, readCommits} from '@chamoji/core';
+import {WHY_ADVICE, parseCommit, readCommits} from '@chamoji/core';
 import {afterEach, expect, test} from 'vitest';
 import {createRepo, gitOutput} from '../../core/test/helpers/fixture-repo.js';
-import {DENY_REASON, decideCommit, runAgentHook} from '../src/agent-hook.js';
+import {
+	DENY_REASON,
+	decideCommit,
+	judgeCommit,
+	runAgentHook,
+} from '../src/agent-hook.js';
 
 const cliJs = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
 
@@ -286,7 +291,13 @@ test('a commit with no card is denied with the reason', async () => {
 });
 
 test('a commit with a card prints nothing', async () => {
-	expect(await hook(bash('git commit -m "x\n\nWhy: y"'))).toEqual({
+	expect(
+		await hook(
+			bash(
+				'git commit -m "x\n\nWhy: the form crashed when the field was cleared"',
+			),
+		),
+	).toEqual({
 		code: 0,
 		stdout: '',
 		stderr: '',
@@ -408,7 +419,11 @@ test('the CLI prints only the decision, with no update notice or error', async (
 		'deny',
 	);
 
-	const allowed = await spawnHook(bash('git commit -m "x\n\nWhy: y"'));
+	const allowed = await spawnHook(
+		bash(
+			'git commit -m "x\n\nWhy: the form crashed when the field was cleared"',
+		),
+	);
 	expect(allowed).toEqual({code: 0, stdout: '', stderr: ''});
 
 	// Not even --ai, or a bad input, may add output or change the exit code.
@@ -417,4 +432,56 @@ test('the CLI prints only the decision, with no update notice or error', async (
 		stdout: '',
 		stderr: '',
 	});
+});
+
+test('a thin Why is sent back with advice', () =>
+	expect(judgeCommit('git commit -m "🐛 Fix login" -m "Why: fix bug"')).toEqual(
+		{why: 'fix bug', advice: WHY_ADVICE.filler},
+	));
+
+test('a good Why is allowed', () =>
+	expect(
+		judgeCommit(
+			'git commit -m "🐛 Fix login" -m "Why: Safari drops the session cookie when the tab sleeps"',
+		),
+	).toBe('allow'));
+
+test('no card is still denied', () =>
+	expect(judgeCommit('git commit -m "x"')).toBe('deny'));
+
+test('opting out allows a thin Why', () =>
+	expect(
+		judgeCommit('CHAMOJI_NO_CARD=1 git commit -m "x" -m "Why: fix bug"'),
+	).toBe('allow'));
+
+test('a card the parser cannot read as a card is allowed', () =>
+	expect(judgeCommit('git commit -m "x" --trailer "Why:fix"')).toBe('allow'));
+
+test('a message file is allowed', () =>
+	expect(judgeCommit('git commit -F msg.txt')).toBe('allow'));
+
+test('a thin Why in a heredoc is caught', () =>
+	expect(
+		judgeCommit(
+			'git commit -m "$(cat <<\'EOF\'\nTweak copy\n\nWhy: as discussed\nEOF\n)"',
+		),
+	).toMatchObject({why: 'as discussed'}));
+
+test('a thin Why in a trailer is caught', () =>
+	expect(
+		judgeCommit('git commit -m "🐛 Fix login" --trailer "Why: fix bug"'),
+	).toMatchObject({why: 'fix bug'}));
+
+test('a deny later in the command wins over an earlier thin Why', () =>
+	expect(
+		judgeCommit('git commit -m "a" -m "Why: fix bug" && git commit -m "b"'),
+	).toBe('deny'));
+
+test('the hook says why it refused a thin Why', async () => {
+	const {stdout} = await hook(
+		bash('git commit -m "🐛 Fix login" -m "Why: fix bug"'),
+	);
+	expect(
+		JSON.parse(stdout).hookSpecificOutput.permissionDecisionReason,
+	).toMatch(/^Your Why \("fix bug"\) doesn't say why\./);
 });
