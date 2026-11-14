@@ -77,8 +77,12 @@ export const metadata = {
 		a line you haven’t committed, or `kind: "commit"` with the whole commit as
 		chamoji reads it: hash, author name and email, date, subject, body, gitmoji,
 		trailers, `card` when there is one, and `workstream` as a slug. It doesn’t
-		look up the workstream’s title. A commit result also has `whyQuality`
-		(`ok`, `thin` or `none` when there is no card), `whyReasons` (why a Why was
+		look up the workstream’s title. `commit.card` is the commit’s own card. A
+		commit result also has a top-level `card`: the card every reader uses, with
+		a reason added later by `--amend` first and the commit’s own lines after it.
+		`addedLater` holds the added card on its own, and is left out when there is
+		none. A commit result also has `whyQuality` (`ok`, `thin` or `none` when
+		there is no card), judged on that merged card, `whyReasons` (why a Why was
 		judged thin) and `clues` (`pr`, when the subject names one, and `nearby`)
 		when the reason is thin or missing. The exit codes stay the same.
 	</Property>
@@ -88,7 +92,8 @@ export const metadata = {
 		`--amend <target> <reason>`. It goes in a git note in
 		`refs/notes/chamoji`, so the commit and its hash stay as they are. A reason
 		with no `Why:` line is kept as `Why: <reason>`. A reason that is thin too is
-		refused and nothing is written. Adding another replaces the first. Every
+		refused and nothing is written, and so is a merge commit: add the reason to
+		the commit that made the change. Adding another replaces the first. Every
 		reader, including `chamoji why`, the MCP `why` tool and memory search, shows
 		the added reason first.
 	</Property>
@@ -249,7 +254,19 @@ With `--json`:
       ],
       "followUp": []
     }
-  }
+  },
+  "card": {
+    "why": [
+      "the form crashed when the field was cleared"
+    ],
+    "constraint": [],
+    "gotcha": [
+      "callers still compare with undefined in two places"
+    ],
+    "followUp": []
+  },
+  "whyQuality": "ok",
+  "whyReasons": []
 }
 ```
 
