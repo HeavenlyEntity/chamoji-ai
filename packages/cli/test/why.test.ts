@@ -408,3 +408,15 @@ test('--thin refuses a path outside the repository with exit 2', async () => {
 	expect(stdout).toBe('');
 	expect(stderr).toBe('chamoji: ../outside is outside the repository.\n');
 });
+
+test('--thin refuses an absolute path outside the repository with exit 2', async () => {
+	repo = await createRepo([{commit: '✨ Add a', files: FILES}]);
+	const outside = path.dirname(repo.dir);
+	const {code, stdout, stderr} = await chamoji(
+		['why', '--thin', outside],
+		repo.dir,
+	);
+	expect(code).toBe(2);
+	expect(stdout).toBe('');
+	expect(stderr).toBe(`chamoji: ${outside} is outside the repository.\n`);
+});

@@ -1,3 +1,4 @@
+import {realpath} from 'node:fs/promises';
 import path from 'node:path';
 import {readCommits, runGit} from './git.js';
 import {parseCommit} from './parse.js';
@@ -39,8 +40,8 @@ export async function listThinWhys(
 	pathspec = '.',
 	options: {limit?: number} = {},
 ): Promise<ThinWhy[]> {
-	await assertInside(cwd, pathspec);
-	const files = (await runGit(['ls-files', '-z', '--', pathspec], cwd))
+	const inside = await assertInside(cwd, pathspec);
+	const files = (await runGit(['ls-files', '-z', '--', inside], cwd))
 		.split('\0')
 		.filter(Boolean);
 	const counts = new Map<string, number>();
@@ -86,19 +87,57 @@ export async function listThinWhys(
 }
 
 /**
- * Throws OutsideRepoError for a plain path that climbs out of the repository.
- * The folder's place in the repo comes from git (`--show-prefix`), so links in
- * the path to `cwd` can't fool it. A pathspec with magic (`:(glob)...`) is
- * left to git.
+ * The pathspec to give git, or OutsideRepoError for a plain path that leaves
+ * the repository. A relative path is placed with the folder's prefix from git
+ * (`--show-prefix`). An absolute one is compared with the repo's top folder
+ * after `realpath` on both sides, so /tmp and /private/tmp agree; a part that
+ * doesn't exist yet is kept as written. An absolute path inside the repo is
+ * given to git by its real path. A pathspec with magic (`:(glob)...`) is left
+ * to git.
  */
-async function assertInside(cwd: string, pathspec: string): Promise<void> {
-	if (pathspec.startsWith(':')) return;
+async function assertInside(cwd: string, pathspec: string): Promise<string> {
+	if (pathspec.startsWith(':')) return pathspec;
+	if (path.isAbsolute(pathspec)) {
+		const top = await realpath(
+			(await runGit(['rev-parse', '--show-toplevel'], cwd)).trim(),
+		);
+		const target = await realTarget(pathspec);
+		const relative = path.relative(top, target);
+		if (
+			relative === '..' ||
+			relative.startsWith(`..${path.sep}`) ||
+			path.isAbsolute(relative)
+		) {
+			throw new OutsideRepoError(pathspec);
+		}
+
+		return target;
+	}
+
 	const prefix = (await runGit(['rev-parse', '--show-prefix'], cwd)).trim();
 	const target = path.posix.normalize(
 		path.posix.join(prefix, pathspec.replaceAll('\\', '/')),
 	);
 	if (target === '..' || target.startsWith('../')) {
 		throw new OutsideRepoError(pathspec);
+	}
+
+	return pathspec;
+}
+
+/** `realpath` of the nearest part of `target` that exists, plus the rest. */
+async function realTarget(target: string): Promise<string> {
+	const resolved = path.resolve(target);
+	let existing = resolved;
+	for (;;) {
+		try {
+			const real = await realpath(existing);
+			return path.join(real, path.relative(existing, resolved));
+		} catch {
+			const parent = path.dirname(existing);
+			if (parent === existing) return resolved;
+			existing = parent;
+		}
 	}
 }
 

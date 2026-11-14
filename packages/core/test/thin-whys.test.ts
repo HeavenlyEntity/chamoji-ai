@@ -1,3 +1,5 @@
+import path from 'node:path';
+import {realpath} from 'node:fs/promises';
 import {afterEach, expect, test} from 'vitest';
 import {OutsideRepoError, listThinWhys} from '../src/thin-whys.js';
 import {writeNoteCard} from '../src/why-notes.js';
@@ -102,4 +104,23 @@ test('a path outside the repository throws a typed error', async () => {
 		OutsideRepoError,
 	);
 	expect(await listThinWhys(repo.dir, 'src/../src/c.ts')).toHaveLength(1);
+});
+
+test('an absolute path inside the repo lists normally; outside throws', async () => {
+	repo = await fixture();
+	const real = await realpath(repo.dir);
+	const found = await listThinWhys(repo.dir, `${real}/src`);
+	expect(found.map(item => item.kind)).toEqual(['thin', 'missing']);
+	await expect(
+		listThinWhys(repo.dir, `${repo.dir}/src/c.ts`),
+	).resolves.toHaveLength(1);
+	await expect(listThinWhys(repo.dir, '/etc')).rejects.toBeInstanceOf(
+		OutsideRepoError,
+	);
+	await expect(
+		listThinWhys(`${repo.dir}/src`, `${real}/src/b.ts`),
+	).resolves.toHaveLength(1);
+	await expect(
+		listThinWhys(`${repo.dir}/src`, path.dirname(real)),
+	).rejects.toBeInstanceOf(OutsideRepoError);
 });
