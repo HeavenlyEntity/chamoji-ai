@@ -24,6 +24,7 @@ import {run} from '../src/run.js';
 
 let repo: FixtureRepo | undefined;
 afterEach(async () => {
+	vi.unstubAllEnvs();
 	await repo?.cleanup();
 	repo = undefined;
 });
@@ -918,7 +919,7 @@ test('a file moved between units counts for both', async () => {
 	expect(seen).toEqual([{own: ['web', 'mobile'], rides: []}]);
 });
 
-async function checkingCommit(whyCheck: boolean) {
+async function checkingCommit(whyCheck: boolean, fake = true) {
 	repo = await createRepo([{commit: '🎉 Init'}]);
 	if (whyCheck)
 		await gitOutput(repo.dir, ['config', 'chamoji.whyCheck', 'true']);
@@ -947,10 +948,14 @@ async function checkingCommit(whyCheck: boolean) {
 			close() {},
 		}),
 		env: {},
-		whyChecker: async (input: unknown) => {
-			asked.push(input);
-			return true;
-		},
+		...(fake
+			? {
+					whyChecker: async (input: unknown) => {
+						asked.push(input);
+						return true;
+					},
+				}
+			: {}),
 	} as never);
 	return {code, asked, given, answer};
 }
@@ -974,4 +979,11 @@ test('without chamoji.whyCheck, the composer gets no check', async () => {
 	expect(code).toBe(0);
 	expect(given).toBeUndefined();
 	expect(asked).toEqual([]);
+});
+
+test('with chamoji.whyCheck on but no TypeSafe key, the composer gets no check', async () => {
+	vi.stubEnv('TYPESAFE_API_KEY', '');
+	const {code, given} = await checkingCommit(true, false);
+	expect(code).toBe(0);
+	expect(given).toBeUndefined();
 });

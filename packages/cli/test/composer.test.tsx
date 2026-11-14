@@ -229,6 +229,58 @@ test('a check that fails moves on', async () => {
 	expect(app.lastFrame()).toContain('Breaking change? (y/N)');
 });
 
+async function pendingCheck() {
+	let resolve!: (unclear: boolean) => void;
+	const checkWhy = vi.fn(
+		async () =>
+			new Promise<boolean>(done => {
+				resolve = done;
+			}),
+	);
+	const app = await toWhyChecked(checkWhy, 5000);
+	await app.type(VAGUE_BUT_LONG, ENTER);
+	expect(app.lastFrame()).toContain('Checking the reason');
+	return {app, resolve};
+}
+
+test.each([true, false])(
+	'an answer of %s that arrives after more typing is dropped',
+	async answer => {
+		const {app, resolve} = await pendingCheck();
+		await app.type('!');
+		resolve(answer);
+		await tick();
+		expect(flat(app.lastFrame())).not.toContain(AI_WARNING);
+		expect(app.lastFrame()).not.toContain('Checking the reason');
+		expect(app.lastFrame()).toContain('What would break, or come back');
+		expect(app.lastFrame()).not.toContain('Breaking change? (y/N)');
+	},
+);
+
+test.each([true, false])(
+	'an answer of %s that arrives after Esc is dropped',
+	async answer => {
+		const {app, resolve} = await pendingCheck();
+		await app.type(ESC);
+		resolve(answer);
+		await tick();
+		expect(flat(app.lastFrame())).not.toContain(AI_WARNING);
+		expect(app.lastFrame()).not.toContain('Checking the reason');
+		expect(app.lastFrame()).not.toContain('Breaking change? (y/N)');
+		expect(app.lastFrame()).toContain('Title');
+	},
+);
+
+test('an answer that arrives after Ctrl-C is dropped', async () => {
+	const {app, resolve} = await pendingCheck();
+	await app.type(CTRL_C);
+	resolve(true);
+	await tick();
+	expect(app.onCancel).toHaveBeenCalled();
+	expect(app.onSubmit).not.toHaveBeenCalled();
+	expect(flat(app.lastFrame())).not.toContain(AI_WARNING);
+});
+
 test('a locally thin why never reaches Jev', async () => {
 	const checkWhy = vi.fn(async () => true);
 	const app = await toWhyChecked(checkWhy);
