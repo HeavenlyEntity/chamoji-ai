@@ -1,3 +1,4 @@
+import {execFile} from 'node:child_process';
 import {runGit, runGitWithInput} from './git.js';
 import {readIntent} from './intent.js';
 import type {IntentCard} from './types.js';
@@ -47,18 +48,54 @@ export async function readNoteCards(
 		return cards;
 	}
 
+	const owners = new Map<string, string[]>();
 	for (const line of listing.split('\n')) {
 		const [blob, hash] = line.trim().split(' ');
 		if (!blob || !hash) continue;
-		try {
-			const card = noteCard(await runGit(['cat-file', 'blob', blob], cwd));
-			if (card) cards.set(hash, card);
-		} catch {
-			// A note that can't be read leaves the commit's own card.
-		}
+		owners.set(blob, [...(owners.get(blob) ?? []), hash]);
+	}
+
+	if (owners.size === 0) return cards;
+	let output: Buffer;
+	try {
+		output = await catBlobs(cwd, [...owners.keys()]);
+	} catch {
+		return cards;
+	}
+
+	// Each entry is `<oid> <type> <size>\n<size bytes>\n`, or `<oid> missing\n`.
+	let at = 0;
+	while (at < output.length) {
+		const end = output.indexOf(0x0a, at);
+		if (end === -1) break;
+		const [oid, type, size] = output.toString('latin1', at, end).split(' ');
+		at = end + 1;
+		if (type === undefined || size === undefined) continue;
+		const length = Number(size);
+		if (!Number.isInteger(length) || at + length > output.length) break;
+		const text = output.toString('utf8', at, at + length);
+		at += length + 1;
+		if (type !== 'blob') continue;
+		const card = noteCard(text);
+		if (!card) continue;
+		for (const hash of owners.get(oid!) ?? []) cards.set(hash, card);
 	}
 
 	return cards;
+}
+
+/** `git cat-file --batch` for `blobs`, as raw bytes so sizes stay exact. */
+function catBlobs(cwd: string, blobs: string[]): Promise<Buffer> {
+	return new Promise((resolve, reject) => {
+		const child = execFile(
+			'git',
+			['cat-file', '--batch'],
+			{cwd, encoding: 'buffer', maxBuffer: 64 * 1024 * 1024},
+			(error, stdout) => (error ? reject(error) : resolve(stdout)),
+		);
+		child.stdin?.on('error', () => {});
+		child.stdin?.end(`${blobs.join('\n')}\n`);
+	});
 }
 
 /** Sets the commit's note, replacing any earlier one. */
