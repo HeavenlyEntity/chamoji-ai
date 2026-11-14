@@ -286,3 +286,93 @@ test('control characters never reach the draft', async () => {
 	const draft = await draftFromSession(input(home));
 	expect(draft?.text).not.toContain('\u001B');
 });
+
+test('a Codex session for a sibling folder sharing the name prefix is ignored', async () => {
+	const home = await tempHome();
+	await plantCodex(home, `${ROOT}-other`);
+	expect(await recentUserMessages(ROOT, {home, now: NOW})).toBeUndefined();
+});
+
+const FILLER = (count: number) =>
+	Array.from({length: count}, () => user('ok ' + 'y'.repeat(900)));
+
+test('only the end of a large Claude Code file is read', async () => {
+	const home = await tempHome();
+	const file = path.join(claudeDir(home), 'a.jsonl');
+	await plant(file, [user(REASON), ...FILLER(400)]);
+	const early = await recentUserMessages(ROOT, {home, now: NOW});
+	expect(early?.messages.join(' ')).not.toContain('returns 422');
+	expect(await draftFromSession(input(home))).toBeUndefined();
+	await plant(file, [...FILLER(400), user(REASON)]);
+	expect((await draftFromSession(input(home)))?.text).toBe(REASON);
+});
+
+test('a Codex file for another folder is rejected from its first line', async () => {
+	const home = await tempHome();
+	const file = path.join(
+		home,
+		'.codex',
+		'sessions',
+		'2026',
+		'11',
+		'13',
+		'r.jsonl',
+	);
+	await plant(file, [
+		{type: 'session_meta', payload: {cwd: '/elsewhere'}},
+		...FILLER(2000),
+	]);
+	expect(await recentUserMessages(ROOT, {home, now: NOW})).toBeUndefined();
+});
+
+test('a Codex file whose first line never ends is skipped', async () => {
+	const home = await tempHome();
+	const file = path.join(
+		home,
+		'.codex',
+		'sessions',
+		'2026',
+		'11',
+		'13',
+		'r.jsonl',
+	);
+	await plant(file, [
+		`{"type":"session_meta","payload":{"cwd":"${ROOT}","pad":"${'z'.repeat(70_000)}"}}`,
+	]);
+	expect(await recentUserMessages(ROOT, {home, now: NOW})).toBeUndefined();
+});
+
+test('summaries, subagent turns and AGENTS.md text are never read as the user', async () => {
+	const home = await tempHome();
+	await plant(path.join(claudeDir(home), 'a.jsonl'), [
+		user(REASON, {isCompactSummary: true}),
+		user(REASON, {isSidechain: true}),
+		user('real message'),
+	]);
+	expect((await recentUserMessages(ROOT, {home, now: NOW}))?.messages).toEqual([
+		'real message',
+	]);
+	const other = await tempHome();
+	await plant(
+		path.join(other, '.codex', 'sessions', '2026', '11', '13', 'r.jsonl'),
+		[
+			{type: 'session_meta', payload: {cwd: ROOT}},
+			{
+				type: 'response_item',
+				payload: {
+					type: 'message',
+					role: 'user',
+					content: [
+						{
+							type: 'input_text',
+							text: '# AGENTS.md instructions for /x\n\n' + REASON,
+						},
+					],
+				},
+			},
+		],
+	);
+	expect(
+		await recentUserMessages(ROOT, {home: other, now: NOW}),
+	).toBeUndefined();
+});

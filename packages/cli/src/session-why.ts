@@ -1,4 +1,4 @@
-import {readdir, readFile, stat} from 'node:fs/promises';
+import {open, readdir, stat} from 'node:fs/promises';
 import path from 'node:path';
 import {CAUSAL_MARKERS, judgeWhy, type WhyDraft} from '@chamoji/core';
 import type {AdvisorClient} from './advisor.js';
@@ -12,6 +12,10 @@ const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
 /** The whole read is abandoned after this long. */
 const READ_BUDGET_MS = 300;
 const KEEP_MESSAGES = 20;
+/** Only the end of a session is read: the newest messages are the useful ones. */
+const TAIL_BYTES = 256 * 1024;
+/** The Codex meta line must end within this many bytes. */
+const FIRST_LINE_BYTES = 64 * 1024;
 const MAX_MESSAGE = 2000;
 const MAX_CANDIDATES = 12;
 const WORD = /[\p{L}\p{N}][\p{L}\p{N}'_-]*/gu;
@@ -81,6 +85,38 @@ async function recentFiles(
 	return found.sort((a, b) => b.mtime - a.mtime);
 }
 
+/** The last 256 KiB of a file as lines, without a first line that may be cut. */
+async function readTail(file: string): Promise<string> {
+	const handle = await open(file, 'r');
+	try {
+		const {size} = await handle.stat();
+		const start = Math.max(0, size - TAIL_BYTES);
+		const buffer = Buffer.alloc(size - start);
+		const {bytesRead} = await handle.read(buffer, 0, buffer.length, start);
+		const text = buffer.subarray(0, bytesRead).toString('utf8');
+		if (start === 0) return text;
+		const newline = text.indexOf('\n');
+		return newline === -1 ? '' : text.slice(newline + 1);
+	} finally {
+		await handle.close();
+	}
+}
+
+/** The first line of a file, or undefined when it doesn't end within 64 KiB. */
+async function readFirstLine(file: string): Promise<string | undefined> {
+	const handle = await open(file, 'r');
+	try {
+		const buffer = Buffer.alloc(FIRST_LINE_BYTES);
+		const {bytesRead} = await handle.read(buffer, 0, buffer.length, 0);
+		const text = buffer.subarray(0, bytesRead).toString('utf8');
+		const newline = text.indexOf('\n');
+		if (newline !== -1) return text.slice(0, newline);
+		return bytesRead < FIRST_LINE_BYTES ? text : undefined;
+	} finally {
+		await handle.close();
+	}
+}
+
 function parseLines(text: string): unknown[] {
 	const lines: unknown[] = [];
 	for (const line of text.split('\n')) {
@@ -102,7 +138,15 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 function keep(text: unknown, into: string[]): void {
 	if (typeof text !== 'string') return;
 	const trimmed = text.trim();
-	if (trimmed === '' || trimmed.startsWith('<')) return;
+	// Codex puts the repo's AGENTS.md in a user message; that is not the user's.
+	if (
+		trimmed === '' ||
+		trimmed.startsWith('<') ||
+		trimmed.startsWith('# AGENTS.md')
+	) {
+		return;
+	}
+
 	into.push(trimmed.slice(0, MAX_MESSAGE));
 }
 
@@ -121,8 +165,15 @@ async function readClaude(
 	const newest = (await recentFiles(dir, now, maxAgeMs))[0];
 	if (!newest) return undefined;
 	const messages: string[] = [];
-	for (const line of parseLines(await readFile(newest.file, 'utf8'))) {
-		if (!isObject(line) || line['type'] !== 'user' || line['isMeta'] === true) {
+	for (const line of parseLines(await readTail(newest.file))) {
+		// Summaries and subagent turns are written by the model, not the user.
+		if (
+			!isObject(line) ||
+			line['type'] !== 'user' ||
+			line['isMeta'] === true ||
+			line['isCompactSummary'] === true ||
+			line['isSidechain'] === true
+		) {
 			continue;
 		}
 
@@ -170,8 +221,9 @@ async function readCodex(
 
 	files.sort((a, b) => b.mtime - a.mtime);
 	for (const {file, mtime} of files) {
-		const lines = parseLines(await readFile(file, 'utf8'));
-		const meta = lines[0];
+		const first = await readFirstLine(file);
+		if (first === undefined) continue;
+		const meta = parseLines(first)[0];
 		const payload = isObject(meta) ? meta['payload'] : undefined;
 		const cwd = isObject(payload) ? payload['cwd'] : undefined;
 		if (
@@ -184,7 +236,7 @@ async function readCodex(
 		}
 
 		const messages: string[] = [];
-		for (const line of lines) {
+		for (const line of parseLines(await readTail(file))) {
 			if (!isObject(line) || line['type'] !== 'response_item') continue;
 			const item = line['payload'];
 			if (

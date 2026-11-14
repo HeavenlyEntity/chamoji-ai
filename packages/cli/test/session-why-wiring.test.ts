@@ -23,6 +23,7 @@ let repo: FixtureRepo | undefined;
 let home: string | undefined;
 
 afterEach(async () => {
+	vi.unstubAllEnvs();
 	vi.mocked(draftFromSession).mockClear();
 	await repo?.cleanup();
 	if (home) await rm(home, {recursive: true});
@@ -31,10 +32,14 @@ afterEach(async () => {
 });
 
 /** Runs `chamoji commit` and returns what the composer was handed as a draft. */
-async function composeWith(flag: boolean, pending = false) {
+async function composeWith(flag: boolean, pending = false, composer = false) {
 	repo = await createRepo([{commit: '🎉 Init'}]);
 	if (flag) {
 		await gitOutput(repo.dir, ['config', 'chamoji.whyFromSessions', 'true']);
+	}
+
+	if (composer) {
+		await gitOutput(repo.dir, ['config', 'chamoji.composer', 'true']);
 	}
 
 	const root = (
@@ -102,4 +107,21 @@ test('a reason an agent handed over wins, and the session is not read', async ()
 	const {given} = await composeWith(true, true);
 	expect(given).toMatchObject({source: 'your Cursor chat'});
 	expect(draftFromSession).not.toHaveBeenCalled();
+});
+
+/** The client the composer path handed to the reader; the real one is never called. */
+async function clientSeen(composer: boolean, key: string) {
+	vi.stubEnv('TYPESAFE_API_KEY', key);
+	vi.mocked(draftFromSession).mockImplementationOnce(async () => undefined);
+	await composeWith(true, false, composer);
+	const [input] = vi.mocked(draftFromSession).mock.calls[0] ?? [];
+	return input?.client;
+}
+
+test('Jev gets the candidates only with chamoji.composer on and a key', async () => {
+	expect(await clientSeen(true, 'test-key-123')).toBeDefined();
+	vi.mocked(draftFromSession).mockClear();
+	expect(await clientSeen(false, 'test-key-123')).toBeUndefined();
+	vi.mocked(draftFromSession).mockClear();
+	expect(await clientSeen(true, '')).toBeUndefined();
 });
