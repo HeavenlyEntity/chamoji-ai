@@ -92,9 +92,15 @@ export const metadata = {
 		Claude Code session” or “your Codex session”, and only when no agent left
 		a reason with `remember_why`. Nothing is sent anywhere unless `chamoji.composer`
 		is also on and there is a TypeSafe key: then Jev gets the candidate
-		sentences, with email addresses replaced and any sentence holding a
-		key-like string left out, plus the staged file paths, and picks the best
-		one. Cursor, Claude Desktop and Grok keep no session files chamoji reads;
+		sentences, with email addresses replaced, plus the staged file paths, and
+		picks the best one. A sentence that looks like it holds a secret is left
+		out before anything is offered or sent: a URL with a password or token in
+		it, a word like “password”, “token” or “secret” followed by a value, a
+		well-known key prefix such as `sk-`, `ghp_`, `AKIA` or `eyJ`, a long run of
+		hex, or any other long key-like string. This is a filter, not a guarantee,
+		which is one more reason it is off until you turn it on. Only lines your
+		session recorded in this repo, or a folder inside it, are read, so a
+		project whose folder name looks alike is never mixed in. Cursor, Claude Desktop and Grok keep no session files chamoji reads;
 		they reach the Why through [`chamoji mcp`](/commands/mcp).
 	</Property>
 	<Property name="Breaking change?" type="y/N">

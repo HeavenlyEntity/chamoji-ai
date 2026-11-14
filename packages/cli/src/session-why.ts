@@ -22,6 +22,17 @@ const MAX_CANDIDATES = 12;
 const TOKEN_LIKE = /[A-Za-z0-9_-]{24,}/;
 /** A run of key characters this long, with a letter and a digit, looks like a secret. */
 const KEY_RUN = /[A-Za-z0-9+/=_-]{20,}/g;
+/** `scheme://user:pass@host`, or `scheme://token@host` with a long token. */
+const URL_CREDENTIALS =
+	/[a-z][a-z\d+.-]*:\/\/(?:[^\s/@:]+:[^\s/@]+|[^\s/@:]{8,})@/i;
+/** A secret's name, a `:`, `=` or `is` a few characters on, then a value. */
+const KEYWORD_VALUE =
+	/\b(?:password|passwd|pwd|secret|token|api[ _-]?key|access key|private key|client secret|auth)s?\b[^\n]{0,6}?(?:[:=]|\bis\b)\s*\S{6,}/i;
+/** Prefixes of well-known keys, which give them away even when short. */
+const KEY_PREFIX =
+	/(?<![A-Za-z\d])(?:sk[-_]|rk_|pk_live|ghp_|gho_|ghs_|github_pat_|xox[abprs]-|A[SK]IA[A-Z\d]{12}|AIza)|-----BEGIN|eyJ[A-Za-z\d_-]{10}/;
+/** A run of hex this long is a hash or a key. */
+const HEX_RUN = /[\da-f]{16}/i;
 /** Shorter file names match too many words to mean anything. */
 const MIN_NAME = 3;
 const SENTENCES = /(?<=[.!?])\s+|\n+/;
@@ -170,8 +181,12 @@ async function readClaude(
 	const messages: string[] = [];
 	for (const line of parseLines(await readTail(newest.file))) {
 		// Summaries and subagent turns are written by the model, not the user.
+		// The folder name is lossy, so each line must say it ran in this repo.
+		const cwd = isObject(line) ? line['cwd'] : undefined;
 		if (
 			!isObject(line) ||
+			typeof cwd !== 'string' ||
+			!within(root, cwd) ||
 			line['type'] !== 'user' ||
 			line['isMeta'] === true ||
 			line['isCompactSummary'] === true ||
@@ -264,11 +279,12 @@ async function readCodex(
 }
 
 /** True when `cwd` is `root` or a folder inside it. */
-function within(root: string, cwd: string): boolean {
+export function within(root: string, cwd: string): boolean {
 	const relative = path.relative(root, cwd);
 	return (
-		relative === '' ||
-		(!relative.startsWith('..') && !path.isAbsolute(relative))
+		relative !== '..' &&
+		!relative.startsWith('..' + path.sep) &&
+		!path.isAbsolute(relative)
 	);
 }
 
@@ -288,17 +304,29 @@ function namePattern(name: string): RegExp | undefined {
 	);
 }
 
-/** True when the text holds a long run of key characters with a letter and a digit. */
-function hasKeyRun(text: string): boolean {
-	return (text.match(KEY_RUN) ?? []).some(
-		run => /[A-Za-z]/.test(run) && /\d/.test(run),
+/**
+ * True when the text looks like it holds a secret: a long token-like run, a
+ * key-like run with a letter and a digit, a URL with credentials, a secret's
+ * name followed by a value, a well-known key prefix, or a long hex run. It
+ * errs toward dropping a sentence.
+ */
+export function looksSecret(text: string): boolean {
+	return (
+		TOKEN_LIKE.test(text) ||
+		(text.match(KEY_RUN) ?? []).some(
+			run => /[A-Za-z]/.test(run) && /\d/.test(run),
+		) ||
+		URL_CREDENTIALS.test(text) ||
+		KEYWORD_VALUE.test(text) ||
+		KEY_PREFIX.test(text) ||
+		HEX_RUN.test(text)
 	);
 }
 
 /**
  * The sentences, from what the user told their agent, that give a reason:
  * 6 to 60 words with a cause word or the name of a staged file, emails
- * replaced, nothing token-like, and rated at least ok by the local Why rules.
+ * replaced, nothing that looks secret, and rated at least ok by the local Why rules.
  * Newest first, at most 12.
  */
 export function reasonCandidates(
@@ -324,8 +352,9 @@ export function reasonCandidates(
 				continue;
 			}
 
+			// Judge the unmasked text too: masking an email hides `user:pass@host`.
 			const text = redact(cleaned);
-			if (TOKEN_LIKE.test(text) || hasKeyRun(text)) continue;
+			if (looksSecret(cleaned) || looksSecret(text)) continue;
 			const verdict = judgeWhy(
 				{why: [text], constraint: [], gotcha: [], followUp: []},
 				'',
