@@ -115,6 +115,14 @@ export {
 	readNoteCards,
 	writeNoteCard,
 } from './why-notes.js';
+export {
+	PENDING_WHY_MAX_AGE_MS,
+	clearPendingWhy,
+	readPendingWhy,
+	writePendingWhy,
+	type PendingWhy,
+	type WhyDraft,
+} from './pending-why.js';
 export {OutsideRepoError, listThinWhys, type ThinWhy} from './thin-whys.js';
 export {
 	findClues,

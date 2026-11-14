@@ -5,6 +5,7 @@ import {
 	WHY_ADVICE,
 	searchGitmojis,
 	type ComposeConfig,
+	type WhyDraft,
 	type CommitDraft,
 	type GitmojiInfo,
 } from '@chamoji/core';
@@ -63,6 +64,8 @@ export type ComposerProps = {
 	checkWhyTimeoutMs?: number;
 	/** The units the staged change touches, with a release section. */
 	impact?: Impact;
+	/** A reason the user gave their agent. Tab on an empty Why fills it; nothing fills it on its own. */
+	draft?: WhyDraft;
 };
 
 /**
@@ -78,6 +81,7 @@ export function Composer({
 	checkWhy,
 	checkWhyTimeoutMs = WHY_CHECK_TIMEOUT_MS,
 	impact,
+	draft: whyDraft,
 }: ComposerProps) {
 	// A change that releases no unit of its own but rides along to some can
 	// release them now, with a Release: trailer each.
@@ -295,6 +299,11 @@ export function Composer({
 			return;
 		}
 
+		if (key.tab && step === 'why' && whyDraft && text.why === '') {
+			setText(all => ({...all, why: whyDraft.text}));
+			return;
+		}
+
 		if (step === 'why') setWarnedFor(null);
 		if (key.backspace || key.delete) {
 			setText(all => ({...all, [step]: all[step].slice(0, -1)}));
@@ -342,9 +351,15 @@ export function Composer({
 					<Text>
 						{text[step]}
 						<Text inverse> </Text>
+						{step === 'why' && whyDraft && text.why === '' && (
+							<Text dimColor>{whyDraft.text}</Text>
+						)}
 					</Text>
 				)}
 			</Box>
+			{step === 'why' && whyDraft && text.why === '' && (
+				<Text dimColor>Tab fills it from {whyDraft.source}.</Text>
+			)}
 			{step === 'why' && checking && <Text dimColor>Checking the reason…</Text>}
 			{step === 'why' &&
 				warnedFor !== null &&
@@ -430,6 +445,7 @@ export async function compose(
 	advice?: Promise<Advice | null>,
 	impact?: Impact,
 	checkWhy?: ComposerProps['checkWhy'],
+	draft?: WhyDraft,
 ): Promise<string | null> {
 	return new Promise(resolve => {
 		let done = false;
@@ -448,6 +464,7 @@ export async function compose(
 				advice={advice}
 				impact={impact}
 				checkWhy={checkWhy}
+				draft={draft}
 			/>,
 			{
 				stdin: streams.stdin,

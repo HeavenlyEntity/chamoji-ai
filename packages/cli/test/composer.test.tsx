@@ -26,6 +26,7 @@ function open(
 	check?: {
 		checkWhy?: (why: string, title: string) => Promise<boolean>;
 		checkWhyTimeoutMs?: number;
+		draft?: {text: string; source: string};
 	},
 ) {
 	const onSubmit = vi.fn();
@@ -40,6 +41,7 @@ function open(
 			impact={impact}
 			checkWhy={check?.checkWhy}
 			checkWhyTimeoutMs={check?.checkWhyTimeoutMs}
+			draft={check?.draft}
 		/>,
 	);
 	cleanup = app.unmount;
@@ -499,4 +501,68 @@ test('the Release trailers carry the raw unit names', async () => {
 	expect(app.onSubmit).toHaveBeenCalledWith(
 		'🐛 (api): Fix timeout\n\nRelease: we\u001B[2Jb',
 	);
+});
+
+const DRAFT = {
+	text: 'the provider returns 422 for stays over 365 nights',
+	source: 'your Claude Code session',
+};
+const TAB = '\t';
+
+async function toWhyWithDraft(draft?: typeof DRAFT) {
+	const app = open(
+		{scopePrompt: false, messagePrompt: false},
+		undefined,
+		undefined,
+		undefined,
+		{draft},
+	);
+	await app.type('bug', ENTER, 'cap the stay length', ENTER);
+	return app;
+}
+
+test('a remembered reason is offered on the why step and Tab fills it', async () => {
+	const app = await toWhyWithDraft(DRAFT);
+	expect(flat(app.lastFrame())).toContain(
+		'Tab fills it from your Claude Code session.',
+	);
+	// The row wraps beside the prompt, so only the start is whole.
+	expect(app.lastFrame()).toContain('the provider returns 422');
+	await app.type(TAB);
+	expect(app.lastFrame()).toContain('the provider returns 422');
+	expect(flat(app.lastFrame())).not.toContain('Tab fills it');
+	await app.type(ENTER, ENTER);
+	expect(app.onSubmit).toHaveBeenCalledTimes(1);
+	expect(app.onSubmit.mock.calls[0]?.[0]).toContain(`Why: ${DRAFT.text}`);
+});
+
+test('the reason is never filled without Tab', async () => {
+	const app = await toWhyWithDraft(DRAFT);
+	await app.type(ENTER, ENTER);
+	expect(app.onSubmit.mock.calls[0]?.[0]).not.toContain('Why:');
+});
+
+test('typing hides the offer and Tab then does nothing', async () => {
+	const app = await toWhyWithDraft(DRAFT);
+	await app.type('a');
+	expect(flat(app.lastFrame())).not.toContain('Tab fills it');
+	await app.type(TAB);
+	expect(app.lastFrame()).not.toContain(DRAFT.text);
+});
+
+test('Tab does nothing on other steps, and without a draft', async () => {
+	const app = open(
+		{scopePrompt: false, messagePrompt: false},
+		undefined,
+		undefined,
+		undefined,
+		{draft: DRAFT},
+	);
+	await app.type('bug', TAB, ENTER);
+	expect(app.lastFrame()).not.toContain(DRAFT.text);
+	const plain = await toWhyWithDraft();
+	expect(flat(plain.lastFrame())).not.toContain('Tab fills it');
+	await plain.type(TAB);
+	await plain.type(ENTER, ENTER);
+	expect(plain.onSubmit.mock.calls[0]?.[0]).not.toContain('Why:');
 });

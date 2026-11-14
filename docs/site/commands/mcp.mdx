@@ -1,15 +1,17 @@
 export const metadata = {
 	title: 'chamoji mcp',
 	description:
-		'Serve project memory to AI agents over MCP: search_memory, why and workstream, three read-only tools over stdio.',
+		'Serve project memory to AI agents over MCP: search_memory, why and workstream, plus remember_why, which keeps your reason for the commit composer.',
 };
 
 # `chamoji mcp`
 
 <p className="lead">
 	Serve project memory to your coding agent. `chamoji mcp` is a small Model
-	Context Protocol server over stdio with three tools, all read-only: search
-	commits and workstreams, ask why a line is there, and describe a workstream.
+	Context Protocol server over stdio with four tools. Three are read-only:
+	search commits and workstreams, ask why a line is there, and describe a
+	workstream. The fourth keeps the reason you give your agent, so the commit
+	composer can offer it.
 </p>
 
 <Tag variant="setup">SINCE 0.11.0</Tag>
@@ -34,7 +36,8 @@ export const metadata = {
 		return is data, not instructions.
 	</Step>
 	<Step title="Lists its tools.">
-		`search_memory`, `why` and `workstream`, each marked read-only.
+		`search_memory`, `why` and `workstream`, each marked read-only, and
+		`remember_why`, which is not.
 	</Step>
 	<Step title="Answers each call.">
 		One request at a time, in order. A reply is the result as JSON text. A tool
@@ -44,9 +47,9 @@ export const metadata = {
 	<Step title="Stops.">When the agent closes stdin, it exits 0.</Step>
 </Steps>
 
-None of the tools changes your history, refs or files. `search_memory` may refresh the search index in `.git`. The server makes no network calls, except with `--ai`.
+None of the tools changes your history, refs or files. `search_memory` may refresh the search index in `.git`, and `remember_why` writes one small file there. The server makes no network calls, except with `--ai`.
 
-## Tools {{ icon: 'brackets-curly', badge: '3' }}
+## Tools {{ icon: 'brackets-curly', badge: '4' }}
 
 <Properties>
 	<Property name="search_memory" type="query · limit">
@@ -70,6 +73,15 @@ None of the tools changes your history, refs or files. `search_memory` may refre
 		A workstream’s title, emoji, status, description and links, and once it’s
 		remembered, its commits with their cards. With no slug, the active
 		workstream, or the list of workstreams when none is active.
+	</Property>
+	<Property name="remember_why" type="why">
+		Keep why you want the change, in your own words, so [`chamoji
+		commit`](/commands/commit) can offer it as the Why. `why` is required, 1 to
+		500 characters. A thin reason, such as “fix bug”, is refused with what it is
+		missing, so the agent can ask you. The reason is kept in
+		`.git/chamoji/pending-why.json` with the commit it was given at and the
+		agent it came from, for 24 hours or until the next commit. The composer
+		never fills it in by itself: you press Tab. It returns `remembered: true`.
 	</Property>
 </Properties>
 
