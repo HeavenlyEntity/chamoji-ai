@@ -65,7 +65,7 @@ export type ComposerProps = {
 	/** The units the staged change touches, with a release section. */
 	impact?: Impact;
 	/** A reason the user gave their agent. Tab on an empty Why fills it; nothing fills it on its own. */
-	draft?: WhyDraft;
+	draft?: WhyDraft | Promise<WhyDraft | undefined>;
 };
 
 /**
@@ -81,7 +81,7 @@ export function Composer({
 	checkWhy,
 	checkWhyTimeoutMs = WHY_CHECK_TIMEOUT_MS,
 	impact,
-	draft: whyDraft,
+	draft: givenDraft,
 }: ComposerProps) {
 	// A change that releases no unit of its own but rides along to some can
 	// release them now, with a Release: trailer each.
@@ -120,6 +120,24 @@ export function Composer({
 	// so the list never moves under someone who has started typing.
 	const [suggestFirst, setSuggestFirst] = useState(false);
 	const touched = useRef(false);
+	// A draft that is still being read shows up when it arrives, and only
+	// while the Why is empty, so it never moves under someone who has typed.
+	const [whyDraft, setWhyDraft] = useState<WhyDraft | undefined>(
+		givenDraft instanceof Promise ? undefined : givenDraft,
+	);
+
+	useEffect(() => {
+		if (!(givenDraft instanceof Promise)) return;
+		let live = true;
+		givenDraft
+			.then(result => {
+				if (live && result) setWhyDraft(result);
+			})
+			.catch(() => undefined);
+		return () => {
+			live = false;
+		};
+	}, [givenDraft]);
 
 	useEffect(() => {
 		if (!pendingAdvice) return;
@@ -445,7 +463,7 @@ export async function compose(
 	advice?: Promise<Advice | null>,
 	impact?: Impact,
 	checkWhy?: ComposerProps['checkWhy'],
-	draft?: WhyDraft,
+	draft?: WhyDraft | Promise<WhyDraft | undefined>,
 ): Promise<string | null> {
 	return new Promise(resolve => {
 		let done = false;

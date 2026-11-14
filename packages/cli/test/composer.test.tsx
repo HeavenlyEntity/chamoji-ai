@@ -26,7 +26,9 @@ function open(
 	check?: {
 		checkWhy?: (why: string, title: string) => Promise<boolean>;
 		checkWhyTimeoutMs?: number;
-		draft?: {text: string; source: string};
+		draft?:
+			| {text: string; source: string}
+			| Promise<{text: string; source: string} | undefined>;
 	},
 ) {
 	const onSubmit = vi.fn();
@@ -565,4 +567,47 @@ test('Tab does nothing on other steps, and without a draft', async () => {
 	await plain.type(TAB);
 	await plain.type(ENTER, ENTER);
 	expect(plain.onSubmit.mock.calls[0]?.[0]).not.toContain('Why:');
+});
+
+test('a draft that arrives late is offered while the Why is empty', async () => {
+	let resolve: (draft: typeof DRAFT) => void = () => undefined;
+	const late = new Promise<typeof DRAFT>(done => {
+		resolve = done;
+	});
+	const app = open(
+		{scopePrompt: false, messagePrompt: false},
+		undefined,
+		undefined,
+		undefined,
+		{draft: late},
+	);
+	await app.type('bug', ENTER, 'cap the stay length', ENTER);
+	expect(flat(app.lastFrame())).not.toContain('Tab fills it');
+	resolve(DRAFT);
+	await app.type('');
+	expect(flat(app.lastFrame())).toContain(
+		'Tab fills it from your Claude Code session.',
+	);
+	await app.type(TAB, ENTER, ENTER);
+	expect(app.onSubmit.mock.calls[0]?.[0]).toContain(`Why: ${DRAFT.text}`);
+});
+
+test('a late draft is not offered once the person has typed a Why', async () => {
+	let resolve: (draft: typeof DRAFT) => void = () => undefined;
+	const late = new Promise<typeof DRAFT>(done => {
+		resolve = done;
+	});
+	const app = open(
+		{scopePrompt: false, messagePrompt: false},
+		undefined,
+		undefined,
+		undefined,
+		{draft: late},
+	);
+	await app.type('bug', ENTER, 'cap the stay length', ENTER, 'a');
+	resolve(DRAFT);
+	await app.type('');
+	expect(flat(app.lastFrame())).not.toContain('Tab fills it');
+	await app.type(TAB);
+	expect(app.lastFrame()).not.toContain(DRAFT.text);
 });

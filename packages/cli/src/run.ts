@@ -1,7 +1,7 @@
 import {execFile} from 'node:child_process';
 import {existsSync} from 'node:fs';
 import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
-import {tmpdir} from 'node:os';
+import {homedir, tmpdir} from 'node:os';
 import path from 'node:path';
 import {
 	applyRelease,
@@ -113,6 +113,7 @@ import {stripControlLines} from './text.js';
 import {openTerminal} from './tty.js';
 import type {UpdateCheck} from './update-check.js';
 import {composeImpact} from './impact.js';
+import {draftFromSession} from './session-why.js';
 import {draftFrom} from './why-draft.js';
 import {oneLineLogo, playWelcome, SHORT_HELP, TAGLINE} from './welcome.js';
 import {runWhy} from './why.js';
@@ -141,6 +142,8 @@ export type Io = {
 	npm?: NpmRunner;
 	/** Fetches for the OIDC check of `publish`; tests pass a fake. Defaults to global fetch. */
 	fetch?: FetchLike;
+	/** The home folder whose Claude Code and Codex sessions `chamoji.whyFromSessions` reads; defaults to the real one. */
+	home?: string;
 	/** The terminal the composer runs on, or null when there is none; tests pass a fake. */
 	terminal?: () => ComposerTerminal | null;
 	/** Environment for the hook's CI check; defaults to process.env. */
@@ -201,7 +204,7 @@ export type ComposerTerminal = {
 		advice?: Promise<Advice | null>,
 		impact?: Impact,
 		checkWhy?: ComposerProps['checkWhy'],
-		draft?: WhyDraft,
+		draft?: WhyDraft | Promise<WhyDraft | undefined>,
 	): Promise<string | null>;
 	close(): void;
 };
@@ -1198,7 +1201,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 
 		const settings = await readAiSettings(root);
 		const advice = adviceFor(root, settings, '');
-		const draft = draftFrom(await readPendingWhy(root));
+		const draft = await draftFor(root, settings);
 		let message: string | null;
 		try {
 			message = await terminal.compose(
@@ -1324,7 +1327,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 			advice,
 			await composeImpact(root),
 			await whyCheckFor(root, settings),
-			draftFrom(await readPendingWhy(root)),
+			await draftFor(root, settings),
 		);
 		if (message === null) return false;
 
@@ -1403,6 +1406,35 @@ export async function run(argv: string[], given: Io): Promise<number> {
 			if (staged.files.length === 0) return null;
 			return advise({staged, draft});
 		})().catch(() => null);
+	}
+
+	/**
+	 * The Why the composer may offer on Tab. What an agent handed over with
+	 * `remember_why` comes first. Only without one, and only when the user
+	 * turned `chamoji.whyFromSessions` on, a sentence from their own Claude
+	 * Code or Codex session is read, and that read is never awaited here: the
+	 * composer shows it if it arrives before the user reaches the Why. Jev
+	 * picks among the candidates only with `chamoji.composer` on and a key.
+	 */
+	async function draftFor(
+		root: string,
+		settings: AiSettings,
+	): Promise<WhyDraft | Promise<WhyDraft | undefined> | undefined> {
+		const pending = draftFrom(await readPendingWhy(root));
+		if (pending || !settings.whyFromSessions) return pending;
+		return (async () => {
+			const staged = await readStagedChanges(root, {sendDiffs: false});
+			const client = settings.composer
+				? await realAdvisorClient(root)
+				: undefined;
+			return draftFromSession({
+				root,
+				home: io.home ?? homedir(),
+				now: new Date(),
+				stagedFiles: staged.files.map(file => file.path),
+				client,
+			});
+		})().catch(() => undefined);
 	}
 
 	/**
@@ -2638,6 +2670,7 @@ export type AiSettings = {
 	composer: boolean;
 	sendDiffs: boolean;
 	whyCheck: boolean;
+	whyFromSessions: boolean;
 };
 
 /**
@@ -2654,6 +2687,7 @@ async function readAiSettings(cwd: string): Promise<AiSettings> {
 		composer: await flag('chamoji.composer'),
 		sendDiffs: await flag('chamoji.sendDiffs'),
 		whyCheck: await flag('chamoji.whyCheck'),
+		whyFromSessions: await flag('chamoji.whyFromSessions'),
 	};
 }
 
@@ -2664,16 +2698,24 @@ async function readAiSettings(cwd: string): Promise<AiSettings> {
 async function realAdvisor(
 	cwd: string,
 ): Promise<ReturnType<typeof createCommitAdvisor> | null> {
+	const client = await realAdvisorClient(cwd);
+	return client ? createCommitAdvisor(client) : null;
+}
+
+/** The TypeSafe client for choice and noul questions, or undefined without a usable key. */
+async function realAdvisorClient(
+	cwd: string,
+): Promise<AdvisorClient | undefined> {
 	const key = await readTypesafeKey(cwd, process.env, {untrackedOnly: true});
-	if (!key || /[^\x21-\x7E]/.test(key)) return null;
+	if (!key || /[^\x21-\x7E]/.test(key)) return undefined;
 	const client = new TypeSafeClient({apiKey: key});
-	return createCommitAdvisor({
-		// The advisor asks only choice and noul questions, so box answers never come back.
+	return {
+		// Only choice and noul questions are asked, so box answers never come back.
 		systemOne: async request =>
 			(await client.systemOne(
 				request as Parameters<typeof client.systemOne>[0],
 			)) as unknown as Awaited<ReturnType<AdvisorClient['systemOne']>>,
-	});
+	};
 }
 
 /**
