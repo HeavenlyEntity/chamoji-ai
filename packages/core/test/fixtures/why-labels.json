@@ -1102,30 +1102,6 @@
 		"label": "good"
 	},
 	{
-		"subject": "Spare own tags with a lookahead instead of listing every template tag",
-		"card": {
-			"why": [
-				"one unmerged own tag (5.0.0) turned gearz's template patterns into 135 exact tags, so the template's next tags would count as releases; now one shape pattern leaves just the own tags out (5 patterns on gearz)"
-			],
-			"constraint": [],
-			"gotcha": [],
-			"followUp": []
-		},
-		"label": "good"
-	},
-	{
-		"subject": "Keep template commits out of first notes, recognised by author too",
-		"card": {
-			"why": [
-				"on the real repo 27 Makerkit commits from v4.0.0 and from deleted v3-step branches leaked into web's and mobile's first notes; upstream.authors, ignored version tags and the author rule now cover them, and --explain calls the remote and since detected"
-			],
-			"constraint": [],
-			"gotcha": [],
-			"followUp": []
-		},
-		"label": "good"
-	},
-	{
 		"subject": "Document chamoji setup and close milestone 7.5",
 		"card": {
 			"why": [
@@ -1622,18 +1598,6 @@
 		"card": {
 			"why": [
 				"upstream's own merge commits were reported as syncs, config values could be read by git as options, and a custom group config could collapse a sync."
-			],
-			"constraint": [],
-			"gotcha": [],
-			"followUp": []
-		},
-		"label": "good"
-	},
-	{
-		"subject": "Leave template history out and show each sync as one line",
-		"card": {
-			"why": [
-				"Makerkit's commits must never reach an app's notes, and each merge that brings them in should read as one line."
 			],
 			"constraint": [],
 			"gotcha": [],
