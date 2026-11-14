@@ -34,7 +34,7 @@ STEPS = [
     ('Scope', ['\r']),
     ('Title', ['add the report', '\r']),
     ('Body', ['\r']),
-    ('Why?', ['the team asked for it', '\r']),
+    ('What would break', ['the team asked for it', '\r']),
     ('Breaking change?', ['\r']),
 ]
 # How long one prompt, or git finishing, may take: a slow runner needs far less.
