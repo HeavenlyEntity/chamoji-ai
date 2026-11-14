@@ -263,6 +263,9 @@ const HELP = `
 	  $ chamoji why <file:line>        Show why a line is there: the commit
 	                                   that wrote it and the Why, Constraint,
 	                                   Gotcha and Follow-up it recorded
+	  $ chamoji why --amend <sha|file:line> <reason...>
+	                                   Add a better reason to an old commit
+	                                   in a git note (refs/notes/chamoji)
 	  $ chamoji memory                 List what shipped or dropped workstreams
 	                                   left in memory (refs/chamoji/memory);
 	                                   --archived adds the archived ones
@@ -477,6 +480,7 @@ function parse(argv: string[]) {
 			catchUp: {type: 'boolean'},
 			forTag: {type: 'string'},
 			json: {type: 'boolean'},
+			amend: {type: 'string'},
 			none: {type: 'boolean'},
 			purge: {type: 'boolean'},
 			archived: {type: 'boolean'},

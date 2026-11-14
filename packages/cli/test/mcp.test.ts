@@ -11,6 +11,7 @@ import {
 	setActive,
 	snapshotWorkstream,
 	WHY_ADVICE,
+	writeNoteCard,
 	writeTree,
 	type MemoryHit,
 } from '@chamoji/core';
@@ -236,6 +237,26 @@ test('a commit with no card still returns its subject and body', async () => {
 	expect(data.subject).toBe('🐛 Fix footer');
 	expect(data.body).toContain('overlapped the cookie banner');
 	expect(data.card).toBeUndefined();
+});
+
+test('why returns the added reason and the merged card', async () => {
+	const dir = await project();
+	await writeNoteCard(
+		dir,
+		(await gitOutput(dir, ['rev-parse', 'HEAD~1'])).trim(),
+		'the provider returns 422 for stays over 365 nights',
+	);
+	const {data} = await callTool(createTools(dir), 'why', {
+		file: 'src/a.ts',
+		line: 2,
+	});
+	expect(data.addedLater).toMatchObject({
+		why: ['the provider returns 422 for stays over 365 nights'],
+	});
+	expect(data.card.why).toEqual([
+		'the provider returns 422 for stays over 365 nights',
+		'the old form leaked sessions',
+	]);
 });
 
 test('a line that is not committed yet says so', async () => {

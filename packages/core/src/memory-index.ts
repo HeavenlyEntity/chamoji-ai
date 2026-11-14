@@ -20,6 +20,7 @@ import {
 import {parseCommit} from './parse.js';
 import type {IntentCard} from './types.js';
 import {judgeWhy} from './why-quality.js';
+import {NOTES_REF, mergeCards, readNoteCards} from './why-notes.js';
 
 /** A commit or a workstream summary that matched a search. */
 export type MemoryHit = {
@@ -35,7 +36,7 @@ export type MemoryHit = {
 };
 
 /** Bump it when the file's layout or what goes into it changes. */
-const INDEX_VERSION = 2;
+const INDEX_VERSION = 3;
 
 const DEFAULT_LIMIT = 10;
 
@@ -54,7 +55,7 @@ type StoredDocument = {
 type Loaded = {documents: StoredDocument[]; index: Bm25Index};
 
 /** What an index was built from; when either differs it is out of date. */
-type Stamp = {head: string; memory: string};
+type Stamp = {head: string; memory: string; notes: string};
 
 /**
  * Rebuilds the index from every commit on HEAD and every live memory entry.
@@ -116,6 +117,7 @@ async function currentStamp(cwd: string): Promise<Stamp> {
 	return {
 		head: (await headOf(cwd, 'HEAD')) ?? '',
 		memory: (await headOf(cwd, MEMORY_REF)) ?? '',
+		notes: (await headOf(cwd, NOTES_REF)) ?? '',
 	};
 }
 
@@ -126,8 +128,11 @@ async function build(
 	const documents: StoredDocument[] = [];
 	const searchable: SearchDocument[] = [];
 	if (stamp.head !== '') {
+		const added = await readNoteCards(cwd);
 		for (const raw of await readCommits(cwd, stamp.head)) {
-			const {hash, subject, body, card, description} = parseCommit(raw);
+			const parsed = parseCommit(raw);
+			const {hash, subject, body, description} = parsed;
+			const card = mergeCards(added.get(hash), parsed.card);
 			const whyQuality =
 				card === undefined ? undefined : judgeWhy(card, description).level;
 			const stored: StoredDocument = {
@@ -240,7 +245,7 @@ async function readIndex(
 	}
 
 	if (typeof raw !== 'object' || raw === null) return undefined;
-	const {version, head, memory, documents, index} = raw as Record<
+	const {version, head, memory, notes, documents, index} = raw as Record<
 		string,
 		unknown
 	>;
@@ -248,6 +253,7 @@ async function readIndex(
 		version !== INDEX_VERSION ||
 		head !== stamp.head ||
 		memory !== stamp.memory ||
+		notes !== stamp.notes ||
 		!Array.isArray(documents)
 	) {
 		return undefined;

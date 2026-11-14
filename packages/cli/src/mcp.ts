@@ -214,8 +214,7 @@ export function createTools(cwd: string, rerank?: MemoryReranker): McpTools {
 			const result = await blameLine(cwd, file, line);
 			if (result.kind === 'uncommitted')
 				return {kind: 'uncommitted', file, line};
-			const {hash, subject, body, authorName, date, card, workstream} =
-				result.commit;
+			const {hash, subject, body, authorName, date, workstream} = result.commit;
 			const reading = await readWhy(cwd, result.commit, file);
 			const found =
 				workstream === undefined
@@ -232,7 +231,8 @@ export function createTools(cwd: string, rerank?: MemoryReranker): McpTools {
 				body: redact(withoutTrailers(body.slice(0, 2 * MAX_BODY))),
 				author: authorName,
 				date,
-				card,
+				card: reading.card,
+				...(reading.added === undefined ? {} : {addedLater: reading.added}),
 				whyQuality: reading.quality,
 				whyAdvice:
 					reading.quality === 'thin' && reading.reasons[0] !== undefined

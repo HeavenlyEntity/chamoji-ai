@@ -3,7 +3,16 @@ import {
 	blameLine,
 	findClues,
 	judgeWhy,
+	mergeCards,
+	noteCard,
 	parseLocation,
+	readCommits,
+	parseCommit,
+	readNoteCard,
+	runGit,
+	WHY_ADVICE,
+	writeNoteCard,
+	NOTES_REF,
 	readMemory,
 	readWorkstreams,
 	type IntentCard,
@@ -28,6 +37,10 @@ export type WhyReading = {
 	quality: WhyQuality;
 	reasons: WhyReason[];
 	clues?: WhyClues;
+	/** The reason added later in a git note, when there is one. */
+	added?: IntentCard;
+	/** The commit's card with the added reason first. */
+	card?: IntentCard;
 };
 
 const CARD_LABELS: [keyof IntentCard, string][] = [
@@ -45,9 +58,10 @@ const CARD_LABELS: [keyof IntentCard, string][] = [
  */
 export async function runWhy(
 	input: string[],
-	flags: {json?: boolean},
+	flags: {json?: boolean; amend?: string},
 	io: Io,
 ): Promise<number> {
+	if (flags.amend !== undefined) return amendWhy(flags.amend, input, io);
 	const [location, ...extra] = input;
 	if (location === undefined || extra.length > 0) {
 		io.stderr('chamoji: why needs one location: chamoji why <file:line>\n');
@@ -86,9 +100,9 @@ export async function runWhy(
 				: `${stripControl(`${file}:${line}`)} is not committed yet.\n`,
 		);
 	} else if (flags.json) {
-		const {quality, reasons, clues} = reading!;
+		const {quality, reasons, clues, added} = reading!;
 		io.stdout(
-			`${JSON.stringify({...result, whyQuality: quality, whyReasons: reasons, clues}, null, 2)}\n`,
+			`${JSON.stringify({...result, whyQuality: quality, whyReasons: reasons, clues, addedLater: added}, null, 2)}\n`,
 		);
 	} else {
 		io.stdout(describe(result.commit, reading!, summary));
@@ -106,7 +120,13 @@ export async function readWhy(
 	commit: ParsedCommit,
 	file: string,
 ): Promise<WhyReading> {
-	if (commit.card === undefined) {
+	const added = await readNoteCard(cwd, commit.hash);
+	const card = mergeCards(added, commit.card);
+	const extra = {
+		...(added === undefined ? {} : {added}),
+		...(card === undefined ? {} : {card}),
+	};
+	if (card === undefined) {
 		return {
 			quality: 'none',
 			reasons: [],
@@ -114,10 +134,80 @@ export async function readWhy(
 		};
 	}
 
-	const {level, reasons} = judgeWhy(commit.card, commit.description);
+	const {level, reasons} = judgeWhy(card, commit.description);
 	return level === 'ok'
-		? {quality: 'ok', reasons}
-		: {quality: 'thin', reasons, clues: await findClues(cwd, commit, file)};
+		? {quality: 'ok', reasons, ...extra}
+		: {
+				quality: 'thin',
+				reasons,
+				clues: await findClues(cwd, commit, file),
+				...extra,
+			};
+}
+
+/**
+ * `chamoji why --amend <sha|file:line> <reason...>`: keeps a better reason for
+ * a commit in a git note, so history is not rewritten. A reason that is thin
+ * against the commit's subject is refused.
+ */
+async function amendWhy(
+	target: string,
+	words: string[],
+	io: Io,
+): Promise<number> {
+	const reason = words.join(' ').trim();
+	if (target === '' || reason === '') {
+		io.stderr(
+			'chamoji: why --amend needs a commit and a reason: chamoji why --amend <sha|file:line> <reason...>\n',
+		);
+		return USAGE_ERROR;
+	}
+
+	await assertGitRepo(io.cwd);
+	let hash: string;
+	let location: {file: string; line: number} | undefined;
+	try {
+		if (target.includes(':')) location = parseLocation(target);
+	} catch {
+		location = undefined;
+	}
+
+	if (location) {
+		const result = await blameLine(io.cwd, location.file, location.line);
+		if (result.kind === 'uncommitted') {
+			io.stderr(
+				`chamoji: ${stripControl(target)} is not committed yet, so there is no commit to add a reason to.\n`,
+			);
+			return 1;
+		}
+
+		hash = result.commit.hash;
+	} else {
+		try {
+			hash = (
+				await runGit(['rev-parse', '--verify', `${target}^{commit}`], io.cwd)
+			).trim();
+		} catch {
+			io.stderr(`chamoji: ${stripControl(target)} is not a commit.\n`);
+			return 1;
+		}
+	}
+
+	const [raw] = await readCommits(io.cwd, hash, {maxCount: 1});
+	const commit = parseCommit(raw!);
+	const card = noteCard(reason);
+	const verdict = card && judgeWhy(card, commit.description);
+	if (verdict && verdict.level !== 'ok') {
+		const advice = WHY_ADVICE[verdict.reasons[0]!];
+		io.stderr(`chamoji: that reason is thin too. ${advice}\n`);
+		return 1;
+	}
+
+	await writeNoteCard(io.cwd, hash, reason);
+	io.stdout(
+		`Added a reason to ${stripControl(commit.shortHash)} ${stripControl(commit.subject)}. Share it with: git push origin ${NOTES_REF}\n`,
+	);
+	return 0;
 }
 
 /**
@@ -142,7 +232,7 @@ export async function findWorkstream(
  */
 function describe(
 	{shortHash, subject, authorName, date, card}: ParsedCommit,
-	{quality, clues}: WhyReading,
+	{quality, clues, added}: WhyReading,
 	workstream?: Pick<Workstream, 'title' | 'emoji' | 'status'>,
 ) {
 	const lines = [
@@ -150,7 +240,10 @@ function describe(
 		`${stripControl(authorName)}, ${stripControl(date).slice(0, 10)}`,
 		'',
 	];
-	const recorded = cardLines(card);
+	const recorded = [
+		...cardLines(added).map(line => `${line} (added later)`),
+		...cardLines(card),
+	];
 	lines.push(
 		...(recorded.length > 0 ? recorded : ['This commit records no intent.']),
 	);

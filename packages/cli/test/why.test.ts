@@ -5,6 +5,7 @@ import {snapshotWorkstream} from '@chamoji/core';
 import {afterEach, expect, test, vi} from 'vitest';
 import {
 	createRepo,
+	gitOutput,
 	type FixtureRepo,
 } from '../../core/test/helpers/fixture-repo.js';
 import {run} from '../src/run.js';
@@ -292,4 +293,75 @@ test('--json adds whyQuality, whyReasons and clues', async () => {
 	expect(result.whyReasons).toEqual(['filler', 'too-short']);
 	expect(result.clues.pr).toBe(12);
 	expect(result.clues.nearby).toHaveLength(1);
+});
+
+const REASON = 'the provider returns 422 for stays over 365 nights';
+
+async function hashOf(dir: string, rev = 'HEAD') {
+	return (await gitOutput(dir, ['rev-parse', rev])).trim();
+}
+
+test('--amend adds a reason that shows first, marked as added later', async () => {
+	repo = await createRepo([
+		{commit: '🐛 Fix bug', body: 'Why: fix bug', files: FILES},
+	]);
+	const hash = await hashOf(repo.dir);
+	const added = await chamoji(
+		['why', '--amend', hash, ...REASON.split(' ')],
+		repo.dir,
+	);
+	expect(added.stderr).toBe('');
+	expect(added.code).toBe(0);
+	expect(added.stdout).toMatch(
+		/^Added a reason to [0-9a-f]{7} 🐛 Fix bug\. Share it with: git push origin refs\/notes\/chamoji\n$/,
+	);
+	const {stdout} = await chamoji(['why', 'src/a.ts:1'], repo.dir);
+	expect(stdout).toContain(`Why: ${REASON} (added later)\nWhy: fix bug\n`);
+	expect(stdout).not.toContain('This reason is thin');
+});
+
+test('--amend refuses a reason that is thin too and writes nothing', async () => {
+	repo = await createRepo([
+		{commit: '🐛 Fix bug', body: 'Why: fix bug', files: FILES},
+	]);
+	const {code, stderr} = await chamoji(
+		['why', '--amend', await hashOf(repo.dir), 'fix', 'it'],
+		repo.dir,
+	);
+	expect(code).toBe(1);
+	expect(stderr).toContain('that reason is thin too.');
+	expect(await gitOutput(repo.dir, ['notes', '--ref=chamoji', 'list'])).toBe(
+		'',
+	);
+});
+
+test('--amend takes a file:line and refuses an empty reason', async () => {
+	repo = await createRepo([
+		{commit: '🐛 Fix bug', body: 'Why: fix bug', files: FILES},
+	]);
+	const done = await chamoji(
+		['why', '--amend', 'src/a.ts:1', ...REASON.split(' ')],
+		repo.dir,
+	);
+	expect(done.code).toBe(0);
+	expect((await chamoji(['why', 'src/a.ts:2'], repo.dir)).stdout).toContain(
+		`Why: ${REASON} (added later)`,
+	);
+	const empty = await chamoji(['why', '--amend', 'src/a.ts:1'], repo.dir);
+	expect(empty.code).toBe(2);
+});
+
+test('--amend on an uncommitted line exits 1 and an unknown commit exits 1', async () => {
+	repo = await createRepo([{commit: '🐛 Fix bug', files: FILES}]);
+	await appendFile(path.join(repo.dir, 'src/a.ts'), 'four\n');
+	const line = await chamoji(
+		['why', '--amend', 'src/a.ts:4', REASON],
+		repo.dir,
+	);
+	expect(line.code).toBe(1);
+	expect(line.stderr).toBe(
+		'chamoji: src/a.ts:4 is not committed yet, so there is no commit to add a reason to.\n',
+	);
+	const unknown = await chamoji(['why', '--amend', 'nope', REASON], repo.dir);
+	expect(unknown.code).toBe(1);
 });

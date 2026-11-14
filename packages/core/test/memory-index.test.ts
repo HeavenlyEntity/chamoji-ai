@@ -2,6 +2,7 @@ import {readFile, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {afterEach, expect, test} from 'vitest';
 import {reindexMemory, searchMemory} from '../src/memory-index.js';
+import {writeNoteCard} from '../src/why-notes.js';
 import {archiveMemory, purgeMemory, snapshotWorkstream} from '../src/memory.js';
 import {
 	createRepo,
@@ -112,14 +113,14 @@ test('a commit with no card has no whyQuality', async () => {
 	expect(hit).not.toHaveProperty('whyQuality');
 });
 
-test('an index file from version 1 is rebuilt', async () => {
+test('an index file from an older version is rebuilt', async () => {
 	repo = await createRepo([{commit: '✨ Add login'}]);
 	await searchMemory(repo.dir, 'login');
 	const file = await indexFile(repo.dir);
 	const saved = JSON.parse(await readFile(file, 'utf8'));
 	await writeFile(file, JSON.stringify({...saved, version: 1}));
 	await searchMemory(repo.dir, 'login');
-	expect(JSON.parse(await readFile(file, 'utf8')).version).toBe(2);
+	expect(JSON.parse(await readFile(file, 'utf8')).version).toBe(3);
 });
 
 test('search finds a workstream summary whose branch is gone', async () => {
@@ -344,4 +345,25 @@ test('purge deletes this worktree index, and another worktree rebuilds its own',
 	} finally {
 		await gitOutput(repo.dir, ['worktree', 'remove', '--force', other]);
 	}
+});
+
+test('an added reason is found by the next search with no reindex', async () => {
+	repo = await createRepo([
+		{commit: '🐛 Fix bug', body: 'Why: fix bug'},
+		{commit: '📝 Tidy readme'},
+	]);
+	expect(await searchMemory(repo.dir, '365')).toEqual([]);
+	const hash = (await gitOutput(repo.dir, ['rev-parse', 'HEAD~1'])).trim();
+	await writeNoteCard(
+		repo.dir,
+		hash,
+		'the provider returns 422 for stays over 365 nights',
+	);
+	const hits = await searchMemory(repo.dir, '365');
+	expect(hits.map(hit => hit.id)).toEqual([hash]);
+	expect(hits[0]).toMatchObject({whyQuality: 'ok'});
+	expect(hits[0]!.card?.why).toEqual([
+		'the provider returns 422 for stays over 365 nights',
+		'fix bug',
+	]);
 });

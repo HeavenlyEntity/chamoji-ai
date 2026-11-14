@@ -39,6 +39,11 @@ export const metadata = {
 		commits to the same file in the 14 days before it whose cards do say why. It
 		only reads git.
 	</Step>
+	<Step title="Puts added reasons first.">
+		If someone ran `chamoji why --amend` on the commit, the reason they added
+		comes first, ending in `(added later)`, ahead of the commit’s own lines. The
+		Why is judged with the added reason included.
+	</Step>
 	<Step title="Adds the workstream.">
 		When the commit has no card, or a thin one, and names a workstream, it shows
 		that workstream’s title and status, from project memory or, failing that,
@@ -77,6 +82,16 @@ export const metadata = {
 		judged thin) and `clues` (`pr`, when the subject names one, and `nearby`)
 		when the reason is thin or missing. The exit codes stay the same.
 	</Property>
+	<Property name="--amend" type="string">
+		Add a better reason to an old commit. The target is a commit hash, or a
+		`file:line` whose commit is blamed, and everything after it is the reason:
+		`--amend <target> <reason>`. It goes in a git note in
+		`refs/notes/chamoji`, so the commit and its hash stay as they are. A reason
+		with no `Why:` line is kept as `Why: <reason>`. A reason that is thin too is
+		refused and nothing is written. Adding another replaces the first. Every
+		reader, including `chamoji why`, the MCP `why` tool and memory search, shows
+		the added reason first.
+	</Property>
 	<Property name="--no-update-check" type="boolean">
 		Don’t check npm for a newer chamoji. See [the update
 		notice](/install#the-update-notice).
@@ -88,6 +103,13 @@ export const metadata = {
 <Resources>
 	<Resource name="chamoji why src/auth.ts:42" icon="magnifying-glass" code>
 		The commit behind a line, and the reason it gave.
+	</Resource>
+	<Resource
+		name="chamoji why --amend 39a81ce 'the provider returns 422 for stays over 365 nights'"
+		icon="notebook"
+		code
+	>
+		Add the reason an old commit should have given.
 	</Resource>
 	<Resource name="chamoji why src/auth.ts:42 --json" icon="robot" code>
 		The same, for a script or an agent.
@@ -133,6 +155,16 @@ PR: #31
 Nearby: 39a81ce 🐛 Return null for an empty date
   Why: the form crashed when the field was cleared
   Gotcha: callers still compare with undefined in two places
+```
+
+The same commit after someone adds a reason to it:
+
+```txt {{ title: 'chamoji why src/picker.js:5' }}
+c41d9e2 🐛 Fix the picker (#31)
+Sam Rivera, 2026-11-06
+
+Why: the provider returns 422 for stays over 365 nights (added later)
+Why: fix bug
 ```
 
 A line you’ve added but not committed:
@@ -201,16 +233,33 @@ chamoji: src/picker.js has 10 lines
 
 </CodeGroup>
 
+## Share added reasons {{ icon: 'terminal' }}
+
+Added reasons live in a git note, and git doesn’t push notes unless you ask.
+Send yours, and fetch a teammate’s:
+
+```sh
+git push origin refs/notes/chamoji
+git fetch origin refs/notes/chamoji:refs/notes/chamoji
+```
+
+Until you fetch, your copy only has the reasons added in it. Nothing is lost:
+the commit’s own lines still show.
+
 ## Exit codes
 
 <Properties>
 	<Property name="0">
 		It found the commit, or the line isn’t committed yet.
 	</Property>
-	<Property name="2">No location, or more than one.</Property>
+	<Property name="2">
+		No location, or more than one. With `--amend`, no target or no reason.
+	</Property>
 	<Property name="1">
 		Anything else, such as a location that isn’t `file:line`, a file or line
-		that doesn’t exist, a repo with no commits yet, or outside a git repo.
+		that doesn’t exist, a repo with no commits yet, or outside a git repo. With
+		`--amend`: a line that isn’t committed yet, a target that isn’t a commit, or
+		a reason that is thin too.
 	</Property>
 </Properties>
 
