@@ -397,3 +397,14 @@ test('--thin lists thin and missing Whys behind a path', async () => {
 	const json = await chamoji(['why', '--thin', '--json'], repo.dir);
 	expect(JSON.parse(json.stdout)).toHaveLength(2);
 });
+
+test('--thin refuses a path outside the repository with exit 2', async () => {
+	repo = await createRepo([{commit: '✨ Add a', files: FILES}]);
+	const {code, stdout, stderr} = await chamoji(
+		['why', '--thin', '../outside'],
+		repo.dir,
+	);
+	expect(code).toBe(2);
+	expect(stdout).toBe('');
+	expect(stderr).toBe('chamoji: ../outside is outside the repository.\n');
+});

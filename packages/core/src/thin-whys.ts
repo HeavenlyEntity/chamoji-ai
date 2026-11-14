@@ -1,3 +1,4 @@
+import path from 'node:path';
 import {readCommits, runGit} from './git.js';
 import {parseCommit} from './parse.js';
 import {judgeWhy, type WhyReason} from './why-quality.js';
@@ -15,6 +16,14 @@ export type ThinWhy = {
 	reasons: WhyReason[];
 };
 
+/** The path asked for is not inside the repository. */
+export class OutsideRepoError extends Error {
+	constructor(readonly pathspec: string) {
+		super(`${pathspec} is outside the repository.`);
+		this.name = 'OutsideRepoError';
+	}
+}
+
 const DEFAULT_LIMIT = 20;
 const HEADER = /^([0-9a-f]{40,64}) \d+ \d+/;
 
@@ -30,6 +39,7 @@ export async function listThinWhys(
 	pathspec = '.',
 	options: {limit?: number} = {},
 ): Promise<ThinWhy[]> {
+	await assertInside(cwd, pathspec);
 	const files = (await runGit(['ls-files', '-z', '--', pathspec], cwd))
 		.split('\0')
 		.filter(Boolean);
@@ -76,6 +86,23 @@ export async function listThinWhys(
 }
 
 /**
+ * Throws OutsideRepoError for a plain path that climbs out of the repository.
+ * The folder's place in the repo comes from git (`--show-prefix`), so links in
+ * the path to `cwd` can't fool it. A pathspec with magic (`:(glob)...`) is
+ * left to git.
+ */
+async function assertInside(cwd: string, pathspec: string): Promise<void> {
+	if (pathspec.startsWith(':')) return;
+	const prefix = (await runGit(['rev-parse', '--show-prefix'], cwd)).trim();
+	const target = path.posix.normalize(
+		path.posix.join(prefix, pathspec.replaceAll('\\', '/')),
+	);
+	if (target === '..' || target.startsWith('../')) {
+		throw new OutsideRepoError(pathspec);
+	}
+}
+
+/**
  * Lines per commit in one file. Each line has a header in the porcelain
  * output; its text starts with a tab, so it can't be mistaken for one. A
  * file git can't blame, or a line no commit wrote, gives nothing.
@@ -95,21 +122,14 @@ async function blameCounts(
 		return counts;
 	}
 
-	const boundaries = new Set<string>();
-	let current: string | undefined;
 	for (const line of stdout.split('\n')) {
 		if (line.startsWith('\t')) continue;
 		const hash = HEADER.exec(line)?.[1];
-		if (hash !== undefined) {
-			current = hash;
-			counts.set(hash, (counts.get(hash) ?? 0) + 1);
-		} else if (line === 'boundary' && current !== undefined) {
-			boundaries.add(current);
-		}
+		if (hash !== undefined) counts.set(hash, (counts.get(hash) ?? 0) + 1);
 	}
 
 	for (const hash of counts.keys()) {
-		if (/^0+$/.test(hash) || boundaries.has(hash)) counts.delete(hash);
+		if (/^0+$/.test(hash)) counts.delete(hash);
 	}
 
 	return counts;
