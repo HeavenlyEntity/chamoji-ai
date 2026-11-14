@@ -420,3 +420,74 @@ test('--thin refuses an absolute path outside the repository with exit 2', async
 	expect(stdout).toBe('');
 	expect(stderr).toBe(`chamoji: ${outside} is outside the repository.\n`);
 });
+
+test('--check says a thin reason is thin and exits 1', async () => {
+	repo = await createRepo([{commit: '✨ Add a', files: FILES}]);
+	const {code, stdout} = await chamoji(['why', '--check', 'fix bug'], repo.dir);
+	expect(code).toBe(1);
+	expect(stdout).toMatch(/^thin: Name the bug/);
+});
+
+test('--check says ok to a reason that names its cause and exits 0', async () => {
+	repo = await createRepo([{commit: '✨ Add a', files: FILES}]);
+	const {code, stdout} = await chamoji(
+		['why', '--check', 'Safari drops the session cookie when the tab sleeps'],
+		repo.dir,
+	);
+	expect(code).toBe(0);
+	expect(stdout).toBe('ok\n');
+});
+
+test('--check with no reason exits 2', async () => {
+	repo = await createRepo([{commit: '✨ Add a', files: FILES}]);
+	const {code, stderr} = await chamoji(['why', '--check'], repo.dir);
+	expect(code).toBe(2);
+	expect(stderr).toContain('why --check needs a reason');
+});
+
+test('--check --ai with no key says so and exits 2', async () => {
+	repo = await createRepo([{commit: '✨ Add a', files: FILES}]);
+	vi.stubEnv('TYPESAFE_API_KEY', '');
+	const {code, stdout, stderr} = await chamoji(
+		['why', '--check', '--ai', 'x'],
+		repo.dir,
+	);
+	expect(code).toBe(2);
+	expect(stdout).toBe('');
+	expect(stderr).toContain('--ai needs a TypeSafe API key');
+});
+
+test('--check --ai asks Jev about a reason the local rules pass', async () => {
+	repo = await createRepo([{commit: '✨ Add a', files: FILES}]);
+	const reason = 'this makes the code better and easier to maintain';
+	let stdout = '';
+	const code = await run(['why', '--check', '--ai', reason], {
+		cwd: repo.dir,
+		stdout: text => (stdout += text),
+		stderr: () => undefined,
+		whyChecker: async () => true,
+	});
+	expect(code).toBe(1);
+	expect(stdout).toMatch(/^thin: This doesn't say what would go wrong/);
+});
+
+test('--check --ai keeps ok when Jev finds the reason fine or fails', async () => {
+	repo = await createRepo([{commit: '✨ Add a', files: FILES}]);
+	const reason = 'Safari drops the session cookie when the tab sleeps';
+	for (const whyChecker of [
+		async () => false,
+		async () => {
+			throw new Error('offline');
+		},
+	]) {
+		let stdout = '';
+		const code = await run(['why', '--check', '--ai', reason], {
+			cwd: repo.dir,
+			stdout: text => (stdout += text),
+			stderr: () => undefined,
+			whyChecker,
+		});
+		expect(code).toBe(0);
+		expect(stdout).toBe('ok\n');
+	}
+});

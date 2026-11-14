@@ -80,7 +80,7 @@ import {
 	type Advice,
 	type AdvisorClient,
 } from './advisor.js';
-import {compose, type Impact} from './composer.js';
+import {compose, type ComposerProps, type Impact} from './composer.js';
 import {MISSING_KEY, readTypesafeKey} from './env.js';
 import {gitStep, NO_FACE, runStep, type Face, type Step} from './face.js';
 import {hasFace} from './face-settings.js';
@@ -112,6 +112,7 @@ import type {UpdateCheck} from './update-check.js';
 import {composeImpact} from './impact.js';
 import {oneLineLogo, playWelcome, SHORT_HELP, TAGLINE} from './welcome.js';
 import {runWhy} from './why.js';
+import {createWhyChecker, type WhyChecker} from './why-check.js';
 import {runWorkstream} from './ws.js';
 
 export type Io = {
@@ -150,6 +151,8 @@ export type Io = {
 	jev?: JevClient;
 	/** Jev's commit advice; tests pass a fake. Defaults to the TypeSafe API. */
 	advise?: ReturnType<typeof createCommitAdvisor>;
+	/** Jev's check of a Why (composer and `why --check --ai`); tests pass a fake. Defaults to the TypeSafe API. */
+	whyChecker?: WhyChecker;
 	/** Jev's `memory search --ai` reorder; tests pass a fake. Defaults to the TypeSafe API. */
 	rerank?: MemoryReranker;
 	/**
@@ -193,6 +196,7 @@ export type ComposerTerminal = {
 		config: ComposeConfig,
 		advice?: Promise<Advice | null>,
 		impact?: Impact,
+		checkWhy?: ComposerProps['checkWhy'],
 	): Promise<string | null>;
 	close(): void;
 };
@@ -201,8 +205,8 @@ const realTerminal = (): ComposerTerminal | null => {
 	const terminal = openTerminal();
 	return terminal
 		? {
-				compose: async (config, advice, impact) =>
-					compose(config, terminal, advice, impact),
+				compose: async (config, advice, impact, checkWhy) =>
+					compose(config, terminal, advice, impact, checkWhy),
 				close: () => terminal.close(),
 			}
 		: null;
@@ -265,6 +269,9 @@ const HELP = `
 	                                   Gotcha and Follow-up it recorded
 	  $ chamoji why --thin [path]      List the commits behind the most lines
 	                                   whose Why is thin or missing
+	  $ chamoji why --check [--ai] <reason...>
+	                                   Say whether a reason is thin (exit 1) or
+	                                   ok; --ai also asks Jev (TypeSafe)
 	  $ chamoji why --amend <sha|file:line> <reason...>
 	                                   Add a better reason to an old commit
 	                                   in a git note (refs/notes/chamoji)
@@ -484,6 +491,7 @@ function parse(argv: string[]) {
 			json: {type: 'boolean'},
 			amend: {type: 'string'},
 			thin: {type: 'boolean'},
+			check: {type: 'boolean'},
 			none: {type: 'boolean'},
 			purge: {type: 'boolean'},
 			archived: {type: 'boolean'},
@@ -559,12 +567,13 @@ export async function run(argv: string[], given: Io): Promise<number> {
 		try {
 			// card ignores --ai: it counts what the rules sort and sends nothing out.
 			// memory search and mcp have their own use for it, and ask for their key
-			// themselves. agent-hook has none, and stdout is its decision.
+			// themselves, as does why --check. agent-hook has none, and stdout is its decision.
 			const classify =
 				flags.ai &&
 				command !== 'card' &&
 				command !== 'memory' &&
 				command !== 'mcp' &&
+				command !== 'why' &&
 				command !== 'agent-hook'
 					? jev.wrap(await jevClassifier(io, jev.progress))
 					: undefined;
@@ -690,7 +699,9 @@ export async function run(argv: string[], given: Io): Promise<number> {
 				}
 
 				case 'why': {
-					return await runWhy(cli.input.slice(1), flags, io);
+					return await runWhy(cli.input.slice(1), flags, io, async () =>
+						realWhyChecker(io),
+					);
 				}
 
 				case 'memory': {
@@ -1180,13 +1191,15 @@ export async function run(argv: string[], given: Io): Promise<number> {
 			return PREFLIGHT_FAILED;
 		}
 
-		const advice = adviceFor(root, await readAiSettings(root), '');
+		const settings = await readAiSettings(root);
+		const advice = adviceFor(root, settings, '');
 		let message: string | null;
 		try {
 			message = await terminal.compose(
 				config,
 				advice,
 				await composeImpact(root),
+				await whyCheckFor(root, settings),
 			);
 		} finally {
 			terminal.close();
@@ -1287,9 +1300,10 @@ export async function run(argv: string[], given: Io): Promise<number> {
 		const root = (
 			await runGit(['rev-parse', '--show-toplevel'], io.cwd)
 		).trim();
+		const settings = await readAiSettings(root);
 		const advice = adviceFor(
 			root,
-			await readAiSettings(root),
+			settings,
 			original.split('\n').find(line => line.trim() && !line.startsWith('#')) ??
 				'',
 		);
@@ -1297,6 +1311,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 			await loadComposeConfig(root),
 			advice,
 			await composeImpact(root),
+			await whyCheckFor(root, settings),
 		);
 		if (message === null) return false;
 
@@ -1375,6 +1390,27 @@ export async function run(argv: string[], given: Io): Promise<number> {
 			if (staged.files.length === 0) return null;
 			return advise({staged, draft});
 		})().catch(() => null);
+	}
+
+	/**
+	 * The composer's Jev check of a Why, when the user turned it on in git
+	 * config and there's a key; otherwise undefined. It sends the title, the
+	 * Why and the staged file paths. The agent hook never gets one.
+	 */
+	async function whyCheckFor(
+		root: string,
+		settings: AiSettings,
+	): Promise<ComposerProps['checkWhy']> {
+		if (!settings.whyCheck) return undefined;
+		const check = io.whyChecker ?? (await realWhyChecker(io, root, true));
+		if (!check) return undefined;
+		let files: Promise<string[]> | undefined;
+		return async (why, title) => {
+			files ??= readStagedChanges(root, {sendDiffs: false}).then(staged =>
+				staged.files.map(file => file.path),
+			);
+			return check({title, why, files: await files});
+		};
 	}
 
 	async function hook(action: string | undefined): Promise<number> {
@@ -2585,7 +2621,11 @@ function githubReleases(
 	});
 }
 
-export type AiSettings = {composer: boolean; sendDiffs: boolean};
+export type AiSettings = {
+	composer: boolean;
+	sendDiffs: boolean;
+	whyCheck: boolean;
+};
 
 /**
  * The composer's AI opt-ins, from git config (`chamoji.composer`,
@@ -2600,6 +2640,7 @@ async function readAiSettings(cwd: string): Promise<AiSettings> {
 	return {
 		composer: await flag('chamoji.composer'),
 		sendDiffs: await flag('chamoji.sendDiffs'),
+		whyCheck: await flag('chamoji.whyCheck'),
 	};
 }
 
@@ -2615,6 +2656,34 @@ async function realAdvisor(
 	const client = new TypeSafeClient({apiKey: key});
 	return createCommitAdvisor({
 		// The advisor asks only choice and noul questions, so box answers never come back.
+		systemOne: async request =>
+			(await client.systemOne(
+				request as Parameters<typeof client.systemOne>[0],
+			)) as unknown as Awaited<ReturnType<AdvisorClient['systemOne']>>,
+	});
+}
+
+/**
+ * Jev's check of a Why on the TypeSafe API, or undefined without a key. For
+ * the composer (`untrackedOnly`) a tracked `.env` can't supply the key, as
+ * with the advisor. `why --check --ai` uses the same lookup as other `--ai`
+ * commands.
+ */
+async function realWhyChecker(
+	io: Io,
+	root = io.cwd,
+	untrackedOnly = false,
+): Promise<WhyChecker | undefined> {
+	if (io.whyChecker) return io.whyChecker;
+	if (untrackedOnly) {
+		const key = await readTypesafeKey(root, process.env, {untrackedOnly});
+		if (!key || /[^\x21-\x7E]/.test(key)) return undefined;
+	}
+
+	const client = await typesafeClient({...io, cwd: root}, {untrackedOnly});
+	if (!client) return undefined;
+	// The check asks only a noul question, so box answers never come back.
+	return createWhyChecker({
 		systemOne: async request =>
 			(await client.systemOne(
 				request as Parameters<typeof client.systemOne>[0],
