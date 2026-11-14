@@ -19,6 +19,7 @@ import {isRecord} from './records.js';
 import type {MemoryReranker} from './rerank.js';
 import type {Io} from './run.js';
 import {stripControl, stripControlLines} from './text.js';
+import {MAX_WHY, cleanReason} from './why-draft.js';
 import {findWorkstream, readWhy} from './why.js';
 
 /**
@@ -37,7 +38,6 @@ export type McpTools = {
 /** The name each client gave in `initialize`, per server instance. */
 const clients = new WeakMap<McpTools, string>();
 
-const MAX_WHY = 500;
 const MAX_CLIENT_NAME = 40;
 
 /**
@@ -249,8 +249,7 @@ const TOOLS = new Map<string, Tool>([
 					throw new Error(`why must be a string of 1 to ${MAX_WHY} characters`);
 				}
 
-				// One line of plain text: it becomes a Why: line in a commit.
-				const clean = stripControl(why).replaceAll(/\s+/g, ' ').trim();
+				const clean = cleanReason(why);
 				const verdict = judgeWhy(
 					{why: [clean], constraint: [], gotcha: [], followUp: []},
 					'',

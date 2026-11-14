@@ -62,7 +62,6 @@ import {
 	type FileChange,
 	type NpmRunner,
 	type OutputFormat,
-	type PendingWhy,
 	type PublishMethod,
 	type PublishOutcome,
 	type PublishPlan,
@@ -114,6 +113,7 @@ import {stripControlLines} from './text.js';
 import {openTerminal} from './tty.js';
 import type {UpdateCheck} from './update-check.js';
 import {composeImpact} from './impact.js';
+import {draftFrom} from './why-draft.js';
 import {oneLineLogo, playWelcome, SHORT_HELP, TAGLINE} from './welcome.js';
 import {runWhy} from './why.js';
 import {createWhyChecker, type WhyChecker} from './why-check.js';
@@ -1198,7 +1198,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 
 		const settings = await readAiSettings(root);
 		const advice = adviceFor(root, settings, '');
-		const draft = whyDraft(await readPendingWhy(root));
+		const draft = draftFrom(await readPendingWhy(root));
 		let message: string | null;
 		try {
 			message = await terminal.compose(
@@ -1324,7 +1324,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 			advice,
 			await composeImpact(root),
 			await whyCheckFor(root, settings),
-			whyDraft(await readPendingWhy(root)),
+			draftFrom(await readPendingWhy(root)),
 		);
 		if (message === null) return false;
 
@@ -1381,11 +1381,6 @@ export async function run(argv: string[], given: Io): Promise<number> {
 				`chamoji: editor commits aren't stamped; add "Workstream: ${slug}" to the message, or use -m or chamoji commit.\n`,
 			);
 		}
-	}
-
-	/** What the user told their agent, as the composer offers it. */
-	function whyDraft(pending: PendingWhy | undefined): WhyDraft | undefined {
-		return pending && {text: pending.why, source: pending.source};
 	}
 
 	/**
