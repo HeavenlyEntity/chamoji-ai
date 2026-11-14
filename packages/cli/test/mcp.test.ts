@@ -10,6 +10,7 @@ import {
 	runGitWithInput,
 	setActive,
 	snapshotWorkstream,
+	WHY_ADVICE,
 	writeTree,
 	type MemoryHit,
 } from '@chamoji/core';
@@ -1053,5 +1054,32 @@ test('a damaged search index is rebuilt and the search still answers', async () 
 		});
 		expect(isError, damage).toBe(false);
 		expect(data.hits[0].title, damage).toBe('✨ Add login');
+	}
+});
+
+test('why labels a thin card and adds clues', async () => {
+	const repo = await createRepo([
+		{
+			commit: '✨ Add login',
+			body: 'Why: the old form leaked sessions after the tab closed, so logins stayed open',
+			files: {'src/a.ts': 'one\ntwo\n'},
+		},
+		{
+			commit: '🐛 Fix login (#12)',
+			body: 'Why: fix bug',
+			files: {'src/a.ts': 'one\ntwo\nthree\n'},
+		},
+	]);
+	try {
+		const {data} = await callTool(createTools(repo.dir), 'why', {
+			file: 'src/a.ts',
+			line: 3,
+		});
+		expect(data.whyQuality).toBe('thin');
+		expect(data.whyAdvice).toBe(WHY_ADVICE.filler);
+		expect(data.clues.pr).toBe(12);
+		expect(data.clues.nearby).toHaveLength(1);
+	} finally {
+		await repo.cleanup();
 	}
 });

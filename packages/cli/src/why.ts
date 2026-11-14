@@ -1,12 +1,17 @@
 import {
 	assertGitRepo,
 	blameLine,
+	findClues,
+	judgeWhy,
 	parseLocation,
 	readMemory,
 	readWorkstreams,
 	type IntentCard,
 	type ParsedCommit,
 	type Workstream,
+	type WhyClues,
+	type WhyQuality,
+	type WhyReason,
 } from '@chamoji/core';
 import {NO_FACE, runStep} from './face.js';
 import type {Io} from './run.js';
@@ -14,6 +19,16 @@ import {stripControl} from './text.js';
 
 /** Same code run.ts uses for a command that was used wrongly. */
 const USAGE_ERROR = 2;
+
+const THIN_NOTICE =
+	'This reason is thin. Look at the PR, issue and nearby commits too.';
+
+/** A commit's reason: how good it is and, when it isn't good, where to look. */
+export type WhyReading = {
+	quality: WhyQuality;
+	reasons: WhyReason[];
+	clues?: WhyClues;
+};
 
 const CARD_LABELS: [keyof IntentCard, string][] = [
 	['why', 'Why'],
@@ -41,18 +56,20 @@ export async function runWhy(
 
 	await assertGitRepo(io.cwd);
 	const {file, line} = parseLocation(location);
-	const {result, summary} = await runStep(
+	const {result, reading, summary} = await runStep(
 		io.face ?? NO_FACE,
 		'Finding the commit that wrote the line',
 		async () => {
 			const result = await blameLine(io.cwd, file, line);
-			if (flags.json || result.kind === 'uncommitted') return {result};
-			const {card, workstream} = result.commit;
+			if (result.kind === 'uncommitted') return {result};
+			const {workstream} = result.commit;
+			const reading = await readWhy(io.cwd, result.commit, file);
+			if (flags.json) return {result, reading};
 			const summary =
-				card === undefined && workstream !== undefined
+				reading.quality !== 'ok' && workstream !== undefined
 					? await findWorkstream(io.cwd, workstream)
 					: undefined;
-			return {result, summary};
+			return {result, reading, summary};
 		},
 		({result}) => ({
 			outcome: 'ok',
@@ -62,15 +79,45 @@ export async function runWhy(
 					: 'Found the commit',
 		}),
 	);
-	if (flags.json) {
-		io.stdout(`${JSON.stringify(result, null, 2)}\n`);
-	} else if (result.kind === 'uncommitted') {
-		io.stdout(`${stripControl(`${file}:${line}`)} is not committed yet.\n`);
+	if (result.kind === 'uncommitted') {
+		io.stdout(
+			flags.json
+				? `${JSON.stringify(result, null, 2)}\n`
+				: `${stripControl(`${file}:${line}`)} is not committed yet.\n`,
+		);
+	} else if (flags.json) {
+		const {quality, reasons, clues} = reading!;
+		io.stdout(
+			`${JSON.stringify({...result, whyQuality: quality, whyReasons: reasons, clues}, null, 2)}\n`,
+		);
 	} else {
-		io.stdout(describe(result.commit, summary));
+		io.stdout(describe(result.commit, reading!, summary));
 	}
 
 	return 0;
+}
+
+/**
+ * How good the commit's Why is, judged against its description. A thin or
+ * missing one comes with clues; a good one needs none.
+ */
+export async function readWhy(
+	cwd: string,
+	commit: ParsedCommit,
+	file: string,
+): Promise<WhyReading> {
+	if (commit.card === undefined) {
+		return {
+			quality: 'none',
+			reasons: [],
+			clues: await findClues(cwd, commit, file),
+		};
+	}
+
+	const {level, reasons} = judgeWhy(commit.card, commit.description);
+	return level === 'ok'
+		? {quality: 'ok', reasons}
+		: {quality: 'thin', reasons, clues: await findClues(cwd, commit, file)};
 }
 
 /**
@@ -95,6 +142,7 @@ export async function findWorkstream(
  */
 function describe(
 	{shortHash, subject, authorName, date, card}: ParsedCommit,
+	{quality, clues}: WhyReading,
 	workstream?: Pick<Workstream, 'title' | 'emoji' | 'status'>,
 ) {
 	const lines = [
@@ -106,6 +154,15 @@ function describe(
 	lines.push(
 		...(recorded.length > 0 ? recorded : ['This commit records no intent.']),
 	);
+	if (quality === 'thin') lines.push(THIN_NOTICE);
+	if (clues?.pr !== undefined) lines.push(`PR: #${clues.pr}`);
+	for (const near of clues?.nearby ?? []) {
+		lines.push(
+			`Nearby: ${stripControl(near.shortHash)} ${stripControl(near.subject)}`,
+			...cardLines(near.card).map(line => `  ${line}`),
+		);
+	}
+
 	if (workstream) {
 		const {emoji, title, status} = workstream;
 		lines.push(

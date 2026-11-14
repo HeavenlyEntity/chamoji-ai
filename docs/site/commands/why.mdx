@@ -32,14 +32,22 @@ export const metadata = {
 		Its short hash, subject, author and date, and its intent card: the `Why:`,
 		`Constraint:`, `Gotcha:` and `Follow-up:` lines in its message.
 	</Step>
+	<Step title="Judges the reason.">
+		It checks whether the `Why:` line says why, with a local check that sends
+		nothing anywhere. A thin Why, such as “fix bug”, gets a notice. A thin or
+		missing one also gets clues: the PR number from the subject, and up to three
+		commits to the same file in the 14 days before it whose cards do say why. It
+		only reads git.
+	</Step>
 	<Step title="Adds the workstream.">
-		When the commit has no card but names a workstream, it shows that
-		workstream’s title and status, from project memory or, failing that,
+		When the commit has no card, or a thin one, and names a workstream, it shows
+		that workstream’s title and status, from project memory or, failing that,
 		`.chamoji/workstreams.yml`.
 	</Step>
 	<Step title="Prints it.">
-		A commit without a card says “This commit records no intent.” A line you
-		haven’t committed yet says so and exits 0.
+		A commit without a card says “This commit records no intent.” A thin Why
+		prints “This reason is thin. Look at the PR, issue and nearby commits too.”
+		A line you haven’t committed yet says so and exits 0.
 	</Step>
 </Steps>
 
@@ -64,7 +72,10 @@ export const metadata = {
 		a line you haven’t committed, or `kind: "commit"` with the whole commit as
 		chamoji reads it: hash, author name and email, date, subject, body, gitmoji,
 		trailers, `card` when there is one, and `workstream` as a slug. It doesn’t
-		look up the workstream’s title. The exit codes stay the same.
+		look up the workstream’s title. A commit result also has `whyQuality`
+		(`ok`, `thin` or `none` when there is no card), `whyReasons` (why a Why was
+		judged thin) and `clues` (`pr`, when the subject names one, and `nearby`)
+		when the reason is thin or missing. The exit codes stay the same.
 	</Property>
 	<Property name="--no-update-check" type="boolean">
 		Don’t check npm for a newer chamoji. See [the update
@@ -108,6 +119,20 @@ Sam Rivera, 2026-11-05
 
 This commit records no intent.
 Workstream: ⌨️ Keyboard support (shipped)
+```
+
+A commit whose Why is thin, with a PR and a nearby commit that does say why:
+
+```txt {{ title: 'chamoji why src/picker.js:5' }}
+c41d9e2 🐛 Fix the picker (#31)
+Sam Rivera, 2026-11-06
+
+Why: fix bug
+This reason is thin. Look at the PR, issue and nearby commits too.
+PR: #31
+Nearby: 39a81ce 🐛 Return null for an empty date
+  Why: the form crashed when the field was cleared
+  Gotcha: callers still compare with undefined in two places
 ```
 
 A line you’ve added but not committed:

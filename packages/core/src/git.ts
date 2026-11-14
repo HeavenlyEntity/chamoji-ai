@@ -155,6 +155,7 @@ const COMMIT_FIELDS = [
 export async function readCommits(
 	cwd: string,
 	range: string,
+	options: {paths?: string[]; since?: string; maxCount?: number} = {},
 ): Promise<RawCommit[]> {
 	const stdout = await runGit(
 		[
@@ -163,9 +164,14 @@ export async function readCommits(
 			'--no-merges',
 			'--no-show-signature',
 			`--format=${COMMIT_FIELDS.join('%x00')}`,
+			...(options.since === undefined ? [] : [`--since=${options.since}`]),
+			...(options.maxCount === undefined
+				? []
+				: [`--max-count=${options.maxCount}`]),
 			'--end-of-options',
 			range,
 			'--',
+			...(options.paths ?? []),
 		],
 		cwd,
 	);

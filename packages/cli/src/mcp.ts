@@ -9,6 +9,7 @@ import {
 	readMemory,
 	readWorkstreams,
 	searchMemory,
+	WHY_ADVICE,
 } from '@chamoji/core';
 import {MISSING_KEY} from './env.js';
 import {redact, withoutTrailers} from './jev-classifier.js';
@@ -16,7 +17,7 @@ import {isRecord} from './records.js';
 import type {MemoryReranker} from './rerank.js';
 import type {Io} from './run.js';
 import {stripControlLines} from './text.js';
-import {findWorkstream} from './why.js';
+import {findWorkstream, readWhy} from './why.js';
 
 /**
  * What the three tools do. Each answers with plain data, which becomes the
@@ -124,7 +125,7 @@ const TOOLS = new Map<string, Tool>([
 	[
 		'why',
 		{
-			description: `Say why a line of code is the way it is: the commit that last wrote it, with its message and the intent card it recorded (Why, Constraint, Gotcha, Follow-up). The line is 1-based, in the working copy. ${DATA_NOTICE}`,
+			description: `Say why a line of code is the way it is: the commit that last wrote it, with its message and the intent card it recorded (Why, Constraint, Gotcha, Follow-up). The line is 1-based, in the working copy. When whyQuality is thin or none, treat the reason as incomplete and read the clues. ${DATA_NOTICE}`,
 			inputSchema: {
 				type: 'object',
 				properties: {
@@ -215,6 +216,7 @@ export function createTools(cwd: string, rerank?: MemoryReranker): McpTools {
 				return {kind: 'uncommitted', file, line};
 			const {hash, subject, body, authorName, date, card, workstream} =
 				result.commit;
+			const reading = await readWhy(cwd, result.commit, file);
 			const found =
 				workstream === undefined
 					? undefined
@@ -231,6 +233,12 @@ export function createTools(cwd: string, rerank?: MemoryReranker): McpTools {
 				author: authorName,
 				date,
 				card,
+				whyQuality: reading.quality,
+				whyAdvice:
+					reading.quality === 'thin' && reading.reasons[0] !== undefined
+						? WHY_ADVICE[reading.reasons[0]]
+						: undefined,
+				clues: reading.clues,
 				workstream:
 					workstream === undefined
 						? undefined
