@@ -1,15 +1,24 @@
 import {
 	formatCommitMessage,
 	getGitmoji,
+	judgeWhy,
+	WHY_ADVICE,
 	searchGitmojis,
 	type ComposeConfig,
+	type WhyDraft,
 	type CommitDraft,
 	type GitmojiInfo,
 } from '@chamoji/core';
 import {Box, render, Text, useInput} from 'ink';
 import {useEffect, useRef, useState} from 'react';
-import {HINT_THRESHOLD, PRESELECT_THRESHOLD, type Advice} from './advisor.js';
+import {
+	ADVICE_TIMEOUT_MS,
+	HINT_THRESHOLD,
+	PRESELECT_THRESHOLD,
+	type Advice,
+} from './advisor.js';
 import {stripControl} from './text.js';
+import {WHY_CHECK_TIMEOUT_MS} from './why-check.js';
 
 type Step =
 	| 'gitmoji'
@@ -26,7 +35,7 @@ const PROMPTS: Record<Step, string> = {
 	scope: 'Scope (optional)',
 	title: 'Title',
 	body: 'Body (optional)',
-	why: 'Why? (optional, kept as a Why: trailer)',
+	why: 'What would break, or come back, if someone undid this? (kept as Why:)',
 	breaking: 'Breaking change? (y/N)',
 	breakingText: 'What breaks?',
 	release: 'Release',
@@ -39,9 +48,6 @@ const names = (units: string[]) => units.map(unit => stripControl(unit));
 
 const LIST_SIZE = 7;
 
-/** How long the composer waits for Jev's advice before carrying on without it. */
-const ADVICE_TIMEOUT_MS = 2000;
-
 export type ComposerProps = {
 	config: ComposeConfig;
 	onSubmit: (message: string) => void;
@@ -49,8 +55,17 @@ export type ComposerProps = {
 	/** Jev's advice, when AI is on. The composer never waits for it. */
 	advice?: Promise<Advice | null>;
 	adviceTimeoutMs?: number;
+	/**
+	 * Jev's second opinion on a Why the local rules passed, when AI is on:
+	 * true means the reason is unclear. It only warns; a timeout or an error
+	 * counts as fine.
+	 */
+	checkWhy?: (why: string, title: string) => Promise<boolean>;
+	checkWhyTimeoutMs?: number;
 	/** The units the staged change touches, with a release section. */
 	impact?: Impact;
+	/** A reason the user gave their agent. Tab on an empty Why fills it; nothing fills it on its own. */
+	draft?: WhyDraft | Promise<WhyDraft | undefined>;
 };
 
 /**
@@ -63,7 +78,10 @@ export function Composer({
 	onCancel,
 	advice: pendingAdvice,
 	adviceTimeoutMs = ADVICE_TIMEOUT_MS,
+	checkWhy,
+	checkWhyTimeoutMs = WHY_CHECK_TIMEOUT_MS,
 	impact,
+	draft: givenDraft,
 }: ComposerProps) {
 	// A change that releases no unit of its own but rides along to some can
 	// release them now, with a Release: trailer each.
@@ -90,12 +108,36 @@ export function Composer({
 	});
 	const [breakingValue, setBreakingValue] = useState<string | boolean>();
 	const [selected, setSelected] = useState(0);
+	// The thin Why the person was last warned about; Enter on it again keeps it.
+	const [warnedFor, setWarnedFor] = useState<string | null>(null);
+	const [whyAdvice, setWhyAdvice] = useState('');
+	// A Jev check on the Why is out. Any key but Enter drops its answer.
+	const [checking, setChecking] = useState(false);
+	const checkToken = useRef(0);
 	const [gitmoji, setGitmoji] = useState<string | null>(null);
 	const [advice, setAdvice] = useState<Advice | null>(null);
 	// Suggestions reorder the list only if they arrive before any keypress,
 	// so the list never moves under someone who has started typing.
 	const [suggestFirst, setSuggestFirst] = useState(false);
 	const touched = useRef(false);
+	// A draft that is still being read shows up when it arrives, and only
+	// while the Why is empty, so it never moves under someone who has typed.
+	const [whyDraft, setWhyDraft] = useState<WhyDraft | undefined>(
+		givenDraft instanceof Promise ? undefined : givenDraft,
+	);
+
+	useEffect(() => {
+		if (!(givenDraft instanceof Promise)) return;
+		let live = true;
+		givenDraft
+			.then(result => {
+				if (live && result) setWhyDraft(result);
+			})
+			.catch(() => undefined);
+		return () => {
+			live = false;
+		};
+	}, [givenDraft]);
 
 	useEffect(() => {
 		if (!pendingAdvice) return;
@@ -163,8 +205,15 @@ export function Composer({
 	useInput((input, key) => {
 		touched.current = true;
 		if (key.ctrl && input === 'c') {
+			checkToken.current++;
 			onCancel();
 			return;
+		}
+
+		if (checking) {
+			if (key.return) return;
+			checkToken.current++;
+			setChecking(false);
 		}
 
 		if (key.escape) {
@@ -227,6 +276,40 @@ export function Composer({
 		if (key.return) {
 			if (step === 'breakingText') {
 				finish(text.breakingText.trim() || true);
+			} else if (step === 'why') {
+				// Warn once about a thin Why, never block. Enter again moves on.
+				const why = text.why.trim();
+				if (why && warnedFor !== why) {
+					const verdict = judgeWhy(
+						{why: [why], constraint: [], gotcha: [], followUp: []},
+						text.title,
+					);
+					if (verdict.level === 'thin') {
+						setWarnedFor(why);
+						setWhyAdvice(verdict.advice);
+						return;
+					}
+
+					if (checkWhy) {
+						const token = ++checkToken.current;
+						setChecking(true);
+						void askJev(checkWhy, why, text.title, checkWhyTimeoutMs).then(
+							unclear => {
+								if (token !== checkToken.current) return;
+								setChecking(false);
+								if (unclear) {
+									setWarnedFor(why);
+									setWhyAdvice(WHY_ADVICE['ai-unclear']);
+								} else {
+									move(1);
+								}
+							},
+						);
+						return;
+					}
+				}
+
+				move(1);
 			} else if (step !== 'title' || text.title.trim()) {
 				move(1);
 			}
@@ -234,6 +317,12 @@ export function Composer({
 			return;
 		}
 
+		if (key.tab && step === 'why' && whyDraft && text.why === '') {
+			setText(all => ({...all, why: whyDraft.text}));
+			return;
+		}
+
+		if (step === 'why') setWarnedFor(null);
 		if (key.backspace || key.delete) {
 			setText(all => ({...all, [step]: all[step].slice(0, -1)}));
 			if (step === 'gitmoji') setSelected(0);
@@ -280,9 +369,23 @@ export function Composer({
 					<Text>
 						{text[step]}
 						<Text inverse> </Text>
+						{step === 'why' && whyDraft && text.why === '' && (
+							<Text dimColor>{whyDraft.text}</Text>
+						)}
 					</Text>
 				)}
 			</Box>
+			{step === 'why' && whyDraft && text.why === '' && (
+				<Text dimColor>Tab fills it from {whyDraft.source}.</Text>
+			)}
+			{step === 'why' && checking && <Text dimColor>Checking the reason…</Text>}
+			{step === 'why' &&
+				warnedFor !== null &&
+				warnedFor === text.why.trim() && (
+					<Text color="yellow">
+						{whyAdvice} Enter again keeps it as written.
+					</Text>
+				)}
 			{step === 'title' && hint(advice?.split) && (
 				<Text color="yellow">
 					Jev thinks these changes mix unrelated work; consider committing them
@@ -330,12 +433,37 @@ export type ComposeStreams = {
 	stdout: NodeJS.WriteStream;
 };
 
+/**
+ * Jev's verdict on a Why: true only when it says the reason is unclear. A
+ * timeout or an error is false, since the check must never get in the way.
+ */
+async function askJev(
+	check: (why: string, title: string) => Promise<boolean>,
+	why: string,
+	title: string,
+	timeoutMs: number,
+): Promise<boolean> {
+	let timer: NodeJS.Timeout | undefined;
+	const timeout = new Promise<boolean>(resolve => {
+		timer = setTimeout(() => {
+			resolve(false);
+		}, timeoutMs);
+	});
+	try {
+		return await Promise.race([check(why, title).catch(() => false), timeout]);
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
 /** Runs the composer on a terminal. Resolves with the message, or null when cancelled. */
 export async function compose(
 	config: ComposeConfig,
 	streams: ComposeStreams,
 	advice?: Promise<Advice | null>,
 	impact?: Impact,
+	checkWhy?: ComposerProps['checkWhy'],
+	draft?: WhyDraft | Promise<WhyDraft | undefined>,
 ): Promise<string | null> {
 	return new Promise(resolve => {
 		let done = false;
@@ -353,6 +481,8 @@ export async function compose(
 				onCancel={() => finish(null)}
 				advice={advice}
 				impact={impact}
+				checkWhy={checkWhy}
+				draft={draft}
 			/>,
 			{
 				stdin: streams.stdin,

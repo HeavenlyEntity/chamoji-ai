@@ -1,7 +1,7 @@
 import {execFile} from 'node:child_process';
 import {existsSync} from 'node:fs';
 import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
-import {tmpdir} from 'node:os';
+import {homedir, tmpdir} from 'node:os';
 import path from 'node:path';
 import {
 	applyRelease,
@@ -11,6 +11,7 @@ import {
 	CARD_ENDPOINT,
 	cardUrl,
 	checkPublishAuth,
+	clearPendingWhy,
 	committedSection,
 	ConfigVersionError,
 	fetchesMemory,
@@ -37,6 +38,7 @@ import {
 	restoreChanges,
 	render,
 	repoStats,
+	readPendingWhy,
 	requireNpm,
 	resolveUnits,
 	runGit,
@@ -69,6 +71,7 @@ import {
 	type ReleaseOptions,
 	type UnitPending,
 	type UnitPlan,
+	type WhyDraft,
 	type WrittenChanges,
 } from '@chamoji/core';
 import {TypeSafeClient} from '@typesafe-ai/sdk';
@@ -80,7 +83,7 @@ import {
 	type Advice,
 	type AdvisorClient,
 } from './advisor.js';
-import {compose, type Impact} from './composer.js';
+import {compose, type ComposerProps, type Impact} from './composer.js';
 import {MISSING_KEY, readTypesafeKey} from './env.js';
 import {gitStep, NO_FACE, runStep, type Face, type Step} from './face.js';
 import {hasFace} from './face-settings.js';
@@ -110,8 +113,11 @@ import {stripControlLines} from './text.js';
 import {openTerminal} from './tty.js';
 import type {UpdateCheck} from './update-check.js';
 import {composeImpact} from './impact.js';
+import {draftFromSession} from './session-why.js';
+import {draftFrom} from './why-draft.js';
 import {oneLineLogo, playWelcome, SHORT_HELP, TAGLINE} from './welcome.js';
 import {runWhy} from './why.js';
+import {createWhyChecker, type WhyChecker} from './why-check.js';
 import {runWorkstream} from './ws.js';
 
 export type Io = {
@@ -136,6 +142,8 @@ export type Io = {
 	npm?: NpmRunner;
 	/** Fetches for the OIDC check of `publish`; tests pass a fake. Defaults to global fetch. */
 	fetch?: FetchLike;
+	/** The home folder whose Claude Code and Codex sessions `chamoji.whyFromSessions` reads; defaults to the real one. */
+	home?: string;
 	/** The terminal the composer runs on, or null when there is none; tests pass a fake. */
 	terminal?: () => ComposerTerminal | null;
 	/** Environment for the hook's CI check; defaults to process.env. */
@@ -150,6 +158,8 @@ export type Io = {
 	jev?: JevClient;
 	/** Jev's commit advice; tests pass a fake. Defaults to the TypeSafe API. */
 	advise?: ReturnType<typeof createCommitAdvisor>;
+	/** Jev's check of a Why (composer and `why --check --ai`); tests pass a fake. Defaults to the TypeSafe API. */
+	whyChecker?: WhyChecker;
 	/** Jev's `memory search --ai` reorder; tests pass a fake. Defaults to the TypeSafe API. */
 	rerank?: MemoryReranker;
 	/**
@@ -193,6 +203,8 @@ export type ComposerTerminal = {
 		config: ComposeConfig,
 		advice?: Promise<Advice | null>,
 		impact?: Impact,
+		checkWhy?: ComposerProps['checkWhy'],
+		draft?: WhyDraft | Promise<WhyDraft | undefined>,
 	): Promise<string | null>;
 	close(): void;
 };
@@ -201,8 +213,8 @@ const realTerminal = (): ComposerTerminal | null => {
 	const terminal = openTerminal();
 	return terminal
 		? {
-				compose: async (config, advice, impact) =>
-					compose(config, terminal, advice, impact),
+				compose: async (config, advice, impact, checkWhy, draft) =>
+					compose(config, terminal, advice, impact, checkWhy, draft),
 				close: () => terminal.close(),
 			}
 		: null;
@@ -263,6 +275,14 @@ const HELP = `
 	  $ chamoji why <file:line>        Show why a line is there: the commit
 	                                   that wrote it and the Why, Constraint,
 	                                   Gotcha and Follow-up it recorded
+	  $ chamoji why --thin [path]      List the commits behind the most lines
+	                                   whose Why is thin or missing
+	  $ chamoji why --check [--ai] <reason...>
+	                                   Say whether a reason is thin (exit 1) or
+	                                   ok; --ai also asks Jev (TypeSafe)
+	  $ chamoji why --amend <sha|file:line> <reason...>
+	                                   Add a better reason to an old commit
+	                                   in a git note (refs/notes/chamoji)
 	  $ chamoji memory                 List what shipped or dropped workstreams
 	                                   left in memory (refs/chamoji/memory);
 	                                   --archived adds the archived ones
@@ -477,6 +497,9 @@ function parse(argv: string[]) {
 			catchUp: {type: 'boolean'},
 			forTag: {type: 'string'},
 			json: {type: 'boolean'},
+			amend: {type: 'string'},
+			thin: {type: 'boolean'},
+			check: {type: 'boolean'},
 			none: {type: 'boolean'},
 			purge: {type: 'boolean'},
 			archived: {type: 'boolean'},
@@ -552,12 +575,13 @@ export async function run(argv: string[], given: Io): Promise<number> {
 		try {
 			// card ignores --ai: it counts what the rules sort and sends nothing out.
 			// memory search and mcp have their own use for it, and ask for their key
-			// themselves. agent-hook has none, and stdout is its decision.
+			// themselves, as does why --check. agent-hook has none, and stdout is its decision.
 			const classify =
 				flags.ai &&
 				command !== 'card' &&
 				command !== 'memory' &&
 				command !== 'mcp' &&
+				command !== 'why' &&
 				command !== 'agent-hook'
 					? jev.wrap(await jevClassifier(io, jev.progress))
 					: undefined;
@@ -683,7 +707,9 @@ export async function run(argv: string[], given: Io): Promise<number> {
 				}
 
 				case 'why': {
-					return await runWhy(cli.input.slice(1), flags, io);
+					return await runWhy(cli.input.slice(1), flags, io, async () =>
+						realWhyChecker(io),
+					);
 				}
 
 				case 'memory': {
@@ -1173,13 +1199,17 @@ export async function run(argv: string[], given: Io): Promise<number> {
 			return PREFLIGHT_FAILED;
 		}
 
-		const advice = adviceFor(root, await readAiSettings(root), '');
+		const settings = await readAiSettings(root);
+		const advice = adviceFor(root, settings, '');
+		const {now, later} = await draftFor(root, settings);
 		let message: string | null;
 		try {
 			message = await terminal.compose(
 				config,
 				advice,
 				await composeImpact(root),
+				await whyCheckFor(root, settings),
+				now ?? later,
 			);
 		} finally {
 			terminal.close();
@@ -1214,6 +1244,11 @@ export async function run(argv: string[], given: Io): Promise<number> {
 					io.cwd,
 				),
 			);
+			// The reason is spent once a commit carries it.
+			if (now && message.includes(`Why: ${now.text}`)) {
+				await clearPendingWhy(root);
+			}
+
 			return 0;
 		} catch (error) {
 			const {stdout = '', stderr = ''} = error as {
@@ -1280,16 +1315,20 @@ export async function run(argv: string[], given: Io): Promise<number> {
 		const root = (
 			await runGit(['rev-parse', '--show-toplevel'], io.cwd)
 		).trim();
+		const settings = await readAiSettings(root);
 		const advice = adviceFor(
 			root,
-			await readAiSettings(root),
+			settings,
 			original.split('\n').find(line => line.trim() && !line.startsWith('#')) ??
 				'',
 		);
+		const {now, later} = await draftFor(root, settings);
 		const message = await terminal.compose(
 			await loadComposeConfig(root),
 			advice,
 			await composeImpact(root),
+			await whyCheckFor(root, settings),
+			now ?? later,
 		);
 		if (message === null) return false;
 
@@ -1368,6 +1407,59 @@ export async function run(argv: string[], given: Io): Promise<number> {
 			if (staged.files.length === 0) return null;
 			return advise({staged, draft});
 		})().catch(() => null);
+	}
+
+	/**
+	 * The Why the composer may offer on Tab. What an agent handed over with
+	 * `remember_why` comes first, as `now`. Only without one, and only when the
+	 * user turned `chamoji.whyFromSessions` on, a sentence from their own
+	 * Claude Code or Codex session is read, as `later`: a promise the caller
+	 * hands the composer as it is, so the composer opens at once and shows the
+	 * draft if it arrives before the user reaches the Why. The result is a
+	 * plain object so that awaiting it never waits for that read. Jev picks
+	 * among the candidates only with `chamoji.composer` on and a key.
+	 */
+	async function draftFor(
+		root: string,
+		settings: AiSettings,
+	): Promise<{now?: WhyDraft; later?: Promise<WhyDraft | undefined>}> {
+		const now = draftFrom(await readPendingWhy(root));
+		if (now || !settings.whyFromSessions) return {now};
+		const later = (async () => {
+			const staged = await readStagedChanges(root, {sendDiffs: false});
+			const client = settings.composer
+				? await realAdvisorClient(root)
+				: undefined;
+			return draftFromSession({
+				root,
+				home: io.home ?? homedir(),
+				now: new Date(),
+				stagedFiles: staged.files.map(file => file.path),
+				client,
+			});
+		})().catch(() => undefined);
+		return {later};
+	}
+
+	/**
+	 * The composer's Jev check of a Why, when the user turned it on in git
+	 * config and there's a key; otherwise undefined. It sends the title, the
+	 * Why and the staged file paths. The agent hook never gets one.
+	 */
+	async function whyCheckFor(
+		root: string,
+		settings: AiSettings,
+	): Promise<ComposerProps['checkWhy']> {
+		if (!settings.whyCheck) return undefined;
+		const check = io.whyChecker ?? (await realWhyChecker(io, root, true));
+		if (!check) return undefined;
+		let files: Promise<string[]> | undefined;
+		return async (why, title) => {
+			files ??= readStagedChanges(root, {sendDiffs: false}).then(staged =>
+				staged.files.map(file => file.path),
+			);
+			return check({title, why, files: await files});
+		};
 	}
 
 	async function hook(action: string | undefined): Promise<number> {
@@ -2578,7 +2670,12 @@ function githubReleases(
 	});
 }
 
-export type AiSettings = {composer: boolean; sendDiffs: boolean};
+export type AiSettings = {
+	composer: boolean;
+	sendDiffs: boolean;
+	whyCheck: boolean;
+	whyFromSessions: boolean;
+};
 
 /**
  * The composer's AI opt-ins, from git config (`chamoji.composer`,
@@ -2593,6 +2690,8 @@ async function readAiSettings(cwd: string): Promise<AiSettings> {
 	return {
 		composer: await flag('chamoji.composer'),
 		sendDiffs: await flag('chamoji.sendDiffs'),
+		whyCheck: await flag('chamoji.whyCheck'),
+		whyFromSessions: await flag('chamoji.whyFromSessions'),
 	};
 }
 
@@ -2603,11 +2702,47 @@ async function readAiSettings(cwd: string): Promise<AiSettings> {
 async function realAdvisor(
 	cwd: string,
 ): Promise<ReturnType<typeof createCommitAdvisor> | null> {
+	const client = await realAdvisorClient(cwd);
+	return client ? createCommitAdvisor(client) : null;
+}
+
+/** The TypeSafe client for choice and noul questions, or undefined without a usable key. */
+async function realAdvisorClient(
+	cwd: string,
+): Promise<AdvisorClient | undefined> {
 	const key = await readTypesafeKey(cwd, process.env, {untrackedOnly: true});
-	if (!key || /[^\x21-\x7E]/.test(key)) return null;
+	if (!key || /[^\x21-\x7E]/.test(key)) return undefined;
 	const client = new TypeSafeClient({apiKey: key});
-	return createCommitAdvisor({
-		// The advisor asks only choice and noul questions, so box answers never come back.
+	return {
+		// Only choice and noul questions are asked, so box answers never come back.
+		systemOne: async request =>
+			(await client.systemOne(
+				request as Parameters<typeof client.systemOne>[0],
+			)) as unknown as Awaited<ReturnType<AdvisorClient['systemOne']>>,
+	};
+}
+
+/**
+ * Jev's check of a Why on the TypeSafe API, or undefined without a key. For
+ * the composer (`untrackedOnly`) a tracked `.env` can't supply the key, as
+ * with the advisor. `why --check --ai` uses the same lookup as other `--ai`
+ * commands.
+ */
+async function realWhyChecker(
+	io: Io,
+	root = io.cwd,
+	untrackedOnly = false,
+): Promise<WhyChecker | undefined> {
+	if (io.whyChecker) return io.whyChecker;
+	if (untrackedOnly) {
+		const key = await readTypesafeKey(root, process.env, {untrackedOnly});
+		if (!key || /[^\x21-\x7E]/.test(key)) return undefined;
+	}
+
+	const client = await typesafeClient({...io, cwd: root}, {untrackedOnly});
+	if (!client) return undefined;
+	// The check asks only a noul question, so box answers never come back.
+	return createWhyChecker({
 		systemOne: async request =>
 			(await client.systemOne(
 				request as Parameters<typeof client.systemOne>[0],

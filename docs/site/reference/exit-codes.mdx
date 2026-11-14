@@ -110,7 +110,12 @@ chamoji release --push || [ $? -eq 3 ]
 		0 when it found the commit, and for a line you haven’t committed yet. 2 with
 		no location, or more than one. 1 for anything else, such as a location that
 		isn’t `file:line`, a file or line that doesn’t exist, or a repo with no
-		commits yet.
+		commits yet. `--check` exits 0 for a reason that says why and 1 for a thin
+		one. `--amend`, `--thin` and `--check` exit 2 when used wrongly: `--amend`
+		with no commit or reason, `--thin` with more than one path or a path outside
+		the repo, `--check` with no reason, or `--check --ai` with no TypeSafe key.
+		`--amend` exits 1 when it refuses: a thin reason, a merge commit, a line you
+		haven’t committed, or a target that isn’t a commit.
 	</Property>
 	<Property name="memory">
 		0 when it worked, including a search with no matches. 2 when it was used

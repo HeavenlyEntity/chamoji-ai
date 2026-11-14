@@ -5,6 +5,7 @@ import {snapshotWorkstream} from '@chamoji/core';
 import {afterEach, expect, test, vi} from 'vitest';
 import {
 	createRepo,
+	gitOutput,
 	type FixtureRepo,
 } from '../../core/test/helpers/fixture-repo.js';
 import {run} from '../src/run.js';
@@ -48,6 +49,7 @@ test('prints the commit and its card', async () => {
 	expect(stdout).toContain(
 		'Why: because\nConstraint: no network\nGotcha: order matters\nFollow-up: tidy later\n',
 	);
+	expect(stdout).not.toContain('This reason is thin');
 });
 
 test('a commit with no card still prints its subject and says so', async () => {
@@ -148,14 +150,28 @@ test('why takes the title from the workstreams file before any snapshot', async 
 	expect(stdout).toContain('Workstream: 🔐 Auth revamp (shipped)\n');
 });
 
-test('a commit with a card shows no workstream line', async () => {
+test('a commit with a good card shows no workstream line', async () => {
+	const why = 'the old form leaked sessions after the tab closed';
+	repo = await createRepo([
+		{commit: '🎉 Init', files: SHIPPED},
+		{
+			commit: '✨ Add a',
+			body: `Why: ${why}\nWorkstream: auth`,
+			files: FILES,
+		},
+	]);
+	const {stdout} = await chamoji(['why', 'src/a.ts:1'], repo.dir);
+	expect(stdout).toContain(`Why: ${why}\n`);
+	expect(stdout).not.toContain('Auth revamp');
+});
+
+test('a thin card still shows the workstream line', async () => {
 	repo = await createRepo([
 		{commit: '🎉 Init', files: SHIPPED},
 		{commit: '✨ Add a', body: 'Why: because\nWorkstream: auth', files: FILES},
 	]);
 	const {stdout} = await chamoji(['why', 'src/a.ts:1'], repo.dir);
-	expect(stdout).toContain('Why: because\n');
-	expect(stdout).not.toContain('Auth revamp');
+	expect(stdout).toContain('Workstream: 🔐 Auth revamp (shipped)\n');
 });
 
 test('a workstream nothing knows about leaves the plain answer', async () => {
@@ -228,4 +244,306 @@ test('why is one step, and prints what it printed before', async () => {
 		['end', 'ok', 'Found the commit'],
 		['stop'],
 	]);
+});
+
+const NOTICE =
+	'This reason is thin. Look at the PR, issue and nearby commits too.';
+
+async function thinRepo(why: string) {
+	return createRepo([
+		{
+			commit: '✨ Add login',
+			body: 'Why: the old form leaked sessions after the tab closed, so logins stayed open',
+			files: FILES,
+		},
+		{
+			commit: '🐛 Fix login (#12)',
+			body: `Why: ${why}`,
+			files: {'src/a.ts': 'one\ntwo\nthree\nfour\n'},
+		},
+	]);
+}
+
+test('a thin card prints the notice, the PR and nearby commits', async () => {
+	repo = await thinRepo('fix bug');
+	const {stdout} = await chamoji(['why', 'src/a.ts:4'], repo.dir);
+	expect(stdout).toContain(`Why: fix bug\n${NOTICE}\n`);
+	expect(stdout).toContain('PR: #12\n');
+	expect(stdout).toMatch(
+		/Nearby: [0-9a-f]{7} ✨ Add login\n {2}Why: the old form leaked sessions/,
+	);
+});
+
+test('a good card prints no notice and no clues', async () => {
+	repo = await thinRepo(
+		'a retry storm took the login service down when the token expired',
+	);
+	const {stdout} = await chamoji(['why', 'src/a.ts:4'], repo.dir);
+	expect(stdout).not.toContain(NOTICE);
+	expect(stdout).not.toContain('Nearby:');
+	expect(stdout).not.toContain('PR:');
+});
+
+test('--json adds whyQuality, whyReasons and clues', async () => {
+	repo = await thinRepo('fix bug');
+	const {stdout} = await chamoji(['why', 'src/a.ts:4', '--json'], repo.dir);
+	const result = JSON.parse(stdout);
+	expect(result.kind).toBe('commit');
+	expect(result.whyQuality).toBe('thin');
+	expect(result.whyReasons).toEqual(['filler', 'too-short']);
+	expect(result.clues.pr).toBe(12);
+	expect(result.clues.nearby).toHaveLength(1);
+});
+
+const REASON = 'the provider returns 422 for stays over 365 nights';
+
+async function hashOf(dir: string, rev = 'HEAD') {
+	return (await gitOutput(dir, ['rev-parse', rev])).trim();
+}
+
+test('--amend adds a reason that shows first, marked as added later', async () => {
+	repo = await createRepo([
+		{commit: '🐛 Fix bug', body: 'Why: fix bug', files: FILES},
+	]);
+	const hash = await hashOf(repo.dir);
+	const added = await chamoji(
+		['why', '--amend', hash, ...REASON.split(' ')],
+		repo.dir,
+	);
+	expect(added.stderr).toBe('');
+	expect(added.code).toBe(0);
+	expect(added.stdout).toMatch(
+		/^Added a reason to [0-9a-f]{7} 🐛 Fix bug\. Share it with: git push origin refs\/notes\/chamoji\n$/,
+	);
+	const {stdout} = await chamoji(['why', 'src/a.ts:1'], repo.dir);
+	expect(stdout).toContain(`Why: ${REASON} (added later)\nWhy: fix bug\n`);
+	expect(stdout).not.toContain('This reason is thin');
+});
+
+test('--amend refuses a reason that is thin too and writes nothing', async () => {
+	repo = await createRepo([
+		{commit: '🐛 Fix bug', body: 'Why: fix bug', files: FILES},
+	]);
+	const {code, stderr} = await chamoji(
+		['why', '--amend', await hashOf(repo.dir), 'fix', 'it'],
+		repo.dir,
+	);
+	expect(code).toBe(1);
+	expect(stderr).toContain('that reason is thin too.');
+	expect(await gitOutput(repo.dir, ['notes', '--ref=chamoji', 'list'])).toBe(
+		'',
+	);
+});
+
+test('--amend takes a file:line and refuses an empty reason', async () => {
+	repo = await createRepo([
+		{commit: '🐛 Fix bug', body: 'Why: fix bug', files: FILES},
+	]);
+	const done = await chamoji(
+		['why', '--amend', 'src/a.ts:1', ...REASON.split(' ')],
+		repo.dir,
+	);
+	expect(done.code).toBe(0);
+	expect((await chamoji(['why', 'src/a.ts:2'], repo.dir)).stdout).toContain(
+		`Why: ${REASON} (added later)`,
+	);
+	const empty = await chamoji(['why', '--amend', 'src/a.ts:1'], repo.dir);
+	expect(empty.code).toBe(2);
+});
+
+test('--amend on an uncommitted line exits 1 and an unknown commit exits 1', async () => {
+	repo = await createRepo([{commit: '🐛 Fix bug', files: FILES}]);
+	await appendFile(path.join(repo.dir, 'src/a.ts'), 'four\n');
+	const line = await chamoji(
+		['why', '--amend', 'src/a.ts:4', REASON],
+		repo.dir,
+	);
+	expect(line.code).toBe(1);
+	expect(line.stderr).toBe(
+		'chamoji: src/a.ts:4 is not committed yet, so there is no commit to add a reason to.\n',
+	);
+	const unknown = await chamoji(['why', '--amend', 'nope', REASON], repo.dir);
+	expect(unknown.code).toBe(1);
+});
+
+test('--thin lists thin and missing Whys behind a path', async () => {
+	repo = await createRepo([
+		{
+			commit: '✨ Add a',
+			body: 'Why: the provider returns 422 for stays over 365 nights',
+			files: {'src/a.ts': 'a1\na2\n'},
+		},
+		{
+			commit: '🐛 Fix b',
+			body: 'Why: fix bug',
+			files: {'src/b.ts': 'b1\nb2\nb3\nb4\nb5\n'},
+		},
+		{commit: '✨ Add c', files: {'src/c.ts': 'c1\n'}},
+	]);
+	const {code, stdout, stderr} = await chamoji(['why', '--thin'], repo.dir);
+	expect(stderr).toBe('');
+	expect(code).toBe(0);
+	expect(stdout).toContain('5 lines');
+	expect(stdout).toContain('Why: fix bug');
+	expect(stdout).toContain('No Why.');
+	expect(stdout).toContain(
+		'Add a better reason with: chamoji why --amend <hash> "<reason>"',
+	);
+
+	const none = await chamoji(['why', '--thin', 'src/a.ts'], repo.dir);
+	expect(none.code).toBe(0);
+	expect(none.stdout).toContain('No thin Whys behind src/a.ts.');
+
+	const json = await chamoji(['why', '--thin', '--json'], repo.dir);
+	expect(JSON.parse(json.stdout)).toHaveLength(2);
+});
+
+test('--thin refuses a path outside the repository with exit 2', async () => {
+	repo = await createRepo([{commit: '✨ Add a', files: FILES}]);
+	const {code, stdout, stderr} = await chamoji(
+		['why', '--thin', '../outside'],
+		repo.dir,
+	);
+	expect(code).toBe(2);
+	expect(stdout).toBe('');
+	expect(stderr).toBe('chamoji: ../outside is outside the repository.\n');
+});
+
+test('--thin refuses an absolute path outside the repository with exit 2', async () => {
+	repo = await createRepo([{commit: '✨ Add a', files: FILES}]);
+	const outside = path.dirname(repo.dir);
+	const {code, stdout, stderr} = await chamoji(
+		['why', '--thin', outside],
+		repo.dir,
+	);
+	expect(code).toBe(2);
+	expect(stdout).toBe('');
+	expect(stderr).toBe(`chamoji: ${outside} is outside the repository.\n`);
+});
+
+test('--check says a thin reason is thin and exits 1', async () => {
+	repo = await createRepo([{commit: '✨ Add a', files: FILES}]);
+	const {code, stdout} = await chamoji(['why', '--check', 'fix bug'], repo.dir);
+	expect(code).toBe(1);
+	expect(stdout).toMatch(/^thin: Name the bug/);
+});
+
+test('--check says ok to a reason that names its cause and exits 0', async () => {
+	repo = await createRepo([{commit: '✨ Add a', files: FILES}]);
+	const {code, stdout} = await chamoji(
+		['why', '--check', 'Safari drops the session cookie when the tab sleeps'],
+		repo.dir,
+	);
+	expect(code).toBe(0);
+	expect(stdout).toBe('ok\n');
+});
+
+test('--check with no reason exits 2', async () => {
+	repo = await createRepo([{commit: '✨ Add a', files: FILES}]);
+	const {code, stderr} = await chamoji(['why', '--check'], repo.dir);
+	expect(code).toBe(2);
+	expect(stderr).toContain('why --check needs a reason');
+});
+
+test('--check --ai with no key says so and exits 2', async () => {
+	repo = await createRepo([{commit: '✨ Add a', files: FILES}]);
+	vi.stubEnv('TYPESAFE_API_KEY', '');
+	const {code, stdout, stderr} = await chamoji(
+		['why', '--check', '--ai', 'x'],
+		repo.dir,
+	);
+	expect(code).toBe(2);
+	expect(stdout).toBe('');
+	expect(stderr).toContain('--ai needs a TypeSafe API key');
+});
+
+test('--check --ai asks Jev about a reason the local rules pass', async () => {
+	repo = await createRepo([{commit: '✨ Add a', files: FILES}]);
+	const reason = 'this makes the code better and easier to maintain';
+	let stdout = '';
+	const code = await run(['why', '--check', '--ai', reason], {
+		cwd: repo.dir,
+		stdout: text => (stdout += text),
+		stderr: () => undefined,
+		whyChecker: async () => true,
+	});
+	expect(code).toBe(1);
+	expect(stdout).toMatch(/^thin: This doesn't say what would go wrong/);
+});
+
+test('--check --ai keeps ok when Jev finds the reason fine or fails', async () => {
+	repo = await createRepo([{commit: '✨ Add a', files: FILES}]);
+	const reason = 'Safari drops the session cookie when the tab sleeps';
+	for (const whyChecker of [
+		async () => false,
+		async () => {
+			throw new Error('offline');
+		},
+	]) {
+		let stdout = '';
+		const code = await run(['why', '--check', '--ai', reason], {
+			cwd: repo.dir,
+			stdout: text => (stdout += text),
+			stderr: () => undefined,
+			whyChecker,
+		});
+		expect(code).toBe(0);
+		expect(stdout).toBe('ok\n');
+	}
+});
+
+test('--check --ai gives the local verdict when Jev never answers', async () => {
+	repo = await createRepo([{commit: '✨ Add a', files: FILES}]);
+	const reason = 'Safari drops the session cookie when the tab sleeps';
+	let stdout = '';
+	const started = Date.now();
+	const code = await run(['why', '--check', '--ai', reason], {
+		cwd: repo.dir,
+		stdout: text => (stdout += text),
+		stderr: () => undefined,
+		whyChecker: async () => new Promise<boolean>(() => undefined),
+	});
+	expect(code).toBe(0);
+	expect(stdout).toBe('ok\n');
+	expect(Date.now() - started).toBeLessThan(4000);
+});
+
+test('--amend refuses a merge commit and writes nothing', async () => {
+	repo = await createRepo([
+		{commit: '🎉 Init', files: FILES},
+		{mergeBranch: 'side', commits: ['✨ Add side']},
+	]);
+	const merge = await hashOf(repo.dir);
+	const {code, stdout, stderr} = await chamoji(
+		['why', '--amend', 'HEAD', ...REASON.split(' ')],
+		repo.dir,
+	);
+	expect(code).toBe(1);
+	expect(stdout).toBe('');
+	expect(stderr).toBe(
+		'chamoji: HEAD is a merge commit; add the reason to the commit that made the change.\n',
+	);
+	expect(
+		await gitOutput(repo.dir, ['rev-list', '--parents', '-n1', merge]),
+	).toMatch(/^\S+ \S+ \S+\n?$/);
+	expect(await gitOutput(repo.dir, ['notes', '--ref=chamoji', 'list'])).toBe(
+		'',
+	);
+});
+
+test('--json puts the merged card at the top, beside addedLater and the commit', async () => {
+	repo = await createRepo([
+		{commit: '🐛 Fix bug', body: 'Why: fix bug', files: FILES},
+	]);
+	await chamoji(
+		['why', '--amend', await hashOf(repo.dir), ...REASON.split(' ')],
+		repo.dir,
+	);
+	const result = JSON.parse(
+		(await chamoji(['why', 'src/a.ts:1', '--json'], repo.dir)).stdout,
+	);
+	expect(result.card.why).toEqual([REASON, 'fix bug']);
+	expect(result.addedLater.why).toEqual([REASON]);
+	expect(result.commit.card.why).toEqual(['fix bug']);
+	expect(result.whyQuality).toBe('ok');
 });

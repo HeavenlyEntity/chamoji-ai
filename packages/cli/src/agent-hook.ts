@@ -1,3 +1,4 @@
+import {judgeWhy, parseCommit, readIntent} from '@chamoji/core';
 import {isRecord, own} from './records.js';
 import type {Io} from './run.js';
 
@@ -335,12 +336,32 @@ function substitutionEnd(text: string, start: number): number {
 	return text.length;
 }
 
+/** `$(cat <<'EOF' ... EOF)` as one word is the heredoc's text. */
+const CAT_HEREDOC =
+	/^\$\(\s*cat\s+<<-?\s*(['"]?)(\w+)\1[ \t]*\n([\s\S]*?)\n[ \t]*\2[ \t]*\n?\s*\)$/;
+
+function unwrapCat(text: string): string {
+	return CAT_HEREDOC.exec(text.trim())?.[3] ?? text;
+}
+
+/**
+ * The message the commit will have, as far as the hook can read it: the own
+ * `-m` values and heredocs joined by blank lines. A `$(cat <<EOF ...)` in `-m`
+ * is the heredoc's text, which is read as the message instead.
+ */
+function buildMessage(parts: string[], heredocs: string[]): string {
+	const messages = parts.map(unwrapCat);
+	const own =
+		heredocs.length > 0
+			? messages.filter(text => !text.includes('$(') && !text.includes('`'))
+			: messages;
+	return [...own, ...heredocs].join('\n\n').trimStart();
+}
+
 /**
  * Whether the message the commit will have carries a card, by the parser's
  * own rules. The subject is the first paragraph, as git counts it, and is never
- * read for a card, so `-m "Why: because"` is a subject, not a card. A
- * `$(cat <<EOF ...)` in `-m` is the heredoc's text, which is read as the
- * message instead.
+ * read for a card, so `-m "Why: because"` is a subject, not a card.
  */
 function hasCard(
 	messages: string[],
@@ -348,11 +369,7 @@ function hasCard(
 	heredocs: string[],
 ): boolean {
 	if (trailers.some(trailer => CARD_TRAILER.test(trailer))) return true;
-	const own =
-		heredocs.length > 0
-			? messages.filter(text => !text.includes('$(') && !text.includes('`'))
-			: messages;
-	const message = [...own, ...heredocs].join('\n\n').trimStart();
+	const message = buildMessage(messages, heredocs);
 	const [, ...paragraphs] = message.trimEnd().split(/\r?\n[ \t\r]*\n/);
 	if (paragraphs.some(paragraph => CARD_LINE.test(paragraph))) return true;
 	// The parser also takes git's trailer block, the last paragraph, and that
@@ -365,8 +382,14 @@ function hasCard(
 	);
 }
 
-/** Whether one `git commit` leaves its message without a card the agent could have written. */
-function lacksCard(args: string[], heredocs: string[]): boolean {
+/** The message parts of one `git commit` that has a message to read. */
+type Parts = {messages: string[]; trailers: string[]};
+
+/**
+ * What one `git commit` puts in its message, or undefined when the message
+ * is elsewhere (a file, another commit) or nothing is committed.
+ */
+function readParts(args: string[]): Parts | undefined {
 	// Only what goes into the message can hold a card: -m, --trailer and heredocs.
 	const messages: string[] = [];
 	const trailers: string[] = [];
@@ -378,7 +401,7 @@ function lacksCard(args: string[], heredocs: string[]): boolean {
 		if (word.startsWith('--')) {
 			const equals = word.indexOf('=');
 			const name = equals === -1 ? word : word.slice(0, equals);
-			if (KEEPS_MESSAGE.has(name)) return false;
+			if (KEEPS_MESSAGE.has(name)) return undefined;
 			if (name === '--no-edit') {
 				noEdit = true;
 			} else if (name === '--message' || name === '--trailer') {
@@ -395,7 +418,7 @@ function lacksCard(args: string[], heredocs: string[]): boolean {
 			// A cluster such as -am: the first flag that takes a value ends it.
 			for (let at = 1; at < word.length; at++) {
 				const flag = word[at]!;
-				if (flag === 'h' || 'FCc'.includes(flag)) return false;
+				if (flag === 'h' || 'FCc'.includes(flag)) return undefined;
 				if (flag === 'm' || flag === 't') {
 					const value = at === word.length - 1 ? args[++i] : word.slice(at + 1);
 					if (value !== undefined && flag === 'm') messages.push(value);
@@ -411,8 +434,43 @@ function lacksCard(args: string[], heredocs: string[]): boolean {
 
 	// --no-edit reuses the message of an amend or a merge. Given a message too,
 	// it is a plain commit and that message needs its card.
-	if (noEdit && !hasMessage) return false;
-	return !hasCard(messages, trailers, heredocs);
+	if (noEdit && !hasMessage) return undefined;
+	return {messages, trailers};
+}
+
+/** A card whose Why says nothing, with what to tell the agent. */
+export type ThinCard = {why: string; advice: string};
+
+/** The thin verdict on the message these parts make, if its card is readable and thin. */
+function thinCard(
+	{messages, trailers}: Parts,
+	heredocs: string[],
+): ThinCard | undefined {
+	const message = buildMessage(messages, heredocs);
+	const [subject = '', ...paragraphs] = message
+		.trimEnd()
+		.split(/\r?\n[ \t\r]*\n/);
+	const rest = [...paragraphs, trailers.join('\n')]
+		.filter(paragraph => paragraph.trim() !== '')
+		.join('\n\n');
+	const card = readIntent([], rest);
+	if (!card) return undefined;
+	// Readers judge against the parsed description, without gitmoji, type or
+	// scope, so the hook does too.
+	const {description} = parseCommit({
+		hash: '',
+		shortHash: '',
+		authorName: '',
+		authorEmail: '',
+		date: '',
+		subject: subject.split(/\r?\n/)[0] ?? '',
+		body: '',
+		trailers: '',
+	});
+	const verdict = judgeWhy(card, description);
+	return verdict.level === 'thin'
+		? {why: card.why.join(' '), advice: verdict.advice}
+		: undefined;
 }
 
 /**
@@ -423,6 +481,16 @@ function lacksCard(args: string[], heredocs: string[]): boolean {
  * A bare `git commit` has no message to read, so it is denied.
  */
 export function decideCommit(command: string): 'allow' | 'deny' {
+	return judgeCommit(command) === 'deny' ? 'deny' : 'allow';
+}
+
+/**
+ * Like `decideCommit`, and for a commit with a readable card it also judges
+ * the Why: the first thin one comes back as a `ThinCard`. A `deny` anywhere
+ * wins over a thin card.
+ */
+export function judgeCommit(command: string): 'allow' | 'deny' | ThinCard {
+	let thin: ThinCard | undefined;
 	for (const {words, heredocs} of split(command)) {
 		let at = 0;
 		let optedOut = false;
@@ -446,10 +514,20 @@ export function decideCommit(command: string): 'allow' | 'deny' {
 		}
 
 		if (words[at] !== 'commit') continue;
-		if (!optedOut && lacksCard(words.slice(at + 1), heredocs)) return 'deny';
+		if (optedOut) continue;
+		const parts = readParts(words.slice(at + 1));
+		if (!parts) continue;
+		if (!hasCard(parts.messages, parts.trailers, heredocs)) return 'deny';
+		thin ??= thinCard(parts, heredocs);
 	}
 
-	return 'allow';
+	return thin ?? 'allow';
+}
+
+/** Said to the agent when its Why line is there but says nothing. */
+export function thinReason(thin: ThinCard): string {
+	const why = thin.why.length > 80 ? `${thin.why.slice(0, 79)}…` : thin.why;
+	return `Your Why ("${why}") doesn't say why. ${thin.advice} Only if the user told you to keep it, prefix the command with CHAMOJI_NO_CARD=1.`;
 }
 
 /** Reads the hook's input, or undefined when it is longer than any real one. */
@@ -485,16 +563,17 @@ export async function runAgentHook(
 		if (!isRecord(input) || own(input, 'tool_name') !== 'Bash') return 0;
 		const toolInput = own(input, 'tool_input');
 		const command = isRecord(toolInput) ? own(toolInput, 'command') : undefined;
-		if (typeof command !== 'string' || decideCommit(command) === 'allow') {
-			return 0;
-		}
+		if (typeof command !== 'string') return 0;
+		const verdict = judgeCommit(command);
+		if (verdict === 'allow') return 0;
+		const reason = verdict === 'deny' ? DENY_REASON : thinReason(verdict);
 
 		io.stdout(
 			`${JSON.stringify({
 				hookSpecificOutput: {
 					hookEventName: 'PreToolUse',
 					permissionDecision: 'deny',
-					permissionDecisionReason: DENY_REASON,
+					permissionDecisionReason: reason,
 				},
 			})}\n`,
 		);

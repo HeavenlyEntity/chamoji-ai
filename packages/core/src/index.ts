@@ -97,6 +97,42 @@ export {groupCommits} from './group.js';
 export {splitHighlights} from './highlights.js';
 export {readIntent} from './intent.js';
 export {
+	ACTION_VERBS,
+	CAUSAL_MARKERS,
+	FILLER_PHRASES,
+	STOP_WORDS,
+	WHY_ADVICE,
+	judgeWhy,
+	whyWords,
+	type WhyReason,
+	type WhyVerdict,
+} from './why-quality.js';
+export {
+	NOTES_REF,
+	mergeCards,
+	noteCard,
+	noteText,
+	readNoteCard,
+	readNoteCards,
+	writeNoteCard,
+} from './why-notes.js';
+export {
+	PENDING_WHY_MAX_AGE_MS,
+	clearPendingWhy,
+	readPendingWhy,
+	writePendingWhy,
+	type PendingWhy,
+	type WhyDraft,
+} from './pending-why.js';
+export {OutsideRepoError, listThinWhys, type ThinWhy} from './thin-whys.js';
+export {
+	findClues,
+	prNumber,
+	type NearbyCommit,
+	type WhyClues,
+	type WhyQuality,
+} from './why-clues.js';
+export {
 	MEMORY_REF,
 	MEMORY_REMOTE_REF,
 	MemoryError,

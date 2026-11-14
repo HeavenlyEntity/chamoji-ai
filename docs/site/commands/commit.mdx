@@ -61,14 +61,53 @@ export const metadata = {
 	<Property name="Body" type="optional">
 		More lines after the subject. Skipped when `messagePrompt` is false.
 	</Property>
-	<Property name="Why?" type="optional">
+	<Property
+		name="What would break, or come back, if someone undid this?"
+		type="optional"
+	>
 		Kept as a `Why:` trailer, so `chamoji why` and project memory can find it
-		later.
+		later. If you told your agent why and it called `remember_why` (see
+		[`chamoji mcp`](/commands/mcp)), the field shows that reason dimmed, with
+		“Tab fills it from your Claude Code session.” beneath. Tab fills it in, and
+		you can edit it before Enter. Nothing fills it unless you press Tab, and
+		typing first hides the offer. It is dropped when the commit uses it, when
+		HEAD moves, or after a day. If the answer is thin, like "fix bug", a yellow
+		line says what to add. It never blocks you: press Enter again to keep it as
+		written. The rules let a vague answer through when it is long enough, such
+		as “this makes the code better”. To have Jev take a second look, run `git
+		config chamoji.whyCheck true`, which needs a TypeSafe key. Enter on a Why
+		the rules pass then shows “Checking the reason…” for up to two seconds,
+		sends Jev the title, the Why and the staged file paths, and warns the same
+		way when it finds the reason generic. Jev being slow, offline or unsure
+		never warns. It is off unless you turn it on, and a repo you clone can’t
+		turn it on for you.
+		Not every agent calls `remember_why`, so there is a second source, off
+		until you run `git config chamoji.whyFromSessions true`. With it on, the
+		composer reads your latest Claude Code session for this repo, from
+		`~/.claude/projects/`, and your latest Codex session for it, from
+		`~/.codex/sessions/`, when the session is under two hours old. It keeps
+		only your own messages, never the model's replies or tool output, and
+		picks one of your sentences that gives a reason, such as one with “because”
+		or the name of a staged file. Tab fills it in the same way, from “your
+		Claude Code session” or “your Codex session”, and only when no agent left
+		a reason with `remember_why`. Nothing is sent anywhere unless `chamoji.composer`
+		is also on and there is a TypeSafe key: then Jev gets the candidate
+		sentences, with email addresses replaced, plus the staged file paths, and
+		picks the best one. A sentence that looks like it holds a secret is left
+		out before anything is offered or sent: a URL with a password or token in
+		it, a word like “password”, “token” or “secret” followed by a value, a
+		well-known key prefix such as `sk-`, `ghp_`, `AKIA` or `eyJ`, a long run of
+		hex, or any other long key-like string. This is a filter, not a guarantee,
+		which is one more reason it is off until you turn it on. Only lines your
+		session recorded in this repo, or a folder inside it, are read, so a
+		project whose folder name looks alike is never mixed in. Cursor, Claude Desktop and Grok keep no session files chamoji reads;
+		they reach the Why through [`chamoji mcp`](/commands/mcp).
 	</Property>
 	<Property name="Breaking change?" type="y/N">
 		No by default. Yes asks what breaks, and adds a `BREAKING CHANGE:` trailer
 		with your answer, or the title when you leave it empty.
 	</Property>
+
 </Properties>
 
 In a repo with release units, a line under the header says which units the staged change releases with, and which it only rides along to. When it releases none of its own, a last question offers to release those units now, with a `Release:` trailer for each.

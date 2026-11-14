@@ -2,6 +2,7 @@ import {readFile, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {afterEach, expect, test} from 'vitest';
 import {reindexMemory, searchMemory} from '../src/memory-index.js';
+import {writeNoteCard} from '../src/why-notes.js';
 import {archiveMemory, purgeMemory, snapshotWorkstream} from '../src/memory.js';
 import {
 	createRepo,
@@ -80,6 +81,46 @@ test('a subject match outranks a body match', async () => {
 	expect((await searchMemory(repo.dir, 'pagination'))[0]!.title).toBe(
 		'✨ Add pagination',
 	);
+});
+
+// BM25 marks long documents down, so the thin commit's body is long enough
+// that only its card weight, not its length, decides the order.
+test('a thin Why ranks below a specific one and is labeled', async () => {
+	repo = await createRepo([
+		{
+			commit: '🐛 Fix a crash',
+			body: 'Why: fix upload\n\nTouches the client wrapper, the shared helper and the docs for the sdk package.',
+		},
+		{
+			commit: '🐛 Stop the retry storm',
+			body: 'Why: the upload endpoint returns 429 when we retry an upload within 1 s, so wait 2 s',
+		},
+	]);
+	const hits = await searchMemory(repo.dir, 'upload');
+	expect(hits.map(hit => hit.title)).toEqual([
+		'🐛 Stop the retry storm',
+		'🐛 Fix a crash',
+	]);
+	expect(hits.map(hit => hit.whyQuality)).toEqual(['ok', 'thin']);
+});
+
+test('a commit with no card has no whyQuality', async () => {
+	repo = await createRepo([
+		{commit: '✨ Add login', body: 'Uses a throttle on the endpoint.'},
+	]);
+	const [hit] = await searchMemory(repo.dir, 'throttle');
+	expect(hit).toBeDefined();
+	expect(hit).not.toHaveProperty('whyQuality');
+});
+
+test('an index file from an older version is rebuilt', async () => {
+	repo = await createRepo([{commit: '✨ Add login'}]);
+	await searchMemory(repo.dir, 'login');
+	const file = await indexFile(repo.dir);
+	const saved = JSON.parse(await readFile(file, 'utf8'));
+	await writeFile(file, JSON.stringify({...saved, version: 1}));
+	await searchMemory(repo.dir, 'login');
+	expect(JSON.parse(await readFile(file, 'utf8')).version).toBe(3);
 });
 
 test('search finds a workstream summary whose branch is gone', async () => {
@@ -304,4 +345,25 @@ test('purge deletes this worktree index, and another worktree rebuilds its own',
 	} finally {
 		await gitOutput(repo.dir, ['worktree', 'remove', '--force', other]);
 	}
+});
+
+test('an added reason is found by the next search with no reindex', async () => {
+	repo = await createRepo([
+		{commit: '🐛 Fix bug', body: 'Why: fix bug'},
+		{commit: '📝 Tidy readme'},
+	]);
+	expect(await searchMemory(repo.dir, '365')).toEqual([]);
+	const hash = (await gitOutput(repo.dir, ['rev-parse', 'HEAD~1'])).trim();
+	await writeNoteCard(
+		repo.dir,
+		hash,
+		'the provider returns 422 for stays over 365 nights',
+	);
+	const hits = await searchMemory(repo.dir, '365');
+	expect(hits.map(hit => hit.id)).toEqual([hash]);
+	expect(hits[0]).toMatchObject({whyQuality: 'ok'});
+	expect(hits[0]!.card?.why).toEqual([
+		'the provider returns 422 for stays over 365 nights',
+		'fix bug',
+	]);
 });

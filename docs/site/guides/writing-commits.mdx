@@ -155,6 +155,19 @@ git commit -m "🐛 Return null for an empty date" \
 
 [Project memory](/guides/project-memory) explains each line, and how chamoji reads them back.
 
+## What makes a good Why {{ icon: 'notebook' }}
+
+A Why should say what made the change necessary. chamoji checks four things, with no network and nothing sent anywhere:
+
+- **Filler.** A Why made only of words like "fix bug", "as discussed" or "needed" says nothing.
+- **Too short.** A few words, once the filler is gone, rarely name a cause.
+- **Repeats the subject.** A Why that restates the title adds nothing.
+- **What, not why.** "Changed the timeout to 30s" says what changed. The reason is why it had to.
+
+Most of these get one piece of advice: _Name the bug, limit or request behind this, or what breaks if someone reverts it._ A Why that repeats the subject gets _This repeats the subject. Say what made the change necessary._ A card with a `Constraint:`, `Gotcha:` or `Follow-up:` line is let through, and so is a Why in any language that has enough words of its own.
+
+People are nudged and agents are blocked. Nothing ever refuses your own commit. When an agent commits through Claude Code with a thin Why, the [agent hook](/guides/project-memory) denies the command and shows the agent its Why and the advice, so it can rewrite the message while it still knows the reason. If you told the agent to keep it, it prefixes the command with `CHAMOJI_NO_CARD=1`.
+
 ## Breaking changes {{ icon: 'flag' }}
 
 The composer’s breaking question asks whether the change breaks anything. Yes asks what breaks, and adds a `BREAKING CHANGE:` line with your answer, or with the title when you leave it empty. Writing by hand, use a `BREAKING CHANGE:` line, the 💥 gitmoji, or a `!` after the type, as in `feat!:`.

@@ -1,0 +1,3016 @@
+[
+	{
+		"subject": "Lint with oxlint and format with oxfmt instead of Prettier",
+		"card": {
+			"why": [
+				"one Oxc toolchain for lint and format, and the repo had no linter."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Share the small helpers that were copied across core and the CLI",
+		"card": {
+			"why": [
+				"eleven isObject copies and five readText variants each drifted a little; one copy per helper keeps fixes in one spot."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Small batch 2 leftovers: repoSlug escape, ReleasesPlan type, symlink test",
+		"card": {
+			"why": [
+				"repoSlug had its own regex escaping, ReleasesPlan could drift from planSetupFiles, and the symlink test passed vacuously when links could not be made. The test split keeps every assertion."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Share the quadrant packing between the icon and logo scripts",
+		"card": {
+			"why": [
+				"Both generators copied the box-average and quadrant loops and the QUADRANTS table; each keeps its own thresholds."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Keep framework display rules out of the Ink view",
+		"card": {
+			"why": [
+				"setup.ts printed plain text through a .tsx view, FALLBACK_HEX had to match the icon script by hand, and shouldAnimate repeated shouldDrawIcons. frameworks-view.test.tsx only changed its imports to follow the moved functions."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Trim exports only one internal caller uses; export the types the API shows",
+		"card": {
+			"why": [
+				"none of the removed names has shipped, so they can go before 0.16.0 freezes them. workflow.test.ts, mentions.test.ts and frameworks.test.ts now import the removed names from their modules."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Read the root package.json once: readRootPackage in units/workspace.ts",
+		"card": {
+			"why": ["setup's rootPackage copied the publish planner's reader."],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Share the bounded text reader and the setup scan limits",
+		"card": {
+			"why": [
+				"both scans did lstat, isFile, size check and read, with the same two limits written twice. A new fs-read test covers the reader."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "One unitNameOf for a unit's name from its folder",
+		"card": {
+			"why": [
+				"the rule was coded three times. Only questions.ts ever saw a trailing /*, and the other inputs never end in one, so all three agree."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Drop the unused files option from findSdfProjects",
+		"card": {
+			"why": [
+				"no caller passes it; detectLayout hands its SDF projects down instead of a file list."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Share the owner/repo parse as repoSlug; drop unused step parameters",
+		"card": {
+			"why": [
+				"the slug rule was written twice with different host rules, and two parameters had become unused. setup.test.ts follows the asksReleases signature, and git.test.ts gains a repoSlug test."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Build the firstVersion question once; one helper for where a version lives",
+		"card": {
+			"why": [
+				"the version source file was worked out in several places with slightly different fallbacks, and the two question branches repeated their shared stem and options."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Break the answers/questions runtime cycle with setup/rules.ts",
+		"card": {
+			"why": [
+				"questions.ts imported values from answers.ts while answers.ts imported values from questions.ts, so any top-level use in either would have broken module loading."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Plan setup's other files in core: planSetupFiles and publishTargets",
+		"card": {
+			"why": [
+				"the CLI held setup business logic, which forced core to export its building blocks and froze them into the 0.16.0 API. workflow.test.ts now imports those building blocks from their modules instead of the index."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Split setup/workflow.ts by job; share the origin HEAD lookup with release",
+		"card": {
+			"why": [
+				"workflow.ts did six jobs, and the origin HEAD lookup and lockfile knowledge each lived in two places."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Inspect each package once: one manifest read, one framework match, one lockfile read",
+		"card": {
+			"why": [
+				"setup classified each package and then ran detectFramework, which re-read package.json and re-ran the framework table, and every app re-read pnpm-lock.yaml. inspectPackage now returns the kind and the framework together and classifyPackage wraps it, readLockfiles reads the lockfiles once per detection, and readManifestOrEmpty is a catch on readManifest. The frameworks test gained an equivalence check against classifyPackage plus detectFramework and a case for a library with strong signals."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Share SDF detection: one framework identity, one listing, one version reader",
+		"card": {
+			"why": [
+				"the SDF display names and PackageKind were hand-built in four places, setup re-listed the repo for every package, readUnitVersion re-parsed projectversion, and two readManifest functions shared a name. sdfFramework and sdfKind now own the identity, detect passes the SDF projects down through optional options (calls without them behave as before), manifestVersion replaces the duplicate parser, and the manifest.xml reader is readSdfManifest. release.ts now reads manifests through the bounded reader, and listings.test.ts is new."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Move the symlink guard to links.ts and reuse it in mentions and sdf",
+		"card": {
+			"why": [
+				"assertNoSymlinks sat in setup/workflow.ts while units/mentions.ts and units/sdf.ts each hand-rolled their own lstat walk. One module now owns the walk, and each caller keeps its error behaviour (mentions stops on any lstat error, sdf checks the leaf only)."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Regenerate setup's single-package example from a real run",
+		"card": {
+			"why": [
+				"The example predated the release workflow, so it omitted the \"Setup would also write\" lines and the file the CLI now previews. It is now the output of the built CLI in a one-package repo."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Carry Phosphor's copyright line in the generated icons header",
+		"card": {
+			"why": [
+				"Phosphor's MIT licence asks for its copyright notice to travel with the marks. The generator now reads the line from the package's LICENSE; the icons themselves are unchanged."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Make mentions optional in the settings type and cap npm lookups",
+		"card": {
+			"why": [
+				"A required mentions field forced type-only churn in unrelated tests and in upstream detection; it is now optional and read as an empty list. The never-published check also ran one npm view per package at once; it now runs at most 6 at a time and starts none after its timeout."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Bound the manifest.xml reads and keep non-SDF manifests working",
+		"card": {
+			"why": [
+				"The comment and root-element regexes were unbounded and quadratic, so a hostile manifest.xml could stall a release. Reads are capped at 1 MiB, comments are blanked with indexOf, and only the first root tag is looked at. A listed manifest.xml with no projectversion again takes the generic current-version replace, as in 0.15, and the docs name manifest.xml as a known version file."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Keep framework icons coloured off dark, animating terminals",
+		"card": {
+			"why": [
+				"The icons reused the foil's level, which is 0 unless the theme is dark and animating, so a light or still terminal drew them plain. They now take chalk's own level, which only NO_COLOR sets to 0."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Make the generated release workflow run out of the box",
+		"card": {
+			"why": [
+				"With publishing on, the file had no install step, so the recommended check failed, and a bare pnpm/action-setup failed when package.json had no packageManager. It now sets up the package manager and Node 24, installs frozen, passes a pnpm version read from the lockfile, and pins the CLI with chamoji-version. With publishing off it runs chamoji alone. The id-token advice for an existing workflow is asked only when publishing."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Write setup's other files only where the releases step was asked",
+		"card": {
+			"why": [
+				"A re-run that opened the screen for a per-clone step could still write a new release workflow the developer never saw. Now the workflow and privatize edits are written only after the releases questions or with --yes; otherwise setup names them and points at chamoji setup releases."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Test a public Next.js app at the root of a single package",
+		"card": {
+			"why": [
+				"the workspace test claimed setup finds a root app; in a workspace the root is never a unit, so the root-app case belongs to a single package."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Check setup and releases end to end on NetSuite and framework repos",
+		"card": {
+			"why": [
+				"the exit criteria for NetSuite projects, framework apps and libraries, and readme pins are only true if the built CLI does them on whole repos."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Show a repo that is one NetSuite project as that in setup",
+		"card": {
+			"why": [
+				"a root Account Customization Project is no unit, so setup called it a bare package and never named the NetSuite project it found."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Show each framework version in setup, and stop guessing from app.config",
+		"card": {
+			"why": [
+				"Units on different versions of one framework were shown under the first unit's version, and an app.config.ts alone (Expo's and SolidStart's shared name) made Expo-style apps read as SolidStart. A package with no match now shows no framework."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Draw each framework's icon in setup's summary",
+		"card": {
+			"why": [
+				"Setup now detects each unit's framework; showing it as a coloured icon beside its name, version and units lets people confirm at a glance what setup found, and --json gives agents the same facts."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Swap faint framework marks for a neutral Phosphor icon",
+		"card": {
+			"why": [
+				"A brand mark that fills under 16 of 32 cells is unreadable, and a neutral shape beats it; the name still carries the brand colour."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Generate terminal icons for each detected framework",
+		"card": {
+			"why": [
+				"Setup's summary can show which framework it found without the CLI reading SVGs or using the network at run time."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Kill a timed-out npm lookup in setup instead of abandoning it",
+		"card": {
+			"why": [
+				"setup's never-published lookup only raced npm against a timer, so a slow npm view kept running and held chamoji open after setup printed."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Tell setup users about blocked pushes and how CI signs in to npm",
+		"card": {
+			"why": [
+				"setup never changes repo or npm settings, so after writing it says what the user must do: branch rules that block the release commit's push, and the trusted publisher or token secret CI needs, with a first-version note for packages never published."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Fix privatize edits of nested private keys and count only a workflow that runs the release",
+		"card": {
+			"why": [
+				"a nested or minified private key was left or flipped wrongly, and a notes-only workflow blocked writing the release workflow."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Write the release workflow from setup, and offer to mark public apps private",
+		"card": {
+			"why": [
+				"a merge trigger or publishing needs a workflow to run, and a public app must not be picked up by a publish. Setup now shows both in the preview, writes them uncommitted, never replaces an existing workflow, and refuses symlinks."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Keep the schema right on a setup re-run, ask single repos, and report an unset trigger as manual",
+		"card": {
+			"why": [
+				"A re-run set the schema before kept keys were merged back, so a section with publish: false was rewritten at schema 1 and failed to parse; the schema is now set from the final section and never lowered. A single package with no section needs answers like any other shape, so setup no longer calls it done and then writes a config. A section with no trigger still releases manually, so the summary says so until the question is answered."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Ask when to release, about breaking changes and about publishing in setup",
+		"card": {
+			"why": [
+				"Releases on merge, publishing and doc pins need settings that setup can recommend and write, so a repo doesn't have to hand-write them. A single package now gets a section holding its trigger when setup is asked to write it (--yes, or the named releases step), so the CLI's single-package \"nothing to do\" result and its test changed. A section written before triggers existed asks again and writes nothing until answered, so a no-op re-run stays a no-op."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Merge mentions across units and skip symlinked files",
+		"card": {
+			"why": [
+				"one readme can pin several units, which counted as a file collision, and a mention glob could write through a tracked symlink out of the repo."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Update version mentions in docs with each release",
+		"card": {
+			"why": [
+				"pins such as owner/repo@v0.14.0 in a readme go stale after every release; release.mentions moves them to the new version in the release commit."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Start a mismatched, untagged unit at its manifest version in setup's recommendation",
+		"card": {
+			"why": [
+				"the question marked the manifest version as recommended, but the unset firstVersion made the first release read package.json's version instead."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Show each package's kind and framework in setup, with SDF projects as apps",
+		"card": {
+			"why": [
+				"setup's questions and display need each unit's kind, framework and SDF project. No existing setup test expectation changed: no fixture's app is found differently."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Find a root SDF manifest and never follow a symlinked one",
+		"card": {
+			"why": [
+				"detectVersionFiles compared the root unit against '.' so it never offered a root manifest, and a symlinked manifest.xml would have been rewritten through the link by a release."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Find NetSuite SDF projects and bump their manifest.xml version",
+		"card": {
+			"why": [
+				"NetSuite SuiteApps and account customization projects keep their version in manifest.xml, often with no package.json, so releases could neither see nor bump it."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Report Ionic apps and bound the Forge manifest match",
+		"card": {
+			"why": [
+				"Ionic never won as the most specific framework, and the Forge pattern could backtrack heavily on a crafted manifest.yml and failed on CRLF files."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Detect each package's framework and its version",
+		"card": {
+			"why": [
+				"setup needs to show which framework a package is built with, and which version, so detection moves out of classifyPackage into detectFramework, reads versions from the lockfile, and the table covers more frameworks and platforms."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Show the monorepo guide's diagram of how commits find their unit",
+		"card": {
+			"why": [
+				"readers see four commits land in two apps and a shared package, then two releases, before the rules that explain it."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Ship the publishing workstream",
+		"card": {
+			"why": [
+				"0.15.0 releases publishing to npm, so its commits should group under one Highlights entry instead of spreading across Added, Fixed and Security."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Run gh in the repo being released, and keep tests off the real gh",
+		"card": {
+			"why": [
+				"the CLI ran gh from the process's directory, not the repo it works on, and a publish test that passed no fake gh fell through to the real one. Run from the worktree with the developer's login, it created @acme/core@1.0.0 and @acme/util@1.0.0 releases on this repo. gh now runs in io.cwd, the publish tests default to a gh that isn't installed, and a vitest setup file signs gh out for every test."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Make the publish tests pass on Windows",
+		"card": {
+			"why": [
+				"the new cwd checks used path.relative, which gives an absolute path when the repo and temp folder are on different drives, and the worktree test ran pnpm without cmd.exe, which can't find pnpm.cmd."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Keep the runner's GitHub variables out of the Action tests",
+		"card": {
+			"why": [
+				"on CI the tests run in a pull_request job, and the inherited GITHUB_EVENT_NAME made the Action drop the npm token, so two publish tests failed only there."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Run token npm lookups outside the repo so its .npmrc can't proxy them",
+		"card": {
+			"why": [
+				"npm whoami and npm view ran from the repo root under the token config, so a repo .npmrc could set proxy, strict-ssl or cafile and expose the token in transit."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Check that publish mode makes the tag's GitHub release",
+		"card": {
+			"why": [
+				"publish mode runs chamoji publish --from, which now creates the tag's missing GitHub release once it is all on npm; the Action's own test didn't say so."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Make the publishing docs and small edges match what runs",
+		"card": {
+			"why": [
+				"the documented merge workflow had no install step, so the Action couldn't pack anything; it now sets up pnpm and Node (without registry-url, whose .npmrc would replace chamoji's npm credentials) and installs, with a note for other package managers. The docs also misdescribed release.publish.packages, the dry run's exit 3, the Action's version and the permissions publishing needs, and left out that zeroMajor with single needs 0.15.0. The refused dist-tag hint suggested v1, which npm refuses; publish --dry-run --json listed tarball paths that no longer exist; and the sign-in check of release --publish had no test that it leaves no commit or tag."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Finish GitHub releases and recovery that publishing left undone",
+		"card": {
+			"why": [
+				"several paths left a release off GitHub or gave advice that couldn't work. A failed publish told release runs outside merge mode to re-run the job; it now says to run chamoji publish --from, and the Action's release mode catches up first, as merge mode does. publish --from now creates the tag's missing GitHub release once all of it is on npm, and with publishing turned off (CHAMOJI_PUBLISH=false, which the Action sets for publish: false) release --push and notes mode make the release at once. A first version that trusted publishing skips no longer gets a GitHub release: it exits 1 and says how to publish it. And release --publish now honours --tag, so a hotfix below latest can be published."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Keep publish credentials away from git hooks and registry lookups",
+		"card": {
+			"why": [
+				"the token and the job's OIDC request stayed in process.env, so git commit and push ran the repo's hooks with them, and npm view and whoami ran with them before the registry allow-list applied, where a repo .npmrc could send the token anywhere. The binary now takes them out of process.env and only the publish tools get them back; npm view, whoami and npm --version run without npm credentials; registries are checked before any lookup; and under a token a lookup reads through the temporary token config, so restricted packages and listed private registries answer."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Ask for provenance only when npm can sign it",
+		"card": {
+			"why": [
+				"every CI publish passed --provenance, which npm refuses when the job can't mint an OIDC token, so a token publish without id-token: write failed, and so did any publish from a private repository. Provenance now needs both OIDC request variables and CHAMOJI_PROVENANCE not set to false, and the Action sets that for a private repository."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Skip apps when catching up instead of failing the tag",
+		"card": {
+			"why": [
+				"catch-up plans each unit's latest tag as if it had been named with --from, so a public app unit was refused and publish --catch-up exited 1 on every merge run of a repo with one. Catch-up now plans with apps skipped, reports them with their reason, and exits 0."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Release and publish on merge from the Action",
+		"card": {
+			"why": [
+				"the CLI can now release on merge and publish to npm, but the Action could only release when someone pressed the button and never published, so a repo with release.trigger merge had no way to run it. A push to the default branch now runs merge mode (catch up what npm lacks, then chamoji release --on-merge), workflow_dispatch runs release, mode publish re-publishes a tag, and notes mode leaves the GitHub release to the publish. The publish and npm-token inputs choose whether and how to publish; the token is masked before anything prints and reaches the CLI only in the environment."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Catch up releases that never reached npm",
+		"card": {
+			"why": [
+				"a release that was tagged and pushed but never published (a failed run, or one cut locally) stayed off npm until someone noticed. `chamoji publish --catch-up` publishes what each unit's latest tag released and npm lacks, never stops on one failing tag, and creates a missing GitHub release once everything is on npm."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Hold breaking changes for a manual release when asked",
+		"card": {
+			"why": [
+				"a merge-triggered release must not ship a breaking change nobody chose to ship."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Release and publish in one command",
+		"card": {
+			"why": [
+				"releasing and publishing were two runs, so a package that failed its publish checks could already be tagged and pushed. release --publish runs every publish check on the release written to the working tree before the commit and tag, puts the tree back if one fails, pushes atomically, publishes the tarballs it checked, and only then creates the GitHub release. A plain --push in a repo with release.publish set now leaves the GitHub release to the publish, so a release isn't announced before it is on npm."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Add chamoji publish",
+		"card": {
+			"why": [
+				"the publish engine had no way to be run; this command plans and checks a publish, shows it with --dry-run, signs in by token, OIDC or the local npm login, and exits 3 when there is nothing to publish so CI can tell that from a failure. --from now repeats so one run can publish several tags."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Publish tarballs with npm, skipping what's already there",
+		"card": {
+			"why": [
+				"a release needs a step that sends the packed tarballs to the registry, in dependency order, without leaking credentials or leaving temp files behind."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Check npm credentials before anything is tagged",
+		"card": {
+			"why": [
+				"a release that gets as far as tagging and then can't publish leaves a half-done release, so we prove the credentials work first, without ever printing a token. The env scrub also drops npm key, cert and otp settings and the Yarn npm auth variables."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Plan a publish with every check before anything is published",
+		"card": {
+			"why": [
+				"a version must never reach npm half-checked, and an app must never be published by accident."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Add the npm runner, registry and dist-tag rules",
+		"card": {
+			"why": [
+				"Publishing needs one injectable seam for npm, plus the rules for which registry and dist-tag a version goes to, so tests never touch a real registry."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Pack packages with the workspace's own package manager",
+		"card": {
+			"why": [
+				"Publishing a tarball made by the workspace's own tool rewrites workspace: and catalog: ranges correctly, and checking the tarball first stops a broken package going out."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Tell apps from libraries by framework and entry points",
+		"card": {
+			"why": [
+				"Publishing must refuse apps, so a package has to be classified from its own files: frameworks in dependencies or config files mean an app, entry points, files, publishConfig and native module manifests mean a library."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Push the release commit and tags atomically",
+		"card": {
+			"why": [
+				"a later publish step must only run once the commit and tags really reached the remote, so a push that is refused must leave no tag behind. A refusal because the branch moved now says so."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Add release trigger, majors and publish settings",
+		"card": {
+			"why": [
+				"later release-on-merge and npm publishing work reads these settings."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Note an illustration of merge styles and project memory",
+		"card": {
+			"why": [
+				"\"what does squash and merge do to my history?\" is the question developers ask most, and the site doesn't show what chamoji keeps under each merge style."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Show the latest release next to the readme's Action examples",
+		"card": {
+			"why": [
+				"written pins fall behind after each release; a badge drawn from npm shows readers the current tag next to the example they copy."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Pin the readme's and release skill's Action examples to v0.14.0",
+		"card": {
+			"why": [
+				"copied workflows pinned the Action to v0.5.0 or v0.9.0, five to nine releases behind, while the docs site already shows v0.14.0."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Send security reports to the private report form",
+		"card": {
+			"why": [
+				"the issue chooser's security link went to GitHub's generic docs, so a reporter had no direct private route and might fall back to a public issue, which SECURITY.md forbids."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Mark monorepo releases shipped and npm publishing next",
+		"card": {
+			"why": [
+				"7.5 shipped in 0.13.0 and 0.14.0 and passed CI on every platform, but the roadmap still called it unmerged, which hid that 7.6 is next."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Parse the docs pages and allow only the known components",
+		"card": {
+			"why": [
+				"chamoji.dev compiles every docs/site page as MDX, which is code, and pages come in through public PRs. The check read them as text, so a page that only broke at chamoji-web's build, or ran code there, passed here."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Correct the Action, card and agent guides and the key location",
+		"card": {
+			"why": [
+				"review round 1 for the last four guides. `ai: true` without a key fails only the jobs that pass --ai; curl's 30 seconds are per try; the units JSON for nothing has no units list; prereleases with units need a hyphen after x.y.z; the branch check needs origin/HEAD; a bare `cli: chamoji` fails in every mode; and the environment page now says where each command reads the TypeSafe key."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Write the first four guides for the docs site",
+		"card": {
+			"why": [
+				"the command pages link to these guides for how the pieces fit together."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Correct the hook and mcp pages and settle the since tags",
+		"card": {
+			"why": [
+				"the since tags on all twelve command pages were checked against each release's run.ts. They already follow the one rule, so none move."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Write the last six command pages for the docs site",
+		"card": {
+			"why": [
+				"the exit codes page read as complete for these commands but missed cases the source has, such as card's exit 2 for a newer release section and init's exit 0 when the fetch from origin fails."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Correct the monorepo facts on the command pages",
+		"card": {
+			"why": [
+				"with release units, next-version and release unshallow a shallow clone and exit 2 on version-file problems, and the config is read from the current folder, not the repo root. Also labels setup as new in 0.14.0 and tightens the --to, --json and error-example details."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Write the first six command pages for the docs site",
+		"card": {
+			"why": [
+				"setup, commit, changelog, next-version, release and ws each get a page with every flag from the meow table, their exit codes from the source, and output from real runs of 0.14.0. The exit-codes page now lists setup's hook refusal too."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Write the Get started and Reference pages for the docs site",
+		"card": {
+			"why": [
+				"the chamoji.dev docs build these pages from this repo, so a change to the CLI and its docs can land in one PR."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Check the docs site's pages and nav",
+		"card": {
+			"why": [
+				"the docs build refuses nav links with no page, and the house style should be caught here rather than in review."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Wait for the preview and replay before the setup screen hands back",
+		"card": {
+			"why": [
+				"an Enter that saved while they were still reading git left git running in the repo after setup returned, which held its files open on Windows (EBUSY in the e2e cleanup) and did wasted work after saving."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Name no template authors in a fork-workflow clone",
+		"card": {
+			"why": [
+				"in a GitHub fork workflow setup listed the team as template authors, which hid their new commits from release notes in CI"
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Document upstream.authors and mark 7.5 as built, not done",
+		"card": {
+			"why": [
+				"the readme claimed setup uses no network but the memory step talks to origin, the roadmap called 7.5 done while real use and CI are open, and the leak and early-Enter results are now fixed"
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Advise on squash merges that keep a blank or PR-description body",
+		"card": {
+			"why": [
+				"GitHub's squash message is PR_BODY, COMMIT_MESSAGES or BLANK, so the PR_TITLE check never fired, and the advised \"title and description\" also drops Workstream: lines and cards"
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Count release-dependents as own in the composer, and replay versions as read",
+		"card": {
+			"why": [
+				"under release-dependents a shared change releases its users, so offering Release: trailers for them was wrong; and an old tag like web-v1.2 replayed as \"web vweb-v1.2\""
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Say a mixed repo's published packages stay internal, and ask 1.0.0 apps once",
+		"card": {
+			"why": [
+				"the spec promises mixed repos a note that their published packages aren't versioned yet, and a manifest already at 1.0.0 offered \"start there or at 1.0.0?\" with one option"
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Take a newline as Enter on the setup screen",
+		"card": {
+			"why": [
+				"Ink 8 reads an Enter pressed before raw mode as a newline (name enter, not return), so the one-Enter save was lost and text answers could gain a newline"
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Document chamoji setup and close milestone 7.5",
+		"card": {
+			"why": [
+				"prove the spec's setup exit criterion end to end, record the real-repo check, and tell people how to run setup"
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Fix Task 8 review findings: welcome copy, raw trailers, renames, per-clone hint",
+		"card": {
+			"why": [
+				"The welcome wording is fixed by the plan, trailers must carry raw unit names, and the init hint is once per clone."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Point init, the welcome and the composer at chamoji setup",
+		"card": {
+			"why": [
+				"People who run init, bare chamoji or the composer should find setup, and see what a staged change releases."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Show the version before in setup's preview, ask the terminal's theme and print step states once",
+		"card": {
+			"why": [
+				"review found that the preview line lacked the old version and the arrow, the foil almost never showed, an inline error stayed after edits, and the step states printed twice on a terminal."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Give chamoji setup its screen, with a live preview",
+		"card": {
+			"why": [
+				"setup needs its interactive screen: a summary saved with one Enter, \"Change something\", a live preview and the replay, then the per-clone step prompts."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Let an offered hook count as settled, so setup exits 0 when nothing else is left",
+		"card": {
+			"why": [
+				"ruling R17: the hook is offered, not assumed, so a repo with only the hook left has nothing that would change"
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Read setup's config through core, refuse links, strip output and exit 0 when settled",
+		"card": {
+			"why": [
+				"review round 1 for Task 6: a drifted config parser, a symlink-following non-atomic write, raw repo text on the terminal, and ruling R15's exit codes"
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Add chamoji setup with --yes, --json, --explain and its four steps",
+		"card": {
+			"why": [
+				"setup's core needs a command: releases, memory, agents and hook as steps, with a no-terminal path, so CI, agents and scripts can run it and Task 7's screen has a seam to fill"
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Preview the next release and replay past ones under setup's answers",
+		"card": {
+			"why": [
+				"setup should show what the answers do before anything is written, using the real engine."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Read tags for every candidate unit and keep the article in base-name copy",
+		"card": {
+			"why": [
+				"review round 2 of Task 4: a ticked app lost its own tag format, copy read \"came from template\", and a literal BOM was left in section.ts."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Leave a section that means the same alone, and fill setup answers from detection",
+		"card": {
+			"why": [
+				"review round 1 of Task 4 and rulings R10-R14: no-op re-runs rewrote hand-written sections, the root-only copy named the wrong window, and answers lost detected settings."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Turn what setup found into answers, questions and a release section",
+		"card": {
+			"why": [
+				"setup needs recommended answers, the questions it can ask and a release section it can write into an existing config without disturbing it."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Find the template remote, the starting point and squashed syncs",
+		"card": {
+			"why": [
+				"setup needs upstream.name, upstream.since and the sync count to configure template forks."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Keep a unit's own tags out of setup's ignore patterns",
+		"card": {
+			"why": [
+				"review found own tags that setup would ignore (units named like web3, every tag on a canonical upstream, tags on unmerged branches) and a write format that didn't follow the newest tag."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Tell inherited, stray and learned tags apart for setup",
+		"card": {
+			"why": [
+				"setup must offer ignore patterns for template and stray tags without ever hiding an app's own releases, and learn each unit's old tag formats."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Work out a repo's apps, packages and version files for setup",
+		"card": {
+			"why": [
+				"setup needs the layout, the release units and their version files before it can write a release config."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Plan chamoji setup and mark the engine shipped in 0.13.0",
+		"card": {
+			"why": [
+				"setup is the second half of milestone 7.5, and the roadmap still described the engine as unreleased."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Give Windows tests a minute before they time out",
+		"card": {
+			"why": [
+				"on a busy Windows runner, git-heavy tests that take 4 s can pass the 20 s limit. That failed \"push shows each step on the face\" on Node 24 and memory-sync on Node 22, each leaving git holding its temp folder (EBUSY)."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Refuse to write a unit release through a symlink",
+		"card": {
+			"why": [
+				"git commits a link, not what it points to, so a changelog or manifest that is a symlink (or sits under a symlinked folder) would have the release change a file the release commit doesn't hold, possibly outside the repo. Checked when planning and again just before writing."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Print the notes a release committed for changelog --for-tag",
+		"card": {
+			"why": [
+				"rebuilding from commits dropped release-only lines, so the Action's notes mode overwrote good GitHub release bodies with bare ones."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Release a fixed group's shared tag once, and push tags by full ref",
+		"card": {
+			"why": [
+				"a fixed group on one v{version} template failed at apply with tag already exists, and a branch named like a tag made the push ambiguous."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Warn when the upstream remote has nothing fetched",
+		"card": {
+			"why": [
+				"in a CI checkout without the upstream remote, template commits were silently counted as the fork's own."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Refuse Expo configs and version files chamoji could misread",
+		"card": {
+			"why": [
+				"a multi-argument wrapper, a template version, a repeated version key or a symlink got a silent wrong edit, and a first release never said when a version file disagreed with the manifest."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Check release settings for unit-only keys, shared tag templates and paths outside the repo",
+		"card": {
+			"why": [
+				"shape single silently ignored unit settings, two unrelated units could share one tag template, and versionFiles could point outside the repo."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Let unit PR previews run only node or chamoji",
+		"card": {
+			"why": [
+				"a shell wrapper or tsx as the cli could read the PR's files with the workflow's secrets, and a docs line was the only thing stopping it."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Correct the monorepo readme and the MARKETING_VERSION message",
+		"card": {
+			"why": [
+				"the readme overclaimed 0.12 compatibility and pointed iOS users at an unsafe version file."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Document monorepo releases and prove 0.12 compatibility",
+		"card": {
+			"why": [
+				"a repo with no release section must keep giving 0.12.0's exact output, and the new settings need a readme section."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Make the unit PR preview fail closed on anything the PR could control",
+		"card": {
+			"why": [
+				"the preview could still run PR code through bare-word or option cli words, package runners, a relative PATH, a wide environment or a git-lfs smudge filter."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Run the unit PR preview with a trusted CLI and no secrets",
+		"card": {
+			"why": [
+				"the preview ran the CLI inside the untrusted PR worktree with the job's secrets, so a planted .npmrc or CLI path could run attacker code."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Scope the unit PR preview to the PR and fix prerelease detection",
+		"card": {
+			"why": [
+				"the unit preview listed the base's unreleased work and hyphenated tag templates were published as prereleases."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Release, notes and previews per unit in the Action",
+		"card": {
+			"why": [
+				"a monorepo with release units needs the Action to write each unit's notes, release one unit, and preview every unit in the PR comment."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Say when --unit left a unit out instead of saying it needs no release",
+		"card": {
+			"why": [
+				"release --unit web listed mobile as needing no release even when its own fix needed one, because units outside --unit now show in pending."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Share the release steps between single and unit releases, and count every waiting unit",
+		"card": {
+			"why": [
+				"release() and releaseUnits() had copied the planning, push and GitHub-release steps, so a face or credential fix would have had to land twice, and next-version hid units whose own commits need no release."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Release each unit from the CLI",
+		"card": {
+			"why": [
+				"a repo with release units needs release, next-version and changelog to work per unit, while a repo without them keeps 0.12.0's output."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Edit dependency ranges with the version-file scanner and explain fixed releases",
+		"card": {
+			"why": [
+				"one JSON text editor keeps range and version edits from drifting apart, and a fixed-group member with no commits should say what it released with rather than show an empty section."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Plan, apply and push releases per unit",
+		"card": {
+			"why": [
+				"a monorepo with release units needs one release commit that versions, notes and tags every unit with something to release, in dependency order, with shared changes riding along once."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Write each unit's notes in its changelog's own style",
+		"card": {
+			"why": [
+				"each unit's changelog gets its own section per release, and a file someone already keeps by hand should read the same after chamoji adds to it."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Find the exported config object without being fooled by comments or arrows",
+		"card": {
+			"why": [
+				"app.config files export their object in many shapes, and a commented-out export or a destructured arrow must not misdirect the version edit."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Set a unit's version in every file that carries it",
+		"card": {
+			"why": [
+				"a release must write the new version to every file that carries it, as text edits so formatting survives."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Keep calver versions valid semver",
+		"card": {
+			"why": [
+				"zero-padded calver strings made semver.gt throw when a fixed group was aligned."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Work out each unit's next version",
+		"card": {
+			"why": [
+				"each app or package needs its own next version from its tag, commits and fixed groups."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Keep upstream merges and option-like config out of syncs",
+		"card": {
+			"why": [
+				"upstream's own merge commits were reported as syncs, config values could be read by git as options, and a custom group config could collapse a sync."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Work out which commits belong to which unit",
+		"card": {
+			"why": [
+				"A commit's changed files decide whether it is a unit's own work, a shared-package change, or root-only."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Read every unit's tags in any format",
+		"card": {
+			"why": [
+				"a monorepo's existing tags come in several shapes, and each unit's history must read all of them."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "See the same workspace packages the package manager sees",
+		"card": {
+			"why": [
+				"git-ignored build output and test fixtures under a ** glob must not become phantom packages or abort the release plan."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Fail loudly on unreadable manifests and skip folders no glob reaches",
+		"card": {
+			"why": [
+				"a broken package.json must not silently drop a unit's version, and the workspace walk must not read or match folders outside the globs."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Find workspace packages and what each unit uses",
+		"card": {
+			"why": [
+				"the engine needs to know which package or unit owns each changed file and what each unit depends on."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Read release settings from chamoji.config.json",
+		"card": {
+			"why": [
+				"the release engine needs validated, defaulted per-unit settings before it can plan anything."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Plan the monorepo release engine for milestone 7.5",
+		"card": {
+			"why": [
+				"the approved design needs a step-by-step plan before building, and the engine is useful on its own with a hand-written config, so it gets its own plan ahead of chamoji setup."
+			],
+			"constraint": [
+				"a repo without a release section must give byte-identical output to 0.12.0, which the last task proves against golden files."
+			],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Design monorepo releases and chamoji setup",
+		"card": {
+			"why": [
+				"most of the monorepos we work in are app monorepos whose apps each need their own version, and today chamoji releases a whole repo as one, starting from tags a template left behind."
+			],
+			"constraint": [
+				"a repo that never runs setup must release exactly as it does with 0.12.0."
+			],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Build the CLI in every Windows test shard",
+		"card": {
+			"why": [
+				"only the first shard ran pnpm check, which is where the build happens, so shards 2 and 3 ran tests against a CLI that wasn't built."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Split the Windows tests across three jobs",
+		"card": {
+			"why": [
+				"Windows starts git processes several times slower, so its test step took about 9 minutes against 1 on Ubuntu and held up every merge."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Refuse release settings this version can't follow",
+		"card": {
+			"why": [
+				"a pinned old CLI would silently ignore a config's release section and could cut a wrong release."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Give the purge-sync test more time on Windows",
+		"card": {
+			"why": [
+				"it runs three clones, two syncs and a force-push, which take about 8 s on a Windows runner and once hit the 20 s default limit, failing CI on an unrelated PR."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Fix the terminal face's Ctrl-Z, late OSC reply and missing blank line",
+		"card": {
+			"why": [
+				"Ctrl-Z during the intro left the cursor hidden, a slow OSC 11 reply could land in git's password prompt, and the wordmark ran straight into the tagline."
+			],
+			"constraint": [],
+			"gotcha": [
+				"Face.release waits up to 500 ms for the theme question to give the terminal back, because the query's answer comes at its 100 ms limit but stdin stays raw through the 200 ms grace window after it."
+			],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Ship the terminal face workstream and use its tagline",
+		"card": {
+			"why": [
+				"0.12.0 releases the terminal face today, so its commits should group under one Highlights entry, and npm should describe what chamoji is now."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Make the face and release tests pass on Windows",
+		"card": {
+			"why": [
+				"the face tests used the host's platform, and Ctrl-Z handling is off on Windows by design; the release test compared two scratch repos whose remote paths, with random suffixes, appear in the notes' links on Windows."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Correct the terminal section of the brand guide",
+		"card": {
+			"why": [
+				"BRAND.md described the code before the final review's fixes, and got a few details wrong."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Treat every ssh \"Permission denied (\" as a credentials failure",
+		"card": {
+			"why": [
+				"an ssh server that offers only passwords failed the step instead of letting git ask for one."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "End a planning step warn when Jev left commits unsorted",
+		"card": {
+			"why": [
+				"a release whose every Jev batch failed still ended ✓, and the spec says exit 3 from next-version ends on \"Nothing to release\" too."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Ask the terminal for its theme only from the foreground, and only once a face draws",
+		"card": {
+			"why": [
+				"`chamoji memory sync &` was stopped by SIGTTOU, and every face command paid up to 300 ms for a question most never needed."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Record the first real terminal check",
+		"card": {
+			"why": [
+				"the intro and the face were seen in one real terminal, and the plan should say plainly which terminals still need a look before the release."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Record the terminal face: brand, roadmap, readme and results",
+		"card": {
+			"why": [
+				"the face, the foil rule and the three environment variables need one place to be read from, and the byte-identity check against 0.11.0 is the evidence that stdout is untouched."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Add the animated welcome and regroup the help",
+		"card": {
+			"why": [
+				"a bare `chamoji` printed the whole reference to stderr and exited 2, which read as an error and gave no sense of what the tool is for. The new tagline is a draft and needs Alec's approval."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Retry a quiet tag fetch, count a failed Jev and let Ctrl-C through",
+		"card": {
+			"why": [
+				"Under a face, a tag fetch that needed a password fell back to local tags without asking, a Jev that failed on its first request ended with a ✓, and Ctrl-C during the background query was swallowed."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Show faces in the commands that wait",
+		"card": {
+			"why": [
+				"memory sync, release, init and the rest went quiet while they waited on git, GitHub or Jev, so they looked stuck."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Add the face settings, gitStep and Jev's progress",
+		"card": {
+			"why": [
+				"The commands need to know when a face may animate, a way to run network git under a face without hiding a password prompt, and a count of Jev's batches to show."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Leave ssh alone when GIT_SSH is set",
+		"card": {
+			"why": [
+				"GIT_SSH_COMMAND overrides GIT_SSH, so the quiet env would have replaced a user's own ssh program."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Report sync steps and keep network git quiet",
+		"card": {
+			"why": [
+				"The loading faces need to say which step a slow command is on, and a redrawing face must not overwrite a git password prompt."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Keep partial text when the face first draws",
+		"card": {
+			"why": [
+				"Text written without a newline while a step waited was erased by the first frame when stdout and stderr share a terminal. The face now starts a new line first."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Add the face helper",
+		"card": {
+			"why": [
+				"Commands that wait need one place that draws the loading face on stderr and owns that line, so later wiring only has to wrap steps."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Add the wordmark frames and their generator",
+		"card": {
+			"why": [
+				"The terminal wordmark has to match what was approved, so a script renders the real Marow Block letters and the face as quadrant blocks, evens out the eyes by a pixel where quantising skews them, and only the generated strings are committed."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Add the one-line faces and the ASCII fallback",
+		"card": {
+			"why": [
+				"the spinner and ending lines need a fixed set of 7-column faces, and Windows consoles outside Windows Terminal cannot draw the Unicode set."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Keep swallowing a late terminal reply",
+		"card": {
+			"why": [
+				"A background reply that arrived after 100 ms was echoed to the shell prompt, and a stray BEL ended the query before the real reply. The query now stays raw for a 200 ms grace window and only treats a BEL or ST after ESC]11; as the end."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Add the foil colour and theme detection",
+		"card": {
+			"why": [
+				"The terminal faces and the wordmark share one colour layer. It blends the seven foil stops, paints text through chalk at a set level, and finds out whether the terminal background is light or dark."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Start the terminal face workstream",
+		"card": {
+			"why": [
+				"building it as a workstream gives the release one Highlights entry and keeps the dogfooding going."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Plan the terminal face build",
+		"card": {
+			"why": [
+				"the approved design needs exact interfaces and tests per task before anyone builds it."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Give the terminal face a wink and sunglasses",
+		"card": {
+			"why": [
+				"the prototype's happy-eyes grin read as stray marks at quadrant resolution, and a wink and shades say \"done\" more clearly."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Draw the terminal wordmark from Marow Block",
+		"card": {
+			"why": [
+				"Alec chose the real lettering over hand-drawn blocks after seeing the quadrant-block demo with the face in the O."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Settle the terminal background check for the foil",
+		"card": {
+			"why": [
+				"many terminals don't report their background, and Alec chose to assume dark there so the foil shows by default."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Design the terminal face, animated logo and help screen",
+		"card": {
+			"why": [
+				"memory sync ran silently and looked stuck, so every command that waits should show it's alive, in chamoji's own look."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Mark the project memory workstream shipped",
+		"card": {
+			"why": [
+				"0.11.0 releases project memory today, so its commits should group under one Highlights entry in the changelog."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Record the merge and the plan for 0.11.0",
+		"card": {
+			"why": [
+				"PR #5 passed CI on every platform, and we're releasing on 2026-11-03 without the sprint the roadmap asks for, so the roadmap should say both."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Make the memory and MCP tests pass on Windows",
+		"card": {
+			"why": [
+				"Windows CI failed five tests that assumed POSIX behaviour: git there can't print dates this far out, a command line stops at 32 KB, and an absolute POSIX path gets a different error. Each commit still stays in memory and each path still errors, so only the tests change."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Keep the huge-body test within argument limits",
+		"card": {
+			"why": [
+				"the fixture passes the body with git commit -m, and Linux refuses a single argument over 128 KB, so the test failed on Ubuntu with E2BIG."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Redact the whole of a long email address",
+		"card": {
+			"why": [
+				"the 64-character cap on the local part left the start of a longer address in the text sent to Jev."
+			],
+			"constraint": [
+				"the pattern has to stay linear on a long run of word characters, so a lookbehind stops a match starting partway through a run."
+			],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Drop the docs for foreign entries and --no-verify",
+		"card": {
+			"why": [
+				"the readme and plan said memory sync skips the pre-push hook and that writes keep entries chamoji doesn't read; both are gone, and the plan's test name for purge is current."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": ["none."]
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Stop carrying foreign tree entries, and let the pre-push hook run",
+		"card": {
+			"why": [
+				"the re-review reproduced three breaks from carrying foreign entries (a pushed gitlink makes mktree die and blocks every write including purge, a blobless clone can't write, a behind clone can revert a newer edit), and the feature was speculative; a pre-push hook can be a user's policy check, so skipping it was not ours to decide."
+			],
+			"constraint": [
+				"older clients drop what they don't know, so the memory ref's layout is fixed until a new format gets its own ref or a version bump."
+			],
+			"gotcha": [],
+			"followUp": [
+				"a future memory format needs its own ref or a version bump, because released clients drop paths and modes they don't know."
+			]
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Document the final review fixes for project memory",
+		"card": {
+			"why": [
+				"the fixes changed what the commands print and do, and the docs still told people to run a raw force-push after a purge."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Fix the issues found in the final review of project memory",
+		"card": {
+			"why": [
+				"a whole-branch review found that following the printed purge step could erase a teammate's unsynced memory from origin, that one huge commit could stall --ai search for minutes, and that an older chamoji would strip a newer one's entries from the shared ref."
+			],
+			"constraint": [
+				"the memory ref is untrusted, so foreign tree entries are rebuilt only when their names are safe and their depth is bounded, and a larger mode and id wins a clash so every clone settles on one tree."
+			],
+			"gotcha": [
+				"the card is read from below the first paragraph of a message, because git counts that whole paragraph as the subject, so git commit -m with a Why line on the second line has no card."
+			],
+			"followUp": [
+				"run the rerank against the real TypeSafe API, and check the .mcp.json that init --agents writes on native Windows."
+			]
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Correct the project memory docs after review",
+		"card": {
+			"why": [
+				"a reviewer checked the docs against the code and found claims that were wrong or unsupported, and a README that overstates what is sent or searched misleads the people it is meant to protect."
+			],
+			"constraint": [],
+			"gotcha": [
+				"memory search --ai and mcp --ai skip a tracked .env file, so the key sources differ from changelog --ai's."
+			],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Document project memory and record milestone 7",
+		"card": {
+			"why": [
+				"the milestone is built, and a reader needs to know what it does, what it sends, what was checked against real clients and what was not."
+			],
+			"constraint": [
+				"Milestone 7 is not done until a sprint of real use, so the status stays \"Built, release pending\" and ws ship and memory sync wait for release."
+			],
+			"gotcha": [
+				"fish, pwsh, Windows and a real push of the memory ref to GitHub are not verified, and the docs say so."
+			],
+			"followUp": [
+				"run the sprint of real use on this repo, then ws ship, memory sync and release."
+			]
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Bound the why body, lock down temp files, stop inviting the opt-out",
+		"card": {
+			"why": [
+				"Real Claude Code took the CHAMOJI_NO_CARD opt-out on its first denial because the old text invited it, and the final security review asked for the body bound and the 0600 temp file."
+			],
+			"constraint": [
+				"A new file still gets the default permissions (0666 minus the umask), so only the temp file starts at 0600."
+			],
+			"gotcha": [
+				"The temp file's 0600 creation mode has no direct test, since it only exists between the write and the chmod; the tests cover the final modes."
+			],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Keep the agent hook from blocking commits and from changing shared files",
+		"card": {
+			"why": [
+				"a committed hook command that exits 2 on a chamoji without agent-hook blocks every commit in the repo, and a rewrite that silently changes a value or half-writes a shared file costs the team more than the setup saves"
+			],
+			"constraint": [
+				"Claude Code reads exit 2 as a block, so both command forms end in `|| true`; a denial is JSON on stdout with exit 0 and still gets through"
+			],
+			"gotcha": [
+				"decideCommit still skips shell keywords, so `if true; then git commit -m x; fi` is allowed; a table test pins that",
+				"the number check compares each number's digits before and after JSON.parse and stringify, so 1.50 and 1E2 are fine and 12345678901234567890 is refused"
+			],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Make AI agents write an intent card when they commit",
+		"card": {
+			"why": [
+				"a denial reaches the agent while it can still write the card, whereas context added after the commit arrives too late to change it"
+			],
+			"constraint": [
+				"the hook must print only the decision JSON or nothing and always exit 0, so a broken hook never stops the agent's work",
+				".mcp.json and .claude/settings.json are shared files, so init merges into them, keeps their key order and indent, and refuses a corrupt file or a symlink without touching either"
+			],
+			"gotcha": [
+				"decideCommit reads free-form shell text with a small quote and heredoc scanner, not a shell parser, so aliases, variables and sh -c are not seen",
+				"the hook command is chosen once, by whether chamoji is on PATH when init runs, and a committed file then carries that choice to teammates"
+			],
+			"followUp": [
+				"try the hook with real Claude Code, which the controller runs after all tasks"
+			]
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Bound and sanitize what chamoji mcp sends to the model",
+		"card": {
+			"why": [
+				"commits and memory are written by other people, so the server must not hand a model unbounded text, other people's addresses, or a file a clone pointed it at"
+			],
+			"constraint": [
+				"reads of the workstreams file now throw WorkstreamError for a symlink, so ws and the hook see that error where they used to follow the link"
+			],
+			"gotcha": [
+				"JSON.stringify leaves U+2028 and U+2029 raw, which a client that splits on Unicode line separators would cut a reply at"
+			],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Serve project memory to AI agents with chamoji mcp",
+		"card": {
+			"why": [
+				"an agent editing a line should be able to ask why it is the way it is, and get the card its author wrote"
+			],
+			"constraint": [
+				"no MCP SDK; it would double chamoji's install for five methods"
+			],
+			"gotcha": [
+				"tool names and methods go through a Map or a switch, so \"constructor\" is unknown rather than found on Object.prototype",
+				"--ai must be skipped by the commit classifier in run.ts, or a missing key would exit 1 before the server starts"
+			],
+			"followUp": ["try it with the real Claude Code client (claude mcp add)"]
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Keep commit text and tracked env files out of the memory rerank",
+		"card": {
+			"why": [
+				"a tracked .env could name another account's key and receive the query and history text, and commit text in the instructions could steer the ranking"
+			],
+			"constraint": [
+				"changelog `--ai` keeps reading a tracked env file as before"
+			],
+			"gotcha": [
+				"the TypeSafe docs don't spell out how a question refers to nested state, so the `candidates[i]` wording follows the commit classifier's `commits[i]`"
+			],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Search project memory with BM25 and an optional Jev rerank",
+		"card": {
+			"why": [
+				"a card nobody can find doesn't help the next person, and search has to work offline with no key so Jev can only ever reorder what BM25 already found"
+			],
+			"constraint": [
+				"term lookups use a Map, because commit text is other people's and a word like `constructor` or `__proto__` must be an ordinary term",
+				"the index file is validated on load and rebuilt, never trusted, and a search still runs when it can't be saved"
+			],
+			"gotcha": [
+				"`--ai` on `memory` no longer builds the changelog classifier, so `memory search --ai` without a key exits 2 like other misuse"
+			],
+			"followUp": [
+				"tokenize splits on anything that isn't a letter or number as specified, so scripts that write words with combining marks are cut at the marks"
+			]
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Drop any stored commit that HEAD has but this workstream doesn't name",
+		"card": {
+			"why": [
+				"a stored entry can come from another clone, so a card on a hash HEAD can vouch for, but that doesn't name the workstream, was a forged card that survived snapshots"
+			],
+			"constraint": [
+				"a stored commit absent from HEAD, such as one from a deleted branch, still keeps its card"
+			],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Frame commit records with NUL so commit text can't forge them",
+		"card": {
+			"why": [
+				"commit text could forge records, so memory could store a commit that doesn't exist and parseCommit could throw on a piece with no subject"
+			],
+			"constraint": [
+				"a stored card is kept only for hashes HEAD lacks, such as a deleted branch; the sync merge still joins cards"
+			],
+			"gotcha": [
+				"a stored hash on HEAD that no commit there names for the workstream is still kept, since only commits naming it are compared"
+			],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Stop a pushed tip or a forged entry from erasing memory",
+		"card": {
+			"why": [
+				"origin's tip is written by other people, and a sync that trusted it could empty a clone, undo a purge, or tell someone to force-push for a false reason. Entries can also hold cards from unpushed branches, so a release must not publish them without an opt-in."
+			],
+			"constraint": ["only a tombstone may remove an entry from memory."],
+			"gotcha": [
+				"when a descendant brings a purged entry back, its tip can't be a parent even though it's ahead, so that sync keeps local and needs a force-push like any other purge."
+			],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Share project memory between clones",
+		"card": {
+			"why": [
+				"memory has to outlive a deleted branch and reach a fresh clone, or the reasons behind the code stay on one machine."
+			],
+			"constraint": [
+				"init must not set remote.origin.push, and the fetch refspec must be a wildcard, or plain git push, fetch and pull break."
+			],
+			"gotcha": [
+				"a merge parent that still holds purged text makes it reachable again and pushes it, so a tombstone side is the only parent, and when each side purged what the other holds the merge has none."
+			],
+			"followUp": [
+				"nothing forces a push; after a purge the user runs the force-push sync prints."
+			]
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Keep odd commit dates from poisoning a memory entry",
+		"card": {
+			"why": [
+				"a commit from a peer's clock or tools could silently destroy a workstream's memory while ws ship still exited 0"
+			],
+			"constraint": [
+				"git limits neither the year nor the offset in %aI, so commit dates are checked for shape and only updatedAt must be a real time"
+			],
+			"gotcha": [
+				"a separator byte in a commit splits or shifts readCommits' records, so fields can hold other text and later fields can be undefined"
+			],
+			"followUp": [
+				"a commit body can still forge a whole record with a hash-shaped first field; fixing that means changing readCommits' format"
+			]
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Keep workstream summaries in refs/chamoji/memory",
+		"card": {
+			"why": [
+				"reasoning has to outlive the branch it was written on, and a git ref travels with the repo on any host"
+			],
+			"constraint": [
+				"writes go through plumbing only, so HEAD, the index and the work tree are never touched",
+				"the ref is fetched from other people, so readTree drops anything off the layout and every entry is rebuilt field by field"
+			],
+			"gotcha": [
+				"the environment and author.email outrank user.email, so the fixed identity is also set in the environment or a real address would reach the ref",
+				"ls-tree answers relative to cwd without --full-tree"
+			],
+			"followUp": [
+				"memory sync must not keep a purged history as a merge parent, or the purge is undone"
+			]
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Add chamoji why to explain a line",
+		"card": {
+			"why": [
+				"the milestone exists to answer \"why is this line here\", and a line's intent lives on the commit that wrote it, so `why <file:line>` blames the line and prints that commit's card"
+			],
+			"constraint": [
+				"blames the working copy, not HEAD, so line numbers match the editor and an edited line is reported as uncommitted instead of being blamed on an older commit"
+			],
+			"gotcha": [
+				"the commit is read as `<hash>^!`, because readCommits takes one revision argument and a bare `-1 <hash>` would be a single bad argument; it also works for a root commit"
+			],
+			"followUp": [
+				"a range such as file:10-20 would need one card per distinct commit"
+			]
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Read wrapped intent values and survive odd trailer keys",
+		"card": {
+			"why": [
+				"a wrapped Why: line was cut to its first line, and a trailer named constructor or toString crashed the whole changelog through an inherited property lookup."
+			],
+			"constraint": [],
+			"gotcha": [
+				"git can hand back a trailer cut at its first line while the body has the whole value, so a value that only starts a longer one is dropped."
+			],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Read intent cards from commit messages",
+		"card": {
+			"why": [
+				"project memory needs a commit's reasons as data. Every later task reads the card, so parsing it once at the base keeps them from each scanning message bodies on their own."
+			],
+			"constraint": [
+				"cards stay out of rendered changelogs, so the Markdown and HTML output is unchanged."
+			],
+			"gotcha": [
+				"GitHub's squash message puts the lines mid-body where git's trailer parser skips them, so the body is scanned after the trailers."
+			],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Plan milestone 7, Project memory",
+		"card": {
+			"why": [
+				"the roadmap makes this milestone the dogfooding for workstreams, so the plan is the first stamped commit."
+			],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Fix login redirect",
+		"card": {
+			"why": ["fix bug"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "filler"
+	},
+	{
+		"subject": "Add retry to uploads",
+		"card": {
+			"why": ["needed for the update"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "too-short"
+	},
+	{
+		"subject": "Rename the settings tab",
+		"card": {
+			"why": ["as discussed"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "filler"
+	},
+	{
+		"subject": "Tidy the billing module",
+		"card": {
+			"why": ["cleanup"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "filler"
+	},
+	{
+		"subject": "Tweak the empty state copy",
+		"card": {
+			"why": ["minor tweaks"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "filler"
+	},
+	{
+		"subject": "Handle null avatars",
+		"card": {
+			"why": ["it was broken"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "filler"
+	},
+	{
+		"subject": "Bump the retry limit",
+		"card": {
+			"why": ["per review"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "filler"
+	},
+	{
+		"subject": "Show the plan name in the header",
+		"card": {
+			"why": ["requested"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "filler"
+	},
+	{
+		"subject": "Wire up the export button",
+		"card": {
+			"why": ["to make it work"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "filler"
+	},
+	{
+		"subject": "Split the report builder",
+		"card": {
+			"why": ["refactor, improvements"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "filler"
+	},
+	{
+		"subject": "Add the new invoice field",
+		"card": {
+			"why": ["for the ticket"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "filler"
+	},
+	{
+		"subject": "Cache the device list",
+		"card": {
+			"why": ["Safari is slow"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "too-short"
+	},
+	{
+		"subject": "Limit upload size",
+		"card": {
+			"why": ["users complained"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "too-short"
+	},
+	{
+		"subject": "Debounce the search box",
+		"card": {
+			"why": ["felt laggy"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "too-short"
+	},
+	{
+		"subject": "Add a timeout to the sync call",
+		"card": {
+			"why": ["It hung once"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "too-short"
+	},
+	{
+		"subject": "Hide the beta banner",
+		"card": {
+			"why": ["looks bad"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "too-short"
+	},
+	{
+		"subject": "Order tags alphabetically",
+		"card": {
+			"why": ["easier to read"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "too-short"
+	},
+	{
+		"subject": "Store the locale in a cookie",
+		"card": {
+			"why": ["the app needs it"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "too-short"
+	},
+	{
+		"subject": "Skip empty rows in the import",
+		"card": {
+			"why": ["rows were blank"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "too-short"
+	},
+	{
+		"subject": "Lock the lockfile in CI",
+		"card": {
+			"why": ["for stability"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "too-short"
+	},
+	{
+		"subject": "Add retry to upload",
+		"card": {
+			"why": ["to add retry to the upload, retry upload"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "repeats-subject"
+	},
+	{
+		"subject": "Validate email on signup",
+		"card": {
+			"why": ["validate the email on signup"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "repeats-subject"
+	},
+	{
+		"subject": "Paginate the audit log",
+		"card": {
+			"why": ["the audit log needs to be paginated"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "repeats-subject"
+	},
+	{
+		"subject": "Move auth checks into middleware",
+		"card": {
+			"why": ["auth checks in the middleware"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "repeats-subject"
+	},
+	{
+		"subject": "Cache the device list endpoint",
+		"card": {
+			"why": ["cache the endpoint for the device list"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "repeats-subject"
+	},
+	{
+		"subject": "Add dark mode to the dashboard",
+		"card": {
+			"why": ["dashboard dark mode, add it to the dashboard"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "repeats-subject"
+	},
+	{
+		"subject": "Rename Workspace to Project",
+		"card": {
+			"why": ["rename the workspace to project everywhere"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "repeats-subject"
+	},
+	{
+		"subject": "Sort invoices by due date",
+		"card": {
+			"why": ["invoices sorted by the due date now"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "repeats-subject"
+	},
+	{
+		"subject": "Cache devices",
+		"card": {
+			"why": ["Add a cache layer to the device list endpoint"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "what-not-why"
+	},
+	{
+		"subject": "Use the new logger",
+		"card": {
+			"why": ["Use the new logger across all the services"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "what-not-why"
+	},
+	{
+		"subject": "Rename config keys",
+		"card": {
+			"why": ["Renamed the config keys to match the style guide"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "what-not-why"
+	},
+	{
+		"subject": "Move helpers to utils",
+		"card": {
+			"why": ["Moved the shared helpers into the utils folder"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "what-not-why"
+	},
+	{
+		"subject": "Drop legacy exports",
+		"card": {
+			"why": ["Remove the old exports from the public index file"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "what-not-why"
+	},
+	{
+		"subject": "Switch to pnpm",
+		"card": {
+			"why": ["Switch the repo over to pnpm workspaces for builds"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "what-not-why"
+	},
+	{
+		"subject": "Make the sidebar wider",
+		"card": {
+			"why": ["Make the sidebar wider on large screens for the team"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "what-not-why"
+	},
+	{
+		"subject": "Bump vitest",
+		"card": {
+			"why": ["Bumped vitest to the latest minor release available"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "what-not-why"
+	},
+	{
+		"subject": "Change the default theme",
+		"card": {
+			"why": ["Changed the default theme to the darker palette"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "what-not-why"
+	},
+	{
+		"subject": "Remove dead code",
+		"card": {
+			"why": ["wip"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "filler"
+	},
+	{
+		"subject": "Polish the toast",
+		"card": {
+			"why": ["small change"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "filler"
+	},
+	{
+		"subject": "Adjust spacing",
+		"card": {
+			"why": ["looks better now"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "too-short"
+	},
+	{
+		"subject": "压缩首页图片",
+		"card": {
+			"why": ["页面加载太慢了，用户投诉很多"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "缓存商品价格",
+		"card": {
+			"why": ["部署后缓存没有清空，用户一直看到旧价格并且下单失败"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "画像を遅延読み込みする",
+		"card": {
+			"why": ["ページの読み込みが遅すぎてユーザーが離脱していた"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "ログイン後にセッションを更新する",
+		"card": {
+			"why": ["トークンの期限が切れると決済の途中でログアウトされてしまうため"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Cache product prices",
+		"card": {
+			"why": ["หน้าเว็บโหลดช้ามากจนลูกค้าออกจากระบบก่อนชำระเงิน"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "修复登录",
+		"card": {
+			"why": ["修复"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "too-short"
+	}
+]

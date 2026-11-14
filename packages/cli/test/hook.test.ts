@@ -24,6 +24,7 @@ import {run} from '../src/run.js';
 
 let repo: FixtureRepo | undefined;
 afterEach(async () => {
+	vi.unstubAllEnvs();
 	await repo?.cleanup();
 	repo = undefined;
 });
@@ -916,4 +917,73 @@ test('a file moved between units counts for both', async () => {
 			}) as never,
 	);
 	expect(seen).toEqual([{own: ['web', 'mobile'], rides: []}]);
+});
+
+async function checkingCommit(whyCheck: boolean, fake = true) {
+	repo = await createRepo([{commit: '🎉 Init'}]);
+	if (whyCheck)
+		await gitOutput(repo.dir, ['config', 'chamoji.whyCheck', 'true']);
+	await writeFile(path.join(repo.dir, 'export.ts'), 'export {};\n');
+	await writeFile(path.join(repo.dir, '.env'), 'TOKEN=shh\n');
+	await gitOutput(repo.dir, ['add', '-A']);
+	const asked: unknown[] = [];
+	let given: ((why: string, title: string) => Promise<boolean>) | undefined;
+	let answer: boolean | undefined;
+	const code = await run(['commit'], {
+		cwd: repo.dir,
+		stdout() {},
+		stderr() {},
+		terminal: () => ({
+			async compose(
+				_config: unknown,
+				_advice: unknown,
+				_impact: unknown,
+				checkWhy?: typeof given,
+			) {
+				given = checkWhy;
+				// Ask while the change is still staged, as the composer does.
+				answer = await checkWhy?.('because the cache is stale', 'Add export');
+				return '✨ Add export';
+			},
+			close() {},
+		}),
+		env: {},
+		...(fake
+			? {
+					whyChecker: async (input: unknown) => {
+						asked.push(input);
+						return true;
+					},
+				}
+			: {}),
+	} as never);
+	return {code, asked, given, answer};
+}
+
+test('with chamoji.whyCheck on, the composer gets a check that sends the title, why and staged paths', async () => {
+	const {code, asked, answer} = await checkingCommit(true);
+	expect(code).toBe(0);
+	expect(answer).toBe(true);
+	expect(asked).toEqual([
+		{
+			title: 'Add export',
+			why: 'because the cache is stale',
+			files: ['export.ts'],
+		},
+	]);
+	expect(JSON.stringify(asked)).not.toContain('shh');
+});
+
+test('without chamoji.whyCheck, the composer gets no check', async () => {
+	const {code, asked, given} = await checkingCommit(false);
+	expect(code).toBe(0);
+	expect(given).toBeUndefined();
+	expect(asked).toEqual([]);
+});
+
+test('with chamoji.whyCheck on but no TypeSafe key, the composer gets no check', async () => {
+	vi.stubEnv('TYPESAFE_API_KEY', '');
+	const {code, given} = await checkingCommit(true, false);
+	expect(code).toBe(0);
+	expect(given).toBeUndefined();
 });

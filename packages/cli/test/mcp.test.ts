@@ -6,10 +6,13 @@ import {PassThrough} from 'node:stream';
 import {fileURLToPath} from 'node:url';
 import {
 	MEMORY_REF,
+	readPendingWhy,
 	readTree,
 	runGitWithInput,
 	setActive,
 	snapshotWorkstream,
+	WHY_ADVICE,
+	writeNoteCard,
 	writeTree,
 	type MemoryHit,
 } from '@chamoji/core';
@@ -21,7 +24,13 @@ import {
 } from '../../core/test/helpers/fixture-repo.js';
 import {MISSING_KEY} from '../src/env.js';
 import {redact} from '../src/jev-classifier.js';
-import {createTools, handleMessage, runMcp, type McpTools} from '../src/mcp.js';
+import {
+	createTools,
+	handleMessage,
+	runMcp,
+	sourceLabel,
+	type McpTools,
+} from '../src/mcp.js';
 
 // The real redact, wrapped so a test can see how much text it was given.
 vi.mock('../src/jev-classifier.js', async importOriginal => {
@@ -118,6 +127,9 @@ const noTools: McpTools = {
 	async workstream() {
 		throw new Error('unused');
 	},
+	async rememberWhy() {
+		throw new Error('unused');
+	},
 };
 
 test('initialize echoes a known protocol version', async () => {
@@ -151,17 +163,18 @@ test('initialize answers the latest for an unknown one', async () => {
 	}
 });
 
-test('tools/list names exactly three tools', async () => {
+test('tools/list names exactly four tools', async () => {
 	const {result} = await send(noTools, 'tools/list');
 	expect(result.tools.map((tool: {name: string}) => tool.name)).toEqual([
 		'search_memory',
 		'why',
 		'workstream',
+		'remember_why',
 	]);
 	for (const tool of result.tools) {
 		expect(tool.description).toEqual(expect.any(String));
 		expect(tool.inputSchema.type).toBe('object');
-		expect(tool.annotations.readOnlyHint).toBe(true);
+		expect(tool.annotations.readOnlyHint).toBe(tool.name !== 'remember_why');
 	}
 });
 
@@ -235,6 +248,26 @@ test('a commit with no card still returns its subject and body', async () => {
 	expect(data.subject).toBe('🐛 Fix footer');
 	expect(data.body).toContain('overlapped the cookie banner');
 	expect(data.card).toBeUndefined();
+});
+
+test('why returns the added reason and the merged card', async () => {
+	const dir = await project();
+	await writeNoteCard(
+		dir,
+		(await gitOutput(dir, ['rev-parse', 'HEAD~1'])).trim(),
+		'the provider returns 422 for stays over 365 nights',
+	);
+	const {data} = await callTool(createTools(dir), 'why', {
+		file: 'src/a.ts',
+		line: 2,
+	});
+	expect(data.addedLater).toMatchObject({
+		why: ['the provider returns 422 for stays over 365 nights'],
+	});
+	expect(data.card.why).toEqual([
+		'the provider returns 422 for stays over 365 nights',
+		'the old form leaked sessions',
+	]);
 });
 
 test('a line that is not committed yet says so', async () => {
@@ -1054,4 +1087,71 @@ test('a damaged search index is rebuilt and the search still answers', async () 
 		expect(isError, damage).toBe(false);
 		expect(data.hits[0].title, damage).toBe('✨ Add login');
 	}
+});
+
+test('why labels a thin card and adds clues', async () => {
+	const repo = await createRepo([
+		{
+			commit: '✨ Add login',
+			body: 'Why: the old form leaked sessions after the tab closed, so logins stayed open',
+			files: {'src/a.ts': 'one\ntwo\n'},
+		},
+		{
+			commit: '🐛 Fix login (#12)',
+			body: 'Why: fix bug',
+			files: {'src/a.ts': 'one\ntwo\nthree\n'},
+		},
+	]);
+	try {
+		const {data} = await callTool(createTools(repo.dir), 'why', {
+			file: 'src/a.ts',
+			line: 3,
+		});
+		expect(data.whyQuality).toBe('thin');
+		expect(data.whyAdvice).toBe(WHY_ADVICE.filler);
+		expect(data.clues.pr).toBe(12);
+		expect(data.clues.nearby).toHaveLength(1);
+	} finally {
+		await repo.cleanup();
+	}
+});
+
+test('remember_why keeps the reason for the commit composer, labelled by the client', async () => {
+	const dir = await project();
+	const tools = createTools(dir);
+	await send(tools, 'initialize', {
+		protocolVersion: '2025-06-18',
+		clientInfo: {name: 'claude-code', version: '1'},
+	});
+	const {data} = await callTool(tools, 'remember_why', {
+		why: 'the provider returns 422 for stays over 365 nights',
+	});
+	expect(data).toEqual({remembered: true});
+	expect(await readPendingWhy(dir)).toMatchObject({
+		why: 'the provider returns 422 for stays over 365 nights',
+		source: 'your Claude Code session',
+	});
+});
+
+test('remember_why refuses a thin reason and bad arguments', async () => {
+	const dir = await project();
+	const tools = createTools(dir);
+	const thin = await callTool(tools, 'remember_why', {why: 'fix bug'});
+	expect(thin.isError).toBe(true);
+	expect(thin.text).toContain('that reason is thin:');
+	expect(await readPendingWhy(dir)).toBeUndefined();
+	for (const why of [undefined, 3, '', 'x'.repeat(501)]) {
+		expect((await callTool(tools, 'remember_why', {why})).isError).toBe(true);
+	}
+});
+
+test('sourceLabel names known clients and shows unknown ones safely', () => {
+	expect(sourceLabel(undefined)).toBe("your agent's session");
+	expect(sourceLabel('claude-code')).toBe('your Claude Code session');
+	expect(sourceLabel('claude-ai')).toBe('your Claude Desktop chat');
+	expect(sourceLabel('cursor-vscode')).toBe('your Cursor chat');
+	expect(sourceLabel('codex-mcp-client')).toBe('your Codex session');
+	expect(sourceLabel('  my\u001B[31mtool ')).toBe('your my[31mtool session');
+	expect(sourceLabel('x'.repeat(60))).toBe(`your ${'x'.repeat(40)} session`);
+	expect(sourceLabel('   ')).toBe("your agent's session");
 });
