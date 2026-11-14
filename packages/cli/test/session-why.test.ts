@@ -5,8 +5,10 @@ import {afterEach, expect, test} from 'vitest';
 import type {AdvisorClient} from '../src/advisor.js';
 import {
 	draftFromSession,
+	looksSecret,
 	reasonCandidates,
 	recentUserMessages,
+	within,
 } from '../src/session-why.js';
 
 const NOW = new Date('2026-11-13T12:00:00Z');
@@ -39,6 +41,7 @@ const claudeDir = (home: string, root = ROOT) =>
 	path.join(home, '.claude', 'projects', root.replaceAll(/[^A-Za-z0-9]/g, '-'));
 const user = (content: unknown, extra: object = {}) => ({
 	type: 'user',
+	cwd: ROOT,
 	message: {role: 'user', content},
 	...extra,
 });
@@ -422,4 +425,88 @@ test('a sentence holding a base64 secret or an AWS key id is dropped', () => {
 			[],
 		),
 	).toEqual([]);
+});
+
+test('a Claude Code folder shared by a colliding path is not read', async () => {
+	const home = await tempHome();
+	const repo = '/x/b-c';
+	await plant(path.join(claudeDir(home, repo), 'a.jsonl'), [
+		user(REASON, {cwd: '/x/b/c'}),
+	]);
+	expect(await recentUserMessages(repo, {home, now: NOW})).toBeUndefined();
+});
+
+test('Claude Code lines with cwd at the root or in a subfolder are read', async () => {
+	const home = await tempHome();
+	await plant(path.join(claudeDir(home), 'a.jsonl'), [
+		user('at the root'),
+		user('in a subfolder', {cwd: `${ROOT}/packages/cli`}),
+		user('elsewhere', {cwd: '/work/other'}),
+	]);
+	const result = await recentUserMessages(ROOT, {home, now: NOW});
+	expect(result?.messages).toEqual(['at the root', 'in a subfolder']);
+});
+
+test('Claude Code lines without cwd are skipped', async () => {
+	const home = await tempHome();
+	await plant(path.join(claudeDir(home), 'a.jsonl'), [
+		user('no folder here', {cwd: undefined}),
+		user('has a folder'),
+	]);
+	const result = await recentUserMessages(ROOT, {home, now: NOW});
+	expect(result?.messages).toEqual(['has a folder']);
+});
+
+test('within accepts a child folder named ..foo and rejects outside paths', () => {
+	expect(within('/a/b', '/a/b/..foo')).toBe(true);
+	expect(within('/a/b', '/a/b')).toBe(true);
+	expect(within('/a/b', '/a/b/c/d')).toBe(true);
+	expect(within('/a/b', '/a')).toBe(false);
+	expect(within('/a/b', '/a/b-c')).toBe(false);
+	expect(within('/a/b', '/x')).toBe(false);
+});
+
+test('ordinary reasons are not secrets', () => {
+	for (const text of [
+		REASON,
+		'Guests lose the booking because of #482 so we cap the stay.',
+		'The range check moved because src/booking/range.ts ran twice per stay.',
+		'We rotate it because the token expires after 15 minutes for guests.',
+		'Pin the parser to v1.4.0 because 1.5 breaks the booking export.',
+	]) {
+		expect(looksSecret(text)).toBe(false);
+		expect(reasonCandidates([text], [])).toEqual([text]);
+	}
+});
+
+test('each kind of secret is dropped', () => {
+	const secrets = [
+		'postgres://admin:hunter22@db.internal/app',
+		'https://abcdefgh12@sentry.example/1',
+		'the password is hunter22x',
+		'Password: hunter22x',
+		'api_key=abc123def',
+		'the client secret = qwerty12',
+		'auth: zzzzzz',
+		'sk-abc',
+		'sk_abc',
+		'rk_abc',
+		'pk_live_abc',
+		'ghp_abc',
+		'gho_abc',
+		'ghs_abc',
+		'github_pat_abc',
+		'xoxb-123',
+		'AKIA' + 'X'.repeat(12),
+		'ASIA' + '7'.repeat(12),
+		'AIzaAbc',
+		'-----BEGIN KEY',
+		'eyJ' + 'a'.repeat(10),
+		'0123456789abcdef',
+	];
+	for (const secret of secrets) {
+		const text = `The deploy fails because the config holds ${secret} in it today.`;
+		expect(looksSecret(text), secret).toBe(true);
+		expect(reasonCandidates([text], []), secret).toEqual([]);
+	}
 });

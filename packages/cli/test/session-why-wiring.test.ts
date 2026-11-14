@@ -60,7 +60,7 @@ async function composeWith(flag: boolean, pending = false, composer = false) {
 	await mkdir(folder, {recursive: true});
 	await writeFile(
 		path.join(folder, 's.jsonl'),
-		`${JSON.stringify({type: 'user', message: {role: 'user', content: REASON}})}\n`,
+		`${JSON.stringify({type: 'user', cwd: root, message: {role: 'user', content: REASON}})}\n`,
 	);
 	await writeFile(path.join(repo.dir, 'stays.ts'), 'export {};\n');
 	await gitOutput(repo.dir, ['add', '-A']);
