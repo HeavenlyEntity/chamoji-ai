@@ -1,5 +1,5 @@
 import {afterEach, expect, test} from 'vitest';
-import {listThinWhys} from '../src/thin-whys.js';
+import {OutsideRepoError, listThinWhys} from '../src/thin-whys.js';
 import {writeNoteCard} from '../src/why-notes.js';
 import {
 	createRepo,
@@ -71,4 +71,35 @@ test('a path that looks like an option is a path', async () => {
 	repo = await fixture();
 	expect(await listThinWhys(repo.dir, '--output=x')).toEqual([]);
 	expect(await gitOutput(repo.dir, ['status', '--porcelain'])).toBe('');
+});
+
+test('the first commit counts', async () => {
+	repo = await createRepo([
+		{commit: '🐛 Fix it', body: 'Why: fix bug', files: {'a.ts': '1\n2\n'}},
+	]);
+	const found = await listThinWhys(repo.dir);
+	expect(found.map(({lines, kind}) => [lines, kind])).toEqual([[2, 'thin']]);
+});
+
+test('lines split across blame groups add up', async () => {
+	repo = await createRepo([
+		{commit: '🐛 Fix x', body: 'Why: fix bug', files: {'a.ts': 'x1\nx2\nx3\n'}},
+		{commit: '✨ Add y', files: {'a.ts': 'x1\ny\nx3\n'}},
+	]);
+	const found = await listThinWhys(repo.dir);
+	expect(found.map(({subject, lines}) => [subject, lines])).toEqual([
+		['🐛 Fix x', 2],
+		['✨ Add y', 1],
+	]);
+});
+
+test('a path outside the repository throws a typed error', async () => {
+	repo = await fixture();
+	await expect(listThinWhys(repo.dir, '../outside')).rejects.toBeInstanceOf(
+		OutsideRepoError,
+	);
+	await expect(listThinWhys(repo.dir, 'src/../..')).rejects.toBeInstanceOf(
+		OutsideRepoError,
+	);
+	expect(await listThinWhys(repo.dir, 'src/../src/c.ts')).toHaveLength(1);
 });

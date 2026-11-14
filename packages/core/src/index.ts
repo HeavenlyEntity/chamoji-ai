@@ -115,7 +115,7 @@ export {
 	readNoteCards,
 	writeNoteCard,
 } from './why-notes.js';
-export {listThinWhys, type ThinWhy} from './thin-whys.js';
+export {OutsideRepoError, listThinWhys, type ThinWhy} from './thin-whys.js';
 export {
 	findClues,
 	prNumber,

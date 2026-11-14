@@ -4,6 +4,7 @@ import {
 	findClues,
 	judgeWhy,
 	listThinWhys,
+	OutsideRepoError,
 	mergeCards,
 	noteCard,
 	parseLocation,
@@ -132,18 +133,25 @@ async function thinWhys(
 
 	await assertGitRepo(io.cwd);
 	const path = input[0] ?? '.';
-	const found = await runStep(
-		io.face ?? NO_FACE,
-		'Reading who wrote each line',
-		async () => listThinWhys(io.cwd, path),
-		items => ({
-			outcome: 'ok',
-			text:
-				items.length === 0
-					? 'Every commit gives a reason'
-					: `Found ${items.length} ${items.length === 1 ? 'commit' : 'commits'} to improve`,
-		}),
-	);
+	let found: Awaited<ReturnType<typeof listThinWhys>>;
+	try {
+		found = await runStep(
+			io.face ?? NO_FACE,
+			'Reading who wrote each line',
+			async () => listThinWhys(io.cwd, path),
+			items => ({
+				outcome: 'ok',
+				text:
+					items.length === 0
+						? 'Every commit gives a reason'
+						: `Found ${items.length} ${items.length === 1 ? 'commit' : 'commits'} to improve`,
+			}),
+		);
+	} catch (error) {
+		if (!(error instanceof OutsideRepoError)) throw error;
+		io.stderr(`chamoji: ${stripControl(path)} is outside the repository.\n`);
+		return USAGE_ERROR;
+	}
 	if (flags.json) {
 		io.stdout(`${JSON.stringify(found, null, 2)}\n`);
 		return 0;
