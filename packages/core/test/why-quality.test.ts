@@ -1,6 +1,11 @@
 import {expect, test} from 'vitest';
 import type {IntentCard, WhyReason} from '../src/index.js';
-import {CAUSAL_MARKERS, WHY_ADVICE, judgeWhy} from '../src/why-quality.js';
+import {
+	CAUSAL_MARKERS,
+	WHY_ADVICE,
+	judgeWhy,
+	whyWords,
+} from '../src/why-quality.js';
 import labels from './fixtures/why-labels.json' with {type: 'json'};
 
 type Row = {
@@ -150,4 +155,13 @@ test('filler is matched as whole words only', () => {
 
 test('the causal markers are exported', () => {
 	expect(CAUSAL_MARKERS.has('because')).toBe(true);
+});
+
+test('each Chinese, Japanese or Thai character counts as a word', () => {
+	expect(whyWords('页面加载 slow')).toEqual(['页', '面', '加', '载', 'slow']);
+	expect(whyWords('ページ')).toHaveLength(3);
+	expect(judgeWhy(card(['修复']), '修复登录').reasons).toContain('too-short');
+	expect(
+		judgeWhy(card(['页面加载太慢了，用户投诉很多']), '压缩首页图片').level,
+	).toBe('ok');
 });

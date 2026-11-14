@@ -134,10 +134,21 @@ export const CAUSAL_MARKERS: ReadonlySet<string> = new Set([
 ]);
 
 const WORD = /[\p{L}\p{N}][\p{L}\p{N}'_-]*/gu;
+/** Scripts written without spaces, where each character counts as a word. */
+const CHARACTER_WORD =
+	/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}]/gu;
 const MIN_WORDS = 5;
 const REPEAT_SHARE = 0.7;
 
-const words = (text: string): string[] => text.toLowerCase().match(WORD) ?? [];
+/**
+ * The words in a text, lowercased. Chinese, Japanese and Thai are written
+ * without spaces, so each of their characters counts as one word.
+ */
+export function whyWords(text: string): string[] {
+	return (
+		text.toLowerCase().replaceAll(CHARACTER_WORD, ' $& ').match(WORD) ?? []
+	);
+}
 
 const escapeRegex = (text: string): string =>
 	text.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
@@ -170,7 +181,7 @@ export function judgeWhy(card: IntentCard, subject: string): WhyVerdict {
 	}
 
 	const text = card.why.join(' ').toLowerCase();
-	const left = words(text.replaceAll(FILLER, ' '));
+	const left = whyWords(text.replaceAll(FILLER, ' '));
 	const reasons: WhyReason[] = [];
 	if (left.length === 0) {
 		reasons.push('filler');
@@ -180,7 +191,7 @@ export function judgeWhy(card: IntentCard, subject: string): WhyVerdict {
 		reasons.push('too-short');
 	}
 
-	if (repeatsSubject(words(text), words(subject))) {
+	if (repeatsSubject(whyWords(text), whyWords(subject))) {
 		reasons.push('repeats-subject');
 	}
 
@@ -207,7 +218,7 @@ function repeatsSubject(why: string[], subject: string[]): boolean {
 
 /** True when the Why opens with an action verb and names no cause. */
 function describesChange(text: string): boolean {
-	const all = words(text);
+	const all = whyWords(text);
 	if (!ACTION_VERBS.has(all[0] ?? '')) {
 		return false;
 	}

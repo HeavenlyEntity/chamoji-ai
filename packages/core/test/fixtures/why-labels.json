@@ -2987,5 +2987,66 @@
 		},
 		"label": "vague",
 		"reason": "too-short"
+	},
+	{
+		"subject": "压缩首页图片",
+		"card": {
+			"why": ["页面加载太慢了，用户投诉很多"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "缓存商品价格",
+		"card": {
+			"why": ["部署后缓存没有清空，用户一直看到旧价格并且下单失败"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "画像を遅延読み込みする",
+		"card": {
+			"why": ["ページの読み込みが遅すぎてユーザーが離脱していた"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "ログイン後にセッションを更新する",
+		"card": {
+			"why": ["トークンの期限が切れると決済の途中でログアウトされてしまうため"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "Cache product prices",
+		"card": {
+			"why": ["หน้าเว็บโหลดช้ามากจนลูกค้าออกจากระบบก่อนชำระเงิน"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "good"
+	},
+	{
+		"subject": "修复登录",
+		"card": {
+			"why": ["修复"],
+			"constraint": [],
+			"gotcha": [],
+			"followUp": []
+		},
+		"label": "vague",
+		"reason": "too-short"
 	}
 ]
