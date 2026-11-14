@@ -19,6 +19,7 @@ import {
 } from './memory.js';
 import {parseCommit} from './parse.js';
 import type {IntentCard} from './types.js';
+import {judgeWhy} from './why-quality.js';
 
 /** A commit or a workstream summary that matched a search. */
 export type MemoryHit = {
@@ -28,16 +29,18 @@ export type MemoryHit = {
 	/** A commit's subject, or a workstream's title. */
 	title: string;
 	card?: IntentCard;
+	/** Whether the card's Why says why; present only when the hit has a card. */
+	whyQuality?: 'ok' | 'thin';
 	score: number;
 };
 
 /** Bump it when the file's layout or what goes into it changes. */
-const INDEX_VERSION = 1;
+const INDEX_VERSION = 2;
 
 const DEFAULT_LIMIT = 10;
 
 /** How much each part of a commit counts toward a match. */
-const WEIGHT = {card: 3, subject: 2, body: 1};
+const WEIGHT = {card: 3, thinCard: 1, subject: 2, body: 1};
 
 /** What a hit is made from. The index file keeps it so a search reads no git objects. */
 type StoredDocument = {
@@ -45,6 +48,7 @@ type StoredDocument = {
 	id: string;
 	title: string;
 	card?: IntentCard;
+	whyQuality?: 'ok' | 'thin';
 };
 
 type Loaded = {documents: StoredDocument[]; index: Bm25Index};
@@ -95,6 +99,9 @@ export async function searchMemory(
 			id: document.id,
 			title: document.title,
 			...(document.card === undefined ? {} : {card: document.card}),
+			...(document.whyQuality === undefined
+				? {}
+				: {whyQuality: document.whyQuality}),
 			score,
 		});
 	}
@@ -120,18 +127,24 @@ async function build(
 	const searchable: SearchDocument[] = [];
 	if (stamp.head !== '') {
 		for (const raw of await readCommits(cwd, stamp.head)) {
-			const {hash, subject, body, card} = parseCommit(raw);
+			const {hash, subject, body, card, description} = parseCommit(raw);
+			const whyQuality =
+				card === undefined ? undefined : judgeWhy(card, description).level;
 			const stored: StoredDocument = {
 				kind: 'commit',
 				id: hash,
 				title: subject,
 				...(card === undefined ? {} : {card}),
+				...(whyQuality === undefined ? {} : {whyQuality}),
 			};
 			documents.push(stored);
 			searchable.push({
 				id: key(stored),
 				fields: [
-					{text: cardText(card ? [card] : []), weight: WEIGHT.card},
+					{
+						text: cardText(card ? [card] : []),
+						weight: whyQuality === 'thin' ? WEIGHT.thinCard : WEIGHT.card,
+					},
 					{text: subject, weight: WEIGHT.subject},
 					{text: body, weight: WEIGHT.body},
 				],
@@ -144,17 +157,28 @@ async function build(
 			commit.card ? [commit.card] : [],
 		);
 		const card = joinCards(cards);
+		// A workstream is thin only when every one of its cards is.
+		const whyQuality: MemoryHit['whyQuality'] =
+			cards.length === 0
+				? undefined
+				: cards.every(item => judgeWhy(item, entry.title).level === 'thin')
+					? 'thin'
+					: 'ok';
 		const stored: StoredDocument = {
 			kind: 'workstream',
 			id: entry.slug,
 			title: entry.title,
 			...(card === undefined ? {} : {card}),
+			...(whyQuality === undefined ? {} : {whyQuality}),
 		};
 		documents.push(stored);
 		searchable.push({
 			id: key(stored),
 			fields: [
-				{text: cardText(cards), weight: WEIGHT.card},
+				{
+					text: cardText(cards),
+					weight: whyQuality === 'thin' ? WEIGHT.thinCard : WEIGHT.card,
+				},
 				{text: entry.title, weight: WEIGHT.subject},
 				{
 					text: entry.commits.map(commit => commit.subject).join('\n'),
@@ -246,12 +270,14 @@ function toDocument(raw: unknown): StoredDocument | undefined {
 		return undefined;
 	}
 
-	const {kind, id, title, card} = raw as Record<string, unknown>;
+	const {kind, id, title, card, whyQuality} = raw as Record<string, unknown>;
 	if (kind !== 'commit' && kind !== 'workstream') return undefined;
 	if (typeof id !== 'string' || typeof title !== 'string') return undefined;
-	if (card === undefined) return {kind, id, title};
+	const quality: Pick<StoredDocument, 'whyQuality'> =
+		whyQuality === 'ok' || whyQuality === 'thin' ? {whyQuality} : {};
+	if (card === undefined) return {kind, id, title, ...quality};
 	const parsed = toCard(card);
-	return parsed && {kind, id, title, card: parsed};
+	return parsed && {kind, id, title, card: parsed, ...quality};
 }
 
 /** Written aside and renamed, so a search racing this one never reads half a file. */

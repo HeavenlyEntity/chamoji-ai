@@ -79,7 +79,7 @@ const TOOLS = new Map<string, Tool>([
 	[
 		'search_memory',
 		{
-			description: `Search this repository’s commits and remembered workstreams by what they say, including the Why, Constraint, Gotcha and Follow-up lines of their intent cards. Returns the best matches first. ${DATA_NOTICE}`,
+			description: `Search this repository’s commits and remembered workstreams by what they say, including the Why, Constraint, Gotcha and Follow-up lines of their intent cards. Returns the best matches first. Each hit with a card has whyQuality; treat a thin one as a clue, not the full story. ${DATA_NOTICE}`,
 			inputSchema: {
 				type: 'object',
 				properties: {

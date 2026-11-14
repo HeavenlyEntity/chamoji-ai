@@ -82,6 +82,46 @@ test('a subject match outranks a body match', async () => {
 	);
 });
 
+// BM25 marks long documents down, so the thin commit's body is long enough
+// that only its card weight, not its length, decides the order.
+test('a thin Why ranks below a specific one and is labeled', async () => {
+	repo = await createRepo([
+		{
+			commit: '🐛 Fix a crash',
+			body: 'Why: fix upload\n\nTouches the client wrapper, the shared helper and the docs for the sdk package.',
+		},
+		{
+			commit: '🐛 Stop the retry storm',
+			body: 'Why: the upload endpoint returns 429 when we retry an upload within 1 s, so wait 2 s',
+		},
+	]);
+	const hits = await searchMemory(repo.dir, 'upload');
+	expect(hits.map(hit => hit.title)).toEqual([
+		'🐛 Stop the retry storm',
+		'🐛 Fix a crash',
+	]);
+	expect(hits.map(hit => hit.whyQuality)).toEqual(['ok', 'thin']);
+});
+
+test('a commit with no card has no whyQuality', async () => {
+	repo = await createRepo([
+		{commit: '✨ Add login', body: 'Uses a throttle on the endpoint.'},
+	]);
+	const [hit] = await searchMemory(repo.dir, 'throttle');
+	expect(hit).toBeDefined();
+	expect(hit).not.toHaveProperty('whyQuality');
+});
+
+test('an index file from version 1 is rebuilt', async () => {
+	repo = await createRepo([{commit: '✨ Add login'}]);
+	await searchMemory(repo.dir, 'login');
+	const file = await indexFile(repo.dir);
+	const saved = JSON.parse(await readFile(file, 'utf8'));
+	await writeFile(file, JSON.stringify({...saved, version: 1}));
+	await searchMemory(repo.dir, 'login');
+	expect(JSON.parse(await readFile(file, 'utf8')).version).toBe(2);
+});
+
 test('search finds a workstream summary whose branch is gone', async () => {
 	repo = await createRepo([
 		{commit: '🎉 Init', files: WORKSTREAMS},
