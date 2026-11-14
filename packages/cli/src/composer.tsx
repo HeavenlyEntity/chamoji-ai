@@ -18,6 +18,7 @@ import {
 	type Advice,
 } from './advisor.js';
 import {stripControl} from './text.js';
+import {WHY_CHECK_TIMEOUT_MS} from './why-check.js';
 
 type Step =
 	| 'gitmoji'
@@ -46,9 +47,6 @@ export type Impact = {own: string[]; rides: string[]};
 const names = (units: string[]) => units.map(unit => stripControl(unit));
 
 const LIST_SIZE = 7;
-
-/** How long Enter on the Why waits for Jev's check before carrying on. */
-const WHY_CHECK_TIMEOUT_MS = 2000;
 
 export type ComposerProps = {
 	config: ComposeConfig;

@@ -1,4 +1,4 @@
-import {judgeWhy, readIntent} from '@chamoji/core';
+import {judgeWhy, parseCommit, readIntent} from '@chamoji/core';
 import {isRecord, own} from './records.js';
 import type {Io} from './run.js';
 
@@ -455,7 +455,19 @@ function thinCard(
 		.join('\n\n');
 	const card = readIntent([], rest);
 	if (!card) return undefined;
-	const verdict = judgeWhy(card, subject.split(/\r?\n/)[0] ?? '');
+	// Readers judge against the parsed description, without gitmoji, type or
+	// scope, so the hook does too.
+	const {description} = parseCommit({
+		hash: '',
+		shortHash: '',
+		authorName: '',
+		authorEmail: '',
+		date: '',
+		subject: subject.split(/\r?\n/)[0] ?? '',
+		body: '',
+		trailers: '',
+	});
+	const verdict = judgeWhy(card, description);
 	return verdict.level === 'thin'
 		? {why: card.why.join(' '), advice: verdict.advice}
 		: undefined;
