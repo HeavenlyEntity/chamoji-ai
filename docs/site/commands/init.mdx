@@ -126,8 +126,11 @@ chamoji leaves a file alone, and changes nothing, when it is a symlink or in a s
 Add why this change was made: put a "Why: <reason>" line at the end of the commit message, after a blank line. Constraint:, Gotcha: and Follow-up: lines are welcome too. Only if the user told you to skip this, prefix the command with CHAMOJI_NO_CARD=1.
 ```
 
-- **What counts:** any of `Why:`, `Constraint:`, `Gotcha:` or `Follow-up:`, below the subject paragraph, in `-m`, `--trailer` or a heredoc. `-m "Why: because"` alone is a subject, not a card. A bare `git commit` has no message to read, so it’s denied too.
-- **What passes:** `CHAMOJI_NO_CARD=1` in front of the command, a message from a file or another commit (`-F`, `-C`), `--no-edit` with no new message, and commands that only look, such as `--dry-run` and `--help`. Every other command passes too.
+It also denies a commit whose card is only `Why:` lines that don’t say why, judged by the rules in [What makes a good Why](/guides/writing-commits#what-makes-a-good-why). That reason starts `Your Why ("…") doesn't say why.`, then gives one sentence of advice, such as naming the bug, limit or request behind the change.
+
+- **What counts:** any of `Why:`, `Constraint:`, `Gotcha:` or `Follow-up:`, below the subject paragraph, in `-m`, `--trailer` or a heredoc. A card with only `Why:` lines also needs that Why to give a reason; a `Constraint:`, `Gotcha:` or `Follow-up:` line is enough on its own. `-m "Why: because"` alone is a subject, not a card. A bare `git commit` has no message to read, so it’s denied too.
+- **What passes:** `CHAMOJI_NO_CARD=1` in front of the command, which skips both checks, a message from a file or another commit (`-F`, `-C`), `--no-edit` with no new message, and commands that only look, such as `--dry-run` and `--help`. Every other command passes too.
+- **What it can’t judge:** it judges only a Why it can read. A message from a file (`-F`) and a `Why:` with no space after the colon go through unjudged. A `$(...)` other than a `cat` heredoc is never run, so a card inside one can’t be seen: with no other card line, that commit is denied as having none.
 - **What it can’t see:** it reads the command text, so a commit inside `sh -c '…'`, `xargs` or a shell alias isn’t checked.
 - **It never blocks by failing:** whatever goes wrong, it prints nothing and exits 0, and the command goes through.
 

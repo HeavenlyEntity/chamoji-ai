@@ -232,7 +232,7 @@ Took in memory from origin: 3 entries.
 ```
 
 - **`.mcp.json`** gets a `chamoji` server that runs `chamoji mcp`, or `npx --yes @chamoji/cli mcp` when chamoji isn’t on your PATH.
-- **`.claude/settings.json`** gets a hook that checks Claude Code’s commits for a card.
+- **`.claude/settings.json`** gets a hook that checks Claude Code’s commits for a card whose Why says why.
 
 Both files are meant to be committed. Existing entries are kept, and a file chamoji can’t safely read is left alone. Claude Code won’t start a server from a project’s `.mcp.json` until you approve it, so approve it when Claude Code asks.
 
@@ -252,7 +252,7 @@ Each tool tells the model that what it returns is commit text other people wrote
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Add why this change was made: put a \"Why: <reason>\" line at the end of the commit message, after a blank line. Constraint:, Gotcha: and Follow-up: lines are welcome too. Only if the user told you to skip this, prefix the command with CHAMOJI_NO_CARD=1."}}
 ```
 
-The agent tries again with a `Why:` line, and the hook lets it through. Any of the four card lines counts. `CHAMOJI_NO_CARD=1` in front of the command skips the check, for when you’ve told the agent to. The hook covers Claude Code only. Other agents can use the MCP server, but write their cards by hand. [init](/commands/init) lists what passes and what the hook can’t see.
+The agent tries again with a `Why:` line, and the hook lets it through. Any of the four card lines counts, but a card with only a `Why:` must say why: a thin one, such as `Why: fix bug`, is denied too, with a reason that starts `Your Why ("fix bug") doesn't say why.` and asks for the bug, limit or request behind the change. [What makes a good Why](/guides/writing-commits#what-makes-a-good-why) has the rules. `CHAMOJI_NO_CARD=1` in front of the command skips the check, for when you’ve told the agent to. A message from a file (`-F`) or a `Why:` with no space after the colon goes through unjudged, and a card inside a `$(...)` other than a `cat` heredoc can’t be seen. The hook covers Claude Code only. Other agents can use the MCP server, but write their cards by hand. [init](/commands/init) lists what passes and what the hook can’t see.
 
 ## Related {{ anchor: false }}
 

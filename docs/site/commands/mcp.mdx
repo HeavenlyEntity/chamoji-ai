@@ -62,12 +62,15 @@ None of the tools changes your history, refs or files. `search_memory` may refre
 		The commit that last wrote a line, as [`chamoji why`](/commands/why) does.
 		Both are required: `file` is a path from the folder the server runs in, and
 		`line` counts from 1, in the working copy. It returns the hash, subject,
-		body, author, date, card and workstream, or `kind: "uncommitted"`. It also
-		has `whyQuality` (`ok`, `thin` or `none` when there is no card). When it is
-		`thin`, `whyAdvice` says what the reason is missing. When it is `thin` or
-		`none`, `clues` holds the PR number from the subject and up to three nearby
-		commits to the file whose cards do say why. Treat a thin or missing reason
-		as incomplete and read the clues.
+		body, author, date, card and workstream, or `kind: "uncommitted"`. `card`
+		puts a reason added later with `chamoji why --amend` first and the commit’s
+		own lines after it, and `addedLater` holds the added card on its own when
+		there is one. It also has `whyQuality` (`ok`, `thin` or `none` when there is
+		no card), judged on that merged card. When it is `thin`, `whyAdvice` says
+		what the reason is missing. When it is `thin` or `none`, `clues` holds the
+		PR number from the subject and up to three nearby commits to the file whose
+		cards do say why. Treat a thin or missing reason as incomplete and read the
+		clues.
 	</Property>
 	<Property name="workstream" type="slug · optional">
 		A workstream’s title, emoji, status, description and links, and once it’s
