@@ -107,6 +107,15 @@ export {
 	type WhyVerdict,
 } from './why-quality.js';
 export {
+	NOTES_REF,
+	mergeCards,
+	noteCard,
+	noteText,
+	readNoteCard,
+	readNoteCards,
+	writeNoteCard,
+} from './why-notes.js';
+export {
 	findClues,
 	prNumber,
 	type NearbyCommit,
