@@ -48,6 +48,7 @@ test('prints the commit and its card', async () => {
 	expect(stdout).toContain(
 		'Why: because\nConstraint: no network\nGotcha: order matters\nFollow-up: tidy later\n',
 	);
+	expect(stdout).not.toContain('This reason is thin');
 });
 
 test('a commit with no card still prints its subject and says so', async () => {
@@ -148,14 +149,28 @@ test('why takes the title from the workstreams file before any snapshot', async 
 	expect(stdout).toContain('Workstream: 🔐 Auth revamp (shipped)\n');
 });
 
-test('a commit with a card shows no workstream line', async () => {
+test('a commit with a good card shows no workstream line', async () => {
+	const why = 'the old form leaked sessions after the tab closed';
+	repo = await createRepo([
+		{commit: '🎉 Init', files: SHIPPED},
+		{
+			commit: '✨ Add a',
+			body: `Why: ${why}\nWorkstream: auth`,
+			files: FILES,
+		},
+	]);
+	const {stdout} = await chamoji(['why', 'src/a.ts:1'], repo.dir);
+	expect(stdout).toContain(`Why: ${why}\n`);
+	expect(stdout).not.toContain('Auth revamp');
+});
+
+test('a thin card still shows the workstream line', async () => {
 	repo = await createRepo([
 		{commit: '🎉 Init', files: SHIPPED},
 		{commit: '✨ Add a', body: 'Why: because\nWorkstream: auth', files: FILES},
 	]);
 	const {stdout} = await chamoji(['why', 'src/a.ts:1'], repo.dir);
-	expect(stdout).toContain('Why: because\n');
-	expect(stdout).not.toContain('Auth revamp');
+	expect(stdout).toContain('Workstream: 🔐 Auth revamp (shipped)\n');
 });
 
 test('a workstream nothing knows about leaves the plain answer', async () => {
@@ -228,4 +243,53 @@ test('why is one step, and prints what it printed before', async () => {
 		['end', 'ok', 'Found the commit'],
 		['stop'],
 	]);
+});
+
+const NOTICE =
+	'This reason is thin. Look at the PR, issue and nearby commits too.';
+
+async function thinRepo(why: string) {
+	return createRepo([
+		{
+			commit: '✨ Add login',
+			body: 'Why: the old form leaked sessions after the tab closed, so logins stayed open',
+			files: FILES,
+		},
+		{
+			commit: '🐛 Fix login (#12)',
+			body: `Why: ${why}`,
+			files: {'src/a.ts': 'one\ntwo\nthree\nfour\n'},
+		},
+	]);
+}
+
+test('a thin card prints the notice, the PR and nearby commits', async () => {
+	repo = await thinRepo('fix bug');
+	const {stdout} = await chamoji(['why', 'src/a.ts:4'], repo.dir);
+	expect(stdout).toContain(`Why: fix bug\n${NOTICE}\n`);
+	expect(stdout).toContain('PR: #12\n');
+	expect(stdout).toMatch(
+		/Nearby: [0-9a-f]{7} ✨ Add login\n {2}Why: the old form leaked sessions/,
+	);
+});
+
+test('a good card prints no notice and no clues', async () => {
+	repo = await thinRepo(
+		'a retry storm took the login service down when the token expired',
+	);
+	const {stdout} = await chamoji(['why', 'src/a.ts:4'], repo.dir);
+	expect(stdout).not.toContain(NOTICE);
+	expect(stdout).not.toContain('Nearby:');
+	expect(stdout).not.toContain('PR:');
+});
+
+test('--json adds whyQuality, whyReasons and clues', async () => {
+	repo = await thinRepo('fix bug');
+	const {stdout} = await chamoji(['why', 'src/a.ts:4', '--json'], repo.dir);
+	const result = JSON.parse(stdout);
+	expect(result.kind).toBe('commit');
+	expect(result.whyQuality).toBe('thin');
+	expect(result.whyReasons).toEqual(['filler', 'too-short']);
+	expect(result.clues.pr).toBe(12);
+	expect(result.clues.nearby).toHaveLength(1);
 });

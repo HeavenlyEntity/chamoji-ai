@@ -107,6 +107,13 @@ export {
 	type WhyVerdict,
 } from './why-quality.js';
 export {
+	findClues,
+	prNumber,
+	type NearbyCommit,
+	type WhyClues,
+	type WhyQuality,
+} from './why-clues.js';
+export {
 	MEMORY_REF,
 	MEMORY_REMOTE_REF,
 	MemoryError,
