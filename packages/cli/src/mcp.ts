@@ -5,18 +5,20 @@ import {
 	blameLine,
 	getActive,
 	isSlug,
+	judgeWhy,
 	listMemory,
 	readMemory,
 	readWorkstreams,
 	searchMemory,
 	WHY_ADVICE,
+	writePendingWhy,
 } from '@chamoji/core';
 import {MISSING_KEY} from './env.js';
 import {redact, withoutTrailers} from './jev-classifier.js';
 import {isRecord} from './records.js';
 import type {MemoryReranker} from './rerank.js';
 import type {Io} from './run.js';
-import {stripControlLines} from './text.js';
+import {stripControl, stripControlLines} from './text.js';
 import {findWorkstream, readWhy} from './why.js';
 
 /**
@@ -28,7 +30,35 @@ export type McpTools = {
 	searchMemory(query: string, limit: number): Promise<unknown>;
 	why(file: string, line: number): Promise<unknown>;
 	workstream(slug: string | undefined): Promise<unknown>;
+	/** Keeps the user's reason for the commit composer to offer. `source` reads after "from". */
+	rememberWhy(why: string, source: string): Promise<unknown>;
 };
+
+/** The name each client gave in `initialize`, per server instance. */
+const clients = new WeakMap<McpTools, string>();
+
+const MAX_WHY = 500;
+const MAX_CLIENT_NAME = 40;
+
+/**
+ * Display names for the `clientInfo.name` that clients send. These names are
+ * not verified against the real clients.
+ */
+const CLIENT_LABELS = new Map([
+	['claude-code', 'your Claude Code session'],
+	['claude-ai', 'your Claude Desktop chat'],
+	['cursor-vscode', 'your Cursor chat'],
+	['codex-mcp-client', 'your Codex session'],
+]);
+
+/** Where a remembered reason came from, as it reads after "from". */
+export function sourceLabel(clientName: string | undefined): string {
+	if (clientName === undefined) return "your agent's session";
+	const known = CLIENT_LABELS.get(clientName);
+	if (known) return known;
+	const shown = stripControl(clientName).trim().slice(0, MAX_CLIENT_NAME);
+	return shown === '' ? "your agent's session" : `your ${shown} session`;
+}
 
 /** Newest first. A client that sends one we don't know gets the newest. */
 const PROTOCOL_VERSIONS = [
@@ -72,7 +102,14 @@ type Tool = {
 	description: string;
 	inputSchema: Record<string, unknown>;
 	/** Checks the arguments and runs the tool. Throws on arguments it can't use. */
-	call(args: Record<string, unknown>, tools: McpTools): Promise<unknown>;
+	call(
+		args: Record<string, unknown>,
+		tools: McpTools,
+		/** The `clientInfo.name` from `initialize`, when the client sent one. */
+		client: string | undefined,
+	): Promise<unknown>;
+	/** False for a tool that writes. */
+	readOnly?: false;
 };
 
 // A Map, not an object: a name such as `constructor` must find nothing.
@@ -184,6 +221,49 @@ const TOOLS = new Map<string, Tool>([
 			},
 		},
 	],
+	[
+		'remember_why',
+		{
+			description: `Remember why the user wants the change you're making, in the user's own words, so chamoji commit can offer it as the Why. Call it when the user explains the reason. ${DATA_NOTICE}`,
+			inputSchema: {
+				type: 'object',
+				properties: {
+					why: {
+						type: 'string',
+						minLength: 1,
+						maxLength: MAX_WHY,
+						description: 'The reason, in the user’s own words.',
+					},
+				},
+				required: ['why'],
+				additionalProperties: false,
+			},
+			readOnly: false,
+			async call(args, tools, client) {
+				const {why} = args;
+				if (
+					typeof why !== 'string' ||
+					why.trim() === '' ||
+					why.length > MAX_WHY
+				) {
+					throw new Error(`why must be a string of 1 to ${MAX_WHY} characters`);
+				}
+
+				// One line of plain text: it becomes a Why: line in a commit.
+				const clean = stripControl(why).replaceAll(/\s+/g, ' ').trim();
+				const verdict = judgeWhy(
+					{why: [clean], constraint: [], gotcha: [], followUp: []},
+					'',
+				);
+				if (verdict.level === 'thin') {
+					throw new Error(`that reason is thin: ${verdict.advice}`);
+				}
+
+				await tools.rememberWhy(clean, sourceLabel(client));
+				return {remembered: true};
+			},
+		},
+	],
 ]);
 
 /**
@@ -207,6 +287,12 @@ export function createTools(cwd: string, rerank?: MemoryReranker): McpTools {
 			}
 
 			return {hits: hits.slice(0, limit)};
+		},
+
+		async rememberWhy(why, source) {
+			await assertGitRepo(cwd);
+			await writePendingWhy(cwd, {why, source});
+			return {remembered: true};
 		},
 
 		async why(file, line) {
@@ -491,6 +577,10 @@ async function dispatch(
 			const protocolVersion =
 				PROTOCOL_VERSIONS.find(version => version === asked) ??
 				PROTOCOL_VERSIONS[0];
+			const info = isRecord(params) ? params['clientInfo'] : undefined;
+			const name = isRecord(info) ? info['name'] : undefined;
+			if (typeof name === 'string') clients.set(tools, name);
+			else clients.delete(tools);
 			return success(id, {
 				protocolVersion,
 				capabilities: {tools: {}},
@@ -505,11 +595,11 @@ async function dispatch(
 
 		case 'tools/list': {
 			return success(id, {
-				tools: [...TOOLS].map(([name, {description, inputSchema}]) => ({
+				tools: [...TOOLS].map(([name, tool]) => ({
 					name,
-					description,
-					inputSchema,
-					annotations: {readOnlyHint: true},
+					description: tool.description,
+					inputSchema: tool.inputSchema,
+					annotations: {readOnlyHint: tool.readOnly !== false},
 				})),
 			});
 		}
@@ -557,7 +647,7 @@ async function callTool(
 			throw new Error('arguments must be an object');
 		}
 
-		const data = await tool.call(args ?? {}, tools);
+		const data = await tool.call(args ?? {}, tools, clients.get(tools));
 		return {content: [{type: 'text', text: limitReply(data)}]};
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
@@ -579,7 +669,7 @@ async function callTool(
  * stdout carries nothing else; notes for the person go to stderr. It resolves
  * with 0 when stdin ends. With `--ai`, `reranker` supplies Jev's reorder for
  * `search_memory`; without a key, or with one that can't be used, the server
- * warns and stays on the keyword order. Everything it does is read-only.
+ * warns and stays on the keyword order. Only `remember_why` writes, and only a note in the git directory.
  */
 export async function runMcp(
 	flags: {ai?: boolean},

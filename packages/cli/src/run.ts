@@ -11,6 +11,7 @@ import {
 	CARD_ENDPOINT,
 	cardUrl,
 	checkPublishAuth,
+	clearPendingWhy,
 	committedSection,
 	ConfigVersionError,
 	fetchesMemory,
@@ -37,6 +38,7 @@ import {
 	restoreChanges,
 	render,
 	repoStats,
+	readPendingWhy,
 	requireNpm,
 	resolveUnits,
 	runGit,
@@ -60,6 +62,7 @@ import {
 	type FileChange,
 	type NpmRunner,
 	type OutputFormat,
+	type PendingWhy,
 	type PublishMethod,
 	type PublishOutcome,
 	type PublishPlan,
@@ -69,6 +72,7 @@ import {
 	type ReleaseOptions,
 	type UnitPending,
 	type UnitPlan,
+	type WhyDraft,
 	type WrittenChanges,
 } from '@chamoji/core';
 import {TypeSafeClient} from '@typesafe-ai/sdk';
@@ -197,6 +201,7 @@ export type ComposerTerminal = {
 		advice?: Promise<Advice | null>,
 		impact?: Impact,
 		checkWhy?: ComposerProps['checkWhy'],
+		draft?: WhyDraft,
 	): Promise<string | null>;
 	close(): void;
 };
@@ -205,8 +210,8 @@ const realTerminal = (): ComposerTerminal | null => {
 	const terminal = openTerminal();
 	return terminal
 		? {
-				compose: async (config, advice, impact, checkWhy) =>
-					compose(config, terminal, advice, impact, checkWhy),
+				compose: async (config, advice, impact, checkWhy, draft) =>
+					compose(config, terminal, advice, impact, checkWhy, draft),
 				close: () => terminal.close(),
 			}
 		: null;
@@ -1193,6 +1198,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 
 		const settings = await readAiSettings(root);
 		const advice = adviceFor(root, settings, '');
+		const draft = whyDraft(await readPendingWhy(root));
 		let message: string | null;
 		try {
 			message = await terminal.compose(
@@ -1200,6 +1206,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 				advice,
 				await composeImpact(root),
 				await whyCheckFor(root, settings),
+				draft,
 			);
 		} finally {
 			terminal.close();
@@ -1234,6 +1241,11 @@ export async function run(argv: string[], given: Io): Promise<number> {
 					io.cwd,
 				),
 			);
+			// The reason is spent once a commit carries it.
+			if (draft && message.includes(`Why: ${draft.text}`)) {
+				await clearPendingWhy(root);
+			}
+
 			return 0;
 		} catch (error) {
 			const {stdout = '', stderr = ''} = error as {
@@ -1312,6 +1324,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 			advice,
 			await composeImpact(root),
 			await whyCheckFor(root, settings),
+			whyDraft(await readPendingWhy(root)),
 		);
 		if (message === null) return false;
 
@@ -1368,6 +1381,11 @@ export async function run(argv: string[], given: Io): Promise<number> {
 				`chamoji: editor commits aren't stamped; add "Workstream: ${slug}" to the message, or use -m or chamoji commit.\n`,
 			);
 		}
+	}
+
+	/** What the user told their agent, as the composer offers it. */
+	function whyDraft(pending: PendingWhy | undefined): WhyDraft | undefined {
+		return pending && {text: pending.why, source: pending.source};
 	}
 
 	/**
