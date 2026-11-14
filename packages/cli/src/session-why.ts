@@ -1,6 +1,6 @@
 import {open, readdir, stat} from 'node:fs/promises';
 import path from 'node:path';
-import {CAUSAL_MARKERS, judgeWhy, type WhyDraft} from '@chamoji/core';
+import {CAUSAL_MARKERS, judgeWhy, whyWords, type WhyDraft} from '@chamoji/core';
 import {ADVICE_TIMEOUT_MS, type AdvisorClient} from './advisor.js';
 import {redact} from './jev-classifier.js';
 import {cleanReason, MAX_WHY} from './why-draft.js';
@@ -18,9 +18,12 @@ const TAIL_BYTES = 256 * 1024;
 const FIRST_LINE_BYTES = 64 * 1024;
 const MAX_MESSAGE = 2000;
 const MAX_CANDIDATES = 12;
-const WORD = /[\p{L}\p{N}][\p{L}\p{N}'_-]*/gu;
 /** A run this long looks like a key or token, not a word. */
 const TOKEN_LIKE = /[A-Za-z0-9_-]{24,}/;
+/** A run of key characters this long, with a letter and a digit, looks like a secret. */
+const KEY_RUN = /[A-Za-z0-9+/=_-]{20,}/g;
+/** Shorter file names match too many words to mean anything. */
+const MIN_NAME = 3;
 const SENTENCES = /(?<=[.!?])\s+|\n+/;
 
 type Session = {source: SessionSource; messages: string[]; mtime: number};
@@ -270,6 +273,29 @@ function within(root: string, cwd: string): boolean {
 }
 
 /**
+ * A staged file's name as a whole word, with or without its extension, or
+ * undefined when the name is too short to mean anything.
+ */
+function namePattern(name: string): RegExp | undefined {
+	const dot = name.lastIndexOf('.');
+	const stem = dot > 0 ? name.slice(0, dot) : name;
+	const extension = dot > 0 ? name.slice(dot) : '';
+	if (stem.length < MIN_NAME) return undefined;
+	const escape = (text: string) =>
+		text.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
+	return new RegExp(
+		String.raw`(?<!\w)${escape(stem)}(?:${escape(extension)})?(?!\w)`,
+	);
+}
+
+/** True when the text holds a long run of key characters with a letter and a digit. */
+function hasKeyRun(text: string): boolean {
+	return (text.match(KEY_RUN) ?? []).some(
+		run => /[A-Za-z]/.test(run) && /\d/.test(run),
+	);
+}
+
+/**
  * The sentences, from what the user told their agent, that give a reason:
  * 6 to 60 words with a cause word or the name of a staged file, emails
  * replaced, nothing token-like, and rated at least ok by the local Why rules.
@@ -281,24 +307,25 @@ export function reasonCandidates(
 ): string[] {
 	const names = stagedFiles
 		.map(file => path.basename(file).toLowerCase())
-		.filter(name => name !== '');
+		.map(namePattern)
+		.filter(pattern => pattern !== undefined);
 	const found: string[] = [];
 	for (const message of [...messages].reverse()) {
 		for (const piece of message.split(SENTENCES)) {
 			const cleaned = cleanReason(piece);
 			if (cleaned === '' || cleaned.length > MAX_WHY) continue;
-			const words = cleaned.toLowerCase().match(WORD) ?? [];
+			const words = whyWords(cleaned);
 			if (words.length < 6 || words.length > 60) continue;
 			const lower = cleaned.toLowerCase();
 			if (
 				!words.some(word => CAUSAL_MARKERS.has(word)) &&
-				!names.some(name => lower.includes(name))
+				!names.some(name => name.test(lower))
 			) {
 				continue;
 			}
 
 			const text = redact(cleaned);
-			if (TOKEN_LIKE.test(text)) continue;
+			if (TOKEN_LIKE.test(text) || hasKeyRun(text)) continue;
 			const verdict = judgeWhy(
 				{why: [text], constraint: [], gotcha: [], followUp: []},
 				'',

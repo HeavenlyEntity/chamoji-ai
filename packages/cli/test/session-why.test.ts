@@ -388,3 +388,38 @@ test('a Jev pick that never answers offers nothing once the timeout passes', asy
 	).toBeUndefined();
 	expect(Date.now() - started).toBeLessThan(1000);
 });
+
+test('a Chinese sentence naming a staged file counts each character as a word', () => {
+	const sentence = '页面加载太慢了，stays.ts 每次都重新读取全部数据';
+	expect(reasonCandidates([sentence], ['src/stays.ts'])).toEqual([sentence]);
+});
+
+test('a staged file matches only as a whole name, and short names never match', () => {
+	const sentence =
+		'Please tidy the feedback form layout on the settings page today';
+	expect(reasonCandidates([sentence], ['src/db'])).toEqual([]);
+	expect(reasonCandidates([sentence], ['src/back.ts'])).toEqual([]);
+	expect(reasonCandidates([sentence], ['src/on.ts'])).toEqual([]);
+	expect(reasonCandidates([sentence], ['src/feedback.tsx'])).toEqual([
+		sentence,
+	]);
+});
+
+test('a sentence holding a base64 secret or an AWS key id is dropped', () => {
+	expect(
+		reasonCandidates(
+			[
+				'The provider returns 422 because the old key was aB3d+Fg/Hi9kLm0nOp7qR+sT/u in the config.',
+			],
+			[],
+		),
+	).toEqual([]);
+	expect(
+		reasonCandidates(
+			[
+				'The upload fails because the bucket still trusts AKIAABCDEFGHIJ234567 from last year.',
+			],
+			[],
+		),
+	).toEqual([]);
+});
