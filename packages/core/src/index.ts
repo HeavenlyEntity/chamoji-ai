@@ -97,6 +97,16 @@ export {groupCommits} from './group.js';
 export {splitHighlights} from './highlights.js';
 export {readIntent} from './intent.js';
 export {
+	ACTION_VERBS,
+	CAUSAL_MARKERS,
+	FILLER_PHRASES,
+	STOP_WORDS,
+	WHY_ADVICE,
+	judgeWhy,
+	type WhyReason,
+	type WhyVerdict,
+} from './why-quality.js';
+export {
 	MEMORY_REF,
 	MEMORY_REMOTE_REF,
 	MemoryError,
