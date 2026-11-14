@@ -100,11 +100,68 @@ test('scopePrompt and messagePrompt false skip those steps', async () => {
 
 test('a breaking change and a why become trailers', async () => {
 	const app = open({scopePrompt: false, messagePrompt: false});
-	await app.type('boom', ENTER, 'drop v1', ENTER, 'v1 had no auth', ENTER);
+	await app.type(
+		'boom',
+		ENTER,
+		'drop v1',
+		ENTER,
+		'v1 had no auth, so anyone could read other people orders',
+		ENTER,
+	);
 	await app.type('y', 'the /v1 routes are gone', ENTER);
 	expect(app.onSubmit).toHaveBeenCalledWith(
-		'💥 Drop v1\n\nBREAKING CHANGE: the /v1 routes are gone\nWhy: v1 had no auth',
+		'💥 Drop v1\n\nBREAKING CHANGE: the /v1 routes are gone\nWhy: v1 had no auth, so anyone could read other people orders',
 	);
+});
+
+const THIN_WARNING =
+	'Name the bug, limit or request behind this, or what breaks if someone reverts it. Enter again keeps it as written.';
+
+// The 100-column test frame wraps long lines; compare without the wrap.
+const flat = (frame: string | undefined) =>
+	(frame ?? '').replaceAll(/\s+/g, ' ');
+
+async function toWhy() {
+	const app = open({scopePrompt: false, messagePrompt: false});
+	await app.type('bug', ENTER, 'fix it', ENTER);
+	return app;
+}
+
+test('the why prompt asks what would break if the change were undone', async () => {
+	const app = await toWhy();
+	expect(app.lastFrame()).toContain(
+		'What would break, or come back, if someone undid this?',
+	);
+});
+
+test('a thin why warns and stays on the step', async () => {
+	const app = await toWhy();
+	await app.type('fix bug', ENTER);
+	expect(app.lastFrame()).toContain('What would break, or come back');
+	expect(flat(app.lastFrame())).toContain(THIN_WARNING);
+	expect(app.lastFrame()).not.toContain('Breaking change? (y/N)');
+});
+
+test('a second Enter keeps a thin why as written', async () => {
+	const app = await toWhy();
+	await app.type('fix bug', ENTER, ENTER);
+	expect(app.lastFrame()).toContain('Breaking change? (y/N)');
+	await app.type(ENTER);
+	expect(app.onSubmit.mock.calls[0]?.[0]).toContain('Why: fix bug');
+});
+
+test('editing a thin why clears the warning', async () => {
+	const app = await toWhy();
+	await app.type('fix bug', ENTER);
+	expect(flat(app.lastFrame())).toContain(THIN_WARNING);
+	await app.type(' because sessions expire');
+	expect(flat(app.lastFrame())).not.toContain(THIN_WARNING);
+});
+
+test('a good why moves on with the first Enter', async () => {
+	const app = await toWhy();
+	await app.type('Safari drops the session cookie when the tab sleeps', ENTER);
+	expect(app.lastFrame()).toContain('Breaking change? (y/N)');
 });
 
 test('emojiFormat code writes the shortcode', async () => {

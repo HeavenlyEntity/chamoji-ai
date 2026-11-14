@@ -1,6 +1,7 @@
 import {
 	formatCommitMessage,
 	getGitmoji,
+	judgeWhy,
 	searchGitmojis,
 	type ComposeConfig,
 	type CommitDraft,
@@ -26,7 +27,7 @@ const PROMPTS: Record<Step, string> = {
 	scope: 'Scope (optional)',
 	title: 'Title',
 	body: 'Body (optional)',
-	why: 'Why? (optional, kept as a Why: trailer)',
+	why: 'What would break, or come back, if someone undid this? (kept as Why:)',
 	breaking: 'Breaking change? (y/N)',
 	breakingText: 'What breaks?',
 	release: 'Release',
@@ -90,6 +91,9 @@ export function Composer({
 	});
 	const [breakingValue, setBreakingValue] = useState<string | boolean>();
 	const [selected, setSelected] = useState(0);
+	// The thin Why the person was last warned about; Enter on it again keeps it.
+	const [warnedFor, setWarnedFor] = useState<string | null>(null);
+	const [whyAdvice, setWhyAdvice] = useState('');
 	const [gitmoji, setGitmoji] = useState<string | null>(null);
 	const [advice, setAdvice] = useState<Advice | null>(null);
 	// Suggestions reorder the list only if they arrive before any keypress,
@@ -227,6 +231,22 @@ export function Composer({
 		if (key.return) {
 			if (step === 'breakingText') {
 				finish(text.breakingText.trim() || true);
+			} else if (step === 'why') {
+				// Warn once about a thin Why, never block. Enter again moves on.
+				const why = text.why.trim();
+				if (why && warnedFor !== why) {
+					const verdict = judgeWhy(
+						{why: [why], constraint: [], gotcha: [], followUp: []},
+						text.title,
+					);
+					if (verdict.level === 'thin') {
+						setWarnedFor(why);
+						setWhyAdvice(verdict.advice);
+						return;
+					}
+				}
+
+				move(1);
 			} else if (step !== 'title' || text.title.trim()) {
 				move(1);
 			}
@@ -234,6 +254,7 @@ export function Composer({
 			return;
 		}
 
+		if (step === 'why') setWarnedFor(null);
 		if (key.backspace || key.delete) {
 			setText(all => ({...all, [step]: all[step].slice(0, -1)}));
 			if (step === 'gitmoji') setSelected(0);
@@ -283,6 +304,13 @@ export function Composer({
 					</Text>
 				)}
 			</Box>
+			{step === 'why' &&
+				warnedFor !== null &&
+				warnedFor === text.why.trim() && (
+					<Text color="yellow">
+						{whyAdvice} Enter again keeps it as written.
+					</Text>
+				)}
 			{step === 'title' && hint(advice?.split) && (
 				<Text color="yellow">
 					Jev thinks these changes mix unrelated work; consider committing them
