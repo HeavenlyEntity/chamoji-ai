@@ -446,6 +446,13 @@ test('a good Why is allowed', () =>
 		),
 	).toBe('allow'));
 
+test('the Why is judged against the subject without its type and scope, as readers do', () =>
+	expect(
+		judgeCommit(
+			'git commit -m "fix(payment provider): Cap long stays" -m "Why: payment provider rejects long stays"',
+		),
+	).toBe('allow'));
+
 test('no card is still denied', () =>
 	expect(judgeCommit('git commit -m "x"')).toBe('deny'));
 

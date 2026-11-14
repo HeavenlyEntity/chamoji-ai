@@ -491,3 +491,42 @@ test('--check --ai keeps ok when Jev finds the reason fine or fails', async () =
 		expect(stdout).toBe('ok\n');
 	}
 });
+
+test('--check --ai gives the local verdict when Jev never answers', async () => {
+	repo = await createRepo([{commit: '✨ Add a', files: FILES}]);
+	const reason = 'Safari drops the session cookie when the tab sleeps';
+	let stdout = '';
+	const started = Date.now();
+	const code = await run(['why', '--check', '--ai', reason], {
+		cwd: repo.dir,
+		stdout: text => (stdout += text),
+		stderr: () => undefined,
+		whyChecker: async () => new Promise<boolean>(() => undefined),
+	});
+	expect(code).toBe(0);
+	expect(stdout).toBe('ok\n');
+	expect(Date.now() - started).toBeLessThan(4000);
+});
+
+test('--amend refuses a merge commit and writes nothing', async () => {
+	repo = await createRepo([
+		{commit: '🎉 Init', files: FILES},
+		{mergeBranch: 'side', commits: ['✨ Add side']},
+	]);
+	const merge = await hashOf(repo.dir);
+	const {code, stdout, stderr} = await chamoji(
+		['why', '--amend', 'HEAD', ...REASON.split(' ')],
+		repo.dir,
+	);
+	expect(code).toBe(1);
+	expect(stdout).toBe('');
+	expect(stderr).toBe(
+		'chamoji: HEAD is a merge commit; add the reason to the commit that made the change.\n',
+	);
+	expect(
+		await gitOutput(repo.dir, ['rev-list', '--parents', '-n1', merge]),
+	).toMatch(/^\S+ \S+ \S+\n?$/);
+	expect(await gitOutput(repo.dir, ['notes', '--ref=chamoji', 'list'])).toBe(
+		'',
+	);
+});

@@ -3,6 +3,9 @@ import {HINT_THRESHOLD, type AdvisorClient} from './advisor.js';
 /** Names the question below; change it whenever the question changes. */
 export const WHY_CHECK_VERSION = 'jev-latest:why-v1';
 
+/** How long a Why check waits for Jev before carrying on without its opinion. */
+export const WHY_CHECK_TIMEOUT_MS = 2000;
+
 /**
  * Asks Jev whether a Why would stop a future engineer from undoing the change
  * by mistake. It sees the title, the Why and the staged file paths, nothing

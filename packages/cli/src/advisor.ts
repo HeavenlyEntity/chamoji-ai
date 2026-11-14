@@ -51,6 +51,24 @@ export const ADVICE_VERSION = 'jev-latest:advice-v2';
 /** How long the composer waits for Jev's advice before carrying on without it. */
 export const ADVICE_TIMEOUT_MS = 2000;
 
+/** The promise's value, or undefined when it takes longer than `ms`. */
+export async function withTimeout<T>(
+	promise: Promise<T>,
+	ms: number,
+): Promise<T | undefined> {
+	let timer: NodeJS.Timeout | undefined;
+	const late = new Promise<undefined>(resolve => {
+		timer = setTimeout(() => {
+			resolve(undefined);
+		}, ms);
+	});
+	try {
+		return await Promise.race([promise, late]);
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
 const NONE = 'none';
 
 // The official description reads as "any changed files" when there's no

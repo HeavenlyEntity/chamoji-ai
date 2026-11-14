@@ -28,7 +28,8 @@ import {NO_FACE, runStep} from './face.js';
 import {MISSING_KEY} from './env.js';
 import type {Io} from './run.js';
 import {stripControl} from './text.js';
-import type {WhyChecker} from './why-check.js';
+import {withTimeout} from './advisor.js';
+import {WHY_CHECK_TIMEOUT_MS, type WhyChecker} from './why-check.js';
 
 /** Same code run.ts uses for a command that was used wrongly. */
 const USAGE_ERROR = 2;
@@ -129,7 +130,8 @@ export async function runWhy(
  * `chamoji why --check [--ai] <reason...>`: whether a reason would pass as a
  * commit's Why. The local rules judge it as a card against an empty subject;
  * with `--ai` Jev also weighs in, sending only the reason. Prints `ok` and
- * exits 0, or `thin: <advice>` and exits 1. Jev failing counts as no opinion.
+ * exits 0, or `thin: <advice>` and exits 1. Jev failing, or not answering
+ * within 2 s, counts as no opinion.
  */
 async function checkWhy(
 	words: string[],
@@ -159,9 +161,11 @@ async function checkWhy(
 	}
 
 	if (check) {
-		const unclear = await check({title: '', why: reason, files: []}).catch(
-			() => false,
-		);
+		// No answer within the timeout counts as no opinion, like a failure.
+		const unclear = await withTimeout(
+			check({title: '', why: reason, files: []}),
+			WHY_CHECK_TIMEOUT_MS,
+		).catch(() => false);
 		if (unclear) {
 			io.stdout(`thin: ${WHY_ADVICE['ai-unclear']}\n`);
 			return 1;
@@ -312,6 +316,19 @@ async function amendWhy(
 			io.stderr(`chamoji: ${stripControl(target)} is not a commit.\n`);
 			return 1;
 		}
+	}
+
+	// A merge only joins changes; its reason belongs on the commit that made them.
+	const parents = (
+		await runGit(['rev-list', '--parents', '-n', '1', hash], io.cwd)
+	)
+		.trim()
+		.split(' ');
+	if (parents.length > 2) {
+		io.stderr(
+			`chamoji: ${stripControl(target)} is a merge commit; add the reason to the commit that made the change.\n`,
+		);
+		return 1;
 	}
 
 	const [raw] = await readCommits(io.cwd, hash, {maxCount: 1});

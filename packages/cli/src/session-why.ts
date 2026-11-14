@@ -1,7 +1,7 @@
 import {open, readdir, stat} from 'node:fs/promises';
 import path from 'node:path';
 import {CAUSAL_MARKERS, judgeWhy, whyWords, type WhyDraft} from '@chamoji/core';
-import {ADVICE_TIMEOUT_MS, type AdvisorClient} from './advisor.js';
+import {ADVICE_TIMEOUT_MS, withTimeout, type AdvisorClient} from './advisor.js';
 import {redact} from './jev-classifier.js';
 import {cleanReason, MAX_WHY} from './why-draft.js';
 
@@ -399,23 +399,5 @@ export async function draftFromSession(input: {
 		return text === undefined ? undefined : {text, source};
 	} catch {
 		return undefined;
-	}
-}
-
-/** The promise's value, or undefined when it takes longer than `ms`. */
-async function withTimeout<T>(
-	promise: Promise<T>,
-	ms: number,
-): Promise<T | undefined> {
-	let timer: NodeJS.Timeout | undefined;
-	const late = new Promise<undefined>(resolve => {
-		timer = setTimeout(() => {
-			resolve(undefined);
-		}, ms);
-	});
-	try {
-		return await Promise.race([promise, late]);
-	} finally {
-		clearTimeout(timer);
 	}
 }
