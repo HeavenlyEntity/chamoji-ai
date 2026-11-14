@@ -69,7 +69,7 @@ export const metadata = {
 	</Property>
 </Properties>
 
-## Flags {{ badge: '2', icon: 'flag' }}
+## Flags {{ badge: '3', icon: 'flag' }}
 
 <Properties>
 	<Property name="--json" type="boolean">
@@ -92,6 +92,17 @@ export const metadata = {
 		reader, including `chamoji why`, the MCP `why` tool and memory search, shows
 		the added reason first.
 	</Property>
+	<Property name="--thin" type="boolean">
+		List the thin Whys behind a path: `--thin [path]`, with the whole repo as the
+		default. chamoji blames every tracked file under the path, counts the lines
+		each commit wrote, and keeps the commits whose Why is thin or missing, with
+		any added reason counted in. The commits behind the most lines come first,
+		thin before missing when the counts tie, and the list stops at 20. Each one
+		shows its line count, short hash, subject and Why. Lines you haven’t
+		committed yet count for no one. With `--json` it prints the list as an array
+		with `hash`, `shortHash`, `subject`, `lines`, `kind` (`thin` or `missing`),
+		`why` and `reasons`. More than one path exits 2.
+	</Property>
 	<Property name="--no-update-check" type="boolean">
 		Don’t check npm for a newer chamoji. See [the update
 		notice](/install#the-update-notice).
@@ -110,6 +121,9 @@ export const metadata = {
 		code
 	>
 		Add the reason an old commit should have given.
+	</Resource>
+	<Resource name="chamoji why --thin src/" icon="list-numbers" code>
+		Where to start fixing old reasons: the commits behind the most lines.
 	</Resource>
 	<Resource name="chamoji why src/auth.ts:42 --json" icon="robot" code>
 		The same, for a script or an agent.
@@ -166,6 +180,19 @@ Sam Rivera, 2026-11-06
 Why: the provider returns 422 for stays over 365 nights (added later)
 Why: fix bug
 ```
+
+The thin Whys behind a folder:
+
+```txt {{ title: 'chamoji why --thin src/' }}
+48 lines  c41d9e2 🐛 Fix the picker (#31)
+    Why: fix bug
+12 lines  f8b510b ✨ Move between days with the arrow keys
+    No Why.
+
+Add a better reason with: chamoji why --amend <hash> "<reason>"
+```
+
+With nothing to fix it says `No thin Whys behind src/.`
 
 A line you’ve added but not committed:
 
@@ -253,7 +280,8 @@ the commit’s own lines still show.
 		It found the commit, or the line isn’t committed yet.
 	</Property>
 	<Property name="2">
-		No location, or more than one. With `--amend`, no target or no reason.
+		No location, or more than one. With `--amend`, no target or no reason. With
+		`--thin`, more than one path.
 	</Property>
 	<Property name="1">
 		Anything else, such as a location that isn’t `file:line`, a file or line

@@ -365,3 +365,35 @@ test('--amend on an uncommitted line exits 1 and an unknown commit exits 1', asy
 	const unknown = await chamoji(['why', '--amend', 'nope', REASON], repo.dir);
 	expect(unknown.code).toBe(1);
 });
+
+test('--thin lists thin and missing Whys behind a path', async () => {
+	repo = await createRepo([
+		{
+			commit: '✨ Add a',
+			body: 'Why: the provider returns 422 for stays over 365 nights',
+			files: {'src/a.ts': 'a1\na2\n'},
+		},
+		{
+			commit: '🐛 Fix b',
+			body: 'Why: fix bug',
+			files: {'src/b.ts': 'b1\nb2\nb3\nb4\nb5\n'},
+		},
+		{commit: '✨ Add c', files: {'src/c.ts': 'c1\n'}},
+	]);
+	const {code, stdout, stderr} = await chamoji(['why', '--thin'], repo.dir);
+	expect(stderr).toBe('');
+	expect(code).toBe(0);
+	expect(stdout).toContain('5 lines');
+	expect(stdout).toContain('Why: fix bug');
+	expect(stdout).toContain('No Why.');
+	expect(stdout).toContain(
+		'Add a better reason with: chamoji why --amend <hash> "<reason>"',
+	);
+
+	const none = await chamoji(['why', '--thin', 'src/a.ts'], repo.dir);
+	expect(none.code).toBe(0);
+	expect(none.stdout).toContain('No thin Whys behind src/a.ts.');
+
+	const json = await chamoji(['why', '--thin', '--json'], repo.dir);
+	expect(JSON.parse(json.stdout)).toHaveLength(2);
+});

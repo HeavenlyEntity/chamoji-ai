@@ -263,6 +263,8 @@ const HELP = `
 	  $ chamoji why <file:line>        Show why a line is there: the commit
 	                                   that wrote it and the Why, Constraint,
 	                                   Gotcha and Follow-up it recorded
+	  $ chamoji why --thin [path]      List the commits behind the most lines
+	                                   whose Why is thin or missing
 	  $ chamoji why --amend <sha|file:line> <reason...>
 	                                   Add a better reason to an old commit
 	                                   in a git note (refs/notes/chamoji)
@@ -481,6 +483,7 @@ function parse(argv: string[]) {
 			forTag: {type: 'string'},
 			json: {type: 'boolean'},
 			amend: {type: 'string'},
+			thin: {type: 'boolean'},
 			none: {type: 'boolean'},
 			purge: {type: 'boolean'},
 			archived: {type: 'boolean'},
