@@ -376,3 +376,15 @@ test('summaries, subagent turns and AGENTS.md text are never read as the user', 
 		await recentUserMessages(ROOT, {home: other, now: NOW}),
 	).toBeUndefined();
 });
+
+test('a Jev pick that never answers offers nothing once the timeout passes', async () => {
+	const home = await homeWithReason();
+	const stuck: AdvisorClient = {
+		systemOne: async () => new Promise(() => undefined),
+	};
+	const started = Date.now();
+	expect(
+		await draftFromSession(input(home, {client: stuck, timeoutMs: 50})),
+	).toBeUndefined();
+	expect(Date.now() - started).toBeLessThan(1000);
+});

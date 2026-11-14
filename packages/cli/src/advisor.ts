@@ -48,6 +48,9 @@ export const PRESELECT_THRESHOLD = 0.9;
 /** Names the questions below; change it whenever they change. */
 export const ADVICE_VERSION = 'jev-latest:advice-v2';
 
+/** How long the composer waits for Jev's advice before carrying on without it. */
+export const ADVICE_TIMEOUT_MS = 2000;
+
 const NONE = 'none';
 
 // The official description reads as "any changed files" when there's no

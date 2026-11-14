@@ -1201,7 +1201,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 
 		const settings = await readAiSettings(root);
 		const advice = adviceFor(root, settings, '');
-		const draft = await draftFor(root, settings);
+		const {now, later} = await draftFor(root, settings);
 		let message: string | null;
 		try {
 			message = await terminal.compose(
@@ -1209,7 +1209,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 				advice,
 				await composeImpact(root),
 				await whyCheckFor(root, settings),
-				draft,
+				now ?? later,
 			);
 		} finally {
 			terminal.close();
@@ -1245,7 +1245,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 				),
 			);
 			// The reason is spent once a commit carries it.
-			if (draft && message.includes(`Why: ${draft.text}`)) {
+			if (now && message.includes(`Why: ${now.text}`)) {
 				await clearPendingWhy(root);
 			}
 
@@ -1322,12 +1322,13 @@ export async function run(argv: string[], given: Io): Promise<number> {
 			original.split('\n').find(line => line.trim() && !line.startsWith('#')) ??
 				'',
 		);
+		const {now, later} = await draftFor(root, settings);
 		const message = await terminal.compose(
 			await loadComposeConfig(root),
 			advice,
 			await composeImpact(root),
 			await whyCheckFor(root, settings),
-			await draftFor(root, settings),
+			now ?? later,
 		);
 		if (message === null) return false;
 
@@ -1410,19 +1411,21 @@ export async function run(argv: string[], given: Io): Promise<number> {
 
 	/**
 	 * The Why the composer may offer on Tab. What an agent handed over with
-	 * `remember_why` comes first. Only without one, and only when the user
-	 * turned `chamoji.whyFromSessions` on, a sentence from their own Claude
-	 * Code or Codex session is read, and that read is never awaited here: the
-	 * composer shows it if it arrives before the user reaches the Why. Jev
-	 * picks among the candidates only with `chamoji.composer` on and a key.
+	 * `remember_why` comes first, as `now`. Only without one, and only when the
+	 * user turned `chamoji.whyFromSessions` on, a sentence from their own
+	 * Claude Code or Codex session is read, as `later`: a promise the caller
+	 * hands the composer as it is, so the composer opens at once and shows the
+	 * draft if it arrives before the user reaches the Why. The result is a
+	 * plain object so that awaiting it never waits for that read. Jev picks
+	 * among the candidates only with `chamoji.composer` on and a key.
 	 */
 	async function draftFor(
 		root: string,
 		settings: AiSettings,
-	): Promise<WhyDraft | Promise<WhyDraft | undefined> | undefined> {
-		const pending = draftFrom(await readPendingWhy(root));
-		if (pending || !settings.whyFromSessions) return pending;
-		return (async () => {
+	): Promise<{now?: WhyDraft; later?: Promise<WhyDraft | undefined>}> {
+		const now = draftFrom(await readPendingWhy(root));
+		if (now || !settings.whyFromSessions) return {now};
+		const later = (async () => {
 			const staged = await readStagedChanges(root, {sendDiffs: false});
 			const client = settings.composer
 				? await realAdvisorClient(root)
@@ -1435,6 +1438,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 				client,
 			});
 		})().catch(() => undefined);
+		return {later};
 	}
 
 	/**

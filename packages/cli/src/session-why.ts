@@ -1,7 +1,7 @@
 import {open, readdir, stat} from 'node:fs/promises';
 import path from 'node:path';
 import {CAUSAL_MARKERS, judgeWhy, type WhyDraft} from '@chamoji/core';
-import type {AdvisorClient} from './advisor.js';
+import {ADVICE_TIMEOUT_MS, type AdvisorClient} from './advisor.js';
 import {redact} from './jev-classifier.js';
 import {cleanReason, MAX_WHY} from './why-draft.js';
 
@@ -315,7 +315,8 @@ export function reasonCandidates(
 /**
  * A Why to offer from the user's own session, or undefined. With a Jev client
  * it asks which candidate best says why; only those sentences, redacted, and
- * the staged paths are sent. A failed request offers nothing.
+ * the staged paths are sent. A failed request, or one with no answer within
+ * the composer's advice timeout, offers nothing: the user asked Jev to choose.
  */
 export async function draftFromSession(input: {
 	root: string;
@@ -323,8 +324,16 @@ export async function draftFromSession(input: {
 	now: Date;
 	stagedFiles: string[];
 	client?: AdvisorClient;
+	timeoutMs?: number;
 }): Promise<WhyDraft | undefined> {
-	const {root, home, now, stagedFiles, client} = input;
+	const {
+		root,
+		home,
+		now,
+		stagedFiles,
+		client,
+		timeoutMs = ADVICE_TIMEOUT_MS,
+	} = input;
 	const session = await recentUserMessages(root, {home, now});
 	if (!session) return undefined;
 	const candidates = reasonCandidates(session.messages, stagedFiles);
@@ -339,17 +348,22 @@ export async function draftFromSession(input: {
 		for (const [index, text] of candidates.entries())
 			criteria[`c${index}`] = text;
 		criteria['none'] = 'None of these says why they made the change.';
-		const {answers} = await client.systemOne({
-			state: {files: stagedFiles},
-			questions: {
-				pick: {
-					type: 'choice',
-					instructions:
-						'A developer is committing a change to `files`. Which of these sentences, from what they told their coding assistant, best says why they made the change?',
-					criteria,
+		const reply = await withTimeout(
+			client.systemOne({
+				state: {files: stagedFiles},
+				questions: {
+					pick: {
+						type: 'choice',
+						instructions:
+							'A developer is committing a change to `files`. Which of these sentences, from what they told their coding assistant, best says why they made the change?',
+						criteria,
+					},
 				},
-			},
-		});
+			}),
+			timeoutMs,
+		);
+		if (!reply) return undefined;
+		const {answers} = reply;
 		const odds = Object.entries(answers['pick']?.probabilities ?? {}).sort(
 			(a, b) => b[1] - a[1],
 		)[0];
@@ -358,5 +372,23 @@ export async function draftFromSession(input: {
 		return text === undefined ? undefined : {text, source};
 	} catch {
 		return undefined;
+	}
+}
+
+/** The promise's value, or undefined when it takes longer than `ms`. */
+async function withTimeout<T>(
+	promise: Promise<T>,
+	ms: number,
+): Promise<T | undefined> {
+	let timer: NodeJS.Timeout | undefined;
+	const late = new Promise<undefined>(resolve => {
+		timer = setTimeout(() => {
+			resolve(undefined);
+		}, ms);
+	});
+	try {
+		return await Promise.race([promise, late]);
+	} finally {
+		clearTimeout(timer);
 	}
 }

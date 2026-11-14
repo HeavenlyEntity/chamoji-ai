@@ -9,15 +9,15 @@ import {
 } from '../../core/test/helpers/fixture-repo.js';
 import {draftFrom} from '../src/why-draft.js';
 
-let repo: FixtureRepo | undefined;
+const repos: FixtureRepo[] = [];
 afterEach(async () => {
-	await repo?.cleanup();
-	repo = undefined;
+	await Promise.all(repos.splice(0).map(async repo => repo.cleanup()));
 });
 
 /** A file as another tool or an older version could have left it. */
 async function plant(why: unknown, source: unknown) {
-	repo = await createRepo([{commit: '🎉 Init'}]);
+	const repo = await createRepo([{commit: '🎉 Init'}]);
+	repos.push(repo);
 	const gitDir = (
 		await gitOutput(repo.dir, ['rev-parse', '--absolute-git-dir'])
 	).trim();
