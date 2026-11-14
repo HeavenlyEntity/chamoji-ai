@@ -69,7 +69,7 @@ export const metadata = {
 	</Property>
 </Properties>
 
-## Flags {{ badge: '3', icon: 'flag' }}
+## Flags {{ badge: '4', icon: 'flag' }}
 
 <Properties>
 	<Property name="--json" type="boolean">
@@ -103,6 +103,16 @@ export const metadata = {
 		with `hash`, `shortHash`, `subject`, `lines`, `kind` (`thin` or `missing`),
 		`why` and `reasons`. More than one path exits 2.
 	</Property>
+	<Property name="--check" type="boolean">
+		Judge a reason before you use it: `--check <reason>`. chamoji applies the
+		same local rules as the composer, as if it were the Why line of a card.
+		A good reason prints `ok` and exits 0. A thin one prints `thin:` and what
+		to add, and exits 1. With `--ai` it also asks Jev whether the reason would
+		stop someone from undoing the change by mistake, sending only the reason
+		(not the commit or its files). That needs a TypeSafe API key, and without
+		one it exits 2 with the usual missing-key message. If Jev can’t be reached,
+		the local verdict stands. No reason exits 2.
+	</Property>
 	<Property name="--no-update-check" type="boolean">
 		Don’t check npm for a newer chamoji. See [the update
 		notice](/install#the-update-notice).
@@ -121,6 +131,13 @@ export const metadata = {
 		code
 	>
 		Add the reason an old commit should have given.
+	</Resource>
+	<Resource
+		name="chamoji why --check 'Safari drops the session cookie when the tab sleeps'"
+		icon="check-circle"
+		code
+	>
+		See whether a reason would pass, before you commit with it.
 	</Resource>
 	<Resource name="chamoji why --thin src/" icon="list-numbers" code>
 		Where to start fixing old reasons: the commits behind the most lines.
@@ -280,14 +297,15 @@ the commit’s own lines still show.
 		It found the commit, or the line isn’t committed yet.
 	</Property>
 	<Property name="2">
-		No location, or more than one. With `--amend`, no target or no reason. With
-		`--thin`, more than one path, or a path outside the repository.
+		No location, or more than one. With `--amend` or `--check`, no target or no
+		reason. With `--check --ai`, no TypeSafe key. With `--thin`, more than one
+		path, or a path outside the repository.
 	</Property>
 	<Property name="1">
-		Anything else, such as a location that isn’t `file:line`, a file or line
-		that doesn’t exist, a repo with no commits yet, or outside a git repo. With
-		`--amend`: a line that isn’t committed yet, a target that isn’t a commit, or
-		a reason that is thin too.
+		With `--check`, a reason that is thin. Anything else, such as a location
+		that isn’t `file:line`, a file or line that doesn’t exist, a repo with no
+		commits yet, or outside a git repo. With `--amend`: a line that isn’t
+		committed yet, a target that isn’t a commit, or a reason that is thin too.
 	</Property>
 </Properties>
 

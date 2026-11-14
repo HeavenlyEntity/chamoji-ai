@@ -23,6 +23,10 @@ function open(
 	advice?: Promise<Advice | null>,
 	adviceTimeoutMs?: number,
 	impact?: {own: string[]; rides: string[]},
+	check?: {
+		checkWhy?: (why: string, title: string) => Promise<boolean>;
+		checkWhyTimeoutMs?: number;
+	},
 ) {
 	const onSubmit = vi.fn();
 	const onCancel = vi.fn();
@@ -34,6 +38,8 @@ function open(
 			advice={advice}
 			adviceTimeoutMs={adviceTimeoutMs}
 			impact={impact}
+			checkWhy={check?.checkWhy}
+			checkWhyTimeoutMs={check?.checkWhyTimeoutMs}
 		/>,
 	);
 	cleanup = app.unmount;
@@ -161,6 +167,87 @@ test('editing a thin why clears the warning', async () => {
 test('a good why moves on with the first Enter', async () => {
 	const app = await toWhy();
 	await app.type('Safari drops the session cookie when the tab sleeps', ENTER);
+	expect(app.lastFrame()).toContain('Breaking change? (y/N)');
+});
+
+const AI_WARNING =
+	"This doesn't say what would go wrong without the change. Name the cause or the limit behind it. Enter again keeps it as written.";
+const VAGUE_BUT_LONG = 'this makes the code better and easier to maintain';
+
+async function toWhyChecked(
+	checkWhy: (why: string, title: string) => Promise<boolean>,
+	checkWhyTimeoutMs?: number,
+) {
+	const app = open(
+		{scopePrompt: false, messagePrompt: false},
+		undefined,
+		undefined,
+		undefined,
+		{checkWhy, checkWhyTimeoutMs},
+	);
+	await app.type('bug', ENTER, 'fix it', ENTER);
+	return app;
+}
+
+test('Jev finding a why unclear warns once, and a second Enter moves on', async () => {
+	const checkWhy = vi.fn(async () => true);
+	const app = await toWhyChecked(checkWhy);
+	await app.type(VAGUE_BUT_LONG, ENTER);
+	await tick();
+	expect(checkWhy).toHaveBeenCalledWith(VAGUE_BUT_LONG, 'fix it');
+	expect(flat(app.lastFrame())).toContain(AI_WARNING);
+	expect(app.lastFrame()).not.toContain('Breaking change? (y/N)');
+	await app.type(ENTER);
+	expect(app.lastFrame()).toContain('Breaking change? (y/N)');
+	expect(checkWhy).toHaveBeenCalledTimes(1);
+});
+
+test('Jev finding a why fine moves on with the first Enter', async () => {
+	const app = await toWhyChecked(async () => false);
+	await app.type(VAGUE_BUT_LONG, ENTER);
+	await tick();
+	expect(app.lastFrame()).toContain('Breaking change? (y/N)');
+});
+
+test('a check that never answers moves on after the timeout', async () => {
+	const app = await toWhyChecked(
+		async () => new Promise<boolean>(() => {}),
+		150,
+	);
+	await app.type(VAGUE_BUT_LONG, ENTER);
+	expect(app.lastFrame()).toContain('Checking the reason');
+	await new Promise(resolve => setTimeout(resolve, 200));
+	expect(app.lastFrame()).toContain('Breaking change? (y/N)');
+});
+
+test('a check that fails moves on', async () => {
+	const app = await toWhyChecked(async () => {
+		throw new Error('offline');
+	});
+	await app.type(VAGUE_BUT_LONG, ENTER);
+	await tick();
+	expect(app.lastFrame()).toContain('Breaking change? (y/N)');
+});
+
+test('a locally thin why never reaches Jev', async () => {
+	const checkWhy = vi.fn(async () => true);
+	const app = await toWhyChecked(checkWhy);
+	await app.type('fix bug', ENTER);
+	expect(flat(app.lastFrame())).toContain(THIN_WARNING);
+	expect(checkWhy).not.toHaveBeenCalled();
+});
+
+test('an empty why does not ask Jev', async () => {
+	const checkWhy = vi.fn(async () => true);
+	const app = await toWhyChecked(checkWhy);
+	await app.type(ENTER);
+	expect(checkWhy).not.toHaveBeenCalled();
+	expect(app.lastFrame()).toContain('Breaking change? (y/N)');
+});
+
+test('without a check, a vague but long why moves on as before', async () => {
+	const app = await toWhy();
+	await app.type(VAGUE_BUT_LONG, ENTER);
 	expect(app.lastFrame()).toContain('Breaking change? (y/N)');
 });
 

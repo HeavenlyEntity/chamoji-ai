@@ -2,6 +2,7 @@ import {
 	formatCommitMessage,
 	getGitmoji,
 	judgeWhy,
+	WHY_ADVICE,
 	searchGitmojis,
 	type ComposeConfig,
 	type CommitDraft,
@@ -40,6 +41,9 @@ const names = (units: string[]) => units.map(unit => stripControl(unit));
 
 const LIST_SIZE = 7;
 
+/** How long Enter on the Why waits for Jev's check before carrying on. */
+const WHY_CHECK_TIMEOUT_MS = 2000;
+
 /** How long the composer waits for Jev's advice before carrying on without it. */
 const ADVICE_TIMEOUT_MS = 2000;
 
@@ -50,6 +54,13 @@ export type ComposerProps = {
 	/** Jev's advice, when AI is on. The composer never waits for it. */
 	advice?: Promise<Advice | null>;
 	adviceTimeoutMs?: number;
+	/**
+	 * Jev's second opinion on a Why the local rules passed, when AI is on:
+	 * true means the reason is unclear. It only warns; a timeout or an error
+	 * counts as fine.
+	 */
+	checkWhy?: (why: string, title: string) => Promise<boolean>;
+	checkWhyTimeoutMs?: number;
 	/** The units the staged change touches, with a release section. */
 	impact?: Impact;
 };
@@ -64,6 +75,8 @@ export function Composer({
 	onCancel,
 	advice: pendingAdvice,
 	adviceTimeoutMs = ADVICE_TIMEOUT_MS,
+	checkWhy,
+	checkWhyTimeoutMs = WHY_CHECK_TIMEOUT_MS,
 	impact,
 }: ComposerProps) {
 	// A change that releases no unit of its own but rides along to some can
@@ -94,6 +107,9 @@ export function Composer({
 	// The thin Why the person was last warned about; Enter on it again keeps it.
 	const [warnedFor, setWarnedFor] = useState<string | null>(null);
 	const [whyAdvice, setWhyAdvice] = useState('');
+	// A Jev check on the Why is out. Any key but Enter drops its answer.
+	const [checking, setChecking] = useState(false);
+	const checkToken = useRef(0);
 	const [gitmoji, setGitmoji] = useState<string | null>(null);
 	const [advice, setAdvice] = useState<Advice | null>(null);
 	// Suggestions reorder the list only if they arrive before any keypress,
@@ -167,8 +183,15 @@ export function Composer({
 	useInput((input, key) => {
 		touched.current = true;
 		if (key.ctrl && input === 'c') {
+			checkToken.current++;
 			onCancel();
 			return;
+		}
+
+		if (checking) {
+			if (key.return) return;
+			checkToken.current++;
+			setChecking(false);
 		}
 
 		if (key.escape) {
@@ -244,6 +267,24 @@ export function Composer({
 						setWhyAdvice(verdict.advice);
 						return;
 					}
+
+					if (checkWhy) {
+						const token = ++checkToken.current;
+						setChecking(true);
+						void askJev(checkWhy, why, text.title, checkWhyTimeoutMs).then(
+							unclear => {
+								if (token !== checkToken.current) return;
+								setChecking(false);
+								if (unclear) {
+									setWarnedFor(why);
+									setWhyAdvice(WHY_ADVICE['ai-unclear']);
+								} else {
+									move(1);
+								}
+							},
+						);
+						return;
+					}
 				}
 
 				move(1);
@@ -304,6 +345,7 @@ export function Composer({
 					</Text>
 				)}
 			</Box>
+			{step === 'why' && checking && <Text dimColor>Checking the reason…</Text>}
 			{step === 'why' &&
 				warnedFor !== null &&
 				warnedFor === text.why.trim() && (
@@ -358,12 +400,36 @@ export type ComposeStreams = {
 	stdout: NodeJS.WriteStream;
 };
 
+/**
+ * Jev's verdict on a Why: true only when it says the reason is unclear. A
+ * timeout or an error is false, since the check must never get in the way.
+ */
+async function askJev(
+	check: (why: string, title: string) => Promise<boolean>,
+	why: string,
+	title: string,
+	timeoutMs: number,
+): Promise<boolean> {
+	let timer: NodeJS.Timeout | undefined;
+	const timeout = new Promise<boolean>(resolve => {
+		timer = setTimeout(() => {
+			resolve(false);
+		}, timeoutMs);
+	});
+	try {
+		return await Promise.race([check(why, title).catch(() => false), timeout]);
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
 /** Runs the composer on a terminal. Resolves with the message, or null when cancelled. */
 export async function compose(
 	config: ComposeConfig,
 	streams: ComposeStreams,
 	advice?: Promise<Advice | null>,
 	impact?: Impact,
+	checkWhy?: ComposerProps['checkWhy'],
 ): Promise<string | null> {
 	return new Promise(resolve => {
 		let done = false;
@@ -381,6 +447,7 @@ export async function compose(
 				onCancel={() => finish(null)}
 				advice={advice}
 				impact={impact}
+				checkWhy={checkWhy}
 			/>,
 			{
 				stdin: streams.stdin,

@@ -25,8 +25,10 @@ import {
 	type WhyReason,
 } from '@chamoji/core';
 import {NO_FACE, runStep} from './face.js';
+import {MISSING_KEY} from './env.js';
 import type {Io} from './run.js';
 import {stripControl} from './text.js';
+import type {WhyChecker} from './why-check.js';
 
 /** Same code run.ts uses for a command that was used wrongly. */
 const USAGE_ERROR = 2;
@@ -60,9 +62,18 @@ const CARD_LABELS: [keyof IntentCard, string][] = [
  */
 export async function runWhy(
 	input: string[],
-	flags: {json?: boolean; amend?: string; thin?: boolean},
+	flags: {
+		json?: boolean;
+		amend?: string;
+		thin?: boolean;
+		check?: boolean;
+		ai?: boolean;
+	},
 	io: Io,
+	/** Jev's check for `--check --ai`; undefined when there is no key. */
+	checker?: () => Promise<WhyChecker | undefined>,
 ): Promise<number> {
+	if (flags.check) return checkWhy(input, flags.ai === true, io, checker);
 	if (flags.amend !== undefined) return amendWhy(flags.amend, input, io);
 	if (flags.thin) return thinWhys(input, flags, io);
 	const [location, ...extra] = input;
@@ -111,6 +122,53 @@ export async function runWhy(
 		io.stdout(describe(result.commit, reading!, summary));
 	}
 
+	return 0;
+}
+
+/**
+ * `chamoji why --check [--ai] <reason...>`: whether a reason would pass as a
+ * commit's Why. The local rules judge it as a card against an empty subject;
+ * with `--ai` Jev also weighs in, sending only the reason. Prints `ok` and
+ * exits 0, or `thin: <advice>` and exits 1. Jev failing counts as no opinion.
+ */
+async function checkWhy(
+	words: string[],
+	ai: boolean,
+	io: Io,
+	checker: (() => Promise<WhyChecker | undefined>) | undefined,
+): Promise<number> {
+	const reason = words.join(' ').trim();
+	if (reason === '') {
+		io.stderr(
+			'chamoji: why --check needs a reason: chamoji why --check [--ai] <reason...>\n',
+		);
+		return USAGE_ERROR;
+	}
+
+	const check = ai ? await checker?.() : undefined;
+	if (ai && !check) {
+		io.stderr(`chamoji: ${stripControl(MISSING_KEY)}\n`);
+		return USAGE_ERROR;
+	}
+
+	const card = noteCard(reason);
+	const verdict = card && judgeWhy(card, '');
+	if (verdict && verdict.level !== 'ok') {
+		io.stdout(`thin: ${verdict.advice}\n`);
+		return 1;
+	}
+
+	if (check) {
+		const unclear = await check({title: '', why: reason, files: []}).catch(
+			() => false,
+		);
+		if (unclear) {
+			io.stdout(`thin: ${WHY_ADVICE['ai-unclear']}\n`);
+			return 1;
+		}
+	}
+
+	io.stdout('ok\n');
 	return 0;
 }
 
