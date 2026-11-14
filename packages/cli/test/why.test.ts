@@ -530,3 +530,20 @@ test('--amend refuses a merge commit and writes nothing', async () => {
 		'',
 	);
 });
+
+test('--json puts the merged card at the top, beside addedLater and the commit', async () => {
+	repo = await createRepo([
+		{commit: '🐛 Fix bug', body: 'Why: fix bug', files: FILES},
+	]);
+	await chamoji(
+		['why', '--amend', await hashOf(repo.dir), ...REASON.split(' ')],
+		repo.dir,
+	);
+	const result = JSON.parse(
+		(await chamoji(['why', 'src/a.ts:1', '--json'], repo.dir)).stdout,
+	);
+	expect(result.card.why).toEqual([REASON, 'fix bug']);
+	expect(result.addedLater.why).toEqual([REASON]);
+	expect(result.commit.card.why).toEqual(['fix bug']);
+	expect(result.whyQuality).toBe('ok');
+});
