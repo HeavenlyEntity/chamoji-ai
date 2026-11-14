@@ -3,6 +3,7 @@ import {
 	blameLine,
 	findClues,
 	judgeWhy,
+	listThinWhys,
 	mergeCards,
 	noteCard,
 	parseLocation,
@@ -58,10 +59,11 @@ const CARD_LABELS: [keyof IntentCard, string][] = [
  */
 export async function runWhy(
 	input: string[],
-	flags: {json?: boolean; amend?: string},
+	flags: {json?: boolean; amend?: string; thin?: boolean},
 	io: Io,
 ): Promise<number> {
 	if (flags.amend !== undefined) return amendWhy(flags.amend, input, io);
+	if (flags.thin) return thinWhys(input, flags, io);
 	const [location, ...extra] = input;
 	if (location === undefined || extra.length > 0) {
 		io.stderr('chamoji: why needs one location: chamoji why <file:line>\n');
@@ -108,6 +110,59 @@ export async function runWhy(
 		io.stdout(describe(result.commit, reading!, summary));
 	}
 
+	return 0;
+}
+
+/**
+ * `chamoji why --thin [path]`: the commits behind the most lines under `path`
+ * whose Why is thin or missing, so a team fixing old reasons knows where to
+ * start. Reads git only.
+ */
+async function thinWhys(
+	input: string[],
+	flags: {json?: boolean},
+	io: Io,
+): Promise<number> {
+	if (input.length > 1) {
+		io.stderr(
+			'chamoji: why --thin takes one path: chamoji why --thin [path]\n',
+		);
+		return USAGE_ERROR;
+	}
+
+	await assertGitRepo(io.cwd);
+	const path = input[0] ?? '.';
+	const found = await runStep(
+		io.face ?? NO_FACE,
+		'Reading who wrote each line',
+		async () => listThinWhys(io.cwd, path),
+		items => ({
+			outcome: 'ok',
+			text:
+				items.length === 0
+					? 'Every commit gives a reason'
+					: `Found ${items.length} ${items.length === 1 ? 'commit' : 'commits'} to improve`,
+		}),
+	);
+	if (flags.json) {
+		io.stdout(`${JSON.stringify(found, null, 2)}\n`);
+		return 0;
+	}
+
+	if (found.length === 0) {
+		io.stdout(`No thin Whys behind ${stripControl(path)}.\n`);
+		return 0;
+	}
+
+	const lines = found.flatMap(item => [
+		`${item.lines} ${item.lines === 1 ? 'line' : 'lines'}  ${stripControl(item.shortHash)} ${stripControl(item.subject)}`,
+		item.kind === 'thin' ? `    Why: ${stripControl(item.why)}` : '    No Why.',
+	]);
+	lines.push(
+		'',
+		'Add a better reason with: chamoji why --amend <hash> "<reason>"',
+	);
+	io.stdout(`${lines.join('\n')}\n`);
 	return 0;
 }
 
