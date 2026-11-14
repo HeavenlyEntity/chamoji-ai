@@ -85,3 +85,41 @@ test('a free-text note made with git itself reads as a Why', async () => {
 	]);
 	expect((await readNoteCard(repo.dir, hash))?.why).toEqual(['no key here']);
 });
+
+test('readNoteCards reads many notes, multi-line and non-ASCII ones included', async () => {
+	repo = await createRepo([
+		{commit: '✨ Add a'},
+		{commit: '✨ Add b'},
+		{commit: '✨ Add c'},
+	]);
+	const [c, b, a] = (
+		await gitOutput(repo.dir, ['rev-list', '--max-count=3', 'HEAD'])
+	)
+		.trim()
+		.split('\n') as [string, string, string];
+	await writeNoteCard(
+		repo.dir,
+		a,
+		'the vendor café API caps stays at 365 nights',
+	);
+	await writeNoteCard(repo.dir, b, 'Why: x is slow\nConstraint: no network');
+	await writeNoteCard(
+		repo.dir,
+		c,
+		'Why: first line\nwrapped onto a second\nGotcha: ünïcode ✨\nFollow-up: later',
+	);
+	const all = await readNoteCards(repo.dir);
+	expect(all.size).toBe(3);
+	expect(all.get(a)?.why).toEqual([
+		'the vendor café API caps stays at 365 nights',
+	]);
+	expect(all.get(b)).toMatchObject({
+		why: ['x is slow'],
+		constraint: ['no network'],
+	});
+	expect(all.get(c)).toMatchObject({
+		why: ['first line wrapped onto a second'],
+		gotcha: ['ünïcode ✨'],
+		followUp: ['later'],
+	});
+});
