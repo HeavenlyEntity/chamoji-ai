@@ -103,6 +103,7 @@ export {
 	STOP_WORDS,
 	WHY_ADVICE,
 	judgeWhy,
+	whyWords,
 	type WhyReason,
 	type WhyVerdict,
 } from './why-quality.js';
