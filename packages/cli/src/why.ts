@@ -115,9 +115,11 @@ export async function runWhy(
 				: `${stripControl(`${file}:${line}`)} is not committed yet.\n`,
 		);
 	} else if (flags.json) {
-		const {quality, reasons, clues, added} = reading!;
+		// `commit.card` stays the commit's own; `card` puts a reason added later
+		// first, as the MCP why tool does.
+		const {quality, reasons, clues, added, card} = reading!;
 		io.stdout(
-			`${JSON.stringify({...result, whyQuality: quality, whyReasons: reasons, clues, addedLater: added}, null, 2)}\n`,
+			`${JSON.stringify({...result, card, whyQuality: quality, whyReasons: reasons, clues, addedLater: added}, null, 2)}\n`,
 		);
 	} else {
 		io.stdout(describe(result.commit, reading!, summary));
