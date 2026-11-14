@@ -11,7 +11,12 @@ import {
 } from '@chamoji/core';
 import {Box, render, Text, useInput} from 'ink';
 import {useEffect, useRef, useState} from 'react';
-import {HINT_THRESHOLD, PRESELECT_THRESHOLD, type Advice} from './advisor.js';
+import {
+	ADVICE_TIMEOUT_MS,
+	HINT_THRESHOLD,
+	PRESELECT_THRESHOLD,
+	type Advice,
+} from './advisor.js';
 import {stripControl} from './text.js';
 
 type Step =
@@ -44,9 +49,6 @@ const LIST_SIZE = 7;
 
 /** How long Enter on the Why waits for Jev's check before carrying on. */
 const WHY_CHECK_TIMEOUT_MS = 2000;
-
-/** How long the composer waits for Jev's advice before carrying on without it. */
-const ADVICE_TIMEOUT_MS = 2000;
 
 export type ComposerProps = {
 	config: ComposeConfig;

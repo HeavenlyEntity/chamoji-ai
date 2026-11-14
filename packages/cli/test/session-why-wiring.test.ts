@@ -19,21 +19,25 @@ const {draftFromSession} = await import('../src/session-why.js');
 
 const REASON =
 	'The provider returns 422 for stays over 365 nights so guests lose the booking after paying.';
-let repo: FixtureRepo | undefined;
-let home: string | undefined;
+const repos: FixtureRepo[] = [];
+const homes: string[] = [];
 
 afterEach(async () => {
 	vi.unstubAllEnvs();
 	vi.mocked(draftFromSession).mockClear();
-	await repo?.cleanup();
-	if (home) await rm(home, {recursive: true});
-	repo = undefined;
-	home = undefined;
+	await Promise.all(repos.splice(0).map(async repo => repo.cleanup()));
+	await Promise.all(
+		homes.splice(0).map(async home => rm(home, {recursive: true})),
+	);
 });
 
-/** Runs `chamoji commit` and returns what the composer was handed as a draft. */
+/**
+ * Runs `chamoji commit` and returns what the composer was handed as a draft,
+ * as it was handed: a draft still being read stays a promise.
+ */
 async function composeWith(flag: boolean, pending = false, composer = false) {
-	repo = await createRepo([{commit: '🎉 Init'}]);
+	const repo = await createRepo([{commit: '🎉 Init'}]);
+	repos.push(repo);
 	if (flag) {
 		await gitOutput(repo.dir, ['config', 'chamoji.whyFromSessions', 'true']);
 	}
@@ -45,7 +49,8 @@ async function composeWith(flag: boolean, pending = false, composer = false) {
 	const root = (
 		await gitOutput(repo.dir, ['rev-parse', '--show-toplevel'])
 	).trim();
-	home = await mkdtemp(path.join(tmpdir(), 'chamoji-home-'));
+	const home = await mkdtemp(path.join(tmpdir(), 'chamoji-home-'));
+	homes.push(home);
 	const folder = path.join(
 		home,
 		'.claude',
@@ -81,7 +86,7 @@ async function composeWith(flag: boolean, pending = false, composer = false) {
 				_check: unknown,
 				draft: unknown,
 			) {
-				given = await draft;
+				given = draft;
 				return '✨ Add stays';
 			},
 			close() {},
@@ -100,7 +105,20 @@ test('with chamoji.whyFromSessions unset, no session file is read', async () => 
 test('with chamoji.whyFromSessions on, the composer gets a draft from the session', async () => {
 	const {code, given} = await composeWith(true);
 	expect(code).toBe(0);
-	expect(given).toEqual({text: REASON, source: 'your Claude Code session'});
+	expect(given).toBeInstanceOf(Promise);
+	expect(await given).toEqual({
+		text: REASON,
+		source: 'your Claude Code session',
+	});
+});
+
+test('a session read that never ends does not hold the composer back', async () => {
+	vi.mocked(draftFromSession).mockImplementationOnce(
+		async () => new Promise(() => undefined),
+	);
+	const {code, given} = await composeWith(true);
+	expect(code).toBe(0);
+	expect(given).toBeInstanceOf(Promise);
 });
 
 test('a reason an agent handed over wins, and the session is not read', async () => {
@@ -113,7 +131,8 @@ test('a reason an agent handed over wins, and the session is not read', async ()
 async function clientSeen(composer: boolean, key: string) {
 	vi.stubEnv('TYPESAFE_API_KEY', key);
 	vi.mocked(draftFromSession).mockImplementationOnce(async () => undefined);
-	await composeWith(true, false, composer);
+	const {given} = await composeWith(true, false, composer);
+	await given;
 	const [input] = vi.mocked(draftFromSession).mock.calls[0] ?? [];
 	return input?.client;
 }
