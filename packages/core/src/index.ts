@@ -114,6 +114,16 @@ export {
 	type PublicLine,
 } from './card-state.js';
 export {cardStatePath, readCardState} from './card-state-repo.js';
+export {
+	BRIEF_SECTIONS,
+	DEFAULT_BRIEF_BUDGET,
+	MAX_BRIEF_BUDGET,
+	MIN_BRIEF_BUDGET,
+	renderBrief,
+	type BriefInput,
+	type BriefSection,
+} from './brief.js';
+export {stripControl, stripControlLines} from './text.js';
 export {ResolveError, isResolveCommit, resolveLine} from './card-resolve.js';
 export {readIntent} from './intent.js';
 export {
