@@ -324,7 +324,7 @@ const hookEntry = (command: string) => ({
 /** Runs the hook for a new session, after /clear and after a compaction. */
 const sessionEntry = (command: string) => ({
 	matcher: 'startup|clear|compact',
-	hooks: [{type: 'command', command}],
+	hooks: [{type: 'command', command, timeout: 15}],
 });
 
 const bothHooks = (command: string) => ({
@@ -963,11 +963,51 @@ test('init --agents adds a SessionStart entry that runs chamoji agent-hook for s
 	expect(SessionStart).toEqual([
 		{
 			matcher: 'startup|clear|compact',
-			hooks: [{type: 'command', command: 'chamoji agent-hook || true'}],
+			hooks: [
+				{type: 'command', command: 'chamoji agent-hook || true', timeout: 15},
+			],
 		},
 	]);
 	// Not resume or fork: those sessions carry their context with them.
 	expect(SessionStart[0].matcher).toBe('startup|clear|compact');
+	// In seconds, and after the command, as Claude Code reads it.
+	expect(Object.keys(SessionStart[0].hooks[0])).toEqual([
+		'type',
+		'command',
+		'timeout',
+	]);
+	// The commit hook gets no timeout.
+	const {PreToolUse} = JSON.parse(
+		await read(dir, '.claude/settings.json'),
+	).hooks;
+	expect(PreToolUse[0].hooks[0]).not.toHaveProperty('timeout');
+});
+
+test('a session hook already there without a timeout still counts and is not rewritten', async () => {
+	const dir = await plainRepo();
+	await mkdir(path.join(dir, '.claude'));
+	const text = `${JSON.stringify(
+		{
+			hooks: {
+				SessionStart: [
+					{
+						matcher: 'startup|clear|compact',
+						hooks: [{type: 'command', command: HOOK_COMMAND}],
+					},
+				],
+				PreToolUse: [hookEntry(HOOK_COMMAND)],
+			},
+		},
+		null,
+		2,
+	)}\n`;
+	await writeFile(path.join(dir, '.claude', 'settings.json'), text);
+	const {code, stdout} = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+	expect(code).toBe(0);
+	expect(stdout).toContain(
+		'.claude/settings.json: already has the session brief hook\n',
+	);
+	expect(await read(dir, '.claude/settings.json')).toBe(text);
 });
 
 test('running init --agents twice adds the session brief hook once', async () => {
