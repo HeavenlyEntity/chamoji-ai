@@ -515,8 +515,6 @@ function limitReply(data: unknown): string {
 		within: 'card' | 'lines' | undefined,
 	): unknown => {
 		if (typeof value === 'string') {
-			// The brief has a budget of its own, so it goes whole; the reply's cap still holds.
-			if (key === 'brief' && within === undefined) return value;
 			const max =
 				key === 'body'
 					? MAX_BODY
@@ -562,7 +560,19 @@ function limitReply(data: unknown): string {
 		return value;
 	};
 
-	const root = walk(data, '', undefined) as Record<string, unknown>;
+	// The brief tool's text has a budget of its own, so it goes whole; the
+	// reply's cap below still holds. Only the reply's own `brief` key counts.
+	const brief =
+		isRecord(data) && typeof data['brief'] === 'string'
+			? data['brief']
+			: undefined;
+	const root = walk(
+		brief === undefined ? data : {...(data as object), brief: ''},
+		'',
+		undefined,
+	) as Record<string, unknown>;
+	if (brief !== undefined) root['brief'] = brief;
+
 	// Room for the flag itself.
 	const room = MAX_REPLY - 32;
 	for (const only of [LISTS, undefined]) {

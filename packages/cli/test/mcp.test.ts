@@ -1604,3 +1604,28 @@ test('brief answers isError when the state cannot be read', async () => {
 		text: 'git log failed',
 	});
 });
+
+test('only the top-level brief goes whole; a nested brief is still capped', async () => {
+	const long = 'x'.repeat(3000);
+	const tools: McpTools = {
+		...noTools,
+		async brief() {
+			return {head: 'h', brief: long, other: {brief: long}};
+		},
+	};
+	const {data} = await callTool(tools, 'brief', {});
+	expect(data.brief).toBe(long);
+	expect(data.other.brief).toBe('x'.repeat(2000));
+	expect(data.truncated).toBe(true);
+
+	const whole: McpTools = {
+		...noTools,
+		async brief() {
+			return {head: 'h', brief: long};
+		},
+	};
+	expect((await callTool(whole, 'brief', {})).data).toEqual({
+		head: 'h',
+		brief: long,
+	});
+});
