@@ -1,3 +1,5 @@
+import {stat} from 'node:fs/promises';
+import path from 'node:path';
 import {CARD_ID} from './card-lines.js';
 import type {CardLine} from './card-state.js';
 import {readCardState} from './card-state-repo.js';
@@ -18,13 +20,25 @@ const MAX_REASON = 200;
 const CONTROL = /[\u0000-\u001F\u007F-\u009F]/;
 const SUBJECT = /^📝 Resolve ([cgf]-[0-9a-f]{8})$/;
 
+/** What git leaves in the git directory while each of these is under way. */
+const IN_PROGRESS = [
+	'MERGE_HEAD',
+	'CHERRY_PICK_HEAD',
+	'REVERT_HEAD',
+	'rebase-merge',
+	'rebase-apply',
+];
+
 /**
  * Records that a card line ended when no code change says so: an empty
  * commit on HEAD whose `Resolves:` names the line. It is made with a plain
  * `git commit`, so the user's hooks, signing and identity apply. Everything
- * is checked before git is touched, and staged changes stop it rather than
- * ride along, since the commit must stay empty. Returns the new commit's
- * hash and the line as it read before the commit.
+ * is checked before git is touched: a merge, cherry-pick, revert or rebase
+ * under way stops it, since the commit would join that, and so do staged
+ * changes, since the commit must stay empty. Afterwards the commit must have
+ * HEAD as its one parent and HEAD's tree; when a hook changed that, the
+ * commit is left where it is and a ResolveError says so. Returns the new
+ * commit's hash and the line as it read before the commit.
  */
 export async function resolveLine(
 	cwd: string,
@@ -51,12 +65,25 @@ export async function resolveLine(
 		);
 	}
 
+	if (line.state === 'reverted') {
+		throw new ResolveError(
+			`${line.id} was withdrawn when ${(line.revertedBy ?? '').slice(0, 7)} reverted its commit`,
+		);
+	}
+
+	if (await inProgress(cwd)) {
+		throw new ResolveError(
+			'A merge, cherry-pick, revert or rebase is in progress. Finish it first, then resolve the line.',
+		);
+	}
+
 	if (await hasStagedChanges(cwd)) {
 		throw new ResolveError(
 			'You have staged changes. Commit or unstage them first, so the resolve commit stays empty.',
 		);
 	}
 
+	const before = await commitAndTree(cwd, 'HEAD');
 	try {
 		await runGit(
 			[
@@ -81,7 +108,51 @@ export async function resolveLine(
 	}
 
 	const hash = (await runGit(['rev-parse', 'HEAD'], cwd)).trim();
+	const after = await commitAndTree(cwd, hash);
+	if (
+		after.parents.length !== 1 ||
+		after.parents[0] !== before.hash ||
+		after.tree !== before.tree
+	) {
+		throw new ResolveError(
+			`The resolve commit ${hash.slice(0, 7)} is not empty: a hook changed files in it. Check it, and amend it if those changes were not meant to be there.`,
+		);
+	}
+
 	return {hash, line};
+}
+
+/** A commit's hash, parents and tree. */
+async function commitAndTree(
+	cwd: string,
+	revision: string,
+): Promise<{hash: string; parents: string[]; tree: string}> {
+	const [hash = '', tree = '', parents = ''] = (
+		await runGit(
+			['log', '-1', '--format=%H%n%T%n%P', '--end-of-options', revision, '--'],
+			cwd,
+		)
+	)
+		.trim()
+		.split('\n');
+	return {hash, tree, parents: parents.split(' ').filter(Boolean)};
+}
+
+/** Whether a merge, cherry-pick, revert or rebase is under way in this worktree. */
+async function inProgress(cwd: string): Promise<boolean> {
+	const gitDir = (
+		await runGit(['rev-parse', '--absolute-git-dir'], cwd)
+	).trim();
+	for (const name of IN_PROGRESS) {
+		try {
+			await stat(path.join(gitDir, name));
+			return true;
+		} catch {
+			// Not there, so not under way.
+		}
+	}
+
+	return false;
 }
 
 /** `git diff --cached --quiet` exits 1 when something is staged; the index is only read. */
