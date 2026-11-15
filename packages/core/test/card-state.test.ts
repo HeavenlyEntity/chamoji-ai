@@ -306,6 +306,95 @@ test('an off-branch line that a commit on HEAD resolves is resolved', () => {
 	expect(state.dangling).toEqual([]);
 });
 
+test('an off-branch line stated again after the resolve stays off branch', () => {
+	const state = fold([commit(R, 3, {resolves: [{id: PORT_ID}]})], {
+		remembered: [
+			remembered('new-port', 'active', {
+				hash: B,
+				subject: 'Pin the port again',
+				date: '2026-11-05T00:00:00Z',
+				card: card({constraint: [PORT]}),
+			}),
+		],
+	});
+
+	const found = line(state.lines, PORT_ID);
+	expect(found?.state).toBe('off-branch');
+	expect(found?.resolvedBy).toBeUndefined();
+	expect(found?.workstream).toEqual({slug: 'new-port', status: 'active'});
+	expect(state.dangling).toEqual([]);
+});
+
+test('an off-branch line whose dates cannot be compared stays off branch', () => {
+	const state = fold([commit(R, 3, {resolves: [{id: PORT_ID}]})], {
+		remembered: [
+			remembered('old-port', 'dropped', {
+				hash: B,
+				subject: 'Pin the port',
+				date: 'not a date',
+				card: card({constraint: [PORT]}),
+			}),
+		],
+	});
+
+	const found = line(state.lines, PORT_ID);
+	expect(found?.state).toBe('off-branch');
+	expect(found?.resolvedBy).toBeUndefined();
+	expect(state.dangling).toEqual([]);
+});
+
+test('with two resolving commits where only the older covers the source, resolvedBy is the older one', () => {
+	const state = fold(
+		[
+			commit(C, 5, {resolves: [{id: PORT_ID, reason: 'newer'}]}),
+			commit(R, 3, {resolves: [{id: PORT_ID, reason: 'older'}]}),
+			commit(A, 1, {card: card({constraint: [PORT]})}),
+		],
+		{isAncestor: (ancestor, descendant) => ancestor === A && descendant === R},
+	);
+
+	const found = line(state.lines, PORT_ID);
+	expect(found?.state).toBe('resolved');
+	expect(found?.resolvedBy).toEqual({
+		hash: R,
+		date: '2026-11-03T00:00:00Z',
+		reason: 'older',
+	});
+});
+
+test('a Resolves: for an id stated only in a voided commit is dangling', () => {
+	const state = fold(
+		[
+			commit(R, 3, {resolves: [{id: PORT_ID}]}),
+			commit(D, 2),
+			commit(A, 1, {card: card({constraint: [PORT]})}),
+		],
+		{voids: new Map([[D, [A]]])},
+	);
+
+	expect(line(state.lines, PORT_ID)).toBeUndefined();
+	expect(state.dangling).toEqual([{id: PORT_ID, hash: R}]);
+});
+
+test('a remembered commit that is also on HEAD is not counted as remembered', () => {
+	const state = fold([commit(A, 1, {card: card({constraint: [PORT]})})], {
+		remembered: [
+			remembered('old-port', 'shipped', {
+				hash: A,
+				subject: 'Pin the port',
+				date: '2026-11-01T00:00:00Z',
+				card: card({constraint: [PORT, PORT_4000]}),
+			}),
+		],
+	});
+
+	const found = line(state.lines, PORT_ID);
+	expect(found?.state).toBe('open');
+	expect(found?.sources).toEqual([A]);
+	expect(found?.workstream).toBeUndefined();
+	expect(line(state.lines, PORT_4000_ID)).toBeUndefined();
+});
+
 test('a Resolves: that matches nothing is listed as dangling, with its commit', () => {
 	const state = fold([
 		commit(R, 3, {resolves: [{id: 'c-00000000'}, {id: PORT_ID}]}),

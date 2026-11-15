@@ -200,9 +200,12 @@ function replacedId(id: string, sources: FoldCommit[]): string | undefined {
 }
 
 /**
- * Lines that only workstream memory holds, from commits not on HEAD. A commit
- * on HEAD that resolves one settles it; the rest are off branch, under the
- * workstream of their newest remembered commit.
+ * Lines that only workstream memory holds, from commits not on HEAD. A resolve
+ * covers only what was said before it, so a commit on HEAD settles one only
+ * when it is dated on or after the newest remembered commit stating it. Dates
+ * stand in for ancestry because a remembered commit may not be in the object
+ * store; a date that can't be read leaves the line off branch. The rest are
+ * off branch, under the workstream of their newest remembered commit.
  */
 function offBranchLines(live: FoldCommit[], input: FoldInput): CardLine[] {
 	const onHead = new Set(input.commits.map(c => c.hash));
@@ -236,7 +239,9 @@ function offBranchLines(live: FoldCommit[], input: FoldInput): CardLine[] {
 			files: [],
 		};
 
-		const settled = resolvedBy(id, live, () => true);
+		// A date Date.parse refuses is NaN, and NaN compares false either way.
+		const statedAt = Date.parse(newest.commit.date);
+		const settled = resolvedBy(id, live, c => Date.parse(c.date) >= statedAt);
 		if (settled) {
 			line.state = 'resolved';
 			line.resolvedBy = settled;
