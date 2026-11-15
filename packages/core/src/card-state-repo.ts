@@ -14,18 +14,28 @@ import {readCommitFiles, readCommits, runGit} from './git.js';
 import {readSurvival, type Survival} from './line-survival.js';
 import {MEMORY_REF, headOf, listMemory} from './memory.js';
 import {parseCommit} from './parse.js';
-import {readResolves, readRevertedHash} from './resolves.js';
+import {
+	readResolves,
+	readRevertedHash,
+	readRevertedMainline,
+} from './resolves.js';
 import {NOTES_REF, mergeCards, readNoteCards} from './why-notes.js';
 import {STATUSES, isSlug, type WorkstreamStatus} from './workstreams.js';
 
 /** Bump it when the file's layout or what goes into it changes. */
-const CACHE_VERSION = 1;
+const CACHE_VERSION = 2;
 
 const OBJECT_ID = /^[0-9a-f]{40,64}$/;
 
 const KINDS: Array<CardLine['kind']> = ['constraint', 'gotcha', 'followUp'];
 
-const STATES: LineState[] = ['open', 'resolved', 'in-doubt', 'off-branch'];
+const STATES: LineState[] = [
+	'open',
+	'resolved',
+	'in-doubt',
+	'off-branch',
+	'reverted',
+];
 
 /** What a state was worked out from; when any of it differs the state is stale. */
 type Stamp = {head: string; memory: string; notes: string};
@@ -83,7 +93,7 @@ async function build(cwd: string, head: string): Promise<CardState> {
 	const input: FoldInput = {
 		head,
 		commits,
-		voids: await readVoids(cwd, commits, reverted, merges),
+		voids: await readVoids(cwd, commits, reverted, merges, parents),
 		isAncestor: ancestry(parents),
 		survives: new Map(),
 		remembered: await readRemembered(cwd, parents),
@@ -114,6 +124,9 @@ async function build(cwd: string, head: string): Promise<CardState> {
 	return state;
 }
 
+/** What a revert names: its target and, for a merge, the parent it kept. */
+type Reverted = {target: string; mainline?: string};
+
 /**
  * The non-merge commits on HEAD, newest first, and the commit each revert
  * among them names. A note's lines join the commit's own, as the search index
@@ -123,10 +136,10 @@ async function build(cwd: string, head: string): Promise<CardState> {
 async function readFoldCommits(
 	cwd: string,
 	head: string,
-): Promise<{commits: FoldCommit[]; reverted: Map<string, string>}> {
+): Promise<{commits: FoldCommit[]; reverted: Map<string, Reverted>}> {
 	const added = await readNoteCards(cwd);
 	const commits: FoldCommit[] = [];
-	const reverted = new Map<string, string>();
+	const reverted = new Map<string, Reverted>();
 	for (const raw of await readCommits(cwd, head)) {
 		const parsed = parseCommit(raw);
 		const card = mergeCards(added.get(parsed.hash), parsed.card);
@@ -138,7 +151,13 @@ async function readFoldCommits(
 			resolves: readResolves(parsed.trailers, parsed.body),
 		});
 		const target = readRevertedHash(parsed.body);
-		if (target !== undefined) reverted.set(parsed.hash, target);
+		if (target !== undefined) {
+			const mainline = readRevertedMainline(parsed.body);
+			reverted.set(parsed.hash, {
+				target,
+				...(mainline === undefined ? {} : {mainline}),
+			});
+		}
 	}
 
 	return {commits, reverted};
@@ -193,33 +212,45 @@ function ancestry(parents: Map<string, string[]>): FoldInput['isAncestor'] {
 
 /**
  * What each revert on HEAD undoes. Reverting a commit on HEAD undoes that
- * commit; reverting a merge on HEAD undoes what the merge brought in. A
- * revert of anything else, such as a commit on another branch, undoes nothing
- * here.
+ * commit; reverting a merge on HEAD undoes what the merge brought in, from
+ * the side the revert did not keep. A revert of anything else, such as a
+ * commit on another branch, undoes nothing here.
  */
 async function readVoids(
 	cwd: string,
 	commits: FoldCommit[],
-	reverted: Map<string, string>,
+	reverted: Map<string, Reverted>,
 	merges: Set<string>,
+	parents: Map<string, string[]>,
 ): Promise<Map<string, string[]>> {
 	const onHead = new Set(commits.map(c => c.hash));
 	const voids = new Map<string, string[]>();
-	for (const [revert, target] of reverted) {
+	for (const [revert, {target, mainline}] of reverted) {
 		if (onHead.has(target)) {
 			voids.set(revert, [target]);
 		} else if (merges.has(target)) {
-			voids.set(revert, await broughtIn(cwd, target));
+			// `git revert -m 1` is the usual case, so a mainline git didn't
+			// write, or one that is not a parent of the merge, stands for it.
+			const kept =
+				mainline !== undefined &&
+				(parents.get(target) ?? []).includes(mainline)
+					? mainline
+					: `${target}^1`;
+			voids.set(revert, await broughtIn(cwd, target, kept));
 		}
 	}
 
 	return voids;
 }
 
-/** The non-merge commits a merge brought in from the side it merged. */
-async function broughtIn(cwd: string, merge: string): Promise<string[]> {
+/** The non-merge commits a merge brought in that `kept`, the side a revert kept, lacks. */
+async function broughtIn(
+	cwd: string,
+	merge: string,
+	kept: string,
+): Promise<string[]> {
 	const stdout = await runGit(
-		['rev-list', '--no-merges', `${merge}^1..${merge}`],
+		['rev-list', '--no-merges', `${kept}..${merge}`],
 		cwd,
 	);
 	return stdout.split('\n').filter(Boolean);
@@ -327,7 +358,7 @@ async function readCache(
 function toLine(raw: unknown): CardLine | undefined {
 	if (!isPlain(raw)) return undefined;
 	const {id, kind, text, state, sources, date, files} = raw;
-	const {resolvedBy, replacedBy, replaces, workstream} = raw;
+	const {resolvedBy, replacedBy, replaces, workstream, revertedBy} = raw;
 	if (
 		!isId(id) ||
 		!KINDS.includes(kind as CardLine['kind']) ||
@@ -387,6 +418,11 @@ function toLine(raw: unknown): CardLine | undefined {
 		}
 
 		line.workstream = {slug, status: status as WorkstreamStatus};
+	}
+
+	if (revertedBy !== undefined) {
+		if (!isHash(revertedBy)) return undefined;
+		line.revertedBy = revertedBy;
 	}
 
 	return line;

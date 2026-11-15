@@ -116,7 +116,12 @@ export {
 export {cardStatePath, readCardState} from './card-state-repo.js';
 export {ResolveError, isResolveCommit, resolveLine} from './card-resolve.js';
 export {readIntent} from './intent.js';
-export {readResolves, readRevertedHash, type Resolve} from './resolves.js';
+export {
+	readResolves,
+	readRevertedHash,
+	readRevertedMainline,
+	type Resolve,
+} from './resolves.js';
 export {
 	ACTION_VERBS,
 	CAUSAL_MARKERS,

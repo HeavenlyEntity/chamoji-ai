@@ -4,14 +4,22 @@ import type {Resolve} from './resolves.js';
 import type {IntentCard} from './types.js';
 import type {WorkstreamStatus} from './workstreams.js';
 
-export type LineState = 'open' | 'resolved' | 'in-doubt' | 'off-branch';
+export type LineState =
+	| 'open'
+	| 'resolved'
+	| 'in-doubt'
+	| 'off-branch'
+	| 'reverted';
 
 export type CardLine = {
 	id: string;
 	kind: CardKind;
 	text: string;
 	state: LineState;
-	/** Full hashes, newest first. For an off-branch line, the remembered commits. */
+	/**
+	 * Full hashes, newest first. For an off-branch line, the remembered
+	 * commits; for a reverted one, the commits the reverts undid.
+	 */
 	sources: string[];
 	/** The newest source's ISO date. */
 	date: string;
@@ -24,6 +32,8 @@ export type CardLine = {
 	replaces?: string;
 	/** Off branch only. */
 	workstream?: {slug: string; status: WorkstreamStatus};
+	/** Reverted only: the full hash of the newest revert that undid a source. */
+	revertedBy?: string;
 };
 
 export type CardState = {
@@ -68,7 +78,14 @@ type Remembered = FoldInput['remembered'][number];
  */
 export function foldCardState(input: FoldInput): CardState {
 	const live = liveCommits(input.commits, input.voids);
-	const lines = [...headLines(live, input), ...offBranchLines(live, input)];
+	const headAndMemory = [
+		...headLines(live, input),
+		...offBranchLines(live, input),
+	];
+	const lines = [
+		...headAndMemory,
+		...revertedLines(live, headAndMemory, input),
+	];
 
 	const known = new Set(lines.map(l => l.id));
 	const dangling = live.flatMap(c =>
@@ -82,20 +99,45 @@ export function foldCardState(input: FoldInput): CardState {
 }
 
 /**
- * The commits a revert has not undone. Reverts are taken newest first, so a
- * revert that was itself reverted is already void and undoes nothing.
+ * The commits a revert has not undone. A commit is live when no live revert
+ * names it, so a revert that was itself reverted undoes nothing, whatever
+ * order the commits come in. A revert that is not among the commits undoes
+ * nothing, and reverts that name each other in a cycle all count as live.
  */
 function liveCommits(
 	commits: FoldCommit[],
 	voids: Map<string, string[]>,
 ): FoldCommit[] {
-	const voided = new Set<string>();
-	for (const c of commits) {
-		if (voided.has(c.hash)) continue;
-		for (const target of voids.get(c.hash) ?? []) voided.add(target);
+	const onHead = new Set(commits.map(c => c.hash));
+	const revertsOf = new Map<string, string[]>();
+	for (const [revert, targets] of voids) {
+		if (!onHead.has(revert)) continue;
+		for (const target of targets) {
+			revertsOf.set(target, [...(revertsOf.get(target) ?? []), revert]);
+		}
 	}
 
-	return commits.filter(c => !voided.has(c.hash));
+	const known = new Map<string, boolean>();
+	const path: string[] = [];
+	const inCycle = new Set<string>();
+	const isLive = (hash: string): boolean => {
+		const found = known.get(hash);
+		if (found !== undefined) return found;
+		const at = path.indexOf(hash);
+		if (at !== -1) {
+			for (const member of path.slice(at)) inCycle.add(member);
+			return true;
+		}
+
+		path.push(hash);
+		const undone = (revertsOf.get(hash) ?? []).some(revert => isLive(revert));
+		path.pop();
+		const live = inCycle.has(hash) || !undone;
+		known.set(hash, live);
+		return live;
+	};
+
+	return commits.filter(c => isLive(c.hash));
 }
 
 /** Every line a live commit on HEAD states, with its state there. */
@@ -253,7 +295,51 @@ function offBranchLines(live: FoldCommit[], input: FoldInput): CardLine[] {
 	});
 }
 
-/** What a reply carries: id, kind, text, state, resolvedBy, replacedBy, replaces, workstream. */
+/**
+ * Lines that only commits a revert undid state, with no remembered commit
+ * stating them either. They are kept, as reverted, so an agent never takes
+ * one for a live line. A live revert undid each source; `revertedBy` is the
+ * newest of those that undid any.
+ */
+function revertedLines(
+	live: FoldCommit[],
+	known: CardLine[],
+	input: FoldInput,
+): CardLine[] {
+	const liveHashes = new Set(live.map(c => c.hash));
+	const stated = new Set(known.map(l => l.id));
+	const sourcesById = new Map<string, FoldCommit[]>();
+	for (const c of input.commits) {
+		if (liveHashes.has(c.hash)) continue;
+		for (const {id} of linesOf(c.card)) {
+			if (stated.has(id)) continue;
+			sourcesById.set(id, [...(sourcesById.get(id) ?? []), c]);
+		}
+	}
+
+	return [...sourcesById].map(([id, sources]) => {
+		sources.sort((a, b) => newerFirst(a.date, b.date));
+		const newest = sources[0]!;
+		const {kind, text} = linesOf(newest.card).find(l => l.id === id)!;
+		const hashes = sources.map(s => s.hash);
+		const by = live.find(c =>
+			(input.voids.get(c.hash) ?? []).some(target => hashes.includes(target)),
+		);
+		const line: CardLine = {
+			id,
+			kind,
+			text,
+			state: 'reverted',
+			sources: hashes,
+			date: newest.date,
+			files: [],
+		};
+		if (by) line.revertedBy = by.hash;
+		return line;
+	});
+}
+
+/** What a reply carries: id, kind, text, state, resolvedBy, replacedBy, replaces, workstream, revertedBy. */
 export type PublicLine = Omit<CardLine, 'sources' | 'date' | 'files'>;
 
 /** The state of each line in a card, looked up by id. A line the state doesn't know is left out. */
@@ -270,8 +356,17 @@ export function linesFor(
  * state out, and a reply has no keys whose value is undefined.
  */
 export function publicLine(line: CardLine): PublicLine {
-	const {id, kind, text, state, resolvedBy, replacedBy, replaces, workstream} =
-		line;
+	const {
+		id,
+		kind,
+		text,
+		state,
+		resolvedBy,
+		replacedBy,
+		replaces,
+		workstream,
+		revertedBy,
+	} = line;
 	return {
 		id,
 		kind,
@@ -281,6 +376,7 @@ export function publicLine(line: CardLine): PublicLine {
 		...(replacedBy === undefined ? {} : {replacedBy}),
 		...(replaces === undefined ? {} : {replaces}),
 		...(workstream === undefined ? {} : {workstream}),
+		...(revertedBy === undefined ? {} : {revertedBy}),
 	};
 }
 
