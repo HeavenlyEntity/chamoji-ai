@@ -91,6 +91,57 @@ test('a whitespace-only rewrite does not take a line away from its commit', asyn
 	expect(result.get(first)?.survives).toBe(true);
 });
 
+test('a commit that only changed whitespace has survives undefined', async () => {
+	repo = await createRepo([
+		{commit: 'add', files: {'a.txt': 'one\ntwo\n'}},
+		{commit: 'indent', files: {'a.txt': '  one\n  two\n'}},
+	]);
+	const second = await rev(repo.dir, 'HEAD');
+	const result = await readSurvival(repo.dir, [second]);
+	expect(result.get(second)).toEqual({survives: undefined, files: []});
+});
+
+test('readSurvival called from a subdirectory gives the same answer as from the root', async () => {
+	repo = await createRepo([
+		{
+			commit: 'add',
+			files: {'src/a.txt': 'one\ntwo\n', 'docs/b.txt': 'three\n'},
+		},
+		{commit: 'rewrite docs', files: {'docs/b.txt': 'four\n'}},
+	]);
+	const first = await rev(repo.dir, 'HEAD~1');
+	const second = await rev(repo.dir, 'HEAD');
+	const fromSub = await readSurvival(path.join(repo.dir, 'src'), [
+		first,
+		second,
+	]);
+	expect(fromSub.get(first)).toEqual({
+		survives: true,
+		files: ['docs/b.txt', 'src/a.txt'],
+	});
+	expect(fromSub.get(second)).toEqual({
+		survives: true,
+		files: ['docs/b.txt'],
+	});
+	// What the subdirectory's call cached is right for the root too.
+	expect(await readSurvival(repo.dir, [first, second])).toEqual(fromSub);
+	const cache = JSON.parse(await readFile(await cachePath(repo.dir), 'utf8'));
+	expect(Object.keys(cache.files).sort()).toEqual(['docs/b.txt', 'src/a.txt']);
+});
+
+test('with head, the revision given is listed and blamed instead of HEAD', async () => {
+	repo = await createRepo([
+		{commit: 'add', files: {'a.txt': 'one\n'}},
+		{commit: 'rewrite', files: {'a.txt': 'two\n'}},
+	]);
+	const first = await rev(repo.dir, 'HEAD~1');
+	const result = await readSurvival(repo.dir, [first], {head: first});
+	expect(result.get(first)?.survives).toBe(true);
+	expect((await readSurvival(repo.dir, [first])).get(first)?.survives).toBe(
+		false,
+	);
+});
+
 test('an empty list returns an empty map and blames nothing', async () => {
 	repo = await createRepo([{commit: 'add', files: {'a.txt': 'one\n'}}]);
 	const blamed: string[] = [];
