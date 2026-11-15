@@ -176,6 +176,7 @@ export {
 	type SyncStep,
 } from './memory-sync.js';
 export {reindexMemory, searchMemory, type MemoryHit} from './memory-index.js';
+export {readSurvival, type Survival} from './line-survival.js';
 export {parseCommit} from './parse.js';
 export {
 	escapeHtml,
