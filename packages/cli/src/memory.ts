@@ -249,6 +249,8 @@ async function search(
 	);
 	const {state} = read;
 	if (json) {
+		// An array has no top level to flag, so stderr says it instead.
+		warnUnavailable(read, io);
 		const withState = hits.map(hit => withLines(hit, state));
 		io.stdout(`${JSON.stringify(withState, null, 2)}\n`);
 	} else if (hits.length === 0) {
