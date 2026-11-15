@@ -172,7 +172,7 @@ The release is still there, ready to push once the cause is fixed: `git push ori
 
 ## Project memory over MCP {{ tag: 'SETUP', variant: 'setup', label: 'chamoji init --agents', icon: 'brackets-curly' }}
 
-`chamoji mcp` serves your project memory to the agent: why a line is there, what a workstream did, and a search over commits and their cards. Its three tools are read-only, and it makes no network calls unless you add `--ai`.
+`chamoji mcp` serves your project memory to the agent: why a line is there, what a workstream did, a search over commits and their cards, and the project brief. Those four tools only read. A fifth, `remember_why`, keeps the reason you gave for a change, so the commit composer can offer it. The server makes no network calls unless you add `--ai`.
 
 In Claude Code, run `chamoji init --agents` and commit the two files it writes. It adds the server to `.mcp.json`, and a hook that sends back a `git commit` with no card line, such as `Why:`, so the agent’s commits carry the reason too. Approve the server when Claude Code asks. Any other agent that runs stdio MCP servers can start `chamoji mcp` in the repo.
 

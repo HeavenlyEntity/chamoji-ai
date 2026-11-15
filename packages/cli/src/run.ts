@@ -324,8 +324,9 @@ const HELP = `
 	                                   a git commit with no Why: line
 	  $ chamoji card [options]         Print the URL of the repo's card image
 	  $ chamoji mcp                    Serve project memory to AI agents over
-	                                   MCP (stdio): search_memory, why and
-	                                   workstream, all read-only
+	                                   MCP (stdio): search_memory, why,
+	                                   workstream and brief, which only read,
+	                                   and remember_why
 	  $ chamoji agent-hook             The hook itself; Claude Code runs it
 
 	Options

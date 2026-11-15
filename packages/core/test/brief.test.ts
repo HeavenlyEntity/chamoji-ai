@@ -803,3 +803,101 @@ test('the shallow line counts toward the budget', () => {
 		expect(brief.split('\n')[1]).toBe(SHALLOW);
 	}
 });
+
+test('controls are stripped before whitespace is collapsed, so a text never holds a double space', () => {
+	const text = 'x \u0001 (replaces c-12345678) \u0001 (abc1234)';
+	const brief = renderBrief(input([line('c-00000001', {text})]));
+	expect(brief.split('\n')[3]).toBe(
+		'  open       c-00000001  x (replaces c-12345678) (abc1234)  (1234567)',
+	);
+	// A line break or tab between words is still a single space.
+	const broken = renderBrief(
+		input([line('c-00000001', {text: 'a\n\u0001\nb\t\u001B\tc d'})]),
+	);
+	expect(broken.split('\n')[3]).toBe(
+		'  open       c-00000001  a b c d  (1234567)',
+	);
+});
+
+test('the count line of a cut section points to its section, or in a section view to a larger budget', () => {
+	const gotchas = many('gotcha', 20);
+	const all = renderBrief(input(gotchas), {budget: 300});
+	expect(shownUnder(all, 'Gotchas')).toBe(5);
+	expect(all.split('\n').at(-3)).toBe(
+		'  and 15 more: the gotchas section lists them.',
+	);
+
+	const alone = renderBrief(input(gotchas), {budget: 300, section: 'gotchas'});
+	expect(shownUnder(alone, 'Gotchas')).toBe(5);
+	expect(alone.split('\n').at(-3)).toBe(
+		'  and 15 more: ask for a larger budget to list them.',
+	);
+	expect(alone).not.toContain('section lists them');
+});
+
+test('with no tag, a recent section with no room prints its one-line form exactly', () => {
+	const short = {text: 'aaaaa'};
+	const brief = renderBrief(
+		input(
+			[
+				line('c-00000001', short),
+				line('c-00000002', {
+					...short,
+					state: 'resolved',
+					resolvedBy: {hash: H2, date: '2026-11-12T00:00:00Z', reason: 'r'},
+				}),
+				line('c-00000003', {...short, kind: 'gotcha'}),
+				line('c-00000004', {...short, kind: 'followUp'}),
+				line('c-00000005', {
+					...short,
+					state: 'off-branch',
+					workstream: {slug: 'w', status: 'shipped'},
+				}),
+			],
+			{
+				// Workstreams come first and take the room recent would need.
+				workstreams: Array.from({length: 200}, (_, i) => ({
+					slug: `w${i}`,
+					title: 't',
+					commits: 1,
+				})),
+				recent: {
+					tag: null,
+					count: 300,
+					subjects: Array.from({length: 300}, () => 'sssss'),
+				},
+			},
+		),
+		{budget: MIN_BRIEF_BUDGET},
+	);
+	expect(brief).toBe(
+		[
+			FIRST,
+			'',
+			'Constraints',
+			'  open       c-00000001  aaaaa  (1234567)',
+			'',
+			'Resolved recently',
+			'  resolved   c-00000002  aaaaa',
+			`${INDENT}Resolved by 7654321 on 2026-11-12: r`,
+			'',
+			'Gotchas',
+			'  open       c-00000003  aaaaa  (1234567)',
+			'',
+			'Follow-ups',
+			'  open       c-00000004  aaaaa  (1234567)',
+			'',
+			'Off branch',
+			'  off branch c-00000005  aaaaa  (workstream w)',
+			'',
+			'Workstreams',
+			...Array.from({length: 7}, (_, i) => `  w${i}  active  1 commit`),
+			'  and 193 more: the workstreams section lists them.',
+			'',
+			'Recent commits: 300 not shown. The recent section lists them.',
+			'',
+			LAST,
+		].join('\n'),
+	);
+	expect(brief.length).toBeLessThanOrEqual(800);
+});
