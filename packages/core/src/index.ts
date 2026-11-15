@@ -104,12 +104,16 @@ export {
 } from './card-lines.js';
 export {
 	foldCardState,
+	linesFor,
+	publicLine,
 	type CardLine,
 	type CardState,
 	type FoldCommit,
 	type FoldInput,
 	type LineState,
+	type PublicLine,
 } from './card-state.js';
+export {cardStatePath, readCardState} from './card-state-repo.js';
 export {readIntent} from './intent.js';
 export {readResolves, readRevertedHash, type Resolve} from './resolves.js';
 export {

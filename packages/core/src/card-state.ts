@@ -15,10 +15,10 @@ export type CardLine = {
 	sources: string[];
 	/** The newest source's ISO date. */
 	date: string;
-	/** Paths the sources added lines to. The fold leaves it empty; task 5 fills it. */
+	/** Paths the sources added lines to. The fold leaves it empty; `readCardState` fills it. */
 	files: string[];
 	resolvedBy?: {hash: string; date: string; reason: string};
-	/** In doubt only; task 5 fills it. */
+	/** In doubt only; `readCardState` fills it. */
 	replacedBy?: string;
 	/** The id of the line this one replaced. */
 	replaces?: string;
@@ -251,6 +251,37 @@ function offBranchLines(live: FoldCommit[], input: FoldInput): CardLine[] {
 
 		return line;
 	});
+}
+
+/** What a reply carries: id, kind, text, state, resolvedBy, replacedBy, replaces, workstream. */
+export type PublicLine = Omit<CardLine, 'sources' | 'date' | 'files'>;
+
+/** The state of each line in a card, looked up by id. A line the state doesn't know is left out. */
+export function linesFor(
+	state: CardState,
+	card: IntentCard | undefined,
+): CardLine[] {
+	const byId = new Map(state.lines.map(line => [line.id, line]));
+	return linesOf(card).flatMap(({id}) => byId.get(id) ?? []);
+}
+
+/**
+ * A line as a reply shows it. Sources, date and files are for working the
+ * state out, and a reply has no keys whose value is undefined.
+ */
+export function publicLine(line: CardLine): PublicLine {
+	const {id, kind, text, state, resolvedBy, replacedBy, replaces, workstream} =
+		line;
+	return {
+		id,
+		kind,
+		text,
+		state,
+		...(resolvedBy === undefined ? {} : {resolvedBy}),
+		...(replacedBy === undefined ? {} : {replacedBy}),
+		...(replaces === undefined ? {} : {replaces}),
+		...(workstream === undefined ? {} : {workstream}),
+	};
 }
 
 /**
