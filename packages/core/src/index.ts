@@ -103,6 +103,7 @@ export {
 	type CardKind,
 } from './card-lines.js';
 export {readIntent} from './intent.js';
+export {readResolves, readRevertedHash, type Resolve} from './resolves.js';
 export {
 	ACTION_VERBS,
 	CAUSAL_MARKERS,
