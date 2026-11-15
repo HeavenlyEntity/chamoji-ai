@@ -348,7 +348,7 @@ test('the state is read back from the cache file, and rebuilt when the notes ref
 	await readCardState(repo.dir);
 	const file = await cardStatePath(repo.dir);
 	const saved = JSON.parse(await readFile(file, 'utf8'));
-	expect(saved).toMatchObject({version: 3, head: await rev(repo.dir, 'HEAD')});
+	expect(saved).toMatchObject({version: 4, head: await rev(repo.dir, 'HEAD')});
 	saved.state.lines[0].text = 'edited in place';
 	await writeFile(file, JSON.stringify(saved));
 	expect((await lineOf(repo.dir, PORT_ID))?.text).toBe('edited in place');
@@ -371,7 +371,7 @@ test('a cache file that does not check out is rebuilt', async () => {
 	for (const damage of [
 		'not json',
 		JSON.stringify({...saved, version: 1}),
-		JSON.stringify({...saved, version: 4}),
+		JSON.stringify({...saved, version: 5}),
 		JSON.stringify({...saved, shallow: 'f'.repeat(64)}),
 		JSON.stringify({...saved, state: {...saved.state, lines: 'none'}}),
 		JSON.stringify({
@@ -559,16 +559,41 @@ test('a card-state cache file with the old version is rebuilt', async () => {
 	await readCardState(repo.dir);
 	const file = await cardStatePath(repo.dir);
 	const saved = JSON.parse(await readFile(file, 'utf8'));
-	expect(saved).toMatchObject({version: 3, shallow: ''});
-	const {shallow: _, ...old} = saved;
-	old.version = 2;
-	old.state.lines[0].text = 'edited in place';
-	await writeFile(file, JSON.stringify(old));
+	expect(saved).toMatchObject({version: 4, shallow: ''});
+	// Version 2 had no shallow stamp; version 3 kept lines that only say none.
+	const {shallow: _, ...two} = saved;
+	two.version = 2;
+	two.state.lines[0].text = 'edited in place';
+	await writeFile(file, JSON.stringify(two));
+	expect((await lineOf(repo.dir, PORT_ID))?.text).toBe(PORT);
 
+	await writeFile(
+		file,
+		JSON.stringify({
+			...saved,
+			version: 3,
+			state: {
+				...saved.state,
+				lines: [{...saved.state.lines[0], text: 'edited in place'}],
+			},
+		}),
+	);
 	expect((await lineOf(repo.dir, PORT_ID))?.text).toBe(PORT);
 	expect(JSON.parse(await readFile(file, 'utf8'))).toMatchObject({
-		version: 3,
+		version: 4,
 	});
+});
+
+test('a card line that only says none gets no state', async () => {
+	repo = await createRepo([
+		{
+			commit: '✨ Add server',
+			body: `Constraint: ${PORT}\nFollow-up: none.\nGotcha: N/A`,
+			files: {'server.ts': 'listen(3000)\n'},
+		},
+	]);
+	const state = await readCardState(repo.dir);
+	expect(state.lines.map(line => line.id)).toEqual([PORT_ID]);
 });
 
 test('replacedBy skips a commit that a revert undid', async () => {
