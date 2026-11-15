@@ -95,6 +95,13 @@ export {
 } from './units/workspace.js';
 export {groupCommits} from './group.js';
 export {splitHighlights} from './highlights.js';
+export {
+	CARD_ID,
+	cardLineId,
+	linesOf,
+	normalizeLine,
+	type CardKind,
+} from './card-lines.js';
 export {readIntent} from './intent.js';
 export {
 	ACTION_VERBS,
