@@ -129,7 +129,7 @@ test('the default brief is read from its cache file, and rebuilt when workstream
 		'tags',
 		'text',
 	]);
-	expect(cache).toMatchObject({version: 1, head: built.head, text: built.text});
+	expect(cache).toMatchObject({version: 2, head: built.head, text: built.text});
 	expect(cache.workstreams).toMatch(/^[0-9a-f]{64}$/);
 
 	// A text only the cache holds shows the cache was read.
@@ -273,4 +273,20 @@ test('readBrief works in a shallow clone', async () => {
 	} finally {
 		await rm(shallow, {recursive: true, force: true});
 	}
+});
+
+test('a brief cache with the old version is rebuilt', async () => {
+	const dir = await tagged();
+	const built = await readBrief(dir);
+	const file = await briefFile(dir);
+	const cache = JSON.parse(await readFile(file, 'utf8'));
+	await writeFile(
+		file,
+		JSON.stringify({...cache, version: 1, text: 'from the old cache'}),
+	);
+	expect((await readBrief(dir)).text).toBe(built.text);
+	expect(JSON.parse(await readFile(file, 'utf8'))).toMatchObject({
+		version: 2,
+		text: built.text,
+	});
 });
