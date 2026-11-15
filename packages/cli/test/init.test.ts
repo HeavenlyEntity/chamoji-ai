@@ -321,6 +321,17 @@ const hookEntry = (command: string) => ({
 	hooks: [{type: 'command', if: 'Bash(git commit *)', command}],
 });
 
+/** Runs the hook for a new session, after /clear and after a compaction. */
+const sessionEntry = (command: string) => ({
+	matcher: 'startup|clear|compact',
+	hooks: [{type: 'command', command}],
+});
+
+const bothHooks = (command: string) => ({
+	PreToolUse: [hookEntry(command)],
+	SessionStart: [sessionEntry(command)],
+});
+
 test('init --agents writes both files in a repo that has neither', async () => {
 	const dir = await plainRepo();
 	const env = await withChamojiOnPath();
@@ -329,13 +340,16 @@ test('init --agents writes both files in a repo that has neither', async () => {
 	expect(code).toBe(0);
 	expect(stdout).toContain('.mcp.json: added the chamoji MCP server');
 	expect(stdout).toContain('.claude/settings.json: added the commit hook');
+	expect(stdout).toContain(
+		'.claude/settings.json: added the session brief hook',
+	);
 	expect(stdout).toContain('meant to be committed');
 	expect(stdout).not.toContain('npx');
 	expect(await read(dir, '.mcp.json')).toBe(
 		`${JSON.stringify({mcpServers: {chamoji: {command: 'chamoji', args: ['mcp']}}}, null, 2)}\n`,
 	);
 	expect(JSON.parse(await read(dir, '.claude/settings.json'))).toEqual({
-		hooks: {PreToolUse: [hookEntry(HOOK_COMMAND)]},
+		hooks: bothHooks(HOOK_COMMAND),
 	});
 });
 
@@ -349,7 +363,7 @@ test('init --agents runs chamoji through npx when it is not on PATH', async () =
 		},
 	});
 	expect(JSON.parse(await read(dir, '.claude/settings.json'))).toEqual({
-		hooks: {PreToolUse: [hookEntry(NPX_HOOK_COMMAND)]},
+		hooks: bothHooks(NPX_HOOK_COMMAND),
 	});
 });
 
@@ -441,7 +455,12 @@ test('init --agents keeps existing settings and hooks', async () => {
 		hookEntry(HOOK_COMMAND),
 	]);
 	expect(Object.keys(after)).toEqual(['permissions', 'hooks', 'model']);
-	expect(Object.keys(after.hooks)).toEqual(['PostToolUse', 'PreToolUse']);
+	expect(after.hooks.SessionStart).toEqual([sessionEntry(HOOK_COMMAND)]);
+	expect(Object.keys(after.hooks)).toEqual([
+		'PostToolUse',
+		'PreToolUse',
+		'SessionStart',
+	]);
 	// Four spaces stay four spaces; no final newline stays none.
 	expect(text).toContain('\n    "permissions"');
 	expect(text.endsWith('\n')).toBe(false);
@@ -453,7 +472,7 @@ test('init --agents adds a hooks section to settings that have none', async () =
 	await writeFile(path.join(dir, '.claude', 'settings.json'), '{}\n');
 	await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
 	expect(JSON.parse(await read(dir, '.claude/settings.json'))).toEqual({
-		hooks: {PreToolUse: [hookEntry(NPX_HOOK_COMMAND)]},
+		hooks: bothHooks(NPX_HOOK_COMMAND),
 	});
 });
 
@@ -497,6 +516,9 @@ test('init --agents twice adds nothing new', async () => {
 	expect(again.stdout).toContain(
 		'.claude/settings.json: already has the commit hook',
 	);
+	expect(again.stdout).toContain(
+		'.claude/settings.json: already has the session brief hook',
+	);
 	expect(again.stdout).not.toContain('meant to be committed');
 	expect(await texts()).toEqual(firstTexts);
 	expect(await times()).toEqual(firstTimes);
@@ -509,6 +531,9 @@ test('init --agents sees a hook that runs through a full path', async () => {
 			PreToolUse: [
 				{hooks: [{type: 'command', command: '/opt/bin/chamoji agent-hook'}]},
 			],
+			SessionStart: [
+				{hooks: [{type: 'command', command: '/opt/bin/chamoji agent-hook'}]},
+			],
 		},
 	});
 	await mkdir(path.join(dir, '.claude'));
@@ -516,6 +541,9 @@ test('init --agents sees a hook that runs through a full path', async () => {
 	const {stdout} = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
 	expect(stdout).toContain(
 		'.claude/settings.json: already has the commit hook',
+	);
+	expect(stdout).toContain(
+		'.claude/settings.json: already has the session brief hook',
 	);
 	expect(await read(dir, '.claude/settings.json')).toBe(text);
 });
@@ -568,6 +596,11 @@ test('init --agents refuses files that are not the shape it needs', async () => 
 			'.claude/settings.json',
 			'{"hooks": {"PreToolUse": {}}}',
 			'a "hooks.PreToolUse" that is not a list',
+		],
+		[
+			'.claude/settings.json',
+			'{"hooks": {"SessionStart": "chamoji agent-hook"}}',
+			'a "hooks.SessionStart" that is not a list',
 		],
 	] as const) {
 		const dir = await plainRepo();
@@ -694,6 +727,7 @@ test('the hook commands are exactly these, each ending in || true', async () => 
 		await chamoji(['init', '--agents'], dir, env);
 		const settings = JSON.parse(await read(dir, '.claude/settings.json'));
 		expect(settings.hooks.PreToolUse[0].hooks[0].command).toBe(command);
+		expect(settings.hooks.SessionStart[0].hooks[0].command).toBe(command);
 	}
 });
 
@@ -908,7 +942,122 @@ test('init --agents treats an empty or blank file as {}', async () => {
 		expect((await json('.claude/settings.json')).hooks.PreToolUse).toHaveLength(
 			1,
 		);
+		expect(
+			(await json('.claude/settings.json')).hooks.SessionStart,
+		).toHaveLength(1);
 	}
+});
+
+test('init --agents adds a SessionStart entry that runs chamoji agent-hook for startup, clear and compact', async () => {
+	const dir = await plainRepo();
+	const env = await withChamojiOnPath();
+	const {code, stdout, stderr} = await chamoji(['init', '--agents'], dir, env);
+	expect(stderr).toBe('');
+	expect(code).toBe(0);
+	expect(stdout).toContain(
+		'.claude/settings.json: added the session brief hook\n',
+	);
+	const {SessionStart} = JSON.parse(
+		await read(dir, '.claude/settings.json'),
+	).hooks;
+	expect(SessionStart).toEqual([
+		{
+			matcher: 'startup|clear|compact',
+			hooks: [{type: 'command', command: 'chamoji agent-hook || true'}],
+		},
+	]);
+	// Not resume or fork: those sessions carry their context with them.
+	expect(SessionStart[0].matcher).toBe('startup|clear|compact');
+});
+
+test('running init --agents twice adds the session brief hook once', async () => {
+	const dir = await plainRepo();
+	await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+	const first = await read(dir, '.claude/settings.json');
+	const again = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+	expect(again.stdout).toContain(
+		'.claude/settings.json: already has the session brief hook',
+	);
+	expect(await read(dir, '.claude/settings.json')).toBe(first);
+	expect(JSON.parse(first).hooks.SessionStart).toHaveLength(1);
+});
+
+test('a SessionStart that is not a list is refused, like PreToolUse', async () => {
+	for (const value of ['{}', '"chamoji agent-hook"', 'null', '1']) {
+		const dir = await plainRepo();
+		await mkdir(path.join(dir, '.claude'));
+		const text = `{"hooks": {"SessionStart": ${value}}}`;
+		await writeFile(path.join(dir, '.claude', 'settings.json'), text);
+		const {code, stdout, stderr} = await chamoji(
+			['init', '--agents'],
+			dir,
+			NO_CHAMOJI,
+		);
+		expect(code).toBe(1);
+		expect(stdout).toBe('');
+		expect(stderr).toBe(
+			'chamoji: .claude/settings.json has a "hooks.SessionStart" that is not a list, so chamoji left it alone. Fix it and run chamoji init --agents again. Nothing was changed.\n',
+		);
+		expect(await read(dir, '.claude/settings.json')).toBe(text);
+		expect(await missing(dir, '.mcp.json')).toBe(true);
+	}
+});
+
+test('init --agents adds the session brief hook beside a commit hook already there, in one file', async () => {
+	const dir = await plainRepo();
+	await mkdir(path.join(dir, '.claude'));
+	const before = {
+		hooks: {
+			PreToolUse: [hookEntry(NPX_HOOK_COMMAND)],
+			SessionStart: [
+				{matcher: 'startup', hooks: [{type: 'command', command: 'banner.sh'}]},
+			],
+		},
+	};
+	await writeFile(
+		path.join(dir, '.claude', 'settings.json'),
+		`${JSON.stringify(before, null, '\t')}\n`,
+	);
+	const {code, stdout} = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+	expect(code).toBe(0);
+	expect(stdout).toContain(
+		'.claude/settings.json: already has the commit hook\n',
+	);
+	expect(stdout).toContain(
+		'.claude/settings.json: added the session brief hook\n',
+	);
+	const text = await read(dir, '.claude/settings.json');
+	expect(JSON.parse(text)).toEqual({
+		hooks: {
+			PreToolUse: [hookEntry(NPX_HOOK_COMMAND)],
+			SessionStart: [
+				...before.hooks.SessionStart,
+				sessionEntry(NPX_HOOK_COMMAND),
+			],
+		},
+	});
+	expect(text).toContain('\n\t"hooks": {\n\t\t"PreToolUse"');
+});
+
+test('init --agents adds the commit hook beside a session brief hook already there', async () => {
+	const dir = await plainRepo();
+	await mkdir(path.join(dir, '.claude'));
+	await writeFile(
+		path.join(dir, '.claude', 'settings.json'),
+		JSON.stringify({hooks: {SessionStart: [sessionEntry(HOOK_COMMAND)]}}),
+	);
+	const {code, stdout} = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+	expect(code).toBe(0);
+	expect(stdout).toContain('.claude/settings.json: added the commit hook\n');
+	expect(stdout).toContain(
+		'.claude/settings.json: already has the session brief hook\n',
+	);
+	expect(JSON.parse(await read(dir, '.claude/settings.json'))).toEqual({
+		hooks: {
+			SessionStart: [sessionEntry(HOOK_COMMAND)],
+			PreToolUse: [hookEntry(NPX_HOOK_COMMAND)],
+		},
+	});
 });
 
 async function withFace(argv: string[], cwd: string) {
