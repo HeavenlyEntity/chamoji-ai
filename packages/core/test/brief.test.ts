@@ -750,3 +750,56 @@ test('at the smallest budget, constraints print lines before follow-ups do', () 
 		'\n  and 23 more: the constraints section lists them.\n',
 	);
 });
+
+const SHALLOW =
+	'This is a shallow clone, so notes from older commits are missing.';
+
+test('a shallow brief says so on its second line, right under the first', () => {
+	expect(renderBrief(input([line('c-00000001')], {shallow: true}))).toBe(
+		[
+			FIRST,
+			SHALLOW,
+			'',
+			'Constraints',
+			'  open       c-00000001  text of c-00000001  (1234567)',
+			'',
+			LAST,
+		].join('\n'),
+	);
+	expect(
+		renderBrief(input([line('c-00000001')], {shallow: true}), {
+			section: 'constraints',
+		}).split('\n')[1],
+	).toBe(SHALLOW);
+});
+
+test('a shallow brief with nothing else to say is still empty', () => {
+	expect(renderBrief(input([], {shallow: true}))).toBe('');
+	expect(
+		renderBrief(input([line('c-00000001')], {shallow: true}), {
+			section: 'gotchas',
+		}),
+	).toBe('');
+});
+
+test('the shallow line counts toward the budget', () => {
+	const lines = many('constraint', 60, 100);
+	const full = renderBrief(input(lines));
+	const shallow = renderBrief(input(lines, {shallow: true}));
+	// Without it, 42 lines use 5,984 of 6,000 characters; the shallow line and
+	// its newline take the room of the 42nd.
+	expect(full.length).toBe(5984);
+	expect(shownUnder(full, 'Constraints')).toBe(42);
+	expect(shownUnder(shallow, 'Constraints')).toBe(41);
+	expect(shallow.length).toBeLessThanOrEqual(6000);
+	for (const budget of [MIN_BRIEF_BUDGET, 201, 500, DEFAULT_BRIEF_BUDGET]) {
+		const crowd = {...crowded(), shallow: true};
+		crowd.state.dangling = Array.from({length: 50}, (_, i) => ({
+			id: `c-${i}`.padEnd(300, 'k'),
+			hash: H2,
+		}));
+		const brief = renderBrief(crowd, {budget});
+		expect(brief.length, `${budget}`).toBeLessThanOrEqual(budget * 4);
+		expect(brief.split('\n')[1]).toBe(SHALLOW);
+	}
+});

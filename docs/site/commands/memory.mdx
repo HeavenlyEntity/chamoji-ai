@@ -104,8 +104,11 @@ Only `sync` touches the network, and `search --ai` the TypeSafe API. Git doesnâ€
 		follow-ups, off-branch lines from shipped workstreams, active workstreams,
 		and the commits since the newest tag, leaving out resolve commits. Reverted
 		lines are left out. It keeps to a budget of tokens, counted as 4 characters
-		each, and a section with no room says how many lines it holds instead. All
-		card text in it is cleaned and cut. It prints nothing when there is nothing
+		each, and a section with no room says how many lines it holds instead. Room
+		a section doesnâ€™t use goes to the sections that were cut, constraints first.
+		In a shallow clone, such as a CI checkout at depth 1, the line under the
+		first says `This is a shallow clone, so notes from older commits are
+		missing.` All card text in it is cleaned and cut. It prints nothing when there is nothing
 		to say, such as in a repo with no card lines. The same HEAD gives the same
 		text. The brief with no options is kept in `.git/chamoji/brief.json` and
 		made again when HEAD, the memory or notes ref, a tag, or
