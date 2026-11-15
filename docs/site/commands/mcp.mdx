@@ -96,7 +96,10 @@ None of the tools changes your history, refs or files. `search_memory` may refre
 		`recent`, and gets the whole budget. `budget` is a whole number of tokens
 		from 200 to 20000, 1500 by default. It returns `head`, the commit it was
 		read at, and `brief`, the text, which is empty when there is nothing to say.
-		When git can’t work out the line states, it replies with `isError`.
+		When git can’t work out the line states, it replies with `isError`. The
+		brief is never cut to fit a reply, so one too large for it, which can happen
+		near a budget of 20000, replies with `isError` and `The brief is too large
+		to send. Ask for a smaller budget.`
 	</Property>
 </Properties>
 

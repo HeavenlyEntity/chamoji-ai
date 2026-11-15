@@ -75,6 +75,11 @@ type Section = {
 	count: number;
 	head: string[];
 	entries: string[];
+	/**
+	 * Printed by itself, as `--section` asks. Its count line then can't send
+	 * the reader to the section they are reading.
+	 */
+	alone?: boolean;
 };
 
 /**
@@ -89,9 +94,9 @@ export function renderBrief(
 	options: {budget?: number; section?: BriefSection} = {},
 ): string {
 	const only = options.section;
-	const sections = selectSections(input).filter(
-		s => only === undefined || s.name === only,
-	);
+	const sections = selectSections(input)
+		.filter(s => only === undefined || s.name === only)
+		.map(s => (only === undefined ? s : {...s, alone: true}));
 	const dangling = only === undefined ? input.state.dangling : [];
 	const worthSaying =
 		only === undefined
@@ -242,7 +247,7 @@ function fitSection(section: Section, room: number): string | undefined {
 	const least = head.length > 0 ? 0 : 1;
 	for (let shown = entries.length; shown >= least; shown--) {
 		const more = entries.length - shown;
-		const overflow = more > 0 ? overflowLine(section.name, more) : undefined;
+		const overflow = more > 0 ? overflowLine(section, more) : undefined;
 		const length = prefix[shown]! + (overflow ? 1 + overflow.length : 0);
 		if (length > room) continue;
 		return [
@@ -256,8 +261,10 @@ function fitSection(section: Section, room: number): string | undefined {
 	return undefined;
 }
 
-function overflowLine(name: BriefSection, more: number): string {
-	return `  and ${more} more: the ${name} section lists them.`;
+function overflowLine(section: Section, more: number): string {
+	return section.alone
+		? `  and ${more} more: ask for a larger budget to list them.`
+		: `  and ${more} more: the ${section.name} section lists them.`;
 }
 
 function unmatchedMore(rest: number): string {
@@ -399,10 +406,14 @@ function short(hash: string): string {
 
 /**
  * Text anyone who can push may have written: control characters out, one
- * line, and no more than 200 characters with a `…` at a cut.
+ * line, and no more than 200 characters with a `…` at a cut. Each line break
+ * or other space becomes a plain space, the controls go, and only then are
+ * runs of spaces collapsed, so a control between two spaces leaves one.
  */
 function clean(text: string, max = MAX_TEXT): string {
-	const oneLine = stripControl(text.replace(/\s+/g, ' ')).trim();
+	const oneLine = stripControl(text.replace(/\s/g, ' '))
+		.replace(/ +/g, ' ')
+		.trim();
 	if (oneLine.length <= max) return oneLine;
 	let cut = oneLine.slice(0, max - 1);
 	// Do not leave half of a surrogate pair at the cut.

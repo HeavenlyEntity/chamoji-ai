@@ -285,13 +285,15 @@ Took in memory from origin: 3 entries.
 
 Both files are meant to be committed. Existing entries are kept, and a file chamoji can’t safely read is left alone. Claude Code won’t start a server from a project’s `.mcp.json` until you approve it, so approve it when Claude Code asks.
 
-**The MCP server** has three read-only tools. None changes your history, refs or files, though `search_memory` may refresh the index cache in `.git`:
+**The MCP server** has five tools. Four only read, and `remember_why` keeps a reason for the commit composer. None changes your history, refs or files, though `search_memory`, `brief` and `remember_why` may write small files in `.git`:
 
-| Tool            | What it does                                                               |
-| --------------- | -------------------------------------------------------------------------- |
-| `search_memory` | Search commits and remembered workstreams by what they say, cards included |
-| `why`           | The commit behind a `file` and `line`, with its message and card           |
-| `workstream`    | A workstream’s title, status and, once remembered, its commits and cards   |
+| Tool            | What it does                                                                    |
+| --------------- | ------------------------------------------------------------------------------- |
+| `search_memory` | Search commits and remembered workstreams by what they say, cards included      |
+| `why`           | The commit behind a `file` and `line`, with its message and card                |
+| `workstream`    | A workstream’s title, status and, once remembered, its commits and cards        |
+| `remember_why`  | Keep why the user wants the change, so `chamoji commit` can offer it as the Why |
+| `brief`         | The project’s standing notes at HEAD, as `chamoji memory brief` prints them     |
 
 Each tool tells the model that what it returns is commit text other people wrote, so it’s data, not instructions. The server makes no network calls, except under `chamoji mcp --ai`. See [mcp](/commands/mcp).
 

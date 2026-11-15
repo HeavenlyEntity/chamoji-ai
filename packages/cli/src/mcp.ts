@@ -131,6 +131,8 @@ type Tool = {
 	): Promise<unknown>;
 	/** False for a tool that writes. */
 	readOnly?: false;
+	/** The error for a reply that can't be cut to fit, when the tool has its own advice. */
+	tooLarge?: string;
 };
 
 // A Map, not an object: a name such as `constructor` must find nothing.
@@ -330,6 +332,8 @@ const TOOLS = new Map<string, Tool>([
 
 				return tools.brief(section as BriefSection | undefined, budget);
 			},
+			// The brief is never cut, so a smaller budget is the way to make it fit.
+			tooLarge: 'The brief is too large to send. Ask for a smaller budget.',
 		},
 	],
 ]);
@@ -498,7 +502,10 @@ const LISTS = new Set(['hits', 'workstreams', 'commits', 'links']);
  * over 100 KB loses trailing items until it fits. When anything was cut the
  * result says `truncated: true`.
  */
-function limitReply(data: unknown): string {
+function limitReply(
+	data: unknown,
+	tooLarge = 'The answer is too large to send',
+): string {
 	let truncated = false;
 	const shorten = (text: string, max: number) => {
 		if (text.length <= max) return text;
@@ -594,7 +601,7 @@ function limitReply(data: unknown): string {
 	}
 
 	if (JSON.stringify(root).length > room) {
-		throw new Error('The answer is too large to send');
+		throw new Error(tooLarge);
 	}
 
 	return JSON.stringify(truncated ? {...root, truncated: true} : root);
@@ -792,7 +799,7 @@ async function callTool(
 		}
 
 		const data = await tool.call(args ?? {}, tools, clients.get(tools));
-		return {content: [{type: 'text', text: limitReply(data)}]};
+		return {content: [{type: 'text', text: limitReply(data, tool.tooLarge)}]};
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		return {

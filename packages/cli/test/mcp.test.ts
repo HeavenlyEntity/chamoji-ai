@@ -1629,3 +1629,27 @@ test('only the top-level brief goes whole; a nested brief is still capped', asyn
 		brief: long,
 	});
 });
+
+test('a brief too large for a reply says to ask for a smaller budget', async () => {
+	// Quotes double in JSON, so 60,000 of them pass the 100 KB cap.
+	const tools: McpTools = {
+		...noTools,
+		async brief() {
+			return {head: 'h', brief: '"'.repeat(60_000)};
+		},
+	};
+	expect(await callTool(tools, 'brief', {budget: 20_000})).toEqual({
+		text: 'The brief is too large to send. Ask for a smaller budget.',
+		isError: true,
+		data: undefined,
+	});
+
+	// Just under the cap it goes whole.
+	const fits: McpTools = {
+		...noTools,
+		async brief() {
+			return {head: 'h', brief: '"'.repeat(49_000)};
+		},
+	};
+	expect((await callTool(fits, 'brief', {})).data.brief).toHaveLength(49_000);
+});

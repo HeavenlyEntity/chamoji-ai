@@ -195,14 +195,16 @@ It blames the line in your working copy and prints the commit that wrote it, wit
 When you mark a workstream shipped or dropped (`chamoji ws ship`, `chamoji ws drop`), chamoji saves a summary of it on `refs/chamoji/memory`: its title, emoji, status, and its commits with their cards. The summary comes from the commits on `HEAD` that name the workstream, so run the command on the branch that holds the work. The ref is written with git plumbing, so your working tree and index are never touched. The summary survives deleting the branch and a squash merge. Both commands say how many commits they saved (`Saved 2 commits to memory.`) and warn when it is none, which means this branch has no commits for that workstream: run the command again on the branch that has them.
 
 ```bash
-chamoji memory                          # list what is remembered
-chamoji memory list --archived          # list the archived entries too
-chamoji memory show <slug>              # one entry with its commits and cards
-chamoji memory search <query>           # find commits and workstreams by what they say
-chamoji memory reindex                  # rebuild the search index
-chamoji memory archive <slug>           # hide an entry from the list, and keep it
-chamoji memory archive <slug> --purge   # delete it for good
-chamoji memory sync                     # merge with origin and push
+chamoji memory                                  # list what is remembered
+chamoji memory list --archived                  # list the archived entries too
+chamoji memory show <slug>                      # one entry with its commits and cards
+chamoji memory search <query>                   # find commits and workstreams by what they say
+chamoji memory reindex                          # rebuild the search index
+chamoji memory archive <slug>                   # hide an entry from the list, and keep it
+chamoji memory archive <slug> --purge           # delete it for good
+chamoji memory sync                             # merge with origin and push
+chamoji memory resolve <id> --because <reason>  # record that a card line no longer holds
+chamoji memory brief                            # the standing notes an agent reads first
 ```
 
 - **Archive, never delete:** `archive` hides an entry from the list and from search, and `memory show` still finds it. `memory list --archived` lists the archived entries with the live ones. Only `--purge` removes one. `memory list` also says when an entry is there but can't be read, instead of calling memory empty.
@@ -238,13 +240,15 @@ This does what `init` does, and sets up Claude Code in this repo by merging into
 
 **Approve the server.** Claude Code won't run a server from a project's `.mcp.json` until you approve it, and until then `claude mcp list` shows it as Pending approval. Approve it when Claude Code asks.
 
-`chamoji mcp` is a small MCP server over stdio with three tools, all read-only. None changes your history, refs or files; `search_memory` may refresh the index cache in `.git`.
+`chamoji mcp` is a small MCP server over stdio with five tools. Four only read, and `remember_why` keeps a reason for the commit composer. None changes your history, refs or files; `search_memory`, `brief` and `remember_why` may write small files in `.git`.
 
-| Tool            | What it does                                                               |
-| --------------- | -------------------------------------------------------------------------- |
-| `search_memory` | Search commits and remembered workstreams by what they say, cards included |
-| `why`           | The commit behind a `file` and `line`, with its message and card           |
-| `workstream`    | A workstream's title, status and, once remembered, its commits and cards   |
+| Tool            | What it does                                                                    |
+| --------------- | ------------------------------------------------------------------------------- |
+| `search_memory` | Search commits and remembered workstreams by what they say, cards included      |
+| `why`           | The commit behind a `file` and `line`, with its message and card                |
+| `workstream`    | A workstream's title, status and, once remembered, its commits and cards        |
+| `remember_why`  | Keep why the user wants the change, so `chamoji commit` can offer it as the Why |
+| `brief`         | The project's standing notes at HEAD, as `chamoji memory brief` prints them     |
 
 Everything the tools return is commit text that other people wrote, and each tool says so to the model. Replies are cut to a fixed size, and a cut reply says `truncated: true`. The server makes no network calls, except under `chamoji mcp --ai`, which asks Jev to reorder `search_memory` results with the same limits as `memory search --ai`.
 
