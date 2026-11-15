@@ -67,9 +67,7 @@ test('Resolves: with no space after the colon reads the same as a trailer and in
 	expect(readResolves([], 'text\n\nResolves:c-7f3a91be released')).toEqual(
 		expected,
 	);
-	expect(readResolves([], 'Resolves:\tc-7f3a91be released')).toEqual(
-		expected,
-	);
+	expect(readResolves([], 'Resolves:\tc-7f3a91be released')).toEqual(expected);
 });
 
 test('only the first id on a line is resolved, and the rest is the reason', () => {
@@ -85,9 +83,9 @@ test('an id in backticks counts', () => {
 	expect(readResolves([], 'Resolves: `c-7f3a91be` released')).toEqual([
 		{id: 'c-7f3a91be', reason: 'released'},
 	]);
-	expect(
-		readResolves([{key: 'Resolves', value: '`G-0C55E1D2`.'}], ''),
-	).toEqual([{id: 'g-0c55e1d2'}]);
+	expect(readResolves([{key: 'Resolves', value: '`G-0C55E1D2`.'}], '')).toEqual(
+		[{id: 'g-0c55e1d2'}],
+	);
 });
 
 test('an id in quotes, brackets or parentheses does not count', () => {

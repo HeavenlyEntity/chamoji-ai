@@ -55,9 +55,7 @@ test('full-width and composed forms normalize to the same id', () => {
 	expect(cardLineId('constraint', 'Ｆｉｘｅｄ')).toBe(
 		cardLineId('constraint', 'Fixed'),
 	);
-	expect(cardLineId('gotcha', 'café')).toBe(
-		cardLineId('gotcha', 'café'),
-	);
+	expect(cardLineId('gotcha', 'café')).toBe(cardLineId('gotcha', 'café'));
 });
 
 test('a line of only punctuation is not a card line', () => {
