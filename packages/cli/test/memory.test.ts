@@ -345,6 +345,30 @@ test('memory show and search say on stderr when line states could not be read, a
 	expect(entry.commits[0]).not.toHaveProperty('lines');
 });
 
+test('memory search --json keeps its array and says on stderr when line states cannot be read', async () => {
+	repo = await createRepo([
+		{commit: '🎉 Init', files: WORKSTREAMS},
+		{
+			commit: '✨ Add login',
+			body: 'Why: the old form leaked\nGotcha: order matters\nWorkstream: auth',
+			files: {'src/login.ts': 'login\n'},
+		},
+	]);
+	vi.mocked(readCardState).mockRejectedValue(new Error('git failed'));
+	const {code, stdout, stderr} = await chamoji(
+		['memory', 'search', 'leaked', '--json'],
+		repo.dir,
+	);
+	expect(code).toBe(0);
+	expect(stderr).toBe(
+		'chamoji: line states could not be read, so cards are shown without them\n',
+	);
+	const hits = JSON.parse(stdout);
+	expect(Array.isArray(hits)).toBe(true);
+	expect(hits.length).toBeGreaterThan(0);
+	for (const hit of hits) expect(hit).not.toHaveProperty('lines');
+});
+
 test('memory show of an unknown slug exits 1', async () => {
 	const dir = await remembered();
 	const {code, stderr} = await chamoji(['memory', 'show', 'nope'], dir);
