@@ -88,14 +88,15 @@ None of the tools changes your history, refs or files. `search_memory` may refre
 	</Property>
 </Properties>
 
-**Line states.** Beside each `card`, `lines` gives every Constraint, Gotcha and Follow-up line of that card with its `id`, `kind`, `text` and `state`, as [`chamoji why --json`](/commands/why) does. It is left out when the card has no such line, or when the state can’t be read. A card that once held may have ended since, so `search_memory`, `why` and `workstream` each tell the model how to read the four states:
+**Line states.** Beside each `card`, `lines` gives every Constraint, Gotcha and Follow-up line of that card with its `id`, `kind`, `text` and `state`, as [`chamoji why --json`](/commands/why) does. It is left out when the card has no such line. When the states can’t be read, the reply has `linesUnavailable: true` at its top level instead, and still answers. A card that once held may have ended since, so `search_memory`, `why` and `workstream` each tell the model how to read the five states:
 
-| State        | What it means                                                                                | What the agent does            |
-| ------------ | -------------------------------------------------------------------------------------------- | ------------------------------ |
-| `open`       | Nothing has ended it                                                                         | Follows it                     |
-| `resolved`   | A commit ended it; `resolvedBy` has the commit, its date and its reason                      | Doesn’t follow it              |
-| `in-doubt`   | The code the commit wrote is gone; `replacedBy` names the commit that rewrote it, when known | Checks it before relying on it |
-| `off-branch` | Only workstream memory holds it, from a commit not on this branch; `workstream` names it     | Treats it as background        |
+| State        | What it means                                                                                | What the agent does                              |
+| ------------ | -------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `open`       | Nothing has ended it                                                                         | Takes it as still standing                       |
+| `resolved`   | A commit ended it; `resolvedBy` has the commit, its date and its reason                      | Doesn’t rely on it                               |
+| `in-doubt`   | The code the commit wrote is gone; `replacedBy` names the commit that rewrote it, when known | Checks it against the code before relying on it |
+| `off-branch` | Only workstream memory holds it, from a commit not on this branch; `workstream` names it     | Treats it as background from other work          |
+| `reverted`   | A `git revert` on this branch undid every commit that stated it; `revertedBy` names it       | Treats it as withdrawn                           |
 
 [Line states](/commands/why#line-states) has the details, and [resolving a line](/guides/project-memory#resolving-a-line) how a line ends.
 
