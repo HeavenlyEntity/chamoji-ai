@@ -108,7 +108,7 @@ Only `sync` touches the network, and `search --ai` the TypeSafe API. Git doesn�
 	<Property name="id" type="string · required by resolve">
 		A card line’s id, such as `c-7f3a91be`: `c` for a constraint, `g` for a
 		gotcha, `f` for a follow-up. A line that is open, in doubt or off branch can
-		be resolved; one that is already resolved exits 1.
+		be resolved; one that is already resolved, or was reverted, exits 1.
 	</Property>
 </Properties>
 
@@ -125,7 +125,9 @@ Only `sync` touches the network, and `search --ai` the TypeSafe API. Git doesn�
 		Beside `card`, each match and each of `show`’s commits has `lines`: the id
 		and state of every Constraint, Gotcha and Follow-up line, as
 		[why](/commands/why#line-states) describes. It is left out when the card has
-		none. `sync` prints `fetched`, `merged`, `needsForce`, `entries` and
+		none. When the states can’t be read, `show` adds `linesUnavailable: true`,
+		and `show` and `search` without `--json` say so in one line on stderr.
+		`sync` prints `fetched`, `merged`, `needsForce`, `entries` and
 		`pushed`. `resolve` prints `resolved`, the line’s id, and `hash`, the new
 		commit’s. `reindex` and `archive` ignore it.
 	</Property>
@@ -335,11 +337,23 @@ Resolved c-0ddd4939: the dialog must still close on Escape
 Recorded in 1e35040. Push it like any commit.
 ```
 
-It refuses when something is staged, so that nothing rides along in the commit:
+It refuses when something is staged, so that nothing rides along in the commit, and while a merge, cherry-pick, revert or rebase is under way, so that the resolve doesn’t become part of it:
 
 ```txt {{ title: 'With staged changes' }}
 $ chamoji memory resolve c-0ddd4939 --because "the dialog closes on its own now"
 chamoji: You have staged changes. Commit or unstage them first, so the resolve commit stays empty.
+```
+
+```txt {{ title: 'During a merge' }}
+$ chamoji memory resolve c-0ddd4939 --because "the dialog closes on its own now"
+chamoji: A merge, cherry-pick, revert or rebase is in progress. Finish it first, then resolve the line.
+```
+
+A hook can still change the commit after these checks, such as a pre-commit hook that runs `git add -A`. chamoji leaves that commit where it is and says so, with exit code 1:
+
+```txt {{ title: 'A hook added files' }}
+$ chamoji memory resolve c-0ddd4939 --because "the dialog closes on its own now"
+chamoji: The resolve commit 1e35040 is not empty: a hook changed files in it. Check it, and amend it if those changes were not meant to be there.
 ```
 
 <CodeGroup title="Errors">
@@ -379,6 +393,11 @@ $ chamoji memory resolve c-0ddd4939 --because "it ended"
 chamoji: c-0ddd4939 is already resolved by 1e35040
 ```
 
+```txt {{ title: 'Reverted' }}
+$ chamoji memory resolve c-0ddd4939 --because "it ended"
+chamoji: c-0ddd4939 was withdrawn when 3e9d1aa reverted its commit
+```
+
 </CodeGroup>
 
 ## Exit codes
@@ -393,8 +412,10 @@ chamoji: c-0ddd4939 is already resolved by 1e35040
 	<Property name="1">
 		Anything else, such as an entry that doesn’t exist or is already archived,
 		`sync` with no `origin` or a failed fetch or push, or outside a git repo.
-		For `resolve`: an unknown or resolved id, a bad reason, staged changes, or a
-		commit git refused, such as one a hook stopped.
+		For `resolve`: an unknown, resolved or reverted id, a bad reason, staged
+		changes, a merge, cherry-pick, revert or rebase in progress, a commit git
+		refused, such as one a hook stopped, or a resolve commit a hook added files
+		to.
 	</Property>
 </Properties>
 

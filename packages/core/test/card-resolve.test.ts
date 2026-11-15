@@ -286,3 +286,101 @@ test('a resolve commit that also carries a Workstream: trailer is still a resolv
 		resolvedBy: {hash, reason: 'the proxy owns the port now'},
 	});
 });
+
+test('a reverted line is refused: it was withdrawn with its commit', async () => {
+	repo = await serverRepo();
+	await gitOutput(repo.dir, ['revert', '--no-edit', 'HEAD']);
+	const head = await rev(repo.dir, 'HEAD');
+	expect(await lineOf(repo.dir, PORT_ID)).toMatchObject({state: 'reverted'});
+
+	const error = await refusal(repo.dir, PORT_ID, 'the port is gone');
+	expect(error).toBeInstanceOf(ResolveError);
+	expect((error as Error).message).toBe(
+		`${PORT_ID} was withdrawn when ${head.slice(0, 7)} reverted its commit`,
+	);
+	expect(await rev(repo.dir, 'HEAD')).toBe(head);
+});
+
+test('a hook that stages files makes resolve report a commit that is not empty, and leaves it in place', async () => {
+	repo = await serverRepo();
+	const {dir} = repo;
+	const before = await rev(dir, 'HEAD');
+	await writeFile(path.join(dir, 'stray.txt'), 'stray\n');
+	const hooks = path.join(dir, '.git', 'hooks');
+	await mkdir(hooks, {recursive: true});
+	await writeFile(path.join(hooks, 'pre-commit'), '#!/bin/sh\ngit add -A\n', {
+		mode: 0o755,
+	});
+
+	const error = await refusal(dir, PORT_ID, 'the proxy owns the port now');
+	const made = await rev(dir, 'HEAD');
+	expect(made).not.toBe(before);
+	expect(error).toBeInstanceOf(ResolveError);
+	expect((error as Error).message).toBe(
+		`The resolve commit ${made.slice(0, 7)} is not empty: a hook changed files in it. Check it, and amend it if those changes were not meant to be there.`,
+	);
+	// Nothing was undone: the commit, and the file the hook added, stay.
+	expect(await rev(dir, 'HEAD~1')).toBe(before);
+	expect(await gitOutput(dir, ['show', '--name-only', '--format=', 'HEAD'])).toBe(
+		'stray.txt\n',
+	);
+});
+
+test('resolve refuses during a merge in progress and makes no commit', async () => {
+	repo = await serverRepo();
+	const {dir} = repo;
+	await gitOutput(dir, ['switch', '-q', '-c', 'side']);
+	await gitOutput(dir, ['commit', '-q', '--allow-empty', '-m', 'side']);
+	await gitOutput(dir, ['switch', '-q', 'main']);
+	const before = await rev(dir, 'HEAD');
+	await gitOutput(dir, ['merge', '-q', '--no-ff', '--no-commit', 'side']);
+	// Nothing is staged, so only the merge itself stops it.
+	expect(await gitOutput(dir, ['diff', '--cached', '--name-only'])).toBe('');
+
+	const error = await refusal(dir, PORT_ID, 'the proxy owns the port now');
+	expect(error).toBeInstanceOf(ResolveError);
+	expect((error as Error).message).toBe(
+		'A merge, cherry-pick, revert or rebase is in progress. Finish it first, then resolve the line.',
+	);
+	expect(await rev(dir, 'HEAD')).toBe(before);
+	expect(await rev(dir, 'MERGE_HEAD')).toBe(await rev(dir, 'side'));
+});
+
+test('resolve refuses during a cherry-pick in progress and makes no commit', async () => {
+	repo = await serverRepo();
+	const {dir} = repo;
+	await gitOutput(dir, ['switch', '-q', '-c', 'side']);
+	await writeFile(path.join(dir, 'server.ts'), 'listen(4000)\n');
+	await gitOutput(dir, ['commit', '-q', '-a', '-m', 'side']);
+	await gitOutput(dir, ['switch', '-q', 'main']);
+	await writeFile(path.join(dir, 'server.ts'), 'listen(5000)\n');
+	await gitOutput(dir, ['commit', '-q', '-a', '-m', 'main']);
+	const before = await rev(dir, 'HEAD');
+	// The pick conflicts, so git stops with it in progress.
+	await expect(gitOutput(dir, ['cherry-pick', 'side'])).rejects.toThrow();
+
+	const error = await refusal(dir, PORT_ID, 'the proxy owns the port now');
+	expect(error).toBeInstanceOf(ResolveError);
+	expect((error as Error).message).toBe(
+		'A merge, cherry-pick, revert or rebase is in progress. Finish it first, then resolve the line.',
+	);
+	expect(await rev(dir, 'HEAD')).toBe(before);
+});
+
+test('resolve refuses during a rebase in progress', async () => {
+	repo = await serverRepo();
+	const {dir} = repo;
+	await gitOutput(dir, ['switch', '-q', '-c', 'side']);
+	await writeFile(path.join(dir, 'server.ts'), 'listen(4000)\n');
+	await gitOutput(dir, ['commit', '-q', '-a', '-m', 'side']);
+	await gitOutput(dir, ['switch', '-q', 'main']);
+	await writeFile(path.join(dir, 'server.ts'), 'listen(5000)\n');
+	await gitOutput(dir, ['commit', '-q', '-a', '-m', 'main']);
+	await gitOutput(dir, ['switch', '-q', 'side']);
+	await expect(gitOutput(dir, ['rebase', 'main'])).rejects.toThrow();
+
+	const error = await refusal(dir, PORT_ID, 'the proxy owns the port now');
+	expect((error as Error).message).toBe(
+		'A merge, cherry-pick, revert or rebase is in progress. Finish it first, then resolve the line.',
+	);
+});
