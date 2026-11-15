@@ -198,6 +198,33 @@ test('an open line whose file was rewritten is in doubt, with replacedBy set to 
 	});
 });
 
+test('readCardState called from a subdirectory gives the same state as from the root, and what it caches is right when read from the root', async () => {
+	repo = await createRepo([
+		{
+			commit: '✨ Add server',
+			body: `Constraint: ${PORT}\nGotcha: ${FLAKY}`,
+			files: {'src/server.ts': 'listen(3000)\n', 'docs/port.md': 'port\n'},
+		},
+		{commit: '♻️ Rewrite the docs', files: {'docs/port.md': 'gone\n'}},
+	]);
+	const fromSub = await readCardState(path.join(repo.dir, 'src'));
+	expect(fromSub.lines.map(line => [line.id, line.state]).sort()).toEqual(
+		[
+			[PORT_ID, 'open'],
+			[FLAKY_ID, 'open'],
+		].sort(),
+	);
+	expect([...fromSub.lines[0]!.files].sort()).toEqual([
+		'docs/port.md',
+		'src/server.ts',
+	]);
+
+	// Read back from the cache at the root, then worked out afresh there.
+	expect(await readCardState(repo.dir)).toEqual(fromSub);
+	await rm(await cardStatePath(repo.dir));
+	expect(await readCardState(repo.dir)).toEqual(fromSub);
+});
+
 test('files lists the paths the source commit added lines to', async () => {
 	repo = await createRepo([
 		{

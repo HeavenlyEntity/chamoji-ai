@@ -95,6 +95,7 @@ async function build(cwd: string, head: string): Promise<CardState> {
 	const survival = await readSurvival(
 		cwd,
 		open.flatMap(line => line.sources),
+		{head},
 	);
 	const state = foldCardState({
 		...input,

@@ -36,17 +36,24 @@ const COMMIT_ID = /^[0-9a-f]{40,64}$/;
  * is the one at HEAD and every owner is still a commit on HEAD; an amend or
  * rebase leaves the content alone but renames the owners. `onBlame` hears of
  * each file actually blamed.
+ *
+ * Every git command runs from the top of the work tree, whatever `cwd` is
+ * inside it, since paths are kept from the top. `head` is the revision to
+ * list and blame, HEAD by default; a caller that read HEAD once passes the
+ * hash it read, so a HEAD that moves meanwhile can't mix two histories.
  */
 export async function readSurvival(
-	cwd: string,
+	where: string,
 	hashes: string[],
-	options: {onBlame?: (file: string) => void} = {},
+	options: {onBlame?: (file: string) => void; head?: string} = {},
 ): Promise<Map<string, Survival>> {
 	const result = new Map<string, Survival>();
 	if (hashes.length === 0) return result;
 
-	const blobs = await headBlobs(cwd);
-	const onHead = await headCommits(cwd);
+	const cwd = await topLevel(where);
+	const head = options.head ?? 'HEAD';
+	const blobs = await headBlobs(cwd, head);
+	const onHead = await headCommits(cwd, head);
 	const cached = await readCache(cwd);
 	const cache: Cache = new Map();
 	// Only entries that still hold are kept, and only paths at HEAD.
@@ -66,7 +73,7 @@ export async function readSurvival(
 		const known = cache.get(file);
 		if (known) return new Set(known.owners);
 		options.onBlame?.(file);
-		const found = await blameOwners(cwd, file);
+		const found = await blameOwners(cwd, file, head);
 		// A failed blame is not kept: it may work next time.
 		if (found === undefined) return new Set();
 		cache.set(file, {blob, owners: [...found]});
@@ -77,7 +84,8 @@ export async function readSurvival(
 	for (const hash of new Set(hashes)) {
 		const added = await addedFiles(cwd, hash);
 		const missing = added.filter(file => !blobs.has(file));
-		const moved = missing.length > 0 ? await renames(cwd, hash) : new Map();
+		const moved =
+			missing.length > 0 ? await renames(cwd, hash, head) : new Map();
 		const files = added.map(file => moved.get(file) ?? file);
 		let survives: boolean | undefined = files.length > 0 ? false : undefined;
 		for (const file of files) {
@@ -94,10 +102,23 @@ export async function readSurvival(
 	return result;
 }
 
-/** Every commit on HEAD; empty when there is none. */
-async function headCommits(cwd: string): Promise<Set<string>> {
+/**
+ * The top of the work tree `cwd` is in. A repository with no work tree has
+ * none, and its paths are already from the top.
+ */
+async function topLevel(cwd: string): Promise<string> {
 	try {
-		const stdout = await runGit(['rev-list', 'HEAD'], cwd);
+		const top = (await runGit(['rev-parse', '--show-toplevel'], cwd)).trim();
+		return top === '' ? cwd : top;
+	} catch {
+		return cwd;
+	}
+}
+
+/** Every commit on `head`; empty when there is none. */
+async function headCommits(cwd: string, head: string): Promise<Set<string>> {
+	try {
+		const stdout = await runGit(['rev-list', '--end-of-options', head], cwd);
 		return new Set(stdout.split('\n').filter(Boolean));
 	} catch {
 		return new Set();
@@ -105,7 +126,7 @@ async function headCommits(cwd: string): Promise<Set<string>> {
 }
 
 /**
- * Where paths went between `hash` and HEAD, old path to new, for the renames
+ * Where paths went between `hash` and `head`, old path to new, for the renames
  * git detects. One call covers every path of the commit. Records are NUL
  * ended: a rename is `R<score>`, the old path and the new path; any other
  * status has one path.
@@ -113,6 +134,7 @@ async function headCommits(cwd: string): Promise<Set<string>> {
 async function renames(
 	cwd: string,
 	hash: string,
+	head: string,
 ): Promise<Map<string, string>> {
 	const moved = new Map<string, string>();
 	let stdout: string;
@@ -125,7 +147,7 @@ async function renames(
 				'-z',
 				'--end-of-options',
 				hash,
-				'HEAD',
+				head,
 				'--',
 			],
 			cwd,
@@ -149,7 +171,11 @@ async function renames(
 	return moved;
 }
 
-/** The paths a commit added lines to; a binary file or a failed `git show` gives none. */
+/**
+ * The paths a commit added lines to; a binary file or a failed `git show`
+ * gives none. Whitespace is ignored as blame ignores it, so a commit that
+ * only changed whitespace added no lines.
+ */
 async function addedFiles(cwd: string, hash: string): Promise<string[]> {
 	let stdout: string;
 	try {
@@ -157,6 +183,7 @@ async function addedFiles(cwd: string, hash: string): Promise<string[]> {
 			[
 				'show',
 				'--numstat',
+				'-w',
 				'-z',
 				'--no-renames',
 				'--no-show-signature',
@@ -183,12 +210,18 @@ async function addedFiles(cwd: string, hash: string): Promise<string[]> {
 	return paths;
 }
 
-/** Path to blob id for every regular file at HEAD. */
-async function headBlobs(cwd: string): Promise<Map<string, string>> {
+/** Path to blob id for every regular file at `head`, from the top of the tree. */
+async function headBlobs(
+	cwd: string,
+	head: string,
+): Promise<Map<string, string>> {
 	const blobs = new Map<string, string>();
 	let stdout: string;
 	try {
-		stdout = await runGit(['ls-tree', '-r', '-z', 'HEAD'], cwd);
+		stdout = await runGit(
+			['ls-tree', '-r', '-z', '--full-tree', '--end-of-options', head],
+			cwd,
+		);
 	} catch {
 		return blobs;
 	}
@@ -204,16 +237,17 @@ async function headBlobs(cwd: string): Promise<Map<string, string>> {
 	return blobs;
 }
 
-/** The commits that own a line of `file` at HEAD; undefined when blame fails. */
+/** The commits that own a line of `file` at `head`; undefined when blame fails. */
 async function blameOwners(
 	cwd: string,
 	file: string,
+	head: string,
 ): Promise<Set<string> | undefined> {
 	let stdout: string;
 	try {
-		// The same flags as `blameLine`; HEAD, not the working copy, is blamed.
+		// The same flags as `blameLine`; `head`, not the working copy, is blamed.
 		stdout = await runGit(
-			['blame', '--porcelain', '-w', '-M', 'HEAD', '--', file],
+			['blame', '--porcelain', '-w', '-M', head, '--', file],
 			cwd,
 		);
 	} catch {
