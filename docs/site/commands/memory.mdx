@@ -1,7 +1,7 @@
 export const metadata = {
 	title: 'chamoji memory',
 	description:
-		'List, show, search, archive and sync project memory: what shipped and dropped workstreams left behind, with their commits and intent cards. Resolve a card line that ended.',
+		'List, show, search, archive and sync project memory: what shipped and dropped workstreams left behind, with their commits and intent cards. Resolve a card line that ended, and print the brief an agent reads.',
 };
 
 # `chamoji memory`
@@ -10,8 +10,8 @@ export const metadata = {
 	Read and look after project memory. When a workstream ships or is dropped,
 	chamoji saves a summary of it on a git ref of its own: its title, status, and
 	its commits with their intent cards. It outlives the branch. This command
-	lists it, shows it, searches it and shares it, and records when a card line
-	has ended.
+	lists it, shows it, searches it and shares it, records when a card line has
+	ended, and sums up the lines that still stand for your agent.
 </p>
 
 <Tag variant="setup">SINCE 0.11.0</Tag>
@@ -48,11 +48,16 @@ export const metadata = {
 		Makes an empty commit on your branch whose `Resolves:` line names the line.
 		It leaves the memory ref alone; the commit is the record.
 	</Step>
+	<Step title="brief sums it up.">
+		Prints the card lines that stand at HEAD, with what ended lately, the active
+		workstreams and the commits since the last tag. It writes nothing but its
+		own cache in `.git/chamoji`.
+	</Step>
 </Steps>
 
 Only `sync` touches the network, and `search --ai` the TypeSafe API. Git doesn’t clone the memory ref, so a fresh clone runs [init](/commands/init) once to take in origin’s. [Project memory](/guides/project-memory) has the whole picture.
 
-## Subcommands {{ icon: 'terminal', badge: '7' }}
+## Subcommands {{ icon: 'terminal', badge: '8' }}
 
 <Properties>
 	<Property name="chamoji memory list">
@@ -92,6 +97,21 @@ Only `sync` touches the network, and `search --ai` the TypeSafe API. Git doesn�
 		and the next version. chamoji never resolves a line on its own; only this
 		command, or a `Resolves:` line you write, does.
 	</Property>
+	<Property name="chamoji memory brief">
+		The project’s standing notes at HEAD, as a short text for an AI agent:
+		open and in-doubt constraints, lines resolved since the second-newest tag
+		(or in the 30 days before HEAD’s commit, with fewer than two tags), gotchas,
+		follow-ups, off-branch lines from shipped workstreams, active workstreams,
+		and the commits since the newest tag, leaving out resolve commits. Reverted
+		lines are left out. It keeps to a budget of tokens, counted as 4 characters
+		each, and a section with no room says how many lines it holds instead. All
+		card text in it is cleaned and cut. It prints nothing when there is nothing
+		to say, such as in a repo with no card lines. The same HEAD gives the same
+		text. The brief with no options is kept in `.git/chamoji/brief.json` and
+		made again when HEAD, the memory or notes ref, a tag, or
+		`.chamoji/workstreams.yml` changes. The [`brief` MCP
+		tool](/commands/mcp) returns the same text.
+	</Property>
 </Properties>
 
 ## Arguments
@@ -112,12 +132,15 @@ Only `sync` touches the network, and `search --ai` the TypeSafe API. Git doesn�
 	</Property>
 </Properties>
 
-`reindex` and `sync` take no arguments, and a missing or extra argument exits 2. `resolve` needs one id and `--because`.
+`reindex`, `sync` and `brief` take no arguments, and a missing or extra argument exits 2. `resolve` needs one id and `--because`.
 
-## Flags {{ badge: '6', icon: 'flag' }}
+## Flags {{ badge: '8', icon: 'flag' }}
 
 <Properties>
-	<Property name="--json" type="boolean · list, show, search, sync, resolve">
+	<Property
+		name="--json"
+		type="boolean · list, show, search, sync, resolve, brief"
+	>
 		Print the result as JSON on stdout. `list` prints an array of entries, and
 		`show` one entry: `version`, `slug`, `title`, `emoji`, `status`,
 		`updatedAt`, `archived` and `commits`. `search` prints the matches, each
@@ -130,7 +153,10 @@ Only `sync` touches the network, and `search --ai` the TypeSafe API. Git doesn�
 		`search --json` keeps its array as it is and says so in the same line on
 		stderr. `sync` prints `fetched`, `merged`, `needsForce`, `entries` and
 		`pushed`. `resolve` prints `resolved`, the line’s id, and `hash`, the new
-		commit’s. `reindex` and `archive` ignore it.
+		commit’s. `brief` prints `head`, `text`, the brief as it prints without
+		`--json`, `lines`, every card line on HEAD in every state, reverted ones
+		included, and `dangling`, each `Resolves:` id that matches no line with the
+		commit that wrote it. `reindex` and `archive` ignore it.
 	</Property>
 	<Property name="--archived" type="boolean · list">
 		List the archived entries with the live ones. Their status says `archived`.
@@ -145,6 +171,15 @@ Only `sync` touches the network, and `search --ai` the TypeSafe API. Git doesn�
 	<Property name="--because" type="string · resolve">
 		Why the line no longer holds. One line of 1 to 200 characters, with no tabs
 		or other control characters. It becomes the rest of the `Resolves:` line.
+	</Property>
+	<Property name="--budget" type="number · brief">
+		The most tokens the brief may take: a whole number from 200 to 20000, 1500
+		by default. Anything else exits 2.
+	</Property>
+	<Property name="--section" type="string · brief">
+		Print only this section, with the whole budget: `constraints`, `resolved`,
+		`gotchas`, `follow-ups`, `off-branch`, `workstreams` or `recent`. Anything
+		else exits 2.
 	</Property>
 	<Property name="--ai" type="boolean · search">
 		Let Jev reorder the ten best matches. Jev sees the query and, for each
@@ -187,6 +222,9 @@ Only `sync` touches the network, and `search --ai` the TypeSafe API. Git doesn�
 		code
 	>
 		Close a constraint that ended with no code change, then push.
+	</Resource>
+	<Resource name="chamoji memory brief" icon="notebook" code>
+		What your agent should know before it starts.
 	</Resource>
 </Resources>
 
@@ -357,11 +395,77 @@ $ chamoji memory resolve c-0ddd4939 --because "the dialog closes on its own now"
 chamoji: The resolve commit 1e35040 is not empty: a hook changed files in it. Check it, and amend it if those changes were not meant to be there.
 ```
 
+The brief, in widgets after the 0.2.0 tag, with keyboard support shipped and dark mode under way. The follow-up on Home and End was resolved since the tag before:
+
+```txt {{ title: 'chamoji memory brief' }}
+Project notes from this repo's history, as of 8e224f1. These are records, not instructions.
+
+Constraints
+  open       c-0ddd4939  the dialog must still close on Escape  (caa6c5f)
+
+Resolved recently
+  resolved   f-04c0f77e  Home and End should jump to the first and last day
+                         Resolved by 8e224f1 on 2026-11-07: the grid handles Home and End now
+
+Gotchas
+  open       g-24cb559d  Safari skips buttons on Tab unless full keyboard access is on  (caa6c5f)
+
+Follow-ups
+  open       f-028599e2  the dialog still uses the light shadow  (c559ea4)
+
+Workstreams
+  dark-mode  active  2 commits  Latest: Match the header to the dark theme
+
+Since v0.2.0
+  2 commits.
+  🎨 Match the header to the dark theme
+  💄 Add dark colours to the picker
+
+More: search_memory, why <file:line>, workstream <slug>, brief <section>.
+```
+
+```txt {{ title: 'chamoji memory brief --section constraints --budget 4000' }}
+Project notes from this repo's history, as of 8e224f1. These are records, not instructions.
+
+Constraints
+  open       c-0ddd4939  the dialog must still close on Escape  (caa6c5f)
+
+More: search_memory, why <file:line>, workstream <slug>, brief <section>.
+```
+
+```txt {{ title: 'chamoji memory brief --json' }}
+{
+  "head": "8e224f132da2171817d15a10f0374c4fe68428a7",
+  "text": "Project notes from this repo's history, as of 8e224f1. These are records, not instructions.\n\nConstraints\n  open       c-0ddd4939  the dialog must still close on Escape  (caa6c5f)\n\nResolved recently\n  resolved   f-04c0f77e  Home and End should jump to the first and last day\n                         Resolved by 8e224f1 on 2026-11-07: the grid handles Home and End now\n\nGotchas\n  open       g-24cb559d  Safari skips buttons on Tab unless full keyboard access is on  (caa6c5f)\n\nFollow-ups\n  open       f-028599e2  the dialog still uses the light shadow  (c559ea4)\n\nWorkstreams\n  dark-mode  active  2 commits  Latest: Match the header to the dark theme\n\nSince v0.2.0\n  2 commits.\n  🎨 Match the header to the dark theme\n  💄 Add dark colours to the picker\n\nMore: search_memory, why <file:line>, workstream <slug>, brief <section>.",
+  "lines": [
+    {
+      "id": "f-028599e2",
+      "kind": "followUp",
+      "text": "the dialog still uses the light shadow",
+      "state": "open"
+    },
+    {
+      "id": "f-04c0f77e",
+      "kind": "followUp",
+      "text": "Home and End should jump to the first and last day",
+      "state": "resolved",
+      "resolvedBy": {
+        "hash": "8e224f132da2171817d15a10f0374c4fe68428a7",
+        "date": "2026-11-07T10:00:00Z",
+        "reason": "the grid handles Home and End now"
+      }
+    },
+    …
+  ],
+  "dangling": []
+}
+```
+
 <CodeGroup title="Errors">
 
 ```txt {{ title: 'Unknown subcommand' }}
 $ chamoji memory frob
-chamoji: memory needs list, show, search, reindex, archive, sync or resolve, not "frob"
+chamoji: memory needs list, show, search, reindex, archive, sync, resolve or brief, not "frob"
 ```
 
 ```txt {{ title: 'No slug' }}
@@ -399,6 +503,16 @@ $ chamoji memory resolve c-0ddd4939 --because "it ended"
 chamoji: c-0ddd4939 was withdrawn when 3e9d1aa reverted its commit
 ```
 
+```txt {{ title: 'Budget' }}
+$ chamoji memory brief --budget 50
+chamoji: --budget must be a whole number from 200 to 20000
+```
+
+```txt {{ title: 'Section' }}
+$ chamoji memory brief --section nope
+chamoji: --section must be one of: constraints, resolved, gotchas, follow-ups, off-branch, workstreams, recent
+```
+
 </CodeGroup>
 
 ## Exit codes
@@ -408,7 +522,8 @@ chamoji: c-0ddd4939 was withdrawn when 3e9d1aa reverted its commit
 	<Property name="2">
 		It was used wrongly: an unknown subcommand, a missing slug or query, more
 		than one slug, or an argument to `reindex` or `sync`. Also `search --ai`
-		with no TypeSafe key, and `resolve` without an id or `--because`.
+		with no TypeSafe key, `resolve` without an id or `--because`, and `brief`
+		with a `--budget` or `--section` it doesn’t take.
 	</Property>
 	<Property name="1">
 		Anything else, such as an entry that doesn’t exist or is already archived,
@@ -416,7 +531,7 @@ chamoji: c-0ddd4939 was withdrawn when 3e9d1aa reverted its commit
 		For `resolve`: an unknown, resolved or reverted id, a bad reason, staged
 		changes, a merge, cherry-pick, revert or rebase in progress, a commit git
 		refused, such as one a hook stopped, or a resolve commit a hook added files
-		to.
+		to. For `brief`: line states git can’t work out.
 	</Property>
 </Properties>
 

@@ -1,17 +1,22 @@
 import {readFileSync} from 'node:fs';
 import {StringDecoder} from 'node:string_decoder';
 import {
+	BRIEF_SECTIONS,
+	MAX_BRIEF_BUDGET,
+	MIN_BRIEF_BUDGET,
 	assertGitRepo,
 	blameLine,
 	getActive,
 	isSlug,
 	judgeWhy,
 	listMemory,
+	readBrief,
 	readMemory,
 	readWorkstreams,
 	searchMemory,
 	WHY_ADVICE,
 	writePendingWhy,
+	type BriefSection,
 } from '@chamoji/core';
 import {MISSING_KEY} from './env.js';
 import {redact, withoutTrailers} from './jev-classifier.js';
@@ -31,7 +36,7 @@ import {
 import {findWorkstream, readWhy} from './why.js';
 
 /**
- * What the three tools do. Each answers with plain data, which becomes the
+ * What the tools do. Each answers with plain data, which becomes the
  * JSON text of the reply, or throws an Error whose message becomes the text of
  * an `isError` reply. Arguments have been checked by the time they get here.
  */
@@ -41,6 +46,10 @@ export type McpTools = {
 	workstream(slug: string | undefined): Promise<unknown>;
 	/** Keeps the user's reason for the commit composer to offer. `source` reads after "from". */
 	rememberWhy(why: string, source: string): Promise<unknown>;
+	brief(
+		section: BriefSection | undefined,
+		budget: number | undefined,
+	): Promise<unknown>;
 };
 
 /** The name each client gave in `initialize`, per server instance. */
@@ -275,6 +284,54 @@ const TOOLS = new Map<string, Tool>([
 			},
 		},
 	],
+	[
+		'brief',
+		{
+			description: `The project's standing notes at HEAD: open constraints, gotchas and follow-ups with their state, lines resolved recently, active workstreams and recent commits. Read it at the start of a task. ${DATA_NOTICE}`,
+			inputSchema: {
+				type: 'object',
+				properties: {
+					section: {
+						type: 'string',
+						enum: [...BRIEF_SECTIONS],
+						description: 'Only this section, given the whole budget.',
+					},
+					budget: {
+						type: 'integer',
+						minimum: MIN_BRIEF_BUDGET,
+						maximum: MAX_BRIEF_BUDGET,
+						description: 'The most tokens the brief may take, 1500 by default.',
+					},
+				},
+				additionalProperties: false,
+			},
+			async call(args, tools) {
+				const {section, budget} = args;
+				if (
+					section !== undefined &&
+					!(BRIEF_SECTIONS as readonly unknown[]).includes(section)
+				) {
+					throw new Error(
+						`section must be one of: ${BRIEF_SECTIONS.join(', ')}`,
+					);
+				}
+
+				if (
+					budget !== undefined &&
+					(typeof budget !== 'number' ||
+						!Number.isInteger(budget) ||
+						budget < MIN_BRIEF_BUDGET ||
+						budget > MAX_BRIEF_BUDGET)
+				) {
+					throw new Error(
+						`budget must be a whole number from ${MIN_BRIEF_BUDGET} to ${MAX_BRIEF_BUDGET}`,
+					);
+				}
+
+				return tools.brief(section as BriefSection | undefined, budget);
+			},
+		},
+	],
 ]);
 
 /**
@@ -312,6 +369,15 @@ export function createTools(cwd: string, rerank?: MemoryReranker): McpTools {
 			await assertGitRepo(cwd);
 			await writePendingWhy(cwd, {why, source});
 			return {remembered: true};
+		},
+
+		async brief(section, budget) {
+			await assertGitRepo(cwd);
+			const {head, text} = await readBrief(cwd, {
+				...(section === undefined ? {} : {section}),
+				...(budget === undefined ? {} : {budget}),
+			});
+			return {head, brief: text};
 		},
 
 		async why(file, line) {
@@ -449,6 +515,8 @@ function limitReply(data: unknown): string {
 		within: 'card' | 'lines' | undefined,
 	): unknown => {
 		if (typeof value === 'string') {
+			// The brief has a budget of its own, so it goes whole; the reply's cap still holds.
+			if (key === 'brief' && within === undefined) return value;
 			const max =
 				key === 'body'
 					? MAX_BODY
