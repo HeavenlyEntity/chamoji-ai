@@ -69,3 +69,52 @@ test('a line of only punctuation is not a card line', () => {
 		{id: cardLineId('constraint', 'Real'), kind: 'constraint', text: 'Real'},
 	]);
 });
+
+test('a line that only says none is not a card line', () => {
+	const said = [
+		'None.',
+		'N/A.',
+		'NA.',
+		'Nothing.',
+		'None Known.',
+		'none YET.',
+		'Not Applicable.',
+	];
+	for (const kind of ['constraint', 'gotcha', 'followUp'] as const) {
+		for (const text of said) {
+			const card = {why: [], constraint: [], gotcha: [], followUp: []};
+			expect(linesOf({...card, [kind]: [text]}), `${kind} ${text}`).toEqual([]);
+		}
+	}
+
+	expect(
+		linesOf({
+			why: [],
+			constraint: ['  none  ', 'Real'],
+			gotcha: ['n/a'],
+			followUp: ['NOTHING!'],
+		}),
+	).toEqual([
+		{id: cardLineId('constraint', 'Real'), kind: 'constraint', text: 'Real'},
+	]);
+});
+
+test('"none of the callers pass a path" is still a card line', () => {
+	const text = 'none of the callers pass a path';
+	for (const kind of ['constraint', 'gotcha', 'followUp'] as const) {
+		const card = {why: [], constraint: [], gotcha: [], followUp: []};
+		expect(linesOf({...card, [kind]: [text]})).toEqual([
+			{id: cardLineId(kind, text), kind, text},
+		]);
+	}
+
+	// Close to a word on the list is not on it.
+	expect(
+		linesOf({
+			why: [],
+			constraint: ['None needed here', 'nothing yet', 'nan'],
+			gotcha: [],
+			followUp: [],
+		}).map(line => line.text),
+	).toEqual(['None needed here', 'nothing yet', 'nan']);
+});

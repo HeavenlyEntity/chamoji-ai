@@ -24,7 +24,7 @@ import {NOTES_REF, mergeCards, readNoteCards} from './why-notes.js';
 import {STATUSES, isSlug, type WorkstreamStatus} from './workstreams.js';
 
 /** Bump it when the file's layout or what goes into it changes. */
-const CACHE_VERSION = 3;
+const CACHE_VERSION = 4;
 
 const OBJECT_ID = /^[0-9a-f]{40,64}$/;
 
