@@ -256,3 +256,33 @@ test('isResolveCommit is true only for the subject and trailer together', () => 
 		}),
 	).toBe(false);
 });
+
+test('a resolve commit that also carries a Workstream: trailer is still a resolve commit', async () => {
+	repo = await serverRepo();
+	const body = `Resolves: ${PORT_ID} the proxy owns the port now\nWorkstream: auth`;
+	expect(
+		isResolveCommit({
+			subject: `📝 Resolve ${PORT_ID}`,
+			trailers: [
+				{key: 'Resolves', value: `${PORT_ID} the proxy owns the port now`},
+				{key: 'Workstream', value: 'auth'},
+			],
+			body,
+		}),
+	).toBe(true);
+
+	await gitOutput(repo.dir, [
+		'commit',
+		'-q',
+		'--allow-empty',
+		'-m',
+		`📝 Resolve ${PORT_ID}`,
+		'-m',
+		body,
+	]);
+	const hash = await rev(repo.dir, 'HEAD');
+	expect(await lineOf(repo.dir, PORT_ID)).toMatchObject({
+		state: 'resolved',
+		resolvedBy: {hash, reason: 'the proxy owns the port now'},
+	});
+});
