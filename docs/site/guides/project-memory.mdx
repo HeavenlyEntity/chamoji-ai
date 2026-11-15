@@ -64,7 +64,7 @@ Point `chamoji why` at a line. It blames the line in your working copy and print
 Sam Rivera, 2026-11-05
 
 Why: the form crashed when the field was cleared
-Gotcha: callers still compare with undefined in two places
+Gotcha [g-7d1ede3b]: callers still compare with undefined in two places
 ```
 
 A commit with no card shows its workstream instead, when it has one:
@@ -91,6 +91,8 @@ chamoji: No such file in HEAD: src/nope.js
 
 </CodeGroup>
 
+The id in brackets names the line, and a state follows it when the line is no longer simply open. [Line states](/commands/why#line-states) explains them.
+
 A line you haven’t committed yet exits 0. A file or line that doesn’t exist exits 1. The file is relative to the folder you run chamoji in, as with `git blame`. `--json` prints the same result for scripts. `chamoji why` only reads git: nothing is changed or sent anywhere. See [why](/commands/why).
 
 ## The memory ref {{ tag: 'CHANGES YOUR REPO', variant: 'changes', label: 'chamoji memory', icon: 'tree-structure' }}
@@ -101,7 +103,7 @@ When you mark a workstream shipped or dropped with `chamoji ws ship` or `chamoji
 - **It never touches your files.** The ref is written with git plumbing, so your working tree and index stay as they are.
 - **It outlives the branch.** The summary survives deleting the branch and a squash merge.
 
-Here, the Range selection workstream was shipped on its branch. The branch was then squashed into `main` with only the PR title, and deleted. The squash commit has no card, but memory still does:
+Here, the Range selection workstream was shipped on its branch. The branch was then squashed into `main` with only the PR title, and deleted. The squash commit has no card, but memory still does. Its lines are off branch, since the commits that stated them aren’t on `main`:
 
 <CodeGroup title="After a squash merge">
 
@@ -125,8 +127,8 @@ $ chamoji memory show range-selection
 shipped, updated 2026-11-05, 2 commits
 
 6a83d0e 🐛 Cap a range at one year, 2026-11-05
-  Constraint: the booking API rejects ranges over 365 days
-  Follow-up: show the limit in the picker
+  Constraint [c-281efb3c, off branch]: the booking API rejects ranges over 365 days
+  Follow-up [f-226cb8b6, off branch]: show the limit in the picker
 
 06661f2 ✨ Select a range of dates, 2026-11-05
   Why: booking forms need a start and an end date
@@ -136,8 +138,8 @@ shipped, updated 2026-11-05, 2 commits
 $ chamoji memory search booking
 workstream range-selection Range selection
   Why: booking forms need a start and an end date
-  Constraint: the booking API rejects ranges over 365 days
-  Follow-up: show the limit in the picker
+  Constraint [c-281efb3c, off branch]: the booking API rejects ranges over 365 days
+  Follow-up [f-226cb8b6, off branch]: show the limit in the picker
 ```
 
 </CodeGroup>
@@ -163,6 +165,46 @@ time-zones        dropped, archived  1 commit   🌍 Time zones
 </CodeGroup>
 
 Only `archive --purge` removes an entry for good. A purge is local until you sync, keeps the slug as a marker so a later sync can’t bring the entry back, and never force-pushes for you. [memory](/commands/memory) has the details.
+
+## Resolving a line {{ icon: 'check-circle' }}
+
+A constraint, gotcha or follow-up can stop applying while the code it was written for stays. When that happens, resolve the line, so no one, and no agent, keeps following it. What “resolved” means depends on the kind of line:
+
+- **A constraint** is lifted: the limit no longer holds.
+- **A follow-up** is done.
+- **A gotcha** no longer applies.
+
+`chamoji memory resolve` takes the line’s id, from `chamoji why` or `memory show`, and the reason:
+
+```txt {{ title: 'chamoji why src/range.js:3' }}
+4ea861b 🐛 Cap a range at one year
+Sam Rivera, 2026-11-14
+
+Constraint [c-281efb3c]: the booking API rejects ranges over 365 days
+Follow-up [f-226cb8b6]: show the limit in the picker
+```
+
+```txt {{ title: 'chamoji memory resolve c-281efb3c --because "the booking API takes two years since v3"' }}
+Resolved c-281efb3c: the booking API rejects ranges over 365 days
+Recorded in 2568fc9. Push it like any commit.
+```
+
+It makes an empty commit on your branch, `📝 Resolve c-281efb3c`, whose body is `Resolves: c-281efb3c the booking API takes two years since v3`. From then on every reader shows the line as resolved, with the commit and the reason:
+
+```txt {{ title: 'chamoji why src/range.js:3' }}
+4ea861b 🐛 Cap a range at one year
+Sam Rivera, 2026-11-14
+
+Constraint [c-281efb3c, resolved by 2568fc9: the booking API takes two years since v3]: the booking API rejects ranges over 365 days
+Follow-up [f-226cb8b6]: show the limit in the picker
+```
+
+When a code change ends a line, put the `Resolves:` line in that commit’s message instead, as `Resolves: <id> <reason>`. Only a commit on your branch resolves a line, so a branch that hasn’t merged the resolve still shows the line open. [How commits are read](/reference/how-commits-are-read) has the format.
+
+Two limits:
+
+- **A revert written by hand isn’t detected.** chamoji reads the line `git revert` writes. If you undo a resolve, or the change that ended a line, with a commit you wrote yourself, the line stays resolved. State it again to reopen it.
+- **Stating the line again reopens it.** A resolve only covers the commits before it. A later commit with the same line, in any case or spacing, opens it again, so a card copied forward brings back a line you resolved.
 
 ## Sharing memory {{ tag: 'SETUP', variant: 'setup', label: 'chamoji init', icon: 'cloud-arrow-up' }}
 

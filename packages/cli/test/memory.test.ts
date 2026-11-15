@@ -2,6 +2,7 @@ import {mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {
+	cardLineId,
 	listMemory,
 	readCardState,
 	readTree,
@@ -53,6 +54,8 @@ const WORKSTREAMS = {
 		'',
 	].join('\n'),
 };
+
+const ORDER_ID = cardLineId('gotcha', 'order matters');
 
 async function remembered(): Promise<string> {
 	repo = await createRepo([
@@ -196,7 +199,7 @@ test('memory show <slug> prints the entry and its cards', async () => {
 	expect(stdout).toContain('shipped, updated ');
 	expect(stdout).toMatch(/[0-9a-f]{7} ✨ Add login, 2026-01-02\n/);
 	expect(stdout).toContain('  Why: the old form leaked\n');
-	expect(stdout).toContain('  Gotcha: order matters\n');
+	expect(stdout).toContain(`  Gotcha [${ORDER_ID}]: order matters\n`);
 });
 
 test('memory show strips terminal escapes', async () => {
@@ -239,6 +242,65 @@ test('memory show --json prints the MemoryEntry', async () => {
 	const entry = JSON.parse(stdout);
 	expect(entry).toMatchObject({version: 1, slug: 'auth', archived: false});
 	expect(entry.commits[0].card.why).toEqual(['the old form leaked']);
+});
+
+test('why --json, memory search --json and memory show --json carry lines beside card', async () => {
+	repo = await createRepo([
+		{commit: '🎉 Init', files: WORKSTREAMS},
+		{
+			commit: '✨ Add login',
+			body: 'Why: the old form leaked\nGotcha: order matters\nWorkstream: auth',
+			files: {'src/login.ts': 'login\n'},
+		},
+		{
+			commit: '🐛 Fix footer',
+			body: 'Why: the footer overlapped the cookie banner on phones',
+		},
+	]);
+	await snapshotWorkstream(repo.dir, 'auth');
+	const card = {
+		why: ['the old form leaked'],
+		constraint: [],
+		gotcha: ['order matters'],
+		followUp: [],
+	};
+	const lines = [
+		{id: ORDER_ID, kind: 'gotcha', text: 'order matters', state: 'open'},
+	];
+
+	const why = JSON.parse(
+		(await chamoji(['why', 'src/login.ts:1', '--json'], repo.dir)).stdout,
+	);
+	expect(why.card).toEqual(card);
+	expect(why.lines).toEqual(lines);
+	expect(why.commit.card).toEqual(card);
+
+	const hits = JSON.parse(
+		(await chamoji(['memory', 'search', 'leaked', '--json'], repo.dir)).stdout,
+	);
+	expect(hits[0]).toMatchObject({kind: 'commit', card, lines});
+	expect(Object.keys(hits[0])).toEqual([
+		'kind',
+		'id',
+		'title',
+		'card',
+		'lines',
+		'whyQuality',
+		'score',
+	]);
+	// The workstream's card holds the same line, so the same state.
+	expect(hits[1]).toMatchObject({kind: 'workstream', lines});
+	// A hit with no constraint, gotcha or follow-up line has no lines at all.
+	const [footer] = JSON.parse(
+		(await chamoji(['memory', 'search', 'footer', '--json'], repo.dir)).stdout,
+	);
+	expect(footer.title).toBe('🐛 Fix footer');
+	expect(footer).not.toHaveProperty('lines');
+
+	const entry = JSON.parse(
+		(await chamoji(['memory', 'show', 'auth', '--json'], repo.dir)).stdout,
+	);
+	expect(entry.commits[0]).toMatchObject({card, lines});
 });
 
 test('memory show of an unknown slug exits 1', async () => {
@@ -305,7 +367,7 @@ test('memory search prints each match with its card', async () => {
 	expect(code).toBe(0);
 	expect(stdout).toMatch(/^[0-9a-f]{7} ✨ Add login\n/);
 	expect(stdout).toContain('  Why: the old form leaked\n');
-	expect(stdout).toContain('  Gotcha: order matters\n');
+	expect(stdout).toContain(`  Gotcha [${ORDER_ID}]: order matters\n`);
 	expect(stdout).toContain('workstream auth Auth revamp\n');
 });
 

@@ -10,6 +10,8 @@ import {
 	resolveLine,
 	searchMemory,
 	syncMemory,
+	linesFor,
+	type CardState,
 	type MemoryEntry,
 	type MemoryHit,
 	type SyncResult,
@@ -26,7 +28,7 @@ import {
 import type {MemoryReranker} from './rerank.js';
 import type {Io} from './run.js';
 import {stripControl} from './text.js';
-import {cardLines} from './why.js';
+import {cardLines, readStateFor, withLines} from './why.js';
 
 /** Same code run.ts uses for a command that was used wrongly. */
 const USAGE_ERROR = 2;
@@ -184,8 +186,13 @@ async function list(io: Io, json: boolean, archived: boolean): Promise<number> {
 async function show(io: Io, slug: string, json: boolean): Promise<number> {
 	const entry = await readMemory(io.cwd, slug);
 	if (!entry) throw new MemoryError(`No memory for "${slug}"`);
+	const state = await readStateFor(
+		io.cwd,
+		entry.commits.map(commit => commit.card),
+	);
 	if (json) {
-		io.stdout(`${JSON.stringify(entry, null, 2)}\n`);
+		const commits = entry.commits.map(commit => withLines(commit, state));
+		io.stdout(`${JSON.stringify({...entry, commits}, null, 2)}\n`);
 		return 0;
 	}
 
@@ -197,7 +204,9 @@ async function show(io: Io, slug: string, json: boolean): Promise<number> {
 		lines.push(
 			'',
 			`${hash.slice(0, 7)} ${stripControl(subject)}, ${day(date)}`,
-			...cardLines(card).map(line => `  ${line}`),
+			...cardLines(card, state && linesFor(state, card)).map(
+				line => `  ${line}`,
+			),
 		);
 	}
 
@@ -224,23 +233,31 @@ async function search(
 		);
 	}
 
+	const state = await readStateFor(
+		io.cwd,
+		hits.map(hit => hit.card),
+	);
 	if (json) {
-		io.stdout(`${JSON.stringify(hits, null, 2)}\n`);
+		const withState = hits.map(hit => withLines(hit, state));
+		io.stdout(`${JSON.stringify(withState, null, 2)}\n`);
 	} else if (hits.length === 0) {
 		io.stdout(`Nothing in memory matches "${stripControl(query)}".\n`);
 	} else {
-		io.stdout(hits.map(hit => hitLines(hit)).join(''));
+		io.stdout(hits.map(hit => hitLines(hit, state)).join(''));
 	}
 
 	return 0;
 }
 
 /** A hit and its card, safe to print: both come from commits and memory that others wrote. */
-function hitLines({kind, id, title, card}: MemoryHit): string {
+function hitLines(
+	{kind, id, title, card}: MemoryHit,
+	state: CardState | undefined,
+): string {
 	const where = kind === 'commit' ? id.slice(0, 7) : `workstream ${id}`;
 	const lines = [
 		`${stripControl(where)} ${stripControl(title)}`,
-		...cardLines(card).map(line => `  ${line}`),
+		...cardLines(card, state && linesFor(state, card)).map(line => `  ${line}`),
 	];
 	return `${lines.join('\n')}\n`;
 }
