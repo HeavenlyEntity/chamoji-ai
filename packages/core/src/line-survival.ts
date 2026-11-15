@@ -2,6 +2,7 @@ import {randomUUID} from 'node:crypto';
 import {mkdir, readFile, rename, rm, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {runGit} from './git.js';
+import {shallowStamp} from './memory.js';
 
 export type Survival = {
 	/** Undefined when the commit added no lines. */
@@ -11,7 +12,7 @@ export type Survival = {
 };
 
 /** Bump it when the file's layout or what goes into it changes. */
-const CACHE_VERSION = 2;
+const CACHE_VERSION = 3;
 
 /** What blame said about one path: the blob it was run on, and who owned lines. */
 type Entry = {blob: string; owners: string[]};
@@ -34,8 +35,10 @@ const COMMIT_ID = /^[0-9a-f]{40,64}$/;
  * Results are kept per path in the git directory. Blame follows a path's
  * history, not just its content, so an entry is trusted only while the blob
  * is the one at HEAD and every owner is still a commit on HEAD; an amend or
- * rebase leaves the content alone but renames the owners. `onBlame` hears of
- * each file actually blamed.
+ * rebase leaves the content alone but renames the owners. A shallow clone's
+ * blame credits its boundary with lines older commits wrote, so the whole
+ * file is dropped once the boundary changes. `onBlame` hears of each file
+ * actually blamed.
  *
  * Every git command runs from the top of the work tree, whatever `cwd` is
  * inside it, since paths are kept from the top. `head` is the revision to
@@ -54,7 +57,8 @@ export async function readSurvival(
 	const head = options.head ?? 'HEAD';
 	const blobs = await headBlobs(cwd, head);
 	const onHead = await headCommits(cwd, head);
-	const cached = await readCache(cwd);
+	const shallow = await shallowStamp(cwd);
+	const cached = await readCache(cwd, shallow);
 	const cache: Cache = new Map();
 	// Only entries that still hold are kept, and only paths at HEAD.
 	for (const [file, entry] of cached) {
@@ -98,7 +102,7 @@ export async function readSurvival(
 		result.set(hash, {survives, files});
 	}
 
-	if (changed) await writeCache(cwd, cache).catch(() => undefined);
+	if (changed) await writeCache(cwd, shallow, cache).catch(() => undefined);
 	return result;
 }
 
@@ -274,10 +278,11 @@ async function cachePath(cwd: string): Promise<string> {
 }
 
 /**
- * The stored results. The file is local but can be cut short or edited, so
- * anything that does not check out is treated as absent, an entry at a time.
+ * The stored results when they were blamed with this shallow boundary. The
+ * file is local but can be cut short or edited, so anything that does not
+ * check out is treated as absent, an entry at a time.
  */
-async function readCache(cwd: string): Promise<Cache> {
+async function readCache(cwd: string, shallow: string): Promise<Cache> {
 	const cache: Cache = new Map();
 	let raw: unknown;
 	try {
@@ -287,9 +292,10 @@ async function readCache(cwd: string): Promise<Cache> {
 	}
 
 	if (typeof raw !== 'object' || raw === null) return cache;
-	const {version, files} = raw as Record<string, unknown>;
+	const {version, shallow: stamp, files} = raw as Record<string, unknown>;
 	if (
 		version !== CACHE_VERSION ||
+		stamp !== shallow ||
 		typeof files !== 'object' ||
 		files === null ||
 		Array.isArray(files)
@@ -313,14 +319,18 @@ async function readCache(cwd: string): Promise<Cache> {
 }
 
 /** Written aside and renamed, so a call racing this one never reads half a file. */
-async function writeCache(cwd: string, cache: Cache): Promise<void> {
+async function writeCache(
+	cwd: string,
+	shallow: string,
+	cache: Cache,
+): Promise<void> {
 	const file = await cachePath(cwd);
 	const temporary = `${file}.${randomUUID()}.tmp`;
 	await mkdir(path.dirname(file), {recursive: true});
 	try {
 		await writeFile(
 			temporary,
-			`${JSON.stringify({version: CACHE_VERSION, files: Object.fromEntries(cache)})}\n`,
+			`${JSON.stringify({version: CACHE_VERSION, shallow, files: Object.fromEntries(cache)})}\n`,
 		);
 		await rename(temporary, file);
 	} catch (error) {

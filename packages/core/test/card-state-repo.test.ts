@@ -348,7 +348,7 @@ test('the state is read back from the cache file, and rebuilt when the notes ref
 	await readCardState(repo.dir);
 	const file = await cardStatePath(repo.dir);
 	const saved = JSON.parse(await readFile(file, 'utf8'));
-	expect(saved).toMatchObject({version: 2, head: await rev(repo.dir, 'HEAD')});
+	expect(saved).toMatchObject({version: 3, head: await rev(repo.dir, 'HEAD')});
 	saved.state.lines[0].text = 'edited in place';
 	await writeFile(file, JSON.stringify(saved));
 	expect((await lineOf(repo.dir, PORT_ID))?.text).toBe('edited in place');
@@ -371,7 +371,8 @@ test('a cache file that does not check out is rebuilt', async () => {
 	for (const damage of [
 		'not json',
 		JSON.stringify({...saved, version: 1}),
-		JSON.stringify({...saved, version: 3}),
+		JSON.stringify({...saved, version: 4}),
+		JSON.stringify({...saved, shallow: 'f'.repeat(64)}),
 		JSON.stringify({...saved, state: {...saved.state, lines: 'none'}}),
 		JSON.stringify({
 			...saved,
@@ -442,22 +443,13 @@ test('a shallow clone gives open lines and does not throw', async () => {
 			files: {'server.ts': 'listen(3000)\n'},
 		},
 	]);
-	const parent = await mkdtemp(path.join(tmpdir(), 'chamoji-shallow-'));
+	const clone = await shallowClone(repo.dir);
 	try {
-		const copy = path.join(parent, 'copy');
-		await gitOutput(parent, [
-			'clone',
-			'-q',
-			'--depth',
-			'1',
-			`file://${repo.dir}`,
-			copy,
-		]);
-		const state = await readCardState(copy);
+		const state = await readCardState(clone.copy);
 		expect(state.lines.map(line => line.id)).toEqual([PORT_ID]);
 		expect(state.lines.every(line => line.state === 'open')).toBe(true);
 	} finally {
-		await rm(parent, {recursive: true, force: true});
+		await clone.cleanup();
 	}
 });
 
@@ -510,4 +502,71 @@ test("linesFor returns a card's lines with their state, and nothing for undefine
 		'text',
 		'state',
 	]);
+});
+
+/** A `--depth 1` clone of `dir` in a fresh temp folder, and a way to remove it. */
+async function shallowClone(
+	dir: string,
+): Promise<{copy: string; cleanup(): Promise<void>}> {
+	const parent = await mkdtemp(path.join(tmpdir(), 'chamoji-shallow-'));
+	const copy = path.join(parent, 'copy');
+	await gitOutput(parent, [
+		'clone',
+		'-q',
+		'--depth',
+		'1',
+		`file://${dir}`,
+		copy,
+	]);
+	return {copy, cleanup: () => rm(parent, {recursive: true, force: true})};
+}
+
+test('a shallow clone that is deepened rebuilds its state without HEAD moving', async () => {
+	repo = await createRepo([
+		{
+			commit: '✨ Add server',
+			body: `Constraint: ${PORT}`,
+			files: {'server.ts': 'listen(3000)\n'},
+		},
+		{commit: '📝 Tidy readme', files: {'README.md': 'hi\n'}},
+	]);
+	const stated = await rev(repo.dir, 'HEAD~1');
+	const clone = await shallowClone(repo.dir);
+	try {
+		// Only HEAD is in the clone, so the line is not known yet.
+		expect(await lineOf(clone.copy, PORT_ID)).toBeUndefined();
+		const head = await rev(clone.copy, 'HEAD');
+
+		await gitOutput(clone.copy, ['fetch', '-q', '--unshallow']);
+		expect(await rev(clone.copy, 'HEAD')).toBe(head);
+		expect(await lineOf(clone.copy, PORT_ID)).toMatchObject({
+			state: 'open',
+			sources: [stated],
+		});
+	} finally {
+		await clone.cleanup();
+	}
+});
+
+test('a card-state cache file with the old version is rebuilt', async () => {
+	repo = await createRepo([
+		{
+			commit: '✨ Add server',
+			body: `Constraint: ${PORT}`,
+			files: {'server.ts': 'listen(3000)\n'},
+		},
+	]);
+	await readCardState(repo.dir);
+	const file = await cardStatePath(repo.dir);
+	const saved = JSON.parse(await readFile(file, 'utf8'));
+	expect(saved).toMatchObject({version: 3, shallow: ''});
+	const {shallow: _, ...old} = saved;
+	old.version = 2;
+	old.state.lines[0].text = 'edited in place';
+	await writeFile(file, JSON.stringify(old));
+
+	expect((await lineOf(repo.dir, PORT_ID))?.text).toBe(PORT);
+	expect(JSON.parse(await readFile(file, 'utf8'))).toMatchObject({
+		version: 3,
+	});
 });
