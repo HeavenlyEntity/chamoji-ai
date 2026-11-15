@@ -1,4 +1,5 @@
-import {readFile, writeFile} from 'node:fs/promises';
+import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {afterEach, expect, test} from 'vitest';
 import {readSurvival} from '../src/line-survival.js';
@@ -192,13 +193,18 @@ test('a damaged cache file is ignored and rebuilt', async () => {
 		'{not json',
 		JSON.stringify({version: 99, files: {}}),
 		JSON.stringify({version: 1, files: {'a.txt': {blob: 'x', owners: []}}}),
-		JSON.stringify({version: 2, files: {'a.txt': 'nope'}}),
-		JSON.stringify({version: 2, files: {'a.txt': {blob: 'x', owners: [1]}}}),
+		JSON.stringify({version: 3, shallow: '', files: {'a.txt': 'nope'}}),
 		JSON.stringify({
-			version: 2,
+			version: 3,
+			shallow: '',
+			files: {'a.txt': {blob: 'x', owners: [1]}},
+		}),
+		JSON.stringify({
+			version: 3,
+			shallow: '',
 			files: {'a.txt': {blob: 'x', owners: ['not a hash']}},
 		}),
-		'{"version":2,"files":{"__proto__":{"blob":"x","owners":[]}}}',
+		'{"version":3,"shallow":"","files":{"__proto__":{"blob":"x","owners":[]}}}',
 		'null',
 	]) {
 		await writeFile(file, damage);
@@ -209,7 +215,7 @@ test('a damaged cache file is ignored and rebuilt', async () => {
 		expect(blamed).toEqual(['a.txt']);
 		expect(result.get(hash)?.survives).toBe(true);
 		const rebuilt = JSON.parse(await readFile(file, 'utf8'));
-		expect(rebuilt.version).toBe(2);
+		expect(rebuilt.version).toBe(3);
 		expect(Object.getPrototypeOf(Object.prototype)).toBe(null);
 	}
 });
@@ -346,7 +352,67 @@ test('two calls at once both return the right answer and leave a readable cache'
 	expect(x.get(hash)?.survives).toBe(true);
 	expect(y.get(hash)?.survives).toBe(true);
 	const cache = JSON.parse(await readFile(await cachePath(repo.dir), 'utf8'));
-	expect(cache.version).toBe(2);
+	expect(cache.version).toBe(3);
 	// Blaming stops at the first file that shows the commit survives.
 	expect(Object.keys(cache.files)).toEqual(['a.txt']);
+});
+
+test('a blame cache file with the old version is rebuilt', async () => {
+	repo = await createRepo([{commit: 'add', files: {'a.txt': 'one\n'}}]);
+	const hash = await rev(repo.dir, 'HEAD');
+	const blob = await rev(repo.dir, 'HEAD:a.txt');
+	const file = await cachePath(repo.dir);
+	// Version 2 had no shallow stamp; an entry that says nobody owns a line
+	// would read as gone if it were used.
+	await readSurvival(repo.dir, [hash]);
+	await writeFile(
+		file,
+		JSON.stringify({version: 2, files: {'a.txt': {blob, owners: []}}}),
+	);
+	const blamed: string[] = [];
+	const result = await readSurvival(repo.dir, [hash], {
+		onBlame: f => blamed.push(f),
+	});
+	expect(blamed).toEqual(['a.txt']);
+	expect(result.get(hash)?.survives).toBe(true);
+	expect(JSON.parse(await readFile(file, 'utf8'))).toMatchObject({
+		version: 3,
+		shallow: '',
+	});
+});
+
+test('a blame cache written in a shallow clone is not used after it is deepened', async () => {
+	repo = await createRepo([
+		{commit: 'add', files: {'a.txt': 'one\n'}},
+		{commit: 'more', files: {'a.txt': 'one\ntwo\n'}},
+	]);
+	const first = await rev(repo.dir, 'HEAD~1');
+	const second = await rev(repo.dir, 'HEAD');
+	const parent = await mkdtemp(path.join(tmpdir(), 'chamoji-shallow-'));
+	try {
+		const copy = path.join(parent, 'copy');
+		await gitOutput(parent, [
+			'clone',
+			'-q',
+			'--depth',
+			'1',
+			`file://${repo.dir}`,
+			copy,
+		]);
+		// The shallow boundary owns every line of a.txt, the first one too.
+		const shallow = await readSurvival(copy, [second]);
+		expect(shallow.get(second)?.survives).toBe(true);
+		const kept = JSON.parse(await readFile(await cachePath(copy), 'utf8'));
+		expect(kept.shallow).toMatch(/^[0-9a-f]{64}$/);
+
+		await gitOutput(copy, ['fetch', '-q', '--unshallow']);
+		const blamed: string[] = [];
+		const deep = await readSurvival(copy, [first], {
+			onBlame: f => blamed.push(f),
+		});
+		expect(blamed).toEqual(['a.txt']);
+		expect(deep.get(first)).toEqual({survives: true, files: ['a.txt']});
+	} finally {
+		await rm(parent, {recursive: true, force: true});
+	}
 });

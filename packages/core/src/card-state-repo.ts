@@ -12,7 +12,7 @@ import {
 } from './card-state.js';
 import {readCommitFiles, readCommits, runGit} from './git.js';
 import {readSurvival, type Survival} from './line-survival.js';
-import {MEMORY_REF, headOf, listMemory} from './memory.js';
+import {MEMORY_REF, headOf, listMemory, shallowStamp} from './memory.js';
 import {parseCommit} from './parse.js';
 import {
 	readResolves,
@@ -23,7 +23,7 @@ import {NOTES_REF, mergeCards, readNoteCards} from './why-notes.js';
 import {STATUSES, isSlug, type WorkstreamStatus} from './workstreams.js';
 
 /** Bump it when the file's layout or what goes into it changes. */
-const CACHE_VERSION = 2;
+const CACHE_VERSION = 3;
 
 const OBJECT_ID = /^[0-9a-f]{40,64}$/;
 
@@ -38,7 +38,7 @@ const STATES: LineState[] = [
 ];
 
 /** What a state was worked out from; when any of it differs the state is stale. */
-type Stamp = {head: string; memory: string; notes: string};
+type Stamp = {head: string; memory: string; notes: string; shallow: string};
 
 /** Where this worktree keeps the state of its card lines; the git directory is per worktree. */
 export async function cardStatePath(cwd: string): Promise<string> {
@@ -50,9 +50,10 @@ export async function cardStatePath(cwd: string): Promise<string> {
 
 /**
  * The state of every card line, from the commits on HEAD, the notes on them
- * and workstream memory. It is kept in the git directory under the same
- * stamp as the search index, so it is worked out again whenever HEAD, the
- * memory ref or the notes ref moves, and every reader gets the same answer
+ * and workstream memory. It is kept in the git directory under the search
+ * index's stamp and the shallow boundary, so it is worked out again whenever
+ * HEAD, the memory ref or the notes ref moves or a shallow clone is deepened,
+ * and every reader gets the same answer
  * without paying for blame twice. A cache that can't be saved costs only
  * the next call a rebuild. It throws when git fails, so a caller building a
  * reply or running in a hook must catch it.
@@ -73,6 +74,7 @@ async function currentStamp(cwd: string): Promise<Stamp> {
 		head: (await headOf(cwd, 'HEAD')) ?? '',
 		memory: (await headOf(cwd, MEMORY_REF)) ?? '',
 		notes: (await headOf(cwd, NOTES_REF)) ?? '',
+		shallow: await shallowStamp(cwd),
 	};
 }
 
@@ -326,12 +328,13 @@ async function readCache(
 	}
 
 	if (!isPlain(raw)) return undefined;
-	const {version, head, memory, notes, state} = raw;
+	const {version, head, memory, notes, shallow, state} = raw;
 	if (
 		version !== CACHE_VERSION ||
 		head !== stamp.head ||
 		memory !== stamp.memory ||
 		notes !== stamp.notes ||
+		shallow !== stamp.shallow ||
 		!isPlain(state) ||
 		state['head'] !== stamp.head ||
 		!Array.isArray(state['lines']) ||

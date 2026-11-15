@@ -1,4 +1,5 @@
-import {rm} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
+import {readFile, rm} from 'node:fs/promises';
 import path from 'node:path';
 import {readCommits, runGit, runGitWithInput} from './git.js';
 import {parseCommit} from './parse.js';
@@ -326,6 +327,25 @@ export async function headOf(
 		return (await runGit(args, cwd)).trim();
 	} catch {
 		return undefined;
+	}
+}
+
+/**
+ * The sha256 of the file that lists a shallow clone's boundary, or '' when
+ * the clone is complete. `git fetch --unshallow` moves no ref, so a stamp
+ * that holds this is how a state read in the shallow clone goes stale. Git
+ * names the file relative to `cwd`, and in a linked worktree it is the
+ * shared one.
+ */
+export async function shallowStamp(cwd: string): Promise<string> {
+	try {
+		const file = (
+			await runGit(['rev-parse', '--git-path', 'shallow'], cwd)
+		).trim();
+		const content = await readFile(path.resolve(cwd, file));
+		return createHash('sha256').update(content).digest('hex');
+	} catch {
+		return '';
 	}
 }
 
