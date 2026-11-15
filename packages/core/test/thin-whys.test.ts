@@ -124,3 +124,24 @@ test('an absolute path inside the repo lists normally; outside throws', async ()
 		listThinWhys(`${repo.dir}/src`, path.dirname(real)),
 	).rejects.toBeInstanceOf(OutsideRepoError);
 });
+
+test('a resolve commit is not listed as missing a Why', async () => {
+	repo = await createRepo([
+		{
+			commit: '✨ Add a',
+			body: 'Why: the provider returns 422 for stays over 365 nights',
+			files: {'src/a.ts': 'a1\n'},
+		},
+		// Resolve commits are empty, but one written by hand could add lines.
+		{
+			commit: '📝 Resolve c-7f3a91be',
+			body: 'Resolves: c-7f3a91be the proxy owns the port now',
+			files: {'src/b.ts': 'b1\nb2\n'},
+		},
+		{commit: '✨ Add c', files: {'src/c.ts': 'c1\n'}},
+	]);
+	const found = await listThinWhys(repo.dir);
+	expect(found.map(({subject, kind}) => [subject, kind])).toEqual([
+		['✨ Add c', 'missing'],
+	]);
+});

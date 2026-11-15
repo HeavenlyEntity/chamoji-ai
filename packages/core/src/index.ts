@@ -114,6 +114,7 @@ export {
 	type PublicLine,
 } from './card-state.js';
 export {cardStatePath, readCardState} from './card-state-repo.js';
+export {ResolveError, isResolveCommit, resolveLine} from './card-resolve.js';
 export {readIntent} from './intent.js';
 export {readResolves, readRevertedHash, type Resolve} from './resolves.js';
 export {

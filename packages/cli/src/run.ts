@@ -293,6 +293,9 @@ const HELP = `
 	  $ chamoji memory archive <slug>  Hide an entry from the list and keep it
 	                                   (--purge deletes it for good)
 	  $ chamoji memory sync            Merge memory with origin and push it
+	  $ chamoji memory resolve <id> --because <reason>
+	                                   Record that a card line ended, as an
+	                                   empty commit with a Resolves: line
 
 	Commit
 	  $ chamoji commit [-a]            Write a commit with the composer
@@ -374,13 +377,16 @@ const HELP = `
 	             ws list: print the workstreams as an array;
 	             why: print the blame result; memory list and show: print
 	             the entries; memory search: print the matches;
-	             memory sync: print the result; setup: print what it
+	             memory sync: print the result; memory resolve: print
+	             the id and the commit's hash; setup: print what it
 	             found and did (with no --yes, what it would do, writing
 	             nothing; exits 2 when something would change)
 	  --none     ws switch: clear the active workstream
 	  --archived memory list: include archived entries
 	  --purge    memory archive: delete the entry and its history instead;
 	             memory sync then says what origin needs to lose it too
+	  --because  memory resolve: why the line no longer holds (one line,
+	             up to 200 characters)
 	  --agents   init: also add chamoji to .mcp.json and .claude/settings.json.
 	             Both are shared files meant to be committed; existing
 	             entries are kept.
@@ -503,6 +509,7 @@ function parse(argv: string[]) {
 			none: {type: 'boolean'},
 			purge: {type: 'boolean'},
 			archived: {type: 'boolean'},
+			because: {type: 'string'},
 			agents: {type: 'boolean'},
 			yes: {type: 'boolean'},
 			explain: {type: 'boolean'},

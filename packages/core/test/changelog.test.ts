@@ -1,9 +1,12 @@
-import {mkdtemp, rm} from 'node:fs/promises';
+import {mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {afterEach, expect, test, vi} from 'vitest';
+import {cardLineId} from '../src/card-lines.js';
+import {resolveLine} from '../src/card-resolve.js';
 import {buildChangelog} from '../src/changelog.js';
 import {DEFAULT_GROUP_CONFIG} from '../src/config.js';
+import {render} from '../src/render/index.js';
 import type {Release} from '../src/types.js';
 import {
 	createRepo,
@@ -320,4 +323,51 @@ test('since rejects an unknown ref and the flags it cannot combine with', async 
 	await expect(
 		buildChangelog({cwd: repo.dir, config, since: 'HEAD~1', release: '1.0.0'}),
 	).rejects.toThrow(/--since.*--from or --release/);
+});
+
+test('a resolve commit changes neither the changelog nor the next version', async () => {
+	const port = cardLineId(
+		'constraint',
+		'The dev server must stay on port 3000',
+	);
+	const flaky = cardLineId('gotcha', 'The upload test is flaky on CI');
+	repo = await createRepo([
+		{
+			commit: '✨ Add server',
+			body: 'Constraint: The dev server must stay on port 3000\nGotcha: The upload test is flaky on CI',
+			files: {'server.ts': 'listen(3000)\n'},
+		},
+		{tag: 'v1.0.0'},
+	]);
+	const {dir} = repo;
+	/** Every format of the changelog, and the next version. */
+	const read = async () => {
+		const changelog = await buildChangelog({
+			cwd: dir,
+			config,
+			today: '2026-11-14',
+		});
+		return {
+			markdown: render(changelog, 'markdown'),
+			html: render(changelog, 'html'),
+			json: render(changelog, 'json'),
+			next: changelog.releases.find(release => release.tag === null)
+				?.nextVersion,
+		};
+	};
+
+	// The resolve is the only commit since the tag: no Unreleased section appears.
+	const tagged = await read();
+	expect(tagged.next).toBeUndefined();
+	await resolveLine(dir, port, 'the proxy owns the port now');
+	expect(await read()).toEqual(tagged);
+
+	// After a feature, the section and its bump stay as they were.
+	await writeFile(path.join(dir, 'upload.ts'), 'upload\n');
+	await gitOutput(dir, ['add', 'upload.ts']);
+	await gitOutput(dir, ['commit', '-q', '-m', '✨ Add upload']);
+	const unreleased = await read();
+	expect(unreleased.next).toBe('1.1.0');
+	await resolveLine(dir, flaky, 'the test was fixed');
+	expect(await read()).toEqual(unreleased);
 });

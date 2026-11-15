@@ -3,6 +3,7 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {
 	listMemory,
+	readCardState,
 	readTree,
 	snapshotWorkstream,
 	writeTree,
@@ -290,7 +291,7 @@ test('an unknown subcommand is a usage error', async () => {
 	const {code, stderr} = await chamoji(['memory', 'nope'], dir);
 	expect(code).toBe(2);
 	expect(stderr).toContain(
-		'memory needs list, show, search, reindex, archive or sync',
+		'memory needs list, show, search, reindex, archive, sync or resolve',
 	);
 });
 
@@ -691,4 +692,95 @@ test('memory list and show never call the face', async () => {
 	await chamoji(['memory', 'show', 'auth'], dir, {face});
 	await chamoji(['memory', 'search', 'login'], dir, {face});
 	expect(calls).toEqual([]);
+});
+
+/** A repo whose one card line is long and carries a terminal escape; gives its id. */
+async function withLine(): Promise<{dir: string; id: string}> {
+	repo = await createRepo([
+		{
+			commit: '✨ Add server',
+			body: `Constraint: The dev server must stay on port 3000 \u001B[31mbecause the OAuth callback URL registered with the provider says so`,
+			files: {'server.ts': 'listen(3000)\n'},
+		},
+	]);
+	const [line] = (await readCardState(repo.dir)).lines;
+	return {dir: repo.dir, id: line!.id};
+}
+
+test('memory resolve prints the two lines and exits 0', async () => {
+	const {dir, id} = await withLine();
+	const {code, stdout, stderr} = await chamoji(
+		['memory', 'resolve', id, '--because', 'the proxy owns the port now'],
+		dir,
+	);
+	expect(stderr).toBe('');
+	expect(code).toBe(0);
+	const short = (
+		await gitOutput(dir, ['rev-parse', '--short=7', 'HEAD'])
+	).trim();
+	const text =
+		'The dev server must stay on port 3000 [31mbecause the OAuth callback URL registe';
+	expect(text).toHaveLength(80);
+	expect(stdout).toBe(
+		`Resolved ${id}: ${text}\nRecorded in ${short}. Push it like any commit.\n`,
+	);
+	expect(await gitOutput(dir, ['log', '-1', '--format=%B'])).toBe(
+		`📝 Resolve ${id}\n\nResolves: ${id} the proxy owns the port now\n\n`,
+	);
+});
+
+test('memory resolve with no --because exits 2 with the usage line', async () => {
+	const {dir, id} = await withLine();
+	const head = await gitOutput(dir, ['rev-parse', 'HEAD']);
+	const usage =
+		'chamoji: memory resolve needs an id and a reason: chamoji memory resolve <id> --because "<reason>"\n';
+	for (const argv of [
+		['memory', 'resolve', id],
+		['memory', 'resolve', '--because', 'gone'],
+		['memory', 'resolve', id, 'other', '--because', 'gone'],
+	]) {
+		const {code, stdout, stderr} = await chamoji(argv, dir);
+		expect(code).toBe(2);
+		expect(stdout).toBe('');
+		expect(stderr).toBe(usage);
+	}
+
+	expect(await gitOutput(dir, ['rev-parse', 'HEAD'])).toBe(head);
+});
+
+test('memory resolve --json prints the id and the hash', async () => {
+	const {dir, id} = await withLine();
+	const {code, stdout} = await chamoji(
+		['memory', 'resolve', id, '--because', 'gone', '--json'],
+		dir,
+	);
+	expect(code).toBe(0);
+	const hash = (await gitOutput(dir, ['rev-parse', 'HEAD'])).trim();
+	expect(JSON.parse(stdout)).toEqual({resolved: id, hash});
+});
+
+test('memory resolve of an unknown or resolved line exits 1 with the message', async () => {
+	const {dir, id} = await withLine();
+	const unknown = await chamoji(
+		['memory', 'resolve', 'c-00000000', '--because', 'gone'],
+		dir,
+	);
+	expect(unknown).toMatchObject({
+		code: 1,
+		stdout: '',
+		stderr: 'chamoji: No card line has the id c-00000000\n',
+	});
+
+	await chamoji(['memory', 'resolve', id, '--because', 'gone'], dir);
+	const short = (
+		await gitOutput(dir, ['rev-parse', '--short=7', 'HEAD'])
+	).trim();
+	const again = await chamoji(
+		['memory', 'resolve', id, '--because', 'gone'],
+		dir,
+	);
+	expect(again).toMatchObject({
+		code: 1,
+		stderr: `chamoji: ${id} is already resolved by ${short}\n`,
+	});
 });
