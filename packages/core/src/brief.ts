@@ -62,6 +62,8 @@ const STATE_LABELS: Record<LineState, string> = {
 type Section = {
 	name: BriefSection;
 	title: string;
+	/** How many lines, workstreams or commits the section holds. */
+	count: number;
 	head: string[];
 	entries: string[];
 };
@@ -94,8 +96,15 @@ export function renderBrief(
 	const total = clampBudget(options.budget) * CHARS_PER_TOKEN;
 	const free = total - first.length - last.length - SEPARATOR.length;
 
-	const unmatched = unmatchedBlock(dangling, Math.floor(free / 2));
-	const room = free - (unmatched ? SEPARATOR.length + unmatched.length : 0);
+	// The one-line forms come first after the first and last lines, so they
+	// always fit; the Unmatched lines come next, the full sections last.
+	const reserved = sections.reduce(
+		(sum, s) => sum + SEPARATOR.length + notShown(s).length,
+		0,
+	);
+	const unmatched = unmatchedBlock(dangling, Math.floor((free - reserved) / 2));
+	const room =
+		free - reserved - (unmatched ? SEPARATOR.length + unmatched.length : 0);
 	const blocks = fitSections(sections, room, only !== undefined);
 
 	return [first, ...blocks, ...(unmatched ? [unmatched] : []), last].join(
@@ -112,7 +121,11 @@ function clampBudget(budget: number | undefined): number {
 	);
 }
 
-/** Gives each section its share plus what the sections before it left over. */
+/**
+ * Gives each section its share plus what the sections before it left over.
+ * A section whose full form does not fit prints its one-line form instead,
+ * for which room was set aside, so nothing is dropped without a count.
+ */
 function fitSections(
 	sections: Section[],
 	room: number,
@@ -124,14 +137,19 @@ function fitSections(
 		const section = sections.find(s => s.name === name);
 		if (!section) continue;
 		const share = wholeRoom ? room : Math.floor((room * SHARES[name]) / 100);
-		const available = share + carry;
-		const block = fitSection(section, available - SEPARATOR.length);
-		blocks.push(...(block === undefined ? [] : [block]));
-		carry =
-			available - (block === undefined ? 0 : SEPARATOR.length + block.length);
+		const brief = notShown(section);
+		const available = share + carry + SEPARATOR.length + brief.length;
+		const block = fitSection(section, available - SEPARATOR.length) ?? brief;
+		blocks.push(block);
+		carry = available - SEPARATOR.length - block.length;
 	}
 
 	return blocks;
+}
+
+/** What a section prints when there is no room for its title and one line. */
+function notShown(section: Section): string {
+	return `${section.title}: ${section.count} not shown. The ${section.name} section lists them.`;
 }
 
 /**
@@ -219,6 +237,7 @@ function selectSections(input: BriefInput): Section[] {
 		{
 			name: 'workstreams',
 			title: 'Workstreams',
+			count: input.workstreams.length,
 			head: [],
 			entries: input.workstreams.map(workstreamLine),
 		},
@@ -226,6 +245,7 @@ function selectSections(input: BriefInput): Section[] {
 			name: 'recent',
 			title:
 				recent.tag === null ? 'Recent commits' : `Since ${clean(recent.tag)}`,
+			count: recent.count,
 			head: [`  ${commits(recent.count)}.`],
 			entries: recent.subjects.map(s => `  ${clean(s)}`),
 		},
@@ -240,7 +260,13 @@ function lineSection(
 	title: string,
 	lines: CardLine[],
 ): Section {
-	return {name, title, head: [], entries: lines.map(formatLine)};
+	return {
+		name,
+		title,
+		count: lines.length,
+		head: [],
+		entries: lines.map(formatLine),
+	};
 }
 
 /** One line of a section: the state, the id, the text, and what to know before relying on it. */

@@ -504,3 +504,46 @@ test('a date that does not parse counts as recent', () => {
 	);
 	expect(brief).toContain('c-00000001');
 });
+
+test('at the smallest budget every non-empty section shows in full or as its one-line form', () => {
+	const brief = renderBrief(crowded(), {budget: MIN_BRIEF_BUDGET});
+	expect(brief.length).toBeLessThanOrEqual(800);
+	const rows = brief.split('\n');
+	for (const [title, name, count] of [
+		['Constraints', 'constraints', 60],
+		['Resolved recently', 'resolved', 60],
+		['Gotchas', 'gotchas', 60],
+		['Follow-ups', 'follow-ups', 60],
+		['Off branch', 'off-branch', 60],
+		['Workstreams', 'workstreams', 40],
+		['Since v1', 'recent', 80],
+	] as const) {
+		const form = `${title}: ${count} not shown. The ${name} section lists them.`;
+		expect(rows.includes(title) || rows.includes(form), title).toBe(true);
+	}
+});
+
+test('a section with no room prints its one-line form exactly, and a tag shows in the recent one', () => {
+	const flooded = crowded();
+	flooded.state.dangling = Array.from({length: 5}, (_, i) => ({
+		id: `c-${i}${'k'.repeat(300)}`,
+		hash: H2,
+	}));
+	const brief = renderBrief(flooded, {budget: MIN_BRIEF_BUDGET});
+	expect(brief.length).toBeLessThanOrEqual(800);
+	expect(brief).toContain(
+		'\n\nOff branch: 60 not shown. The off-branch section lists them.\n\n',
+	);
+	expect(brief).toContain(
+		'\n\nSince v1: 80 not shown. The recent section lists them.\n\n',
+	);
+});
+
+test('with a section, a full budget still prints it in full', () => {
+	const brief = renderBrief(crowded(), {
+		budget: MIN_BRIEF_BUDGET,
+		section: 'off-branch',
+	});
+	expect(brief).toContain('Off branch\n  off branch ');
+	expect(brief).not.toContain('not shown');
+});
