@@ -45,8 +45,9 @@ export async function resolveLine(
 		: undefined;
 	if (!line) throw new ResolveError(`No card line has the id ${id}`);
 	if (line.state === 'resolved') {
+		const by = line.resolvedBy?.hash.slice(0, 7);
 		throw new ResolveError(
-			`${line.id} is already resolved by ${(line.resolvedBy?.hash ?? '').slice(0, 7)}`,
+			`${line.id} is already resolved${by ? ` by ${by}` : ''}`,
 		);
 	}
 

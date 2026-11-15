@@ -784,3 +784,36 @@ test('memory resolve of an unknown or resolved line exits 1 with the message', a
 		stderr: `chamoji: ${id} is already resolved by ${short}\n`,
 	});
 });
+
+test('memory resolve with staged changes exits 1 with the staged-changes message and makes no commit', async () => {
+	const {dir, id} = await withLine();
+	const head = await gitOutput(dir, ['rev-parse', 'HEAD']);
+	await writeFile(path.join(dir, 'a.txt'), 'a\n');
+	await gitOutput(dir, ['add', 'a.txt']);
+	const result = await chamoji(
+		['memory', 'resolve', id, '--because', 'gone'],
+		dir,
+	);
+	expect(result).toMatchObject({
+		code: 1,
+		stdout: '',
+		stderr:
+			'chamoji: You have staged changes. Commit or unstage them first, so the resolve commit stays empty.\n',
+	});
+	expect(await gitOutput(dir, ['rev-parse', 'HEAD'])).toBe(head);
+	expect(await gitOutput(dir, ['diff', '--cached', '--name-only'])).toBe(
+		'a.txt\n',
+	);
+});
+
+test('memory resolve --because "" exits 1 with the reason message', async () => {
+	const {dir, id} = await withLine();
+	const head = await gitOutput(dir, ['rev-parse', 'HEAD']);
+	const result = await chamoji(['memory', 'resolve', id, '--because', ''], dir);
+	expect(result).toMatchObject({
+		code: 1,
+		stdout: '',
+		stderr: 'chamoji: The reason must be one line of 1 to 200 characters\n',
+	});
+	expect(await gitOutput(dir, ['rev-parse', 'HEAD'])).toBe(head);
+});

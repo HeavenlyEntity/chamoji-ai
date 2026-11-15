@@ -371,3 +371,47 @@ test('a resolve commit changes neither the changelog nor the next version', asyn
 	await resolveLine(dir, flaky, 'the test was fixed');
 	expect(await read()).toEqual(unreleased);
 });
+
+test('a resolve commit with a Workstream: trailer changes neither the changelog nor the next version', async () => {
+	const port = cardLineId(
+		'constraint',
+		'The dev server must stay on port 3000',
+	);
+	repo = await createRepo([
+		{
+			commit: '✨ Add server',
+			body: 'Constraint: The dev server must stay on port 3000',
+			files: {'server.ts': 'listen(3000)\n'},
+		},
+		{tag: 'v1.0.0'},
+		{commit: '✨ Add upload', files: {'upload.ts': 'upload\n'}},
+	]);
+	const {dir} = repo;
+	const read = async () => {
+		const changelog = await buildChangelog({
+			cwd: dir,
+			config,
+			today: '2026-11-14',
+		});
+		return {
+			markdown: render(changelog, 'markdown'),
+			html: render(changelog, 'html'),
+			json: render(changelog, 'json'),
+			next: changelog.releases.find(release => release.tag === null)
+				?.nextVersion,
+		};
+	};
+
+	const before = await read();
+	expect(before.next).toBe('1.1.0');
+	await gitOutput(dir, [
+		'commit',
+		'-q',
+		'--allow-empty',
+		'-m',
+		`📝 Resolve ${port}`,
+		'-m',
+		`Resolves: ${port} the proxy owns the port now\nWorkstream: auth`,
+	]);
+	expect(await read()).toEqual(before);
+});
