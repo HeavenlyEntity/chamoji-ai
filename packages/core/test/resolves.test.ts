@@ -55,6 +55,54 @@ test('other keys are ignored and the key is not case sensitive', () => {
 	).toEqual([{id: 'f-00000001', reason: 'done'}]);
 });
 
+test('Resolves: with no space after the colon reads the same as a trailer and in a body', () => {
+	const expected = [{id: 'c-7f3a91be', reason: 'released'}];
+	expect(
+		readResolves([{key: 'Resolves', value: 'c-7f3a91be released'}], ''),
+	).toEqual(expected);
+	expect(readResolves([], 'text\n\nResolves:c-7f3a91be released')).toEqual(
+		expected,
+	);
+	expect(readResolves([], 'Resolves:\tc-7f3a91be released')).toEqual(
+		expected,
+	);
+});
+
+test('only the first id on a line is resolved, and the rest is the reason', () => {
+	expect(readResolves([], 'Resolves: c-7f3a91be, g-0c55e1d2')).toEqual([
+		{id: 'c-7f3a91be', reason: 'g-0c55e1d2'},
+	]);
+	expect(
+		readResolves([{key: 'Resolves', value: 'c-7f3a91be g-0c55e1d2 both'}], ''),
+	).toEqual([{id: 'c-7f3a91be', reason: 'g-0c55e1d2 both'}]);
+});
+
+test('an id in backticks counts', () => {
+	expect(readResolves([], 'Resolves: `c-7f3a91be` released')).toEqual([
+		{id: 'c-7f3a91be', reason: 'released'},
+	]);
+	expect(
+		readResolves([{key: 'Resolves', value: '`G-0C55E1D2`.'}], ''),
+	).toEqual([{id: 'g-0c55e1d2'}]);
+});
+
+test('an id in quotes, brackets or parentheses does not count', () => {
+	for (const wrapped of [
+		'"c-7f3a91be"',
+		"'c-7f3a91be'",
+		'[c-7f3a91be]',
+		'(c-7f3a91be)',
+		'{c-7f3a91be}',
+		'<c-7f3a91be>',
+		'`c-7f3a91be',
+	]) {
+		expect(readResolves([], `Resolves: ${wrapped} released`)).toEqual([]);
+		expect(
+			readResolves([{key: 'Resolves', value: `${wrapped} released`}], ''),
+		).toEqual([]);
+	}
+});
+
 test("readRevertedHash reads git revert's line, for a commit and for a merge", () => {
 	const hash = 'a'.repeat(40);
 	expect(readRevertedHash(`This reverts commit ${hash}.`)).toBe(hash);
