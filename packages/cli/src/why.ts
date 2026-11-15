@@ -1,8 +1,11 @@
 import {
 	assertGitRepo,
 	blameLine,
+	cardLineId,
 	findClues,
 	judgeWhy,
+	linesFor,
+	linesOf,
 	listThinWhys,
 	OutsideRepoError,
 	mergeCards,
@@ -10,6 +13,8 @@ import {
 	parseLocation,
 	readCommits,
 	parseCommit,
+	publicLine,
+	readCardState,
 	readNoteCard,
 	runGit,
 	WHY_ADVICE,
@@ -17,8 +22,10 @@ import {
 	NOTES_REF,
 	readMemory,
 	readWorkstreams,
+	type CardState,
 	type IntentCard,
 	type ParsedCommit,
+	type PublicLine,
 	type Workstream,
 	type WhyClues,
 	type WhyQuality,
@@ -85,7 +92,7 @@ export async function runWhy(
 
 	await assertGitRepo(io.cwd);
 	const {file, line} = parseLocation(location);
-	const {result, reading, summary} = await runStep(
+	const {result, reading, state, summary} = await runStep(
 		io.face ?? NO_FACE,
 		'Finding the commit that wrote the line',
 		async () => {
@@ -93,12 +100,18 @@ export async function runWhy(
 			if (result.kind === 'uncommitted') return {result};
 			const {workstream} = result.commit;
 			const reading = await readWhy(io.cwd, result.commit, file);
-			if (flags.json) return {result, reading};
+			const state = await readStateFor(io.cwd, [
+				reading.card,
+				...(flags.json ? [] : (reading.clues?.nearby ?? [])).map(
+					near => near.card,
+				),
+			]);
+			if (flags.json) return {result, reading, state};
 			const summary =
 				reading.quality !== 'ok' && workstream !== undefined
 					? await findWorkstream(io.cwd, workstream)
 					: undefined;
-			return {result, reading, summary};
+			return {result, reading, state, summary};
 		},
 		({result}) => ({
 			outcome: 'ok',
@@ -118,11 +131,12 @@ export async function runWhy(
 		// `commit.card` stays the commit's own; `card` puts a reason added later
 		// first, as the MCP why tool does.
 		const {quality, reasons, clues, added, card} = reading!;
+		const lines = replyLines(state, card);
 		io.stdout(
-			`${JSON.stringify({...result, card, whyQuality: quality, whyReasons: reasons, clues, addedLater: added}, null, 2)}\n`,
+			`${JSON.stringify({...result, card, ...(lines && {lines}), whyQuality: quality, whyReasons: reasons, clues, addedLater: added}, null, 2)}\n`,
 		);
 	} else {
-		io.stdout(describe(result.commit, reading!, summary));
+		io.stdout(describe(result.commit, reading!, state, summary));
 	}
 
 	return 0;
@@ -373,16 +387,19 @@ export async function findWorkstream(
 function describe(
 	{shortHash, subject, authorName, date, card}: ParsedCommit,
 	{quality, clues, added}: WhyReading,
+	state: CardState | undefined,
 	workstream?: Pick<Workstream, 'title' | 'emoji' | 'status'>,
 ) {
+	const known = (of: IntentCard | undefined) =>
+		state ? linesFor(state, of) : undefined;
 	const lines = [
 		`${stripControl(shortHash)} ${stripControl(subject)}`,
 		`${stripControl(authorName)}, ${stripControl(date).slice(0, 10)}`,
 		'',
 	];
 	const recorded = [
-		...cardLines(added).map(line => `${line} (added later)`),
-		...cardLines(card),
+		...cardLines(added, known(added)).map(line => `${line} (added later)`),
+		...cardLines(card, known(card)),
 	];
 	lines.push(
 		...(recorded.length > 0 ? recorded : ['This commit records no intent.']),
@@ -392,7 +409,7 @@ function describe(
 	for (const near of clues?.nearby ?? []) {
 		lines.push(
 			`Nearby: ${stripControl(near.shortHash)} ${stripControl(near.subject)}`,
-			...cardLines(near.card).map(line => `  ${line}`),
+			...cardLines(near.card, known(near.card)).map(line => `  ${line}`),
 		);
 	}
 
@@ -406,9 +423,133 @@ function describe(
 	return `${lines.join('\n')}\n`;
 }
 
-/** A card as `Label: value` lines, safe to print. */
-export function cardLines(card: IntentCard | undefined): string[] {
+/**
+ * A card as `Label: value` lines, safe to print. With `lines`, a constraint,
+ * gotcha or follow-up line they hold carries its id and state in brackets
+ * after the label. A line they don't hold, and every Why, prints as it
+ * always did.
+ */
+export function cardLines(
+	card: IntentCard | undefined,
+	lines?: PublicLine[],
+): string[] {
+	const byId = new Map((lines ?? []).map(line => [line.id, line]));
 	return CARD_LABELS.flatMap(([key, label]) =>
-		(card?.[key] ?? []).map(value => `${label}: ${stripControl(value)}`),
+		(card?.[key] ?? []).map(value => {
+			const line = key === 'why' ? undefined : byId.get(cardLineId(key, value));
+			const tag = line ? ` [${stateTag(line)}]` : '';
+			return `${label}${tag}: ${stripControl(value)}`;
+		}),
 	);
+}
+
+/** How much of a resolve's reason a printed line shows. */
+const MAX_REASON = 200;
+
+/** A hash as people read it in a terminal. */
+const shortHash = (hash: string) => stripControl(hash).slice(0, 7);
+
+/** What goes in a printed line's brackets: its id, then its state unless open. */
+function stateTag(line: PublicLine): string {
+	const id = stripControl(line.id);
+	switch (line.state) {
+		case 'open': {
+			return id;
+		}
+
+		case 'resolved': {
+			if (!line.resolvedBy) return `${id}, resolved`;
+			const reason = [...oneLine(line.resolvedBy.reason)]
+				.slice(0, MAX_REASON)
+				.join('');
+			return `${id}, resolved by ${shortHash(line.resolvedBy.hash)}: ${reason}`;
+		}
+
+		case 'in-doubt': {
+			return line.replacedBy === undefined
+				? `${id}, in doubt`
+				: `${id}, in doubt: its code was replaced by ${shortHash(line.replacedBy)}`;
+		}
+
+		case 'off-branch': {
+			return `${id}, off branch`;
+		}
+	}
+}
+
+/** Text from a commit message on one line, with no control characters. */
+function oneLine(text: string): string {
+	return stripControl(text.replaceAll(/\s+/g, ' ')).trim();
+}
+
+/**
+ * The card state, read once for a command or tool call, when any of `cards`
+ * has a line that can have one. A state only adds to an answer, so when git
+ * can't work it out, every card is shown as it was before states existed.
+ */
+export async function readStateFor(
+	cwd: string,
+	cards: Array<IntentCard | undefined>,
+): Promise<CardState | undefined> {
+	if (!cards.some(card => linesOf(card).length > 0)) return undefined;
+	try {
+		return await readCardState(cwd);
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * A card's lines as a reply carries them, beside the card. Undefined, so the
+ * reply leaves `lines` out, when there is no state or the card has no line it
+ * knows. Line text and reasons come from commits others wrote, so every
+ * string is cleaned like any other text from outside.
+ */
+export function replyLines(
+	state: CardState | undefined,
+	card: IntentCard | undefined,
+): PublicLine[] | undefined {
+	if (!state) return undefined;
+	const lines = linesFor(state, card).map(line => cleanLine(publicLine(line)));
+	return lines.length > 0 ? lines : undefined;
+}
+
+/** `item` with its card's lines right after `card`, or as it was when there are none. */
+export function withLines<T extends {card?: IntentCard}>(
+	item: T,
+	state: CardState | undefined,
+): T & {lines?: PublicLine[]} {
+	const lines = replyLines(state, item.card);
+	if (!lines) return item;
+	return Object.fromEntries(
+		Object.entries(item).flatMap(([key, value]) =>
+			key === 'card'
+				? [
+						[key, value],
+						['lines', lines],
+					]
+				: [[key, value]],
+		),
+	) as T & {lines: PublicLine[]};
+}
+
+function cleanLine(line: PublicLine): PublicLine {
+	const {resolvedBy, replacedBy, replaces, workstream} = line;
+	return {
+		...line,
+		id: stripControl(line.id),
+		text: stripControl(line.text),
+		...(resolvedBy && {
+			resolvedBy: {
+				hash: stripControl(resolvedBy.hash),
+				date: stripControl(resolvedBy.date),
+				reason: oneLine(resolvedBy.reason),
+			},
+		}),
+		...(replacedBy === undefined ? {} : {replacedBy: stripControl(replacedBy)}),
+		...(replaces === undefined ? {} : {replaces: stripControl(replaces)}),
+		...(workstream && {
+			workstream: {...workstream, slug: stripControl(workstream.slug)},
+		}),
+	};
 }

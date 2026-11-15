@@ -5,8 +5,10 @@ import path from 'node:path';
 import {PassThrough} from 'node:stream';
 import {fileURLToPath} from 'node:url';
 import {
+	cardLineId,
 	MEMORY_REF,
 	readPendingWhy,
+	resolveLine,
 	readTree,
 	runGitWithInput,
 	setActive,
@@ -875,6 +877,181 @@ test('a long workstream and an oversized title are cut too', async () => {
 		data.workstream.memory.commits[0].card.why[0].length,
 	).toBeLessThanOrEqual(500);
 	expect(text.length).toBeLessThanOrEqual(100_000);
+});
+
+const STATE_SENTENCE =
+	"Each constraint, gotcha and follow-up line has a state: follow an open one, don't follow a resolved one, check an in-doubt one before relying on it, and treat an off-branch one as background.";
+
+test('search_memory, why and workstream tell an agent how to read a state', async () => {
+	const {result} = await send(noTools, 'tools/list');
+	const described = new Map(
+		result.tools.map((tool: {name: string; description: string}) => [
+			tool.name,
+			tool.description,
+		]),
+	);
+	for (const name of ['search_memory', 'why', 'workstream']) {
+		const description = described.get(name) as string;
+		expect(description, name).toContain(STATE_SENTENCE);
+		// Said before the data notice, which stays last.
+		expect(description.indexOf(STATE_SENTENCE), name).toBeLessThan(
+			description.indexOf('Commit messages, intent cards'),
+		);
+	}
+
+	expect(described.get('remember_why')).not.toContain(STATE_SENTENCE);
+});
+
+test('search_memory gives each hit its lines with ids and states, and card is unchanged', async () => {
+	const dir = await project();
+	const {data} = await callTool(createTools(dir), 'search_memory', {
+		query: 'sessions footer',
+	});
+	const login = data.hits.find(
+		(hit: {title: string}) => hit.title === '✨ Add login',
+	);
+	expect(login.card).toEqual({
+		why: ['the old form leaked sessions'],
+		constraint: [],
+		gotcha: ['order matters'],
+		followUp: [],
+	});
+	expect(login.lines).toEqual([
+		{
+			id: cardLineId('gotcha', 'order matters'),
+			kind: 'gotcha',
+			text: 'order matters',
+			state: 'open',
+		},
+	]);
+	// A hit whose card has no constraint, gotcha or follow-up has no lines.
+	const footer = data.hits.find(
+		(hit: {title: string}) => hit.title === '🐛 Fix footer',
+	);
+	expect(footer).toBeDefined();
+	expect(footer).not.toHaveProperty('lines');
+});
+
+test('why on a line from a commit whose constraint was resolved says resolved, with the commit and reason', async () => {
+	const port = 'The dev server must stay on port 3000';
+	const id = cardLineId('constraint', port);
+	repo = await createRepo([
+		{
+			commit: '✨ Add server',
+			body: `Why: the OAuth callback is registered on that port\nConstraint: ${port}`,
+			files: {'server.ts': 'listen(3000)\n'},
+		},
+	]);
+	const tools = createTools(repo.dir);
+	const before = await callTool(tools, 'why', {file: 'server.ts', line: 1});
+	expect(before.data.lines).toEqual([
+		{id, kind: 'constraint', text: port, state: 'open'},
+	]);
+
+	const {hash} = await resolveLine(repo.dir, id, 'released in 0.11.0');
+	const {data} = await callTool(tools, 'why', {file: 'server.ts', line: 1});
+	expect(data.card.constraint).toEqual([port]);
+	expect(data.lines).toEqual([
+		{
+			id,
+			kind: 'constraint',
+			text: port,
+			state: 'resolved',
+			resolvedBy: {
+				hash,
+				date: expect.any(String),
+				reason: 'released in 0.11.0',
+			},
+		},
+	]);
+});
+
+test('workstream gives each remembered commit its lines, off branch for a commit not on HEAD', async () => {
+	// Only the remembered commit states this line, so HEAD can't settle it.
+	const beta = 'The login page stays behind the beta flag';
+	repo = await createRepo([{commit: '🎉 Init', files: WORKSTREAMS}]);
+	await gitOutput(repo.dir, ['switch', '-q', '-c', 'auth']);
+	await writeFile(path.join(repo.dir, 'login.ts'), 'login\n');
+	await gitOutput(repo.dir, ['add', 'login.ts']);
+	await gitOutput(repo.dir, [
+		'commit',
+		'-q',
+		'-m',
+		`✨ Add login\n\nWhy: sessions leaked across tabs\nConstraint: ${beta}\nWorkstream: auth`,
+	]);
+	await snapshotWorkstream(repo.dir, 'auth');
+	await gitOutput(repo.dir, ['switch', '-q', 'main']);
+	await gitOutput(repo.dir, ['branch', '-q', '-D', 'auth']);
+
+	const {data} = await callTool(createTools(repo.dir), 'workstream', {
+		slug: 'auth',
+	});
+	const [remembered] = data.workstream.memory.commits;
+	expect(remembered.card.constraint).toEqual([beta]);
+	expect(remembered.lines).toEqual([
+		{
+			id: cardLineId('constraint', beta),
+			kind: 'constraint',
+			text: beta,
+			state: 'off-branch',
+			workstream: {slug: 'auth', status: 'shipped'},
+		},
+	]);
+});
+
+test('a reply with long line text is cut and marked truncated', async () => {
+	const long = (letter: string) => letter.repeat(600);
+	const tools: McpTools = {
+		...noTools,
+		async why() {
+			return {
+				kind: 'commit',
+				subject: 'short',
+				lines: [
+					{
+						id: 'c-00000000',
+						kind: 'constraint',
+						text: long('t'),
+						state: 'resolved',
+						resolvedBy: {hash: 'abc', date: 'd', reason: long('r')},
+					},
+				],
+			};
+		},
+	};
+	const {data} = await callTool(tools, 'why', {file: 'x', line: 1});
+	expect(data.truncated).toBe(true);
+	const [line] = data.lines;
+	expect(line.text).toBe('t'.repeat(500));
+	expect(line.resolvedBy.reason).toBe('r'.repeat(500));
+
+	// A card holds at most 20 lines of each of three kinds, and lines no more.
+	const many: McpTools = {
+		...noTools,
+		async why() {
+			return {
+				kind: 'commit',
+				lines: Array.from({length: 70}, (_, index) => ({
+					id: `c-${String(index).padStart(8, '0')}`,
+					text: 'ok',
+				})),
+			};
+		},
+	};
+	const dropped = await callTool(many, 'why', {file: 'x', line: 1});
+	expect(dropped.data.truncated).toBe(true);
+	expect(dropped.data.lines).toHaveLength(60);
+
+	// A short line is left whole and the reply carries no flag.
+	const short: McpTools = {
+		...noTools,
+		async why() {
+			return {kind: 'commit', lines: [{id: 'c-00000000', text: 'ok'}]};
+		},
+	};
+	const whole = await callTool(short, 'why', {file: 'x', line: 1});
+	expect(whole.data).not.toHaveProperty('truncated');
+	expect(whole.data.lines[0].text).toBe('ok');
 });
 
 test('a small reply carries no truncated flag', async () => {

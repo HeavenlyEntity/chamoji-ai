@@ -122,9 +122,12 @@ Only `sync` touches the network, and `search --ai` the TypeSafe API. Git doesn�
 		`show` one entry: `version`, `slug`, `title`, `emoji`, `status`,
 		`updatedAt`, `archived` and `commits`. `search` prints the matches, each
 		with `kind` (`commit` or `workstream`), `id`, `title`, `card` and `score`.
-		`sync` prints `fetched`, `merged`, `needsForce`, `entries` and `pushed`.
-		`resolve` prints `resolved`, the line’s id, and `hash`, the new commit’s.
-		`reindex` and `archive` ignore it.
+		Beside `card`, each match and each of `show`’s commits has `lines`: the id
+		and state of every Constraint, Gotcha and Follow-up line, as
+		[why](/commands/why#line-states) describes. It is left out when the card has
+		none. `sync` prints `fetched`, `merged`, `needsForce`, `entries` and
+		`pushed`. `resolve` prints `resolved`, the line’s id, and `hash`, the new
+		commit’s. `reindex` and `archive` ignore it.
 	</Property>
 	<Property name="--archived" type="boolean · list">
 		List the archived entries with the live ones. Their status says `archived`.
@@ -199,7 +202,7 @@ shipped, updated 2026-11-05, 3 commits
 
 7ab921a 🐛 Trap focus inside the dialog, 2026-11-05
   Why: Tab moved focus to the page behind the open dialog
-  Constraint: the dialog must still close on Escape
+  Constraint [c-0ddd4939]: the dialog must still close on Escape
 
 f8b510b ✨ Move between days with the arrow keys, 2026-11-05
 
@@ -211,14 +214,14 @@ Search finds the commit and the workstream that holds it:
 ```txt {{ title: 'chamoji memory search escape dialog' }}
 7ab921a 🐛 Trap focus inside the dialog
   Why: Tab moved focus to the page behind the open dialog
-  Constraint: the dialog must still close on Escape
+  Constraint [c-0ddd4939]: the dialog must still close on Escape
 workstream keyboard-support Keyboard support
   Why: Tab moved focus to the page behind the open dialog
-  Constraint: the dialog must still close on Escape
+  Constraint [c-0ddd4939]: the dialog must still close on Escape
 a33fd19 💄 Add dark colours to the picker
-  Follow-up: the dialog still uses the light shadow
+  Follow-up [f-028599e2]: the dialog still uses the light shadow
 workstream dark-mode Dark mode
-  Follow-up: the dialog still uses the light shadow
+  Follow-up [f-028599e2]: the dialog still uses the light shadow
 ```
 
 ```txt {{ title: 'chamoji memory search shadow --json' }}
@@ -235,6 +238,14 @@ workstream dark-mode Dark mode
         "the dialog still uses the light shadow"
       ]
     },
+    "lines": [
+      {
+        "id": "f-028599e2",
+        "kind": "followUp",
+        "text": "the dialog still uses the light shadow",
+        "state": "open"
+      }
+    ],
     "score": 2.5064509441245146
   },
   …

@@ -1,7 +1,12 @@
 import {appendFile, mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {snapshotWorkstream} from '@chamoji/core';
+import {
+	cardLineId,
+	readCardState,
+	snapshotWorkstream,
+	type CardLine,
+} from '@chamoji/core';
 import {afterEach, expect, test, vi} from 'vitest';
 import {
 	createRepo,
@@ -11,10 +16,17 @@ import {
 import {run} from '../src/run.js';
 import {recordingFace} from './helpers/recording-face.js';
 
+// The real card state, wrapped so a test can stand in for it or make it fail.
+vi.mock('@chamoji/core', async importOriginal => {
+	const original = await importOriginal<typeof import('@chamoji/core')>();
+	return {...original, readCardState: vi.fn(original.readCardState)};
+});
+
 let repo: FixtureRepo | undefined;
 let loose: string | undefined;
 afterEach(async () => {
 	vi.unstubAllEnvs();
+	vi.mocked(readCardState).mockClear();
 	await repo?.cleanup();
 	repo = undefined;
 	if (loose) await rm(loose, {recursive: true, force: true});
@@ -47,9 +59,152 @@ test('prints the commit and its card', async () => {
 	expect(code).toBe(0);
 	expect(stdout).toMatch(/^[0-9a-f]{7} ✨ Add a\nFixture Bot, 2026-01-01\n\n/);
 	expect(stdout).toContain(
-		'Why: because\nConstraint: no network\nGotcha: order matters\nFollow-up: tidy later\n',
+		[
+			'Why: because',
+			`Constraint [${cardLineId('constraint', 'no network')}]: no network`,
+			`Gotcha [${cardLineId('gotcha', 'order matters')}]: order matters`,
+			`Follow-up [${cardLineId('followUp', 'tidy later')}]: tidy later`,
+			'',
+		].join('\n'),
 	);
 	expect(stdout).not.toContain('This reason is thin');
+});
+
+/** A state line for a card line of `kind` and `text`, open unless `extra` says otherwise. */
+function stateLine(
+	kind: CardLine['kind'],
+	text: string,
+	extra: Partial<CardLine> = {},
+): CardLine {
+	return {
+		id: cardLineId(kind, text),
+		kind,
+		text,
+		state: 'open',
+		sources: [],
+		date: '2026-01-01T00:00:00Z',
+		files: [],
+		...extra,
+	};
+}
+
+test('why prints each of the five bracket forms', async () => {
+	const texts = ['no network', 'old proxy', 'port 3000', 'slow disk', 'beta'];
+	repo = await createRepo([
+		{
+			commit: '✨ Add a',
+			body: [
+				'Why: the old form leaked sessions after the tab closed',
+				...texts.map(text => `Constraint: ${text}`),
+				'Gotcha: unknown to the state',
+				'Follow-up: tidy later',
+			].join('\n'),
+			files: FILES,
+		},
+	]);
+	const resolver = `3e9d1aa${'0'.repeat(33)}`;
+	const replacer = `4d03905${'0'.repeat(33)}`;
+	const [open, resolved, replaced, doubted, offBranch] = texts;
+	vi.mocked(readCardState).mockResolvedValueOnce({
+		head: resolver,
+		dangling: [],
+		lines: [
+			stateLine('constraint', open!),
+			stateLine('constraint', resolved!, {
+				state: 'resolved',
+				resolvedBy: {
+					hash: resolver,
+					date: '2026-01-02T00:00:00Z',
+					reason: 'released in 0.11.0',
+				},
+			}),
+			stateLine('constraint', replaced!, {
+				state: 'in-doubt',
+				replacedBy: replacer,
+			}),
+			stateLine('constraint', doubted!, {state: 'in-doubt'}),
+			stateLine('constraint', offBranch!, {
+				state: 'off-branch',
+				workstream: {slug: 'auth', status: 'shipped'},
+			}),
+			// A reason from a commit message: cleaned, on one line, cut to 200.
+			stateLine('followUp', 'tidy later', {
+				state: 'resolved',
+				resolvedBy: {
+					hash: resolver,
+					date: '2026-01-02T00:00:00Z',
+					reason: `done \u001B[31m‮${'r'.repeat(300)}`,
+				},
+			}),
+		],
+	});
+	const {code, stdout} = await chamoji(['why', 'src/a.ts:1'], repo.dir);
+	expect(code).toBe(0);
+	const id = (text: string) => cardLineId('constraint', text);
+	expect(stdout).toContain(
+		[
+			'Why: the old form leaked sessions after the tab closed',
+			`Constraint [${id(open!)}]: no network`,
+			`Constraint [${id(resolved!)}, resolved by 3e9d1aa: released in 0.11.0]: old proxy`,
+			`Constraint [${id(replaced!)}, in doubt: its code was replaced by 4d03905]: port 3000`,
+			`Constraint [${id(doubted!)}, in doubt]: slow disk`,
+			`Constraint [${id(offBranch!)}, off branch]: beta`,
+			// The state doesn't know this one, so it prints as it always did.
+			'Gotcha: unknown to the state',
+			'',
+		].join('\n'),
+	);
+	const reason = `done [31m${'r'.repeat(300)}`.slice(0, 200);
+	expect(stdout).toContain(
+		`Follow-up [${cardLineId('followUp', 'tidy later')}, resolved by 3e9d1aa: ${reason}]: tidy later\n`,
+	);
+	expect(stdout).not.toContain('‮');
+	expect(readCardState).toHaveBeenCalledTimes(1);
+});
+
+test('a commit with only a Why prints exactly as before', async () => {
+	repo = await createRepo([
+		{
+			commit: '✨ Add a',
+			body: 'Why: the old form leaked sessions after the tab closed',
+			files: FILES,
+		},
+	]);
+	const {code, stdout} = await chamoji(['why', 'src/a.ts:1'], repo.dir);
+	expect(code).toBe(0);
+	const short = (
+		await gitOutput(repo.dir, ['rev-parse', '--short=7', 'HEAD'])
+	).trim();
+	expect(stdout).toBe(
+		`${short} ✨ Add a\nFixture Bot, 2026-01-01\n\nWhy: the old form leaked sessions after the tab closed\n`,
+	);
+	// Nothing in the card has a state, so none is read.
+	expect(readCardState).not.toHaveBeenCalled();
+});
+
+test('a card state that fails to read leaves why as it was, and --json without lines', async () => {
+	repo = await createRepo([
+		{
+			commit: '✨ Add a',
+			body: 'Why: the old form leaked sessions after the tab closed\nConstraint: no network',
+			files: FILES,
+		},
+	]);
+	// Once for the text run, once for --json.
+	vi.mocked(readCardState)
+		.mockRejectedValueOnce(new Error('git failed'))
+		.mockRejectedValueOnce(new Error('git failed'));
+	const text = await chamoji(['why', 'src/a.ts:1'], repo.dir);
+	expect(text.code).toBe(0);
+	expect(text.stderr).toBe('');
+	expect(text.stdout).toContain(
+		'Why: the old form leaked sessions after the tab closed\nConstraint: no network\n',
+	);
+	const json = await chamoji(['why', 'src/a.ts:1', '--json'], repo.dir);
+	expect(json.code).toBe(0);
+	const result = JSON.parse(json.stdout);
+	expect(result.card.constraint).toEqual(['no network']);
+	expect(result).not.toHaveProperty('lines');
 });
 
 test('a commit with no card still prints its subject and says so', async () => {
