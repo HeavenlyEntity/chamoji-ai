@@ -226,7 +226,7 @@ test('a cache that cannot be written still gives the answer', async () => {
 
 test('a path with spaces and a leading dash is blamed correctly', async () => {
 	repo = await createRepo([
-		{commit: 'add', files: {'-my "odd" file.txt': 'one\n'}},
+		{commit: 'add', files: {'-my odd file.txt': 'one\n'}},
 		{commit: 'other', files: {'b.txt': 'x\n'}},
 	]);
 	const first = await rev(repo.dir, 'HEAD~1');
@@ -236,10 +236,31 @@ test('a path with spaces and a leading dash is blamed correctly', async () => {
 	});
 	expect(result.get(first)).toEqual({
 		survives: true,
-		files: ['-my "odd" file.txt'],
+		files: ['-my odd file.txt'],
 	});
-	expect(blamed).toEqual(['-my "odd" file.txt']);
+	expect(blamed).toEqual(['-my odd file.txt']);
 });
+
+// Windows can't create a file whose name holds a double quote.
+test.skipIf(process.platform === 'win32')(
+	'a path that git would quote is blamed correctly',
+	async () => {
+		repo = await createRepo([
+			{commit: 'add', files: {'-my "odd" file.txt': 'one\n'}},
+			{commit: 'other', files: {'b.txt': 'x\n'}},
+		]);
+		const first = await rev(repo.dir, 'HEAD~1');
+		const blamed: string[] = [];
+		const result = await readSurvival(repo.dir, [first], {
+			onBlame: f => blamed.push(f),
+		});
+		expect(result.get(first)).toEqual({
+			survives: true,
+			files: ['-my "odd" file.txt'],
+		});
+		expect(blamed).toEqual(['-my "odd" file.txt']);
+	},
+);
 
 test('a binary file does not count as lines added', async () => {
 	repo = await createRepo([{commit: 'add', files: {'a.bin': 'x\0y\0z\n'}}]);
