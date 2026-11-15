@@ -102,6 +102,14 @@ export {
 	normalizeLine,
 	type CardKind,
 } from './card-lines.js';
+export {
+	foldCardState,
+	type CardLine,
+	type CardState,
+	type FoldCommit,
+	type FoldInput,
+	type LineState,
+} from './card-state.js';
 export {readIntent} from './intent.js';
 export {readResolves, readRevertedHash, type Resolve} from './resolves.js';
 export {
