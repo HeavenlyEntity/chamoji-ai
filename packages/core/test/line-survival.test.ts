@@ -128,7 +128,7 @@ test('a changed file is blamed again and its old entry is dropped', async () => 
 	expect(blamed).toEqual(['a.txt']);
 	expect(result.get(hash)?.survives).toBe(false);
 	const cache = JSON.parse(await readFile(await cachePath(repo.dir), 'utf8'));
-	expect(Object.keys(cache.files)).toHaveLength(1);
+	expect(Object.keys(cache.files)).toEqual(['a.txt']);
 });
 
 test('a damaged cache file is ignored and rebuilt', async () => {
@@ -140,8 +140,14 @@ test('a damaged cache file is ignored and rebuilt', async () => {
 	for (const damage of [
 		'{not json',
 		JSON.stringify({version: 99, files: {}}),
-		JSON.stringify({version: 1, files: {x: 'nope'}}),
-		JSON.stringify({version: 1, files: {x: [1]}}),
+		JSON.stringify({version: 1, files: {'a.txt': {blob: 'x', owners: []}}}),
+		JSON.stringify({version: 2, files: {'a.txt': 'nope'}}),
+		JSON.stringify({version: 2, files: {'a.txt': {blob: 'x', owners: [1]}}}),
+		JSON.stringify({
+			version: 2,
+			files: {'a.txt': {blob: 'x', owners: ['not a hash']}},
+		}),
+		'{"version":2,"files":{"__proto__":{"blob":"x","owners":[]}}}',
 		'null',
 	]) {
 		await writeFile(file, damage);
@@ -152,7 +158,8 @@ test('a damaged cache file is ignored and rebuilt', async () => {
 		expect(blamed).toEqual(['a.txt']);
 		expect(result.get(hash)?.survives).toBe(true);
 		const rebuilt = JSON.parse(await readFile(file, 'utf8'));
-		expect(rebuilt.version).toBe(1);
+		expect(rebuilt.version).toBe(2);
+		expect(Object.getPrototypeOf(Object.prototype)).toBe(null);
 	}
 });
 
@@ -188,4 +195,86 @@ test('a binary file does not count as lines added', async () => {
 	const hash = await rev(repo.dir, 'HEAD');
 	const result = await readSurvival(repo.dir, [hash]);
 	expect(result.get(hash)).toEqual({survives: undefined, files: []});
+});
+
+test('a commit whose file was moved afterwards still survives, and files names the new path', async () => {
+	repo = await createRepo([
+		{commit: 'add', files: {'a.txt': 'one\ntwo\nthree\nfour\n'}},
+	]);
+	const first = await rev(repo.dir, 'HEAD');
+	await gitOutput(repo.dir, ['mv', 'a.txt', 'b.txt']);
+	await gitOutput(repo.dir, ['commit', '-q', '-m', 'move']);
+	const result = await readSurvival(repo.dir, [first]);
+	expect(result.get(first)).toEqual({survives: true, files: ['b.txt']});
+});
+
+test('a commit whose file was moved and then fully rewritten does not survive', async () => {
+	repo = await createRepo([
+		{commit: 'add', files: {'a.txt': 'one\ntwo\nthree\nfour\n'}},
+	]);
+	const first = await rev(repo.dir, 'HEAD');
+	await gitOutput(repo.dir, ['mv', 'a.txt', 'b.txt']);
+	await writeFile(path.join(repo.dir, 'b.txt'), 'red\ngreen\nblue\ncyan\n');
+	await gitOutput(repo.dir, ['add', 'b.txt']);
+	await gitOutput(repo.dir, ['commit', '-q', '-m', 'move and rewrite']);
+	const result = await readSurvival(repo.dir, [first]);
+	expect(result.get(first)?.survives).toBe(false);
+});
+
+test('a rename git cannot trace reads as gone', async () => {
+	// Too short to match by content, so git sees a delete and an add.
+	repo = await createRepo([{commit: 'add', files: {'a.txt': 'one\n'}}]);
+	const first = await rev(repo.dir, 'HEAD');
+	await gitOutput(repo.dir, ['mv', 'a.txt', 'b.txt']);
+	await writeFile(path.join(repo.dir, 'b.txt'), 'one\ntwo\nthree\nfour\n');
+	await gitOutput(repo.dir, ['add', 'b.txt']);
+	await gitOutput(repo.dir, ['commit', '-q', '-m', 'move and grow']);
+	const result = await readSurvival(repo.dir, [first]);
+	expect(result.get(first)).toEqual({survives: false, files: ['a.txt']});
+});
+
+test('after the commit is amended, the new hash survives although the file did not change', async () => {
+	repo = await createRepo([{commit: 'add', files: {'a.txt': 'one\n'}}]);
+	const old = await rev(repo.dir, 'HEAD');
+	await readSurvival(repo.dir, [old]);
+	await gitOutput(repo.dir, ['commit', '-q', '--amend', '-m', 'add, reworded']);
+	const amended = await rev(repo.dir, 'HEAD');
+	expect(amended).not.toBe(old);
+	const blamed: string[] = [];
+	const result = await readSurvival(repo.dir, [amended], {
+		onBlame: f => blamed.push(f),
+	});
+	expect(result.get(amended)?.survives).toBe(true);
+	expect(blamed).toEqual(['a.txt']);
+});
+
+test('two paths with the same content keep separate owners', async () => {
+	repo = await createRepo([
+		{commit: 'add a', files: {'a.txt': 'same\n'}},
+		{commit: 'add b', files: {'b.txt': 'same\n'}},
+	]);
+	const first = await rev(repo.dir, 'HEAD~1');
+	const second = await rev(repo.dir, 'HEAD');
+	for (let round = 0; round < 2; round++) {
+		const result = await readSurvival(repo.dir, [first, second]);
+		expect(result.get(first)).toEqual({survives: true, files: ['a.txt']});
+		expect(result.get(second)).toEqual({survives: true, files: ['b.txt']});
+	}
+});
+
+test('two calls at once both return the right answer and leave a readable cache', async () => {
+	repo = await createRepo([
+		{commit: 'add', files: {'a.txt': 'one\n', 'b.txt': 'two\n'}},
+	]);
+	const hash = await rev(repo.dir, 'HEAD');
+	const [x, y] = await Promise.all([
+		readSurvival(repo.dir, [hash]),
+		readSurvival(repo.dir, [hash]),
+	]);
+	expect(x.get(hash)?.survives).toBe(true);
+	expect(y.get(hash)?.survives).toBe(true);
+	const cache = JSON.parse(await readFile(await cachePath(repo.dir), 'utf8'));
+	expect(cache.version).toBe(2);
+	// Blaming stops at the first file that shows the commit survives.
+	expect(Object.keys(cache.files)).toEqual(['a.txt']);
 });
