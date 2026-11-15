@@ -168,7 +168,7 @@ Only `archive --purge` removes an entry for good. A purge is local until you syn
 
 ## Resolving a line {{ icon: 'check-circle' }}
 
-A constraint, gotcha or follow-up can stop applying while the code it was written for stays. When that happens, resolve the line, so no one, and no agent, keeps following it. What “resolved” means depends on the kind of line:
+A constraint, gotcha or follow-up can stop applying while the code it was written for stays. When that happens, resolve the line, so no one, and no agent, keeps relying on it. What “resolved” means depends on the kind of line:
 
 - **A constraint** is lifted: the limit no longer holds.
 - **A follow-up** is done.
@@ -201,9 +201,15 @@ Follow-up [f-226cb8b6]: show the limit in the picker
 
 When a code change ends a line, put the `Resolves:` line in that commit’s message instead, as `Resolves: <id> <reason>`. Only a commit on your branch resolves a line, so a branch that hasn’t merged the resolve still shows the line open. [How commits are read](/reference/how-commits-are-read) has the format.
 
-Two limits:
+A `git revert` counts too. Reverting the commit that resolved a line reopens the line. Reverting every commit that stated a line withdraws it: it shows as reverted, with the revert’s hash, as in `Constraint [c-281efb3c, reverted by 9d4e1f7]: …`, and can’t be resolved.
+
+To undo a resolve, remove the resolve commit before you push it, for example with `git reset --soft HEAD~1` when it is the last commit. The commit is empty, so nothing else changes. Once it is pushed, state the line again in a new commit, which reopens it.
+
+Some limits:
 
 - **A revert written by hand isn’t detected.** chamoji reads the line `git revert` writes. If you undo a resolve, or the change that ended a line, with a commit you wrote yourself, the line stays resolved. State it again to reopen it.
+- **A revert whose commit was rewritten isn’t detected.** The revert names a hash. If that commit was rebased, or came in by “Rebase and merge”, the hash on your branch is a different one, so the revert undoes nothing chamoji can see.
+- **A merge commit’s own message isn’t read.** A `Resolves:` or a card line written in a merge commit counts for nothing. Put it in a commit of its own.
 - **Stating the line again reopens it.** A resolve only covers the commits before it. A later commit with the same line, in any case or spacing, opens it again, so a card copied forward brings back a line you resolved.
 
 ## Sharing memory {{ tag: 'SETUP', variant: 'setup', label: 'chamoji init', icon: 'cloud-arrow-up' }}
