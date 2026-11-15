@@ -38,8 +38,9 @@ const SYNC_NOTE =
  * push only memory and leave the branch behind. It pushes nothing.
  *
  * With `--agents` it first wires Claude Code to chamoji in this repo: the MCP
- * server in `.mcp.json` and the commit hook in `.claude/settings.json`. Those
- * two files are shared, so they are merged into, never replaced.
+ * server in `.mcp.json`, and the commit hook and the session brief hook in
+ * `.claude/settings.json`. Those two files are shared, so they are merged
+ * into, never replaced.
  */
 export async function runInit(
 	flags: {agents?: boolean},
@@ -186,10 +187,12 @@ export const AGENT_FILES = ['.mcp.json', '.claude/settings.json'] as const;
 async function agentPlans(io: Io): Promise<{plans: Plan[]; viaNpx: boolean}> {
 	const root = (await runGit(['rev-parse', '--show-toplevel'], io.cwd)).trim();
 	const viaNpx = !onPath('chamoji', io.env ?? process.env);
+	const commit = await plan(root, commitHook(viaNpx));
 	return {
 		plans: [
 			await plan(root, mcpServer(viaNpx)),
-			await plan(root, commitHook(viaNpx)),
+			commit,
+			await plan(root, sessionHook(viaNpx), commit),
 		],
 		viaNpx,
 	};
@@ -245,7 +248,7 @@ export async function setUpAgents(io: Io): Promise<number> {
 			return 1;
 		}
 
-		changed.push(file);
+		if (!changed.includes(file)) changed.push(file);
 		io.stdout(`${file}: ${merge.added}\n`);
 	}
 
@@ -303,6 +306,35 @@ function mcpServer(viaNpx: boolean): Merge {
 	};
 }
 
+/**
+ * The list at `hooks[event]`, made if it is missing, and whether an entry in
+ * it already runs `chamoji agent-hook`. Refuses anything that is not a list.
+ */
+function agentHookList(
+	data: Record<string, unknown>,
+	event: string,
+): {list: unknown[]; present: boolean} {
+	const hooks = section(data, 'hooks');
+	if (!Object.hasOwn(hooks, event)) hooks[event] = [];
+	const list = hooks[event];
+	if (!Array.isArray(list)) {
+		throw new Refusal(`a "hooks.${event}" that is not a list`);
+	}
+
+	const present = list.some(
+		entry =>
+			isRecord(entry) &&
+			Array.isArray(own(entry, 'hooks')) &&
+			(own(entry, 'hooks') as unknown[]).some(
+				hook =>
+					isRecord(hook) &&
+					typeof own(hook, 'command') === 'string' &&
+					RUNS_AGENT_HOOK.test(own(hook, 'command') as string),
+			),
+	);
+	return {list, present};
+}
+
 /** The PreToolUse entry that sends a `git commit` without a card back to the agent. */
 function commitHook(viaNpx: boolean): Merge {
 	return {
@@ -310,24 +342,7 @@ function commitHook(viaNpx: boolean): Merge {
 		added: 'added the commit hook',
 		present: 'already has the commit hook',
 		apply(data) {
-			const hooks = section(data, 'hooks');
-			if (!Object.hasOwn(hooks, 'PreToolUse')) hooks.PreToolUse = [];
-			const list = hooks.PreToolUse;
-			if (!Array.isArray(list)) {
-				throw new Refusal('a "hooks.PreToolUse" that is not a list');
-			}
-
-			const present = list.some(
-				entry =>
-					isRecord(entry) &&
-					Array.isArray(own(entry, 'hooks')) &&
-					(own(entry, 'hooks') as unknown[]).some(
-						hook =>
-							isRecord(hook) &&
-							typeof own(hook, 'command') === 'string' &&
-							RUNS_AGENT_HOOK.test(own(hook, 'command') as string),
-					),
-			);
+			const {list, present} = agentHookList(data, 'PreToolUse');
 			if (present) return false;
 			list.push({
 				matcher: 'Bash',
@@ -338,6 +353,28 @@ function commitHook(viaNpx: boolean): Merge {
 						command: runChamoji(viaNpx, 'agent-hook'),
 					},
 				],
+			});
+			return true;
+		},
+	};
+}
+
+/**
+ * The SessionStart entry that hands the project brief to a new session, and
+ * to one after `/clear` or a compaction. A resumed or forked session still
+ * has the brief it was given, so the matcher leaves those out.
+ */
+function sessionHook(viaNpx: boolean): Merge {
+	return {
+		file: '.claude/settings.json',
+		added: 'added the session brief hook',
+		present: 'already has the session brief hook',
+		apply(data) {
+			const {list, present} = agentHookList(data, 'SessionStart');
+			if (present) return false;
+			list.push({
+				matcher: 'startup|clear|compact',
+				hooks: [{type: 'command', command: runChamoji(viaNpx, 'agent-hook')}],
 			});
 			return true;
 		},
@@ -364,8 +401,10 @@ function section(
  * Reads a shared file, merges into it and renders the result, keeping the
  * file's indent, line endings and final newline. `text` is null when nothing
  * changes. Refuses a symlink, a corrupt file and one of an unexpected shape.
+ * A `before` plan for the same file is merged on top of, so the second write
+ * keeps the first one's change.
  */
-async function plan(root: string, merge: Merge): Promise<Plan> {
+async function plan(root: string, merge: Merge, before?: Plan): Promise<Plan> {
 	const target = path.join(root, ...merge.file.split('/'));
 	const refuse = (why: string) =>
 		new Refusal(
@@ -390,11 +429,12 @@ async function plan(root: string, merge: Merge): Promise<Plan> {
 	if (found?.isSymbolicLink()) throw refuse('is a symlink');
 	if (found && !found.isFile()) throw refuse('is not a file');
 
-	const original = found ? await readFile(target, 'utf8') : '';
+	const original =
+		before?.text ?? (found ? await readFile(target, 'utf8') : '');
 	const body = original.replace(/^\uFEFF/, '');
 	let data: Record<string, unknown> = {};
 	// An empty file is as good as `{}`.
-	if (found && body.trim() !== '') {
+	if (body.trim() !== '') {
 		let parsed: unknown;
 		try {
 			parsed = JSON.parse(body);

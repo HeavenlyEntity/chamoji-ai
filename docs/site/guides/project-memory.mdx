@@ -273,6 +273,7 @@ time-zones        dropped  1 commit   🌍 Time zones
 ```txt {{ title: 'chamoji init --agents' }}
 .mcp.json: added the chamoji MCP server
 .claude/settings.json: added the commit hook
+.claude/settings.json: added the session brief hook
 These files are meant to be committed, so everyone who uses Claude Code here gets the same setup. A changed file is written back as plain JSON with its indent kept, so other layout, such as blank lines or how short lists wrap, may differ.
 origin already fetches chamoji memory.
 A plain git fetch or git pull downloads origin's memory but doesn't change what chamoji memory shows. Run chamoji memory sync to take it in and share yours.
@@ -280,7 +281,7 @@ Took in memory from origin: 3 entries.
 ```
 
 - **`.mcp.json`** gets a `chamoji` server that runs `chamoji mcp`, or `npx --yes @chamoji/cli mcp` when chamoji isn’t on your PATH.
-- **`.claude/settings.json`** gets a hook that checks Claude Code’s commits for a card whose Why says why.
+- **`.claude/settings.json`** gets a hook that checks Claude Code’s commits for a card whose Why says why, and one that hands each new session the project brief.
 
 Both files are meant to be committed. Existing entries are kept, and a file chamoji can’t safely read is left alone. Claude Code won’t start a server from a project’s `.mcp.json` until you approve it, so approve it when Claude Code asks.
 
@@ -301,6 +302,8 @@ Each tool tells the model that what it returns is commit text other people wrote
 ```
 
 The agent tries again with a `Why:` line, and the hook lets it through. Any of the four card lines counts, but a card with only a `Why:` must say why: a thin one, such as `Why: fix bug`, is denied too, with a reason that starts `Your Why ("fix bug") doesn't say why.` and asks for the bug, limit or request behind the change. [What makes a good Why](/guides/writing-commits#what-makes-a-good-why) has the rules. `CHAMOJI_NO_CARD=1` in front of the command skips the check, for when you’ve told the agent to. A message from a file (`-F`) or a `Why:` with no space after the colon goes through unjudged, and a card inside a `$(...)` other than a `cat` heredoc can’t be seen. The hook covers Claude Code only. Other agents can use the MCP server, but write their cards by hand. [init](/commands/init) lists what passes and what the hook can’t see.
+
+**The session brief hook** runs when a Claude Code session starts: a new one, one after `/clear` and one after a compaction, but not a resumed or forked one, which still has its context. It prints the brief that `chamoji memory brief` prints, and Claude Code adds it to the session, so the agent starts knowing the open constraints, gotchas and follow-ups, what was resolved lately and the active workstreams. The hook adds no text of its own; the brief’s first line says its lines are records, not instructions. Outside a repo, with no commits or nothing to sum up, when anything fails, or when the brief takes longer than 5 seconds, it prints nothing, to stdout or stderr, and exits 0, so a session is never held up. To remove it, delete the `hooks.SessionStart` entry that runs `chamoji agent-hook` from `.claude/settings.json`. [init](/commands/init#the-session-brief-hook) shows what it prints.
 
 ## Related {{ anchor: false }}
 

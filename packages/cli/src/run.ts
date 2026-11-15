@@ -746,9 +746,15 @@ export async function run(argv: string[], given: Io): Promise<number> {
 				}
 
 				case 'agent-hook': {
-					// Claude Code runs this before a Bash command. Whatever happens it
-					// prints a decision or nothing, and exits 0.
-					return await runAgentHook({...io, stdin: process.stdin});
+					// Claude Code runs this before a Bash command and when a session
+					// starts. Whatever happens it prints a decision, the brief or
+					// nothing, and exits 0. A brief that runs late has printed nothing,
+					// and exiting then keeps a slow git from holding the session.
+					return await runAgentHook({
+						...io,
+						stdin: process.stdin,
+						onTimeout: () => process.exit(0),
+					});
 				}
 
 				case 'init': {

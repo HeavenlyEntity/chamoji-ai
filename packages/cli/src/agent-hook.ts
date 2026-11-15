@@ -1,6 +1,7 @@
 import {judgeWhy, parseCommit, readIntent} from '@chamoji/core';
 import {isRecord, own} from './records.js';
 import type {Io} from './run.js';
+import {sessionBrief, type SessionBriefOptions} from './session-brief.js';
 
 /** Said to the agent when it commits with no card. */
 export const DENY_REASON =
@@ -548,19 +549,28 @@ async function readInput(
 }
 
 /**
- * `chamoji agent-hook`: what Claude Code runs before a Bash command. It
- * denies a `git commit` that carries no intent card, so the agent can write
- * one while it still can, and prints nothing for anything else. Whatever goes
- * wrong, it prints nothing and exits 0: a broken hook must not stop the agent.
+ * `chamoji agent-hook`: what Claude Code runs before a Bash command and when
+ * a session starts. Before a command it denies a `git commit` that carries no
+ * intent card, so the agent can write one while it still can. At the start of
+ * a session it hands over the project brief. It prints nothing for anything
+ * else. Whatever goes wrong, it prints nothing and exits 0: a broken hook must
+ * not stop the agent.
  */
 export async function runAgentHook(
-	io: Io & {stdin: NodeJS.ReadableStream},
+	io: Io & {stdin: NodeJS.ReadableStream} & SessionBriefOptions,
 ): Promise<number> {
 	try {
 		const raw = await readInput(io.stdin);
 		if (raw === undefined) return 0;
 		const input: unknown = JSON.parse(raw);
-		if (!isRecord(input) || own(input, 'tool_name') !== 'Bash') return 0;
+		if (!isRecord(input)) return 0;
+		if (own(input, 'hook_event_name') === 'SessionStart') {
+			const brief = await sessionBrief(input, io.cwd, io);
+			if (brief !== undefined) io.stdout(brief);
+			return 0;
+		}
+
+		if (own(input, 'tool_name') !== 'Bash') return 0;
 		const toolInput = own(input, 'tool_input');
 		const command = isRecord(toolInput) ? own(toolInput, 'command') : undefined;
 		if (typeof command !== 'string') return 0;

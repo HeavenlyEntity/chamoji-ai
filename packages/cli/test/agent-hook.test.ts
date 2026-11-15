@@ -4,7 +4,7 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {PassThrough, Readable} from 'node:stream';
 import {fileURLToPath} from 'node:url';
-import {WHY_ADVICE, parseCommit, readCommits} from '@chamoji/core';
+import {WHY_ADVICE, parseCommit, readBrief, readCommits} from '@chamoji/core';
 import {afterEach, expect, test} from 'vitest';
 import {createRepo, gitOutput} from '../../core/test/helpers/fixture-repo.js';
 import {
@@ -13,6 +13,7 @@ import {
 	judgeCommit,
 	runAgentHook,
 } from '../src/agent-hook.js';
+import {BRIEF_LIMIT} from '../src/session-brief.js';
 
 const cliJs = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
 
@@ -491,4 +492,257 @@ test('the hook says why it refused a thin Why', async () => {
 	expect(
 		JSON.parse(stdout).hookSpecificOutput.permissionDecisionReason,
 	).toMatch(/^Your Why \("fix bug"\) doesn't say why\./);
+});
+
+const PORT = 'The dev server must stay on port 3000';
+
+/** Claude Code's SessionStart input, with `source` and `cwd` as given. */
+const session = (fields: Record<string, unknown>) =>
+	JSON.stringify({
+		session_id: 'abc',
+		transcript_path: '/tmp/abc.jsonl',
+		hook_event_name: 'SessionStart',
+		...fields,
+	});
+
+/** A repo whose brief has one open constraint. */
+async function repoWithCard(): Promise<string> {
+	const repo = await createRepo([
+		{commit: '🎉 Init'},
+		{
+			commit: '✨ Add the dev server',
+			body: `Why: the app needs a local server\nConstraint: ${PORT}`,
+			files: {'src/server.ts': 'serve\n'},
+		},
+	]);
+	cleanups.push(async () => repo.cleanup());
+	return repo.dir;
+}
+
+/** Runs the hook with a slow or failing brief reader injected. */
+async function sessionHook(
+	input: string,
+	options: {
+		cwd?: string;
+		readBrief?: (cwd: string) => Promise<{text: string}>;
+		briefLimit?: number;
+		onTimeout?: () => void;
+	} = {},
+) {
+	let stdout = '';
+	let stderr = '';
+	const code = await runAgentHook({
+		cwd: options.cwd ?? process.cwd(),
+		stdout: text => (stdout += text),
+		stderr: text => (stderr += text),
+		stdin: Readable.from([input]),
+		...(options.readBrief ? {readBrief: options.readBrief} : {}),
+		...(options.briefLimit === undefined
+			? {}
+			: {briefLimit: options.briefLimit}),
+		...(options.onTimeout ? {onTimeout: options.onTimeout} : {}),
+	});
+	return {code, stdout, stderr};
+}
+
+const SILENT = {code: 0, stdout: '', stderr: ''};
+
+test('a SessionStart input prints the brief as additionalContext and exits 0', async () => {
+	const dir = await repoWithCard();
+	const {text} = await readBrief(dir);
+	expect(text).toContain(PORT);
+	const result = await sessionHook(session({source: 'startup', cwd: dir}));
+	expect(result.code).toBe(0);
+	expect(result.stderr).toBe('');
+	expect(JSON.parse(result.stdout)).toEqual({
+		hookSpecificOutput: {
+			hookEventName: 'SessionStart',
+			additionalContext: text,
+		},
+	});
+	// Exactly that JSON and a newline, with no text of the hook's own.
+	expect(result.stdout).toBe(
+		`{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":${JSON.stringify(text)}}}\n`,
+	);
+});
+
+test('the brief is printed after /clear and after a compaction too', async () => {
+	const dir = await repoWithCard();
+	const startup = await sessionHook(session({source: 'startup', cwd: dir}));
+	for (const source of ['clear', 'compact']) {
+		expect(await sessionHook(session({source, cwd: dir}))).toEqual(startup);
+	}
+});
+
+test('a resumed or forked session, or one with no or another source, prints nothing', async () => {
+	const dir = await repoWithCard();
+	for (const fields of [
+		{source: 'resume', cwd: dir},
+		{source: 'fork', cwd: dir},
+		{cwd: dir},
+		{source: 'Startup', cwd: dir},
+		{source: 'other', cwd: dir},
+		{source: ['startup'], cwd: dir},
+		{source: null, cwd: dir},
+	]) {
+		expect(await sessionHook(session(fields))).toEqual(SILENT);
+	}
+});
+
+test('the session hook reads the brief from the same repo in a subdirectory', async () => {
+	const dir = await repoWithCard();
+	const sub = path.join(dir, 'src');
+	const atRoot = await sessionHook(session({source: 'startup', cwd: dir}));
+	expect(atRoot.stdout).not.toBe('');
+	expect(await sessionHook(session({source: 'startup', cwd: sub}))).toEqual(
+		atRoot,
+	);
+});
+
+test('without a cwd in the input the session hook reads the process directory', async () => {
+	const dir = await repoWithCard();
+	const withCwd = await sessionHook(session({source: 'startup', cwd: dir}));
+	for (const cwd of [undefined, '', 42]) {
+		const fields =
+			cwd === undefined ? {source: 'startup'} : {source: 'startup', cwd};
+		expect(await sessionHook(session(fields), {cwd: dir})).toEqual(withCwd);
+	}
+});
+
+test('a repo with no cards prints nothing', async () => {
+	const repo = await createRepo([
+		{commit: '🎉 Init'},
+		{commit: '✨ Add a page'},
+	]);
+	cleanups.push(async () => repo.cleanup());
+	expect(
+		await sessionHook(session({source: 'startup', cwd: repo.dir})),
+	).toEqual(SILENT);
+});
+
+test('a directory that is not a git repo prints nothing and exits 0', async () => {
+	const dir = await mkdtemp(path.join(tmpdir(), 'chamoji-not-a-repo-'));
+	cleanups.push(async () => rm(dir, {recursive: true, force: true}));
+	expect(await sessionHook(session({source: 'startup', cwd: dir}))).toEqual(
+		SILENT,
+	);
+	// A directory that isn't there at all says nothing either.
+	expect(
+		await sessionHook(
+			session({source: 'startup', cwd: path.join(dir, 'missing')}),
+		),
+	).toEqual(SILENT);
+});
+
+test('a repo with no commits prints nothing and exits 0', async () => {
+	const dir = await mkdtemp(path.join(tmpdir(), 'chamoji-no-commits-'));
+	cleanups.push(async () => rm(dir, {recursive: true, force: true}));
+	await gitOutput(dir, ['init', '-q']);
+	expect(await sessionHook(session({source: 'startup', cwd: dir}))).toEqual(
+		SILENT,
+	);
+});
+
+test('a brief that takes longer than 5 seconds prints nothing and exits 0', async () => {
+	let timedOut = 0;
+	let finish: (brief: {text: string}) => void = () => undefined;
+	const slow = async () =>
+		new Promise<{text: string}>(resolve => {
+			finish = resolve;
+		});
+	const result = await sessionHook(session({source: 'startup', cwd: '/x'}), {
+		readBrief: slow,
+		briefLimit: 20,
+		onTimeout: () => timedOut++,
+	});
+	expect(result).toEqual(SILENT);
+	expect(timedOut).toBe(1);
+	// The brief that comes in late is dropped.
+	finish({text: 'late'});
+});
+
+test('the limit is 5 seconds', () => {
+	expect(BRIEF_LIMIT).toBe(5000);
+});
+
+test('a brief that fails, or fails late, prints nothing', async () => {
+	for (const readBrief of [
+		async () => {
+			throw new Error('fatal: not a git repository');
+		},
+		() => {
+			throw new Error('thrown before any promise');
+		},
+		async () =>
+			new Promise<{text: string}>((_resolve, reject) => {
+				setTimeout(() => reject(new Error('late')), 40);
+			}),
+	]) {
+		expect(
+			await sessionHook(session({source: 'startup', cwd: '/x'}), {
+				readBrief,
+				briefLimit: 20,
+			}),
+		).toEqual(SILENT);
+	}
+
+	// Let the late rejection land, so an unhandled one would fail the run.
+	await new Promise(resolve => {
+		setTimeout(resolve, 60);
+	});
+});
+
+test('the session hook reads the default brief, with no options', async () => {
+	const calls: unknown[][] = [];
+	await sessionHook(session({source: 'startup', cwd: '/repo'}), {
+		readBrief: async (...args: unknown[]) => {
+			calls.push(args);
+			return {text: 'brief'};
+		},
+	});
+	expect(calls).toEqual([['/repo']]);
+});
+
+test('a PreToolUse input is handled exactly as before', async () => {
+	const never = async () => {
+		throw new Error('the brief is not read for a Bash command');
+	};
+	for (const input of [
+		bash('git commit -m x'),
+		JSON.stringify({
+			tool_name: 'Bash',
+			tool_input: {command: 'git commit -m x'},
+		}),
+		bash(
+			'git commit -m "x\n\nWhy: the form crashed when the field was cleared"',
+		),
+		bash('ls'),
+	]) {
+		expect(await sessionHook(input, {readBrief: never})).toEqual(
+			await hook(input),
+		);
+	}
+
+	const denied = await sessionHook(bash('git commit -m x'), {readBrief: never});
+	expect(JSON.parse(denied.stdout)).toEqual({
+		hookSpecificOutput: {
+			hookEventName: 'PreToolUse',
+			permissionDecision: 'deny',
+			permissionDecisionReason: DENY_REASON,
+		},
+	});
+});
+
+test('the CLI prints the brief for a new session, and nothing outside a repo', async () => {
+	const dir = await repoWithCard();
+	const {text} = await readBrief(dir);
+	const printed = await spawnHook(session({source: 'startup', cwd: dir}));
+	expect(printed).toEqual({
+		code: 0,
+		stdout: `${JSON.stringify({hookSpecificOutput: {hookEventName: 'SessionStart', additionalContext: text}})}\n`,
+		stderr: '',
+	});
+
+	// spawnHook runs in an empty temp directory, which is no repo.
+	expect(await spawnHook(session({source: 'startup'}))).toEqual(SILENT);
 });

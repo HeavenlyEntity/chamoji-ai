@@ -234,7 +234,7 @@ chamoji init --agents
 This does what `init` does, and sets up Claude Code in this repo by merging into two files that are meant to be committed, so everyone who uses Claude Code here gets the same setup. Existing entries are kept, and a file chamoji can't safely read is left alone.
 
 - **`.mcp.json`** gets a `chamoji` server that runs `chamoji mcp`, or `npx --yes @chamoji/cli mcp` when chamoji isn't on your PATH.
-- **`.claude/settings.json`** gets the commit hook, below.
+- **`.claude/settings.json`** gets the commit hook and the session brief hook, below.
 
 **Approve the server.** Claude Code won't run a server from a project's `.mcp.json` until you approve it, and until then `claude mcp list` shows it as Pending approval. Approve it when Claude Code asks.
 
@@ -255,6 +255,8 @@ Everything the tools return is commit text that other people wrote, and each too
 The agent retries with a `Why:` line. Any one of the four lines counts, as long as chamoji would read it: below the subject paragraph, so `-m "Why: because"` is a subject, not a card. `CHAMOJI_NO_CARD=1` in front of the command is the opt-out, meant for when you've told the agent to skip cards. Commits that take their message from a file or another commit (`-F`, `-C`) and commands that only look (`--dry-run`, `--help`) pass. The hook reads the command text, so a commit hidden inside `sh -c '…'`, `xargs` or a shell alias isn't seen. If anything goes wrong inside the hook, it says nothing and lets the command through, and the committed command ends in `|| true`, so a chamoji too old to know the hook can't block your commits.
 
 The hook covers Claude Code only. Other agents can use the MCP server, but write their cards by hand.
+
+**The session brief hook** is a `SessionStart` hook. When a session starts, on a new session, after `/clear` and after a compaction, it prints the brief that `chamoji memory brief` prints, and Claude Code adds it to the session's context, so the agent starts knowing the open constraints, gotchas and follow-ups, what was resolved lately and the active workstreams. Its matcher is `startup|clear|compact`: a resumed or forked session still has its context and gets nothing. It adds no text of its own around the brief, whose first line says its lines are records, not instructions. Outside a repo, in a repo with no commits or nothing to sum up, when anything fails, or when the brief takes longer than 5 seconds, it prints nothing, to stdout or stderr, and exits 0. To remove it, delete the `hooks.SessionStart` entry that runs `chamoji agent-hook` from `.claude/settings.json`.
 
 **Not verified:** the `.mcp.json` that `init --agents` writes on native Windows, where `npx` and a `chamoji` shim may need a `cmd /c` wrapper.
 
