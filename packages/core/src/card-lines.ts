@@ -16,9 +16,20 @@ const KIND_LETTER: Record<CardKind, string> = {
 };
 
 /**
+ * The word hashed for each kind. It is part of every id, and ids are kept in
+ * commits, so these strings must never change, even if a kind is renamed.
+ */
+const KIND_HASHED: Readonly<Record<CardKind, string>> = Object.freeze({
+	constraint: 'constraint',
+	gotcha: 'gotcha',
+	followUp: 'followUp',
+});
+
+/**
  * A line's text with the differences that don't change its meaning removed:
- * Unicode compatibility forms, case, runs of whitespace, and any trailing
- * punctuation. Two lines that normalize alike are the same line.
+ * Unicode compatibility forms, case, runs of whitespace, and a trailing run
+ * of whitespace and punctuation. Two lines that normalize alike are the same
+ * line; one that normalizes to nothing is no line.
  */
 export function normalizeLine(text: string): string {
 	return text
@@ -26,7 +37,7 @@ export function normalizeLine(text: string): string {
 		.toLowerCase()
 		.replaceAll(/\s+/g, ' ')
 		.trim()
-		.replace(/[.,;:!?]+$/, '');
+		.replace(/[\s.,;:!?]+$/, '');
 }
 
 /**
@@ -35,7 +46,7 @@ export function normalizeLine(text: string): string {
  */
 export function cardLineId(kind: CardKind, text: string): string {
 	const hash = createHash('sha256')
-		.update(`${kind}\n${normalizeLine(text)}`)
+		.update(`${KIND_HASHED[kind]}\n${normalizeLine(text)}`)
 		.digest('hex');
 	return `${KIND_LETTER[kind]}-${hash.slice(0, 8)}`;
 }
@@ -43,7 +54,8 @@ export function cardLineId(kind: CardKind, text: string): string {
 /**
  * Every constraint, gotcha and follow-up line of a card, in that order, each
  * with its id. Lines that normalize alike are one line, and the first
- * wording is kept.
+ * wording is kept. A line with nothing but whitespace and punctuation is no
+ * card line: it gets no id and no state.
  */
 export function linesOf(
 	card: IntentCard | undefined,
@@ -56,6 +68,7 @@ export function linesOf(
 	const seen = new Set<string>();
 	for (const kind of KINDS) {
 		for (const text of card[kind]) {
+			if (normalizeLine(text) === '') continue;
 			const id = cardLineId(kind, text);
 			if (!seen.has(id)) {
 				seen.add(id);
