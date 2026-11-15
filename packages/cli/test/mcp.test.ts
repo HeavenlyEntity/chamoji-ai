@@ -7,6 +7,7 @@ import {fileURLToPath} from 'node:url';
 import {
 	cardLineId,
 	MEMORY_REF,
+	readCardState,
 	readPendingWhy,
 	resolveLine,
 	readTree,
@@ -34,6 +35,12 @@ import {
 	type McpTools,
 } from '../src/mcp.js';
 
+// The real card state, wrapped so a test can make it fail.
+vi.mock('@chamoji/core', async importOriginal => {
+	const original = await importOriginal<typeof import('@chamoji/core')>();
+	return {...original, readCardState: vi.fn(original.readCardState)};
+});
+
 // The real redact, wrapped so a test can see how much text it was given.
 vi.mock('../src/jev-classifier.js', async importOriginal => {
 	const original =
@@ -46,6 +53,7 @@ const cliJs = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
 let repo: FixtureRepo | undefined;
 let loose: string | undefined;
 afterEach(async () => {
+	vi.mocked(readCardState).mockClear();
 	await repo?.cleanup();
 	repo = undefined;
 	if (loose) await rm(loose, {recursive: true, force: true});
@@ -1025,23 +1033,6 @@ test('a reply with long line text is cut and marked truncated', async () => {
 	expect(line.text).toBe('t'.repeat(500));
 	expect(line.resolvedBy.reason).toBe('r'.repeat(500));
 
-	// A card holds at most 20 lines of each of three kinds, and lines no more.
-	const many: McpTools = {
-		...noTools,
-		async why() {
-			return {
-				kind: 'commit',
-				lines: Array.from({length: 70}, (_, index) => ({
-					id: `c-${String(index).padStart(8, '0')}`,
-					text: 'ok',
-				})),
-			};
-		},
-	};
-	const dropped = await callTool(many, 'why', {file: 'x', line: 1});
-	expect(dropped.data.truncated).toBe(true);
-	expect(dropped.data.lines).toHaveLength(60);
-
 	// A short line is left whole and the reply carries no flag.
 	const short: McpTools = {
 		...noTools,
@@ -1052,6 +1043,101 @@ test('a reply with long line text is cut and marked truncated', async () => {
 	const whole = await callTool(short, 'why', {file: 'x', line: 1});
 	expect(whole.data).not.toHaveProperty('truncated');
 	expect(whole.data.lines[0].text).toBe('ok');
+});
+
+test('a card with 70 constraints and 5 gotchas keeps the state of each gotcha it shows', async () => {
+	const constraints = Array.from({length: 70}, (_, index) => `limit ${index}`);
+	const gotchas = Array.from({length: 5}, (_, index) => `trap ${index}`);
+	const state = (kind: string, text: string) => ({
+		id: `${kind[0]}-${text}`,
+		kind,
+		text,
+		state: 'open',
+	});
+	const tools: McpTools = {
+		...noTools,
+		async why() {
+			return {
+				kind: 'commit',
+				card: {why: [], constraint: constraints, gotcha: gotchas, followUp: []},
+				lines: [
+					...constraints.map(text => state('constraint', text)),
+					...gotchas.map(text => state('gotcha', text)),
+				],
+			};
+		},
+	};
+	const {data} = await callTool(tools, 'why', {file: 'x', line: 1});
+	expect(data.truncated).toBe(true);
+	expect(data.card.constraint).toHaveLength(20);
+	expect(data.card.gotcha).toEqual(gotchas);
+	const kept = new Set(data.lines.map((line: {text: string}) => line.text));
+	for (const text of [...data.card.constraint, ...data.card.gotcha]) {
+		expect(kept.has(text), text).toBe(true);
+	}
+
+	expect(data.lines).toHaveLength(25);
+});
+
+test('why gives each nearby clue card its lines, resolved for a constraint a later commit resolved', async () => {
+	const port = 'The dev server must stay on port 3000';
+	const id = cardLineId('constraint', port);
+	repo = await createRepo([
+		{
+			commit: '✨ Add server',
+			body: `Why: the OAuth callback is registered on that port\nConstraint: ${port}`,
+			files: {'server.ts': 'listen(3000)\n'},
+		},
+		{
+			commit: '🐛 Fix server (#12)',
+			body: 'Why: fix bug',
+			files: {'server.ts': 'listen(3000)\nlog()\n'},
+		},
+	]);
+	const {hash} = await resolveLine(repo.dir, id, 'the proxy owns the port now');
+	const {data} = await callTool(createTools(repo.dir), 'why', {
+		file: 'server.ts',
+		line: 2,
+	});
+	expect(data.whyQuality).toBe('thin');
+	expect(data).not.toHaveProperty('lines');
+	const [near] = data.clues.nearby;
+	expect(near.card.constraint).toEqual([port]);
+	expect(near.lines).toEqual([
+		{
+			id,
+			kind: 'constraint',
+			text: port,
+			state: 'resolved',
+			resolvedBy: {
+				hash,
+				date: expect.any(String),
+				reason: 'the proxy owns the port now',
+			},
+		},
+	]);
+	expect(Object.keys(near)).toEqual([
+		'hash',
+		'shortHash',
+		'subject',
+		'card',
+		'lines',
+	]);
+});
+
+test('search_memory still answers, without lines, when the card state cannot be read', async () => {
+	const dir = await project();
+	vi.mocked(readCardState).mockRejectedValueOnce(new Error('git failed'));
+	const {isError, data} = await callTool(createTools(dir), 'search_memory', {
+		query: 'sessions',
+	});
+	expect(isError).toBe(false);
+	const login = data.hits.find(
+		(hit: {title: string}) => hit.title === '✨ Add login',
+	);
+	expect(login.card.gotcha).toEqual(['order matters']);
+	expect(login).not.toHaveProperty('lines');
+	expect(readCardState).toHaveBeenCalledTimes(1);
 });
 
 test('a small reply carries no truncated flag', async () => {

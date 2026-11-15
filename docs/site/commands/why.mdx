@@ -98,7 +98,10 @@ export const metadata = {
 		result also has `whyQuality` (`ok`, `thin` or `none` when
 		there is no card), judged on that merged card, `whyReasons` (why a Why was
 		judged thin) and `clues` (`pr`, when the subject names one, and `nearby`)
-		when the reason is thin or missing. The exit codes stay the same.
+		when the reason is thin or missing. Each `nearby` commit has its `hash`,
+		`shortHash`, `subject` and `card`, with `lines` beside the card by the same
+		rule. The lines of a reason added later are in the top-level `lines`, since
+		`card` holds them. The exit codes stay the same.
 	</Property>
 	<Property name="--amend" type="string">
 		Add a better reason to an old commit. The target is a commit hash, or a
