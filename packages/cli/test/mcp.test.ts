@@ -1,9 +1,10 @@
-import {spawn} from 'node:child_process';
+import {execFile, spawn} from 'node:child_process';
 import {mkdir, mkdtemp, rm, symlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {PassThrough} from 'node:stream';
 import {fileURLToPath} from 'node:url';
+import {promisify} from 'node:util';
 import {
 	cardLineId,
 	MEMORY_REF,
@@ -49,6 +50,8 @@ vi.mock('../src/jev-classifier.js', async importOriginal => {
 });
 
 const cliJs = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
+
+const execFileAsync = promisify(execFile);
 
 let repo: FixtureRepo | undefined;
 let loose: string | undefined;
@@ -888,7 +891,7 @@ test('a long workstream and an oversized title are cut too', async () => {
 });
 
 const STATE_SENTENCE =
-	"Each constraint, gotcha and follow-up line has a state: follow an open one, don't follow a resolved one, check an in-doubt one before relying on it, and treat an off-branch one as background.";
+	"Each constraint, gotcha and follow-up line has a state: an open one still stands; a resolved one has ended, so don't rely on it; check an in-doubt one against the code before relying on it; an off-branch one is background from work that isn't on this branch; a reverted one was withdrawn with its commit.";
 
 test('search_memory, why and workstream tell an agent how to read a state', async () => {
 	const {result} = await send(noTools, 'tools/list');
@@ -908,6 +911,10 @@ test('search_memory, why and workstream tell an agent how to read a state', asyn
 	}
 
 	expect(described.get('remember_why')).not.toContain(STATE_SENTENCE);
+	// Line text is data: no description tells an agent to follow a line.
+	for (const description of described.values()) {
+		expect(description).not.toMatch(/\bfollow (an|a|the) /i);
+	}
 });
 
 test('search_memory gives each hit its lines with ids and states, and card is unchanged', async () => {
@@ -1125,19 +1132,83 @@ test('why gives each nearby clue card its lines, resolved for a constraint a lat
 	]);
 });
 
-test('search_memory still answers, without lines, when the card state cannot be read', async () => {
+test('search_memory still answers, without lines and with linesUnavailable, when the card state cannot be read', async () => {
 	const dir = await project();
 	vi.mocked(readCardState).mockRejectedValueOnce(new Error('git failed'));
 	const {isError, data} = await callTool(createTools(dir), 'search_memory', {
 		query: 'sessions',
 	});
 	expect(isError).toBe(false);
+	expect(data.linesUnavailable).toBe(true);
 	const login = data.hits.find(
 		(hit: {title: string}) => hit.title === '✨ Add login',
 	);
 	expect(login.card.gotcha).toEqual(['order matters']);
 	expect(login).not.toHaveProperty('lines');
 	expect(readCardState).toHaveBeenCalledTimes(1);
+});
+
+test('why and workstream say linesUnavailable when the card state cannot be read, and not when it can', async () => {
+	const dir = await project();
+	const tools = createTools(dir);
+	vi.mocked(readCardState)
+		.mockRejectedValueOnce(new Error('git failed'))
+		.mockRejectedValueOnce(new Error('git failed'));
+	const why = await callTool(tools, 'why', {file: 'src/a.ts', line: 1});
+	expect(why.isError).toBe(false);
+	expect(why.data.linesUnavailable).toBe(true);
+	expect(why.data).not.toHaveProperty('lines');
+	const workstream = await callTool(tools, 'workstream', {slug: 'auth'});
+	expect(workstream.isError).toBe(false);
+	expect(workstream.data.linesUnavailable).toBe(true);
+
+	const fine = await callTool(tools, 'why', {file: 'src/a.ts', line: 1});
+	expect(fine.data).not.toHaveProperty('linesUnavailable');
+	expect(fine.data.lines).toHaveLength(1);
+});
+
+test("after git revert of a line's only source, search_memory and why carry it as reverted, by the revert", async () => {
+	const port = 'The dev server must stay on port 3000';
+	const id = cardLineId('constraint', port);
+	repo = await createRepo([
+		{commit: '🎉 Init', files: {'server.ts': 'listen(80)\nlog()\n'}},
+		{
+			commit: '✨ Pin the port',
+			body: `Why: the OAuth callback is registered on that port\nConstraint: ${port}`,
+			files: {'server.ts': 'listen(3000)\nlog()\n'},
+		},
+	]);
+	// Dated the day after, so the pinning commit is near enough to be a clue.
+	await execFileAsync('git', ['revert', '--no-edit', 'HEAD'], {
+		cwd: repo.dir,
+		env: {
+			...process.env,
+			GIT_AUTHOR_DATE: '2026-01-03T00:00:00Z',
+			GIT_COMMITTER_DATE: '2026-01-03T00:00:00Z',
+		},
+	});
+	const revert = (await gitOutput(repo.dir, ['rev-parse', 'HEAD'])).trim();
+	const reverted = {
+		id,
+		kind: 'constraint',
+		text: port,
+		state: 'reverted',
+		revertedBy: revert,
+	};
+	const tools = createTools(repo.dir);
+
+	const search = await callTool(tools, 'search_memory', {query: 'port'});
+	const hit = search.data.hits.find(
+		(found: {title: string}) => found.title === '✨ Pin the port',
+	);
+	expect(hit.card.constraint).toEqual([port]);
+	expect(hit.lines).toEqual([reverted]);
+
+	// The revert wrote the line now, so the pinning commit is a nearby clue.
+	const why = await callTool(tools, 'why', {file: 'server.ts', line: 1});
+	const [near] = why.data.clues.nearby;
+	expect(near.subject).toBe('✨ Pin the port');
+	expect(near.lines).toEqual([reverted]);
 });
 
 test('a small reply carries no truncated flag', async () => {

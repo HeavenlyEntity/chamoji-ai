@@ -9,7 +9,7 @@ import {
 	snapshotWorkstream,
 	writeTree,
 } from '@chamoji/core';
-import {afterEach, expect, test} from 'vitest';
+import {afterEach, expect, test, vi} from 'vitest';
 import {
 	createRepo,
 	gitOutput,
@@ -18,10 +18,21 @@ import {
 import {run, type Io} from '../src/run.js';
 import {recordingFace} from './helpers/recording-face.js';
 
+// The real card state, wrapped so a test can make it fail.
+vi.mock('@chamoji/core', async importOriginal => {
+	const original = await importOriginal<typeof import('@chamoji/core')>();
+	return {...original, readCardState: vi.fn(original.readCardState)};
+});
+
 let repo: FixtureRepo | undefined;
 let loose: string | undefined;
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
+	vi.mocked(readCardState).mockReset();
+	vi.mocked(readCardState).mockImplementation(
+		(await vi.importActual<typeof import('@chamoji/core')>('@chamoji/core'))
+			.readCardState,
+	);
 	await Promise.all(cleanups.splice(0).map(async cleanup => cleanup()));
 	await repo?.cleanup();
 	repo = undefined;
@@ -301,6 +312,37 @@ test('why --json, memory search --json and memory show --json carry lines beside
 		(await chamoji(['memory', 'show', 'auth', '--json'], repo.dir)).stdout,
 	);
 	expect(entry.commits[0]).toMatchObject({card, lines});
+});
+
+test('memory show and search say on stderr when line states could not be read, and show --json has linesUnavailable', async () => {
+	repo = await createRepo([
+		{commit: '🎉 Init', files: WORKSTREAMS},
+		{
+			commit: '✨ Add login',
+			body: 'Why: the old form leaked\nGotcha: order matters\nWorkstream: auth',
+			files: {'src/login.ts': 'login\n'},
+		},
+	]);
+	await snapshotWorkstream(repo.dir, 'auth');
+	const notice =
+		'chamoji: line states could not be read, so cards are shown without them\n';
+	vi.mocked(readCardState).mockRejectedValue(new Error('git failed'));
+
+	const shown = await chamoji(['memory', 'show', 'auth'], repo.dir);
+	expect(shown.code).toBe(0);
+	expect(shown.stderr).toBe(notice);
+	expect(shown.stdout).toContain('  Gotcha: order matters\n');
+
+	const found = await chamoji(['memory', 'search', 'leaked'], repo.dir);
+	expect(found.code).toBe(0);
+	expect(found.stderr).toBe(notice);
+	expect(found.stdout).toContain('  Gotcha: order matters\n');
+
+	const json = await chamoji(['memory', 'show', 'auth', '--json'], repo.dir);
+	expect(json.stderr).toBe('');
+	const entry = JSON.parse(json.stdout);
+	expect(entry.linesUnavailable).toBe(true);
+	expect(entry.commits[0]).not.toHaveProperty('lines');
 });
 
 test('memory show of an unknown slug exits 1', async () => {

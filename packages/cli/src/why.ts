@@ -92,7 +92,7 @@ export async function runWhy(
 
 	await assertGitRepo(io.cwd);
 	const {file, line} = parseLocation(location);
-	const {result, reading, state, summary} = await runStep(
+	const {result, reading, read, summary} = await runStep(
 		io.face ?? NO_FACE,
 		'Finding the commit that wrote the line',
 		async () => {
@@ -100,13 +100,13 @@ export async function runWhy(
 			if (result.kind === 'uncommitted') return {result};
 			const {workstream} = result.commit;
 			const reading = await readWhy(io.cwd, result.commit, file);
-			const state = await readStateFor(io.cwd, readingCards(reading));
-			if (flags.json) return {result, reading, state};
+			const read = await readStateFor(io.cwd, readingCards(reading));
+			if (flags.json) return {result, reading, read};
 			const summary =
 				reading.quality !== 'ok' && workstream !== undefined
 					? await findWorkstream(io.cwd, workstream)
 					: undefined;
-			return {result, reading, state, summary};
+			return {result, reading, read, summary};
 		},
 		({result}) => ({
 			outcome: 'ok',
@@ -126,12 +126,14 @@ export async function runWhy(
 		// `commit.card` stays the commit's own; `card` puts a reason added later
 		// first, as the MCP why tool does.
 		const {quality, reasons, clues, added, card} = reading!;
+		const {state} = read!;
 		const lines = replyLines(state, card);
 		io.stdout(
-			`${JSON.stringify({...result, card, ...(lines && {lines}), whyQuality: quality, whyReasons: reasons, clues: cluesWithLines(clues, state), addedLater: added}, null, 2)}\n`,
+			`${JSON.stringify({...result, card, ...(lines && {lines}), whyQuality: quality, whyReasons: reasons, clues: cluesWithLines(clues, state), addedLater: added, ...unavailable(read!)}, null, 2)}\n`,
 		);
 	} else {
-		io.stdout(describe(result.commit, reading!, state, summary));
+		warnUnavailable(read!, io);
+		io.stdout(describe(result.commit, reading!, read!.state, summary));
 	}
 
 	return 0;
@@ -484,21 +486,42 @@ function oneLine(text: string): string {
 	return stripControl(text.replaceAll(/\s+/g, ' ')).trim();
 }
 
+/** The card state as a command read it, and whether reading it failed. */
+export type StateRead = {state: CardState | undefined; unavailable: boolean};
+
+/** Said on stderr when a command's cards are shown without their line states. */
+export const LINES_UNAVAILABLE =
+	'chamoji: line states could not be read, so cards are shown without them\n';
+
 /**
  * The card state, read once for a command or tool call, when any of `cards`
  * has a line that can have one. A state only adds to an answer, so when git
- * can't work it out, every card is shown as it was before states existed.
+ * can't work it out the answer still comes, with every card as it was before
+ * states existed and `unavailable` set, so the reply can say so.
  */
 export async function readStateFor(
 	cwd: string,
 	cards: Array<IntentCard | undefined>,
-): Promise<CardState | undefined> {
-	if (!cards.some(card => linesOf(card).length > 0)) return undefined;
-	try {
-		return await readCardState(cwd);
-	} catch {
-		return undefined;
+): Promise<StateRead> {
+	if (!cards.some(card => linesOf(card).length > 0)) {
+		return {state: undefined, unavailable: false};
 	}
+
+	try {
+		return {state: await readCardState(cwd), unavailable: false};
+	} catch {
+		return {state: undefined, unavailable: true};
+	}
+}
+
+/** What a JSON or MCP reply adds at its top level when the states could not be read. */
+export function unavailable(read: StateRead): {linesUnavailable?: true} {
+	return read.unavailable ? {linesUnavailable: true} : {};
+}
+
+/** For text output: one line on stderr when the states could not be read. */
+export function warnUnavailable(read: StateRead, io: Pick<Io, 'stderr'>): void {
+	if (read.unavailable) io.stderr(LINES_UNAVAILABLE);
 }
 
 /**

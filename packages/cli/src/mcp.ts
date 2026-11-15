@@ -27,6 +27,7 @@ import {
 	readStateFor,
 	readWhy,
 	replyLines,
+	unavailable,
 	withLines,
 } from './why.js';
 
@@ -100,7 +101,7 @@ const DATA_NOTICE =
 
 /** Said in the description of each tool that returns cards, before the data notice. */
 const STATE_NOTICE =
-	"Each constraint, gotcha and follow-up line has a state: follow an open one, don't follow a resolved one, check an in-doubt one before relying on it, and treat an off-branch one as background.";
+	"Each constraint, gotcha and follow-up line has a state: an open one still stands; a resolved one has ended, so don't rely on it; check an in-doubt one against the code before relying on it; an off-branch one is background from work that isn't on this branch; a reverted one was withdrawn with its commit.";
 
 /** JSON-RPC 2.0 error codes. */
 const PARSE_ERROR = -32_700;
@@ -298,11 +299,14 @@ export function createTools(cwd: string, rerank?: MemoryReranker): McpTools {
 			}
 
 			const shown = hits.slice(0, limit);
-			const state = await readStateFor(
+			const read = await readStateFor(
 				cwd,
 				shown.map(hit => hit.card),
 			);
-			return {hits: shown.map(hit => withLines(hit, state))};
+			return {
+				hits: shown.map(hit => withLines(hit, read.state)),
+				...unavailable(read),
+			};
 		},
 
 		async rememberWhy(why, source) {
@@ -318,7 +322,8 @@ export function createTools(cwd: string, rerank?: MemoryReranker): McpTools {
 				return {kind: 'uncommitted', file, line};
 			const {hash, subject, body, authorName, date, workstream} = result.commit;
 			const reading = await readWhy(cwd, result.commit, file);
-			const state = await readStateFor(cwd, readingCards(reading));
+			const read = await readStateFor(cwd, readingCards(reading));
+			const {state} = read;
 			const lines = replyLines(state, reading.card);
 			const found =
 				workstream === undefined
@@ -348,6 +353,7 @@ export function createTools(cwd: string, rerank?: MemoryReranker): McpTools {
 					workstream === undefined
 						? undefined
 						: {slug: workstream, title: found?.title, status: found?.status},
+				...unavailable(read),
 			};
 		},
 
@@ -375,12 +381,13 @@ export function createTools(cwd: string, rerank?: MemoryReranker): McpTools {
 			}
 
 			const known = current ?? remembered!;
-			const state =
-				remembered &&
-				(await readStateFor(
-					cwd,
-					remembered.commits.map(commit => commit.card),
-				));
+			const read = remembered
+				? await readStateFor(
+						cwd,
+						remembered.commits.map(commit => commit.card),
+					)
+				: undefined;
+			const state = read?.state;
 			return {
 				workstream: {
 					slug: target,
@@ -398,6 +405,7 @@ export function createTools(cwd: string, rerank?: MemoryReranker): McpTools {
 						commits: remembered.commits.map(commit => withLines(commit, state)),
 					},
 				},
+				...(read && unavailable(read)),
 			};
 		},
 	};

@@ -54,7 +54,8 @@ export async function cardStatePath(cwd: string): Promise<string> {
  * stamp as the search index, so it is worked out again whenever HEAD, the
  * memory ref or the notes ref moves, and every reader gets the same answer
  * without paying for blame twice. A cache that can't be saved costs only
- * the next call a rebuild.
+ * the next call a rebuild. It throws when git fails, so a caller building a
+ * reply or running in a hook must catch it.
  */
 export async function readCardState(cwd: string): Promise<CardState> {
 	const stamp = await currentStamp(cwd);

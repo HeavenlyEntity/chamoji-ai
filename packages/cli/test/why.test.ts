@@ -1,6 +1,8 @@
+import {execFile} from 'node:child_process';
 import {appendFile, mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
+import {promisify} from 'node:util';
 import {
 	cardLineId,
 	readCardState,
@@ -23,6 +25,8 @@ vi.mock('@chamoji/core', async importOriginal => {
 	const original = await importOriginal<typeof import('@chamoji/core')>();
 	return {...original, readCardState: vi.fn(original.readCardState)};
 });
+
+const execFileAsync = promisify(execFile);
 
 let repo: FixtureRepo | undefined;
 let loose: string | undefined;
@@ -90,8 +94,15 @@ function stateLine(
 	};
 }
 
-test('why prints each of the five bracket forms', async () => {
-	const texts = ['no network', 'old proxy', 'port 3000', 'slow disk', 'beta'];
+test('why prints each of the six bracket forms', async () => {
+	const texts = [
+		'no network',
+		'old proxy',
+		'port 3000',
+		'slow disk',
+		'beta',
+		'old cache',
+	];
 	repo = await createRepo([
 		{
 			commit: '✨ Add a',
@@ -106,7 +117,8 @@ test('why prints each of the five bracket forms', async () => {
 	]);
 	const resolver = `3e9d1aa${'0'.repeat(33)}`;
 	const replacer = `4d03905${'0'.repeat(33)}`;
-	const [open, resolved, replaced, doubted, offBranch] = texts;
+	const reverter = `5c6d7e8${'0'.repeat(33)}`;
+	const [open, resolved, replaced, doubted, offBranch, withdrawn] = texts;
 	vi.mocked(readCardState).mockResolvedValueOnce({
 		head: resolver,
 		dangling: [],
@@ -128,6 +140,10 @@ test('why prints each of the five bracket forms', async () => {
 			stateLine('constraint', offBranch!, {
 				state: 'off-branch',
 				workstream: {slug: 'auth', status: 'shipped'},
+			}),
+			stateLine('constraint', withdrawn!, {
+				state: 'reverted',
+				revertedBy: reverter,
 			}),
 			// A reason from a commit message: cleaned, on one line, cut to 200.
 			stateLine('followUp', 'tidy later', {
@@ -151,6 +167,7 @@ test('why prints each of the five bracket forms', async () => {
 			`Constraint [${id(replaced!)}, in doubt: its code was replaced by 4d03905]: port 3000`,
 			`Constraint [${id(doubted!)}, in doubt]: slow disk`,
 			`Constraint [${id(offBranch!)}, off branch]: beta`,
+			`Constraint [${id(withdrawn!)}, reverted by 5c6d7e8]: old cache`,
 			// The state doesn't know this one, so it prints as it always did.
 			'Gotcha: unknown to the state',
 			'',
@@ -298,7 +315,7 @@ test('a commit with only a Why prints exactly as before', async () => {
 	expect(readCardState).not.toHaveBeenCalled();
 });
 
-test('a card state that fails to read leaves why as it was, and --json without lines', async () => {
+test('a card state that fails to read leaves why as it was and says so on stderr, and --json has linesUnavailable instead of lines', async () => {
 	repo = await createRepo([
 		{
 			commit: '✨ Add a',
@@ -312,7 +329,9 @@ test('a card state that fails to read leaves why as it was, and --json without l
 		.mockRejectedValueOnce(new Error('git failed'));
 	const text = await chamoji(['why', 'src/a.ts:1'], repo.dir);
 	expect(text.code).toBe(0);
-	expect(text.stderr).toBe('');
+	expect(text.stderr).toBe(
+		'chamoji: line states could not be read, so cards are shown without them\n',
+	);
 	expect(text.stdout).toContain(
 		'Why: the old form leaked sessions after the tab closed\nConstraint: no network\n',
 	);
@@ -321,6 +340,50 @@ test('a card state that fails to read leaves why as it was, and --json without l
 	const result = JSON.parse(json.stdout);
 	expect(result.card.constraint).toEqual(['no network']);
 	expect(result).not.toHaveProperty('lines');
+	expect(result.linesUnavailable).toBe(true);
+	expect(json.stderr).toBe('');
+});
+
+test("after git revert of a line's only source, why --json and why carry it as reverted on the nearby clue", async () => {
+	const id = cardLineId('constraint', PORT);
+	repo = await createRepo([
+		{commit: '🎉 Init', files: {'server.ts': 'listen(80)\nlog()\n'}},
+		{
+			commit: '✨ Pin the port',
+			body: `Why: the OAuth callback is registered on that port\nConstraint: ${PORT}`,
+			files: {'server.ts': 'listen(3000)\nlog()\n'},
+		},
+	]);
+	// Dated the day after, so the pinning commit is near enough to be a clue.
+	await execFileAsync('git', ['revert', '--no-edit', 'HEAD'], {
+		cwd: repo.dir,
+		env: {
+			...process.env,
+			GIT_AUTHOR_DATE: '2026-01-03T00:00:00Z',
+			GIT_COMMITTER_DATE: '2026-01-03T00:00:00Z',
+		},
+	});
+	const revert = (await gitOutput(repo.dir, ['rev-parse', 'HEAD'])).trim();
+
+	const json = JSON.parse(
+		(await chamoji(['why', 'server.ts:1', '--json'], repo.dir)).stdout,
+	);
+	const [near] = json.clues.nearby;
+	expect(near.card.constraint).toEqual([PORT]);
+	expect(near.lines).toEqual([
+		{
+			id,
+			kind: 'constraint',
+			text: PORT,
+			state: 'reverted',
+			revertedBy: revert,
+		},
+	]);
+
+	const {stdout} = await chamoji(['why', 'server.ts:1'], repo.dir);
+	expect(stdout).toContain(
+		`  Constraint [${id}, reverted by ${revert.slice(0, 7)}]: ${PORT}\n`,
+	);
 });
 
 test('a commit with no card still prints its subject and says so', async () => {
