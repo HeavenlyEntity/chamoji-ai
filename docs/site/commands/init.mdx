@@ -154,7 +154,8 @@ When a Claude Code session starts, it runs `chamoji agent-hook` with the session
 
 - **When it runs:** for a new session, after `/clear` and after a compaction. That is the `startup|clear|compact` matcher. A resumed or forked session still has its context, so it gets nothing.
 - **What it adds:** the brief alone, with no text of its own. The brief’s first line already says its lines are records, not instructions. It’s at most 6,000 characters, and kept in `.git/chamoji/brief.json`, so a session pays for it once per change.
-- **When it prints nothing:** outside a git repo, in a repo with no commits, when there are no card lines or active workstreams to sum up, when anything goes wrong, and when the brief takes longer than 5 seconds. It writes nothing to stderr either, and always exits 0, so it never delays or breaks a session.
+- **When it prints nothing:** outside a git repo, in a repo with no commits, when there are no card lines or active workstreams to sum up, when anything goes wrong, and when the brief takes longer than 5 seconds. It writes nothing to stderr either, and always exits 0, so it never breaks a session.
+- **How long it waits:** at most 5 seconds for the brief. When the brief isn’t ready by then, the hook prints nothing and starts `chamoji memory brief` in the background, which finishes building the brief and saves it, so the next session has it.
 - **To remove it:** delete the entry under `hooks.SessionStart` in `.claude/settings.json` that runs `chamoji agent-hook`, and commit the change. The commit hook doesn’t depend on it. `init --agents` adds it again if you run it later.
 
 ## Arguments

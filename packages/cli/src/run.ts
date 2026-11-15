@@ -113,6 +113,7 @@ import {stripControlLines} from './text.js';
 import {openTerminal} from './tty.js';
 import type {UpdateCheck} from './update-check.js';
 import {composeImpact} from './impact.js';
+import {startWarmUp} from './session-brief.js';
 import {draftFromSession} from './session-why.js';
 import {draftFrom} from './why-draft.js';
 import {oneLineLogo, playWelcome, SHORT_HELP, TAGLINE} from './welcome.js';
@@ -749,10 +750,12 @@ export async function run(argv: string[], given: Io): Promise<number> {
 					// Claude Code runs this before a Bash command and when a session
 					// starts. Whatever happens it prints a decision, the brief or
 					// nothing, and exits 0. A brief that runs late has printed nothing,
-					// and exiting then keeps a slow git from holding the session.
+					// and exiting then keeps a slow git from holding the session; a
+					// warm-up started first finishes the brief for the next session.
 					return await runAgentHook({
 						...io,
 						stdin: process.stdin,
+						warmUp: startWarmUp,
 						onTimeout: () => process.exit(0),
 					});
 				}

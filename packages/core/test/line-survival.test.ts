@@ -193,18 +193,18 @@ test('a damaged cache file is ignored and rebuilt', async () => {
 		'{not json',
 		JSON.stringify({version: 99, files: {}}),
 		JSON.stringify({version: 1, files: {'a.txt': {blob: 'x', owners: []}}}),
-		JSON.stringify({version: 3, shallow: '', files: {'a.txt': 'nope'}}),
+		JSON.stringify({version: 4, shallow: '', files: {'a.txt': 'nope'}}),
 		JSON.stringify({
-			version: 3,
+			version: 4,
 			shallow: '',
 			files: {'a.txt': {blob: 'x', owners: [1]}},
 		}),
 		JSON.stringify({
-			version: 3,
+			version: 4,
 			shallow: '',
 			files: {'a.txt': {blob: 'x', owners: ['not a hash']}},
 		}),
-		'{"version":3,"shallow":"","files":{"__proto__":{"blob":"x","owners":[]}}}',
+		'{"version":4,"shallow":"","files":{"__proto__":{"blob":"x","owners":[]}}}',
 		'null',
 	]) {
 		await writeFile(file, damage);
@@ -215,7 +215,7 @@ test('a damaged cache file is ignored and rebuilt', async () => {
 		expect(blamed).toEqual(['a.txt']);
 		expect(result.get(hash)?.survives).toBe(true);
 		const rebuilt = JSON.parse(await readFile(file, 'utf8'));
-		expect(rebuilt.version).toBe(3);
+		expect(rebuilt.version).toBe(4);
 		expect(Object.getPrototypeOf(Object.prototype)).toBe(null);
 	}
 });
@@ -352,33 +352,118 @@ test('two calls at once both return the right answer and leave a readable cache'
 	expect(x.get(hash)?.survives).toBe(true);
 	expect(y.get(hash)?.survives).toBe(true);
 	const cache = JSON.parse(await readFile(await cachePath(repo.dir), 'utf8'));
-	expect(cache.version).toBe(3);
+	expect(cache.version).toBe(4);
 	// Blaming stops at the first file that shows the commit survives.
 	expect(Object.keys(cache.files)).toEqual(['a.txt']);
 });
 
-test('a blame cache file with the old version is rebuilt', async () => {
+test('a blame cache with the old version is rebuilt', async () => {
 	repo = await createRepo([{commit: 'add', files: {'a.txt': 'one\n'}}]);
 	const hash = await rev(repo.dir, 'HEAD');
 	const blob = await rev(repo.dir, 'HEAD:a.txt');
 	const file = await cachePath(repo.dir);
-	// Version 2 had no shallow stamp; an entry that says nobody owns a line
-	// would read as gone if it were used.
+	// Version 2 had no shallow stamp and version 3 no added files; an entry
+	// that says nobody owns a line, or that the commit added nothing, would
+	// read as gone if it were used.
 	await readSurvival(repo.dir, [hash]);
-	await writeFile(
-		file,
-		JSON.stringify({version: 2, files: {'a.txt': {blob, owners: []}}}),
-	);
-	const blamed: string[] = [];
-	const result = await readSurvival(repo.dir, [hash], {
-		onBlame: f => blamed.push(f),
-	});
-	expect(blamed).toEqual(['a.txt']);
-	expect(result.get(hash)?.survives).toBe(true);
-	expect(JSON.parse(await readFile(file, 'utf8'))).toMatchObject({
-		version: 3,
-		shallow: '',
-	});
+	for (const version of [2, 3]) {
+		await writeFile(
+			file,
+			JSON.stringify({
+				version,
+				shallow: '',
+				files: {'a.txt': {blob, owners: []}},
+				added: {[hash]: []},
+			}),
+		);
+		const blamed: string[] = [];
+		const asked: string[] = [];
+		const result = await readSurvival(repo.dir, [hash], {
+			onBlame: f => blamed.push(f),
+			onNumstat: h => asked.push(h),
+		});
+		expect(blamed).toEqual(['a.txt']);
+		expect(asked).toEqual([hash]);
+		expect(result.get(hash)).toEqual({survives: true, files: ['a.txt']});
+		expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({
+			version: 4,
+			shallow: '',
+			files: {'a.txt': {blob, owners: [hash]}},
+			added: {[hash]: ['a.txt']},
+		});
+	}
+});
+
+test('a second readSurvival for the same commits runs no numstat', async () => {
+	repo = await createRepo([
+		{commit: 'add', files: {'a.txt': 'one\n'}},
+		{commit: 'more', files: {'b.txt': 'two\n'}},
+	]);
+	const first = await rev(repo.dir, 'HEAD~1');
+	const second = await rev(repo.dir, 'HEAD');
+	const asked: string[] = [];
+	const onNumstat = (hash: string) => asked.push(hash);
+	const before = await readSurvival(repo.dir, [first, second], {onNumstat});
+	expect(asked.sort()).toEqual([first, second].sort());
+
+	asked.length = 0;
+	const after = await readSurvival(repo.dir, [first, second], {onNumstat});
+	expect(asked).toEqual([]);
+	expect(after).toEqual(before);
+
+	// After a new commit, only the hash not seen before is asked about.
+	await writeFile(path.join(repo.dir, 'c.txt'), 'three\n');
+	await gitOutput(repo.dir, ['add', 'c.txt']);
+	await gitOutput(repo.dir, ['commit', '-q', '-m', 'third']);
+	const third = await rev(repo.dir, 'HEAD');
+	await readSurvival(repo.dir, [first, second, third], {onNumstat});
+	expect(asked).toEqual([third]);
+});
+
+test('an added entry that is not an array of strings is ignored', async () => {
+	repo = await createRepo([{commit: 'add', files: {'a.txt': 'one\n'}}]);
+	const hash = await rev(repo.dir, 'HEAD');
+	await readSurvival(repo.dir, [hash]);
+	const file = await cachePath(repo.dir);
+	const saved = JSON.parse(await readFile(file, 'utf8'));
+	expect(saved.added).toEqual({[hash]: ['a.txt']});
+
+	for (const added of [
+		{[hash]: 'a.txt'},
+		{[hash]: [1]},
+		{[hash]: null},
+		{[hash]: {0: 'a.txt'}},
+		{[hash]: ['a.txt', 7]},
+		// A key that is not a full hash is not used, even with a good value.
+		{[hash.slice(0, 7)]: ['b.txt']},
+		[['a.txt']],
+		'a.txt',
+	]) {
+		await writeFile(file, JSON.stringify({...saved, added}));
+		const asked: string[] = [];
+		const result = await readSurvival(repo.dir, [hash], {
+			onNumstat: h => asked.push(h),
+		});
+		expect(asked, JSON.stringify(added)).toEqual([hash]);
+		expect(result.get(hash)).toEqual({survives: true, files: ['a.txt']});
+		expect(JSON.parse(await readFile(file, 'utf8')).added).toEqual({
+			[hash]: ['a.txt'],
+		});
+	}
+});
+
+test('a commit whose added files were cached is read from the cache, whatever git would say', async () => {
+	repo = await createRepo([
+		{commit: 'add', files: {'a.txt': 'one\n', 'b.txt': 'two\n'}},
+	]);
+	const hash = await rev(repo.dir, 'HEAD');
+	await readSurvival(repo.dir, [hash]);
+	const file = await cachePath(repo.dir);
+	const saved = JSON.parse(await readFile(file, 'utf8'));
+	// Only the cache could say the commit added just b.txt.
+	await writeFile(file, JSON.stringify({...saved, added: {[hash]: ['b.txt']}}));
+	const result = await readSurvival(repo.dir, [hash]);
+	expect(result.get(hash)).toEqual({survives: true, files: ['b.txt']});
 });
 
 test('a blame cache written in a shallow clone is not used after it is deepened', async () => {
