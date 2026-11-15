@@ -12,13 +12,16 @@ export type Survival = {
 };
 
 /** Bump it when the file's layout or what goes into it changes. */
-const CACHE_VERSION = 3;
+const CACHE_VERSION = 4;
 
 /** What blame said about one path: the blob it was run on, and who owned lines. */
 type Entry = {blob: string; owners: string[]};
 
-/** By path, in a Map so a key like `__proto__` in the untrusted file is only a key. */
-type Cache = Map<string, Entry>;
+/**
+ * Blame results by path, and the paths each commit added lines to, by hash.
+ * Maps, so a key like `__proto__` in the untrusted file is only a key.
+ */
+type Cache = {files: Map<string, Entry>; added: Map<string, string[]>};
 
 const COMMIT_ID = /^[0-9a-f]{40,64}$/;
 
@@ -37,8 +40,11 @@ const COMMIT_ID = /^[0-9a-f]{40,64}$/;
  * is the one at HEAD and every owner is still a commit on HEAD; an amend or
  * rebase leaves the content alone but renames the owners. A shallow clone's
  * blame credits its boundary with lines older commits wrote, so the whole
- * file is dropped once the boundary changes. `onBlame` hears of each file
- * actually blamed.
+ * file is dropped once the boundary changes. What files a commit added
+ * lines to never changes for its hash, so that is kept too, for the commits
+ * on HEAD, and a rebuild after a new commit only asks git about hashes it has
+ * not seen. `onBlame` hears of each file actually blamed, and `onNumstat` of
+ * each commit whose added files were asked of git.
  *
  * Every git command runs from the top of the work tree, whatever `cwd` is
  * inside it, since paths are kept from the top. `head` is the revision to
@@ -48,7 +54,11 @@ const COMMIT_ID = /^[0-9a-f]{40,64}$/;
 export async function readSurvival(
 	where: string,
 	hashes: string[],
-	options: {onBlame?: (file: string) => void; head?: string} = {},
+	options: {
+		onBlame?: (file: string) => void;
+		onNumstat?: (hash: string) => void;
+		head?: string;
+	} = {},
 ): Promise<Map<string, Survival>> {
 	const result = new Map<string, Survival>();
 	if (hashes.length === 0) return result;
@@ -59,34 +69,56 @@ export async function readSurvival(
 	const onHead = await headCommits(cwd, head);
 	const shallow = await shallowStamp(cwd);
 	const cached = await readCache(cwd, shallow);
-	const cache: Cache = new Map();
-	// Only entries that still hold are kept, and only paths at HEAD.
-	for (const [file, entry] of cached) {
+	const cache: Cache = {files: new Map(), added: new Map()};
+	// Only entries that still hold are kept, only paths at HEAD and only
+	// commits on it, so commits a rebase left behind don't pile up.
+	for (const [file, entry] of cached.files) {
 		if (
 			blobs.get(file) === entry.blob &&
 			entry.owners.every(owner => onHead.has(owner))
 		) {
-			cache.set(file, entry);
+			cache.files.set(file, entry);
 		}
 	}
 
-	let changed = cache.size !== cached.size;
+	for (const [hash, files] of cached.added) {
+		if (onHead.has(hash)) cache.added.set(hash, files);
+	}
+
+	let changed =
+		cache.files.size !== cached.files.size ||
+		cache.added.size !== cached.added.size;
 	const ownersOf = async (file: string): Promise<Set<string>> => {
 		const blob = blobs.get(file);
 		if (blob === undefined) return new Set();
-		const known = cache.get(file);
+		const known = cache.files.get(file);
 		if (known) return new Set(known.owners);
 		options.onBlame?.(file);
 		const found = await blameOwners(cwd, file, head);
 		// A failed blame is not kept: it may work next time.
 		if (found === undefined) return new Set();
-		cache.set(file, {blob, owners: [...found]});
+		cache.files.set(file, {blob, owners: [...found]});
 		changed = true;
 		return found;
 	};
 
+	const addedBy = async (hash: string): Promise<string[]> => {
+		const known = cache.added.get(hash);
+		if (known) return known;
+		options.onNumstat?.(hash);
+		const found = await addedFiles(cwd, hash);
+		// A failed `git show` is not kept either, nor a commit off HEAD.
+		if (found === undefined) return [];
+		if (onHead.has(hash)) {
+			cache.added.set(hash, found);
+			changed = true;
+		}
+
+		return found;
+	};
+
 	for (const hash of new Set(hashes)) {
-		const added = await addedFiles(cwd, hash);
+		const added = await addedBy(hash);
 		const missing = added.filter(file => !blobs.has(file));
 		const moved =
 			missing.length > 0 ? await renames(cwd, hash, head) : new Map();
@@ -176,11 +208,14 @@ async function renames(
 }
 
 /**
- * The paths a commit added lines to; a binary file or a failed `git show`
- * gives none. Whitespace is ignored as blame ignores it, so a commit that
- * only changed whitespace added no lines.
+ * The paths a commit added lines to; a binary file gives none, and a failed
+ * `git show` gives undefined. Whitespace is ignored as blame ignores it, so
+ * a commit that only changed whitespace added no lines.
  */
-async function addedFiles(cwd: string, hash: string): Promise<string[]> {
+async function addedFiles(
+	cwd: string,
+	hash: string,
+): Promise<string[] | undefined> {
 	let stdout: string;
 	try {
 		stdout = await runGit(
@@ -198,7 +233,7 @@ async function addedFiles(cwd: string, hash: string): Promise<string[]> {
 			cwd,
 		);
 	} catch {
-		return [];
+		return undefined;
 	}
 
 	// Each record is `added TAB deleted TAB path NUL`; a path can't hold a NUL.
@@ -283,7 +318,7 @@ async function cachePath(cwd: string): Promise<string> {
  * check out is treated as absent, an entry at a time.
  */
 async function readCache(cwd: string, shallow: string): Promise<Cache> {
-	const cache: Cache = new Map();
+	const cache: Cache = {files: new Map(), added: new Map()};
 	let raw: unknown;
 	try {
 		raw = JSON.parse(await readFile(await cachePath(cwd), 'utf8'));
@@ -292,7 +327,12 @@ async function readCache(cwd: string, shallow: string): Promise<Cache> {
 	}
 
 	if (typeof raw !== 'object' || raw === null) return cache;
-	const {version, shallow: stamp, files} = raw as Record<string, unknown>;
+	const {
+		version,
+		shallow: stamp,
+		files,
+		added,
+	} = raw as Record<string, unknown>;
 	if (
 		version !== CACHE_VERSION ||
 		stamp !== shallow ||
@@ -311,7 +351,19 @@ async function readCache(cwd: string, shallow: string): Promise<Cache> {
 			Array.isArray(owners) &&
 			owners.every(owner => typeof owner === 'string' && COMMIT_ID.test(owner))
 		) {
-			cache.set(file, {blob, owners: owners as string[]});
+			cache.files.set(file, {blob, owners: owners as string[]});
+		}
+	}
+
+	if (typeof added === 'object' && added !== null && !Array.isArray(added)) {
+		for (const [hash, paths] of Object.entries(added)) {
+			if (
+				COMMIT_ID.test(hash) &&
+				Array.isArray(paths) &&
+				paths.every(file => typeof file === 'string')
+			) {
+				cache.added.set(hash, paths as string[]);
+			}
 		}
 	}
 
@@ -330,7 +382,7 @@ async function writeCache(
 	try {
 		await writeFile(
 			temporary,
-			`${JSON.stringify({version: CACHE_VERSION, shallow, files: Object.fromEntries(cache)})}\n`,
+			`${JSON.stringify({version: CACHE_VERSION, shallow, files: Object.fromEntries(cache.files), added: Object.fromEntries(cache.added)})}\n`,
 		);
 		await rename(temporary, file);
 	} catch (error) {

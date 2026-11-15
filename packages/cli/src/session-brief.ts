@@ -1,3 +1,4 @@
+import {spawn} from 'node:child_process';
 import {readBrief} from '@chamoji/core';
 import {own} from './records.js';
 
@@ -16,11 +17,40 @@ export type SessionBriefOptions = {
 	readBrief?: (cwd: string) => Promise<{text: string}>;
 	briefLimit?: number;
 	/**
+	 * Called with the hook's directory when the brief took too long, before
+	 * `onTimeout`, to finish the brief elsewhere so the next session has it.
+	 */
+	warmUp?: (cwd: string) => void;
+	/**
 	 * Called when the brief took too long. The CLI exits there, since the git
 	 * it started may still be running and would hold the session.
 	 */
 	onTimeout?: () => void;
 };
+
+/**
+ * Starts `chamoji memory brief` in `cwd` as a child that outlives the hook,
+ * so a brief that took too long is still built and cached. It is one run that
+ * exits once the cache is written, not a daemon, and two at once only cost
+ * time, since the cache writes are atomic. It never throws: a warm-up that
+ * can't start leaves the next session to try again. `script` is the CLI's
+ * own file, the one this process runs.
+ */
+export function startWarmUp(cwd: string, script = process.argv[1]): void {
+	try {
+		if (script === undefined) return;
+		const child = spawn(process.execPath, [script, 'memory', 'brief'], {
+			cwd,
+			detached: true,
+			stdio: 'ignore',
+			windowsHide: true,
+		});
+		child.on('error', () => undefined);
+		child.unref();
+	} catch {
+		// Nothing to do: the hook must still print nothing and exit 0.
+	}
+}
 
 /**
  * What the SessionStart hook prints: the default brief of the repo the
@@ -51,6 +81,12 @@ export async function sessionBrief(
 	try {
 		const text = await Promise.race([reading, late]);
 		if (text === undefined) {
+			try {
+				options.warmUp?.(at);
+			} catch {
+				// A warm-up that fails changes nothing about this session.
+			}
+
 			options.onTimeout?.();
 			return undefined;
 		}

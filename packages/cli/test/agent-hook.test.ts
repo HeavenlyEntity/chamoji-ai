@@ -1,10 +1,16 @@
 import {spawn} from 'node:child_process';
-import {mkdtemp, rm} from 'node:fs/promises';
+import {mkdtemp, readFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {PassThrough, Readable} from 'node:stream';
 import {fileURLToPath} from 'node:url';
-import {WHY_ADVICE, parseCommit, readBrief, readCommits} from '@chamoji/core';
+import {
+	WHY_ADVICE,
+	cardStatePath,
+	parseCommit,
+	readBrief,
+	readCommits,
+} from '@chamoji/core';
 import {afterEach, expect, test} from 'vitest';
 import {createRepo, gitOutput} from '../../core/test/helpers/fixture-repo.js';
 import {
@@ -13,7 +19,7 @@ import {
 	judgeCommit,
 	runAgentHook,
 } from '../src/agent-hook.js';
-import {BRIEF_LIMIT} from '../src/session-brief.js';
+import {BRIEF_LIMIT, startWarmUp} from '../src/session-brief.js';
 
 const cliJs = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
 
@@ -526,6 +532,7 @@ async function sessionHook(
 		cwd?: string;
 		readBrief?: (cwd: string) => Promise<{text: string}>;
 		briefLimit?: number;
+		warmUp?: (cwd: string) => void;
 		onTimeout?: () => void;
 	} = {},
 ) {
@@ -540,6 +547,7 @@ async function sessionHook(
 		...(options.briefLimit === undefined
 			? {}
 			: {briefLimit: options.briefLimit}),
+		...(options.warmUp ? {warmUp: options.warmUp} : {}),
 		...(options.onTimeout ? {onTimeout: options.onTimeout} : {}),
 	});
 	return {code, stdout, stderr};
@@ -659,6 +667,89 @@ test('a brief that takes longer than 5 seconds prints nothing and exits 0', asyn
 	expect(timedOut).toBe(1);
 	// The brief that comes in late is dropped.
 	finish({text: 'late'});
+});
+
+test('on a timeout the hook starts a warm-up and still prints nothing', async () => {
+	const order: string[] = [];
+	const warmed: string[] = [];
+	const never = async () => new Promise<{text: string}>(() => undefined);
+	const result = await sessionHook(session({source: 'startup', cwd: '/x'}), {
+		readBrief: never,
+		briefLimit: 20,
+		warmUp: cwd => {
+			warmed.push(cwd);
+			order.push('warm-up');
+		},
+		onTimeout: () => order.push('exit'),
+	});
+	expect(result).toEqual(SILENT);
+	expect(warmed).toEqual(['/x']);
+	// The warm-up starts before the CLI exits.
+	expect(order).toEqual(['warm-up', 'exit']);
+
+	// Without a cwd in the input, the hook's own directory is warmed.
+	warmed.length = 0;
+	await sessionHook(session({source: 'startup'}), {
+		cwd: '/repo',
+		readBrief: never,
+		briefLimit: 20,
+		warmUp: cwd => warmed.push(cwd),
+	});
+	expect(warmed).toEqual(['/repo']);
+
+	// A warm-up that throws changes nothing.
+	let timedOut = 0;
+	expect(
+		await sessionHook(session({source: 'startup', cwd: '/x'}), {
+			readBrief: never,
+			briefLimit: 20,
+			warmUp: () => {
+				throw new Error('spawn failed');
+			},
+			onTimeout: () => timedOut++,
+		}),
+	).toEqual(SILENT);
+	expect(timedOut).toBe(1);
+});
+
+test('a brief that is ready in time starts no warm-up', async () => {
+	const warmed: string[] = [];
+	await sessionHook(session({source: 'startup', cwd: '/x'}), {
+		readBrief: async () => ({text: 'brief'}),
+		warmUp: cwd => warmed.push(cwd),
+	});
+	expect(warmed).toEqual([]);
+});
+
+test('the warm-up fills the brief cache', {timeout: 30_000}, async () => {
+	const dir = await repoWithCard();
+	const file = path.join(path.dirname(await cardStatePath(dir)), 'brief.json');
+	await rm(file, {force: true});
+	startWarmUp(dir, cliJs);
+	const deadline = Date.now() + 20_000;
+	let cached: {text?: unknown} | undefined;
+	while (cached === undefined && Date.now() < deadline) {
+		try {
+			cached = JSON.parse(await readFile(file, 'utf8')) as {text?: unknown};
+		} catch {
+			await new Promise(resolve => {
+				setTimeout(resolve, 100);
+			});
+		}
+	}
+
+	expect(cached?.text).toContain(PORT);
+	// Options are never cached, so this is a fresh render to compare with.
+	expect(cached?.text).toBe((await readBrief(dir, {budget: 1500})).text);
+});
+
+test('a warm-up that cannot start throws nothing', () => {
+	expect(() => {
+		startWarmUp('/no/such/directory', cliJs);
+	}).not.toThrow();
+	expect(() => {
+		startWarmUp(process.cwd(), '/no/such/script.js');
+	}).not.toThrow();
 });
 
 test('the limit is 5 seconds', () => {
