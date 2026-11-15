@@ -321,9 +321,9 @@ test('a hook that stages files makes resolve report a commit that is not empty, 
 	);
 	// Nothing was undone: the commit, and the file the hook added, stay.
 	expect(await rev(dir, 'HEAD~1')).toBe(before);
-	expect(await gitOutput(dir, ['show', '--name-only', '--format=', 'HEAD'])).toBe(
-		'stray.txt\n',
-	);
+	expect(
+		await gitOutput(dir, ['show', '--name-only', '--format=', 'HEAD']),
+	).toBe('stray.txt\n');
 });
 
 test('resolve refuses during a merge in progress and makes no commit', async () => {

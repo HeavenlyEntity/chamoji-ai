@@ -233,8 +233,7 @@ async function readVoids(
 			// `git revert -m 1` is the usual case, so a mainline git didn't
 			// write, or one that is not a parent of the merge, stands for it.
 			const kept =
-				mainline !== undefined &&
-				(parents.get(target) ?? []).includes(mainline)
+				mainline !== undefined && (parents.get(target) ?? []).includes(mainline)
 					? mainline
 					: `${target}^1`;
 			voids.set(revert, await broughtIn(cwd, target, kept));
