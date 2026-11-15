@@ -352,8 +352,9 @@ test('a 10 KB text with escape codes and "\\nConstraints\\n" comes out as one cl
 	expect(brief).not.toContain(esc);
 });
 
-test('a reason, a slug, a subject and a tag are cleaned and cut like a line', () => {
+test('a reason, a slug, a latest and a subject are cut to 200, and a tag to 40', () => {
 	const long = 'q'.repeat(500);
+	const cut = (n: number) => `${'q'.repeat(n - 1)}…`;
 	const brief = renderBrief(
 		input(
 			[
@@ -373,14 +374,132 @@ test('a reason, a slug, a subject and a tag are cleaned and cut like a line', ()
 				recent: {tag: long, count: 1, subjects: [long]},
 			},
 		),
+		{budget: 2000},
 	);
-	for (const l of brief.split('\n')) {
-		expect(l.length).toBeLessThanOrEqual(430);
+	const rows = brief.split('\n');
+	expect(rows).toContain(
+		`${INDENT}Resolved by 7654321 on 2026-11-12: a b${'q'.repeat(197)}`.slice(
+			0,
+			INDENT.length + 'Resolved by 7654321 on 2026-11-12: '.length + 199,
+		) + '…',
+	);
+	expect(rows).toContain(
+		`  s ${'q'.repeat(197)}…  active  1 commit  Latest: ${cut(200)}`,
+	);
+	expect(rows).toContain(`Since ${cut(40)}`);
+	expect(rows).toContain('  1 commit.');
+	expect(rows).toContain(`  ${cut(200)}`);
+});
+
+test('a tag longer than 40 characters prints cut to 40 with the ellipsis', () => {
+	const brief = renderBrief(
+		input([line('c-00000001')], {
+			recent: {tag: 'v'.repeat(60), count: 2, subjects: []},
+		}),
+	);
+	expect(brief).toContain(`\nSince ${'v'.repeat(39)}…\n  2 commits.\n`);
+});
+
+test('recent with a count of 0 prints no recent section, whatever the subjects', () => {
+	const brief = renderBrief(
+		input([line('c-00000001')], {
+			recent: {tag: 'v1', count: 0, subjects: ['a', 'b']},
+		}),
+	);
+	expect(brief).not.toContain('Since');
+	expect(brief).not.toContain('commits');
+});
+
+function hostile(
+	tag: string | null,
+	idLength: number,
+	dangling: number,
+	slug: number,
+): BriefInput {
+	const base = crowded();
+	base.recent.tag = tag;
+	base.workstreams = base.workstreams.map((w, i) => ({
+		...w,
+		slug: `${i}`.padEnd(slug, 's'),
+	}));
+	base.state.dangling = Array.from({length: dangling}, (_, i) => ({
+		id: `c-${i}`.padEnd(idLength, 'k'),
+		hash: H2,
+	}));
+	return base;
+}
+
+test('the reviewer probe stays within 800 characters', () => {
+	const probe = input(
+		[
+			line('c-00000001'),
+			line('c-00000002', {
+				state: 'resolved',
+				resolvedBy: {hash: H2, date: '2026-11-12T00:00:00Z', reason: 'r'},
+			}),
+			line('c-00000003', {kind: 'gotcha'}),
+			line('c-00000004', {kind: 'followUp'}),
+			line('c-00000005', {
+				state: 'off-branch',
+				workstream: {slug: 'w', status: 'shipped'},
+			}),
+		],
+		{
+			workstreams: [{slug: 'w', title: 't', commits: 1}],
+			recent: {tag: 'v'.repeat(500), count: 1, subjects: ['a']},
+		},
+	);
+	probe.state.dangling = Array.from({length: 50}, (_, i) => ({
+		id: `c-${i}`.padEnd(300, 'k'),
+		hash: H2,
+	}));
+	expect(renderBrief(probe, {budget: 200}).length).toBeLessThanOrEqual(800);
+});
+
+test('the cap holds for hostile inputs at every budget', () => {
+	let checked = 0;
+	for (const budget of [200, 201, 500, 1500, 20_000]) {
+		for (const [tag, idLength, dangling, slug] of [
+			['v'.repeat(500), 300, 50, 300],
+			[null, 300, 50, 300],
+			['v1', 300, 6, 1],
+			['v'.repeat(40), 10, 5, 10],
+			['v'.repeat(500), 1, 1, 500],
+			['\u0007'.repeat(50), 500, 200, 20],
+		] as const) {
+			const brief = renderBrief(hostile(tag, idLength, dangling, slug), {
+				budget,
+			});
+			expect(
+				brief.length,
+				`${budget} ${tag?.length} ${idLength}`,
+			).toBeLessThanOrEqual(budget * 4);
+			checked++;
+		}
 	}
 
-	expect(brief).toContain('Resolved by 7654321 on 2026-11-12: a b');
-	expect(brief).toContain('  1 commit.');
-	expect(brief.split('\n').some(l => l.endsWith('…'))).toBe(true);
+	expect(checked).toBeGreaterThanOrEqual(20);
+});
+
+test('real-shaped input at the smallest budget drops nothing that was set aside', () => {
+	const real = hostile('v'.repeat(40), 10, 5, 10);
+	const brief = renderBrief(real, {budget: MIN_BRIEF_BUDGET});
+	expect(brief.length).toBeLessThanOrEqual(800);
+	const rows = brief.split('\n');
+	for (const [title, name, count] of [
+		['Constraints', 'constraints', 60],
+		['Resolved recently', 'resolved', 60],
+		['Gotchas', 'gotchas', 60],
+		['Follow-ups', 'follow-ups', 60],
+		['Off branch', 'off-branch', 60],
+		['Workstreams', 'workstreams', 40],
+		[`Since ${'v'.repeat(40)}`, 'recent', 80],
+	] as const) {
+		const form = `${title}: ${count} not shown. The ${name} section lists them.`;
+		expect(rows.includes(title) || rows.includes(form), title).toBe(true);
+	}
+
+	expect(rows.some(l => l.startsWith('Unmatched:'))).toBe(true);
 });
 
 test('the same input gives the same bytes', () => {

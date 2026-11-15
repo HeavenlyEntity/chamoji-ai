@@ -34,6 +34,7 @@ export type BriefInput = {
 
 const CHARS_PER_TOKEN = 4;
 const MAX_TEXT = 200;
+const MAX_TAG = 40;
 const MAX_UNMATCHED = 5;
 const SEPARATOR = '\n\n';
 /** 2 spaces, the state padded to 10, a space, the 10-character id, 2 spaces. */
@@ -96,16 +97,28 @@ export function renderBrief(
 	const total = clampBudget(options.budget) * CHARS_PER_TOKEN;
 	const free = total - first.length - last.length - SEPARATOR.length;
 
-	// The one-line forms come first after the first and last lines, so they
-	// always fit; the Unmatched lines come next, the full sections last.
-	const reserved = sections.reduce(
+	// The one-line forms come first after the first and last lines, then the
+	// Unmatched lines, the full sections last. When even the first two do not
+	// fit, the cap wins: Unmatched goes first, then sections from the last.
+	let kept = sections;
+	let withUnmatched = dangling.length > 0;
+	const setAside = () =>
+		kept.reduce((sum, s) => sum + SEPARATOR.length + notShown(s).length, 0) +
+		(withUnmatched
+			? SEPARATOR.length + unmatchedMore(dangling.length).length
+			: 0);
+	if (setAside() > free) withUnmatched = false;
+	while (setAside() > free && kept.length > 0) kept = kept.slice(0, -1);
+	const reserved = kept.reduce(
 		(sum, s) => sum + SEPARATOR.length + notShown(s).length,
 		0,
 	);
-	const unmatched = unmatchedBlock(dangling, Math.floor((free - reserved) / 2));
+	const unmatched = withUnmatched
+		? unmatchedBlock(dangling, Math.floor((free - reserved) / 2))
+		: undefined;
 	const room =
 		free - reserved - (unmatched ? SEPARATOR.length + unmatched.length : 0);
-	const blocks = fitSections(sections, room, only !== undefined);
+	const blocks = fitSections(kept, room, only !== undefined);
 
 	return [first, ...blocks, ...(unmatched ? [unmatched] : []), last].join(
 		SEPARATOR,
@@ -186,6 +199,10 @@ function overflowLine(name: BriefSection, more: number): string {
 	return `  and ${more} more: the ${name} section lists them.`;
 }
 
+function unmatchedMore(rest: number): string {
+	return `Unmatched: ${rest} more Resolves: lines match no card line.`;
+}
+
 /** At most 5 lines, and never more than `cap` characters, so a flood of resolves cannot crowd out the rest. */
 function unmatchedBlock(
 	dangling: Array<{id: string; hash: string}>,
@@ -199,9 +216,7 @@ function unmatchedBlock(
 		const rest = lines.length - kept;
 		const block = [
 			...lines.slice(0, kept),
-			...(rest > 0
-				? [`Unmatched: ${rest} more Resolves: lines match no card line.`]
-				: []),
+			...(rest > 0 ? [unmatchedMore(rest)] : []),
 		].join('\n');
 		if (block.length + SEPARATOR.length <= cap || kept === 0) {
 			return block === '' ? undefined : block;
@@ -244,14 +259,16 @@ function selectSections(input: BriefInput): Section[] {
 		{
 			name: 'recent',
 			title:
-				recent.tag === null ? 'Recent commits' : `Since ${clean(recent.tag)}`,
+				recent.tag === null
+					? 'Recent commits'
+					: `Since ${clean(recent.tag, MAX_TAG)}`,
 			count: recent.count,
 			head: [`  ${commits(recent.count)}.`],
 			entries: recent.subjects.map(s => `  ${clean(s)}`),
 		},
 	];
-	return sections.filter(
-		s => s.entries.length > 0 || (s.name === 'recent' && recent.count > 0),
+	return sections.filter(s =>
+		s.name === 'recent' ? recent.count > 0 : s.entries.length > 0,
 	);
 }
 
@@ -323,10 +340,10 @@ function short(hash: string): string {
  * Text anyone who can push may have written: control characters out, one
  * line, and no more than 200 characters with a `…` at a cut.
  */
-function clean(text: string): string {
+function clean(text: string, max = MAX_TEXT): string {
 	const oneLine = stripControl(text.replace(/\s+/g, ' ')).trim();
-	if (oneLine.length <= MAX_TEXT) return oneLine;
-	let cut = oneLine.slice(0, MAX_TEXT - 1);
+	if (oneLine.length <= max) return oneLine;
+	let cut = oneLine.slice(0, max - 1);
 	// Do not leave half of a surrogate pair at the cut.
 	if (/[\uD800-\uDBFF]$/.test(cut)) cut = cut.slice(0, -1);
 	return `${cut.trimEnd()}…`;
