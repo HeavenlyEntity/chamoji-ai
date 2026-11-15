@@ -82,9 +82,9 @@ async function currentStamp(cwd: string): Promise<Stamp> {
 /**
  * Works from `head`, the hash the stamp holds, so a HEAD that moves meanwhile
  * can't mix two histories into one stored state. Folds once without blame, then blames only the sources of lines that came
- * out open, because blame can only move an open line to in doubt. A resolved
- * or off-branch line is never blamed, and a repo with no open line blames
- * nothing.
+ * out open, because blame can only move an open line to in doubt, and then
+ * the restorers of those whose lines are gone. A resolved or off-branch line
+ * is never blamed, and a repo with no open line blames nothing.
  */
 async function build(cwd: string, head: string): Promise<CardState> {
 	const {commits, reverted} = await readFoldCommits(cwd, head);
@@ -106,11 +106,13 @@ async function build(cwd: string, head: string): Promise<CardState> {
 	const first = foldCardState(input);
 	const open = first.lines.filter(line => line.state === 'open');
 	if (open.length === 0) return first;
+	const live = new Set(liveCommits(commits, input.voids).map(c => c.hash));
 	const survival = await readSurvival(
 		cwd,
 		open.flatMap(line => line.sources),
 		{head},
 	);
+	await creditRestorers(cwd, head, survival, restorersOf(reverted, live));
 	const state = foldCardState({
 		...input,
 		survives: new Map(
@@ -124,7 +126,7 @@ async function build(cwd: string, head: string): Promise<CardState> {
 		}
 	}
 
-	await fillReplacedBy(cwd, input, state.lines);
+	await fillReplacedBy(cwd, input, live, state.lines);
 	return state;
 }
 
@@ -282,6 +284,70 @@ async function readRemembered(
 	);
 }
 
+/**
+ * For each commit, the live reverts that put its code back: those whose chain
+ * of revert targets, past the commit the revert itself undid, reaches it. A
+ * revert of a revert restores the original; a longer chain is counted too,
+ * since calling a source restored can only leave its line open, never
+ * resolved.
+ */
+function restorersOf(
+	reverted: Map<string, Reverted>,
+	live: Set<string>,
+): Map<string, string[]> {
+	const restorers = new Map<string, string[]>();
+	for (const [revert, {target: undone}] of reverted) {
+		if (!live.has(revert)) continue;
+		const seen = new Set([revert, undone]);
+		let target = reverted.get(undone)?.target;
+		while (target !== undefined && !seen.has(target)) {
+			seen.add(target);
+			restorers.set(target, [...(restorers.get(target) ?? []), revert]);
+			target = reverted.get(target)?.target;
+		}
+	}
+
+	return restorers;
+}
+
+/**
+ * Blame credits code a revert of a revert put back to that revert, so the
+ * commit that first wrote it looks gone. A source whose own lines are gone
+ * survives when one of its restorers' lines does, and that restorer's files
+ * join its own. Only those sources' restorers are blamed.
+ */
+async function creditRestorers(
+	cwd: string,
+	head: string,
+	survival: Map<string, Survival>,
+	restorers: Map<string, string[]>,
+): Promise<void> {
+	const gone = [...survival].filter(
+		([hash, {survives}]) => survives === false && restorers.has(hash),
+	);
+	if (gone.length === 0) return;
+	const checked = await readSurvival(
+		cwd,
+		gone.flatMap(([hash]) => restorers.get(hash)!),
+		{head},
+	);
+	for (const [hash, {files}] of gone) {
+		const back = restorers
+			.get(hash)!
+			.filter(restorer => checked.get(restorer)?.survives === true);
+		if (back.length === 0) continue;
+		survival.set(hash, {
+			survives: true,
+			files: [
+				...new Set([
+					...files,
+					...back.flatMap(restorer => checked.get(restorer)!.files),
+				]),
+			],
+		});
+	}
+}
+
 /** The paths the checked sources added lines to, each once. */
 function filesOf(sources: string[], survival: Map<string, Survival>): string[] {
 	return [...new Set(sources.flatMap(hash => survival.get(hash)?.files ?? []))];
@@ -289,8 +355,8 @@ function filesOf(sources: string[], survival: Map<string, Survival>): string[] {
 
 /**
  * For each line in doubt, the newest commit on HEAD that changed one of its
- * files and could have replaced its code: not one of its sources, live, as
- * the fold judges it, and a descendant of at least one source. A commit a
+ * files and could have replaced its code: not one of its sources, in `live`,
+ * the commits the fold counts as live, and a descendant of at least one source. A commit a
  * revert undid or one written before the line was stated can't be where it
  * went. Paths are listed from the top of the work tree, so neither the
  * caller's folder nor `diff.relative` can make them differ from `files`.
@@ -298,13 +364,11 @@ function filesOf(sources: string[], survival: Map<string, Survival>): string[] {
 async function fillReplacedBy(
 	cwd: string,
 	input: FoldInput,
+	live: Set<string>,
 	lines: CardLine[],
 ): Promise<void> {
 	const inDoubt = lines.filter(line => line.state === 'in-doubt');
 	if (inDoubt.length === 0) return;
-	const live = new Set(
-		liveCommits(input.commits, input.voids).map(c => c.hash),
-	);
 	const changed = await readCommitFiles(await topLevel(cwd), input.head);
 	for (const line of inDoubt) {
 		for (const [hash, files] of changed) {

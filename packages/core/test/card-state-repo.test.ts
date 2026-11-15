@@ -197,10 +197,10 @@ test('a revert of a revert restores the line, even when the first revert is date
 	await gitOutput(repo.dir, ['switch', '-q', 'main']);
 	await gitOutput(repo.dir, ['merge', '-q', '--no-ff', '-m', 'Merge', 'side']);
 
-	// Blame credits the restored code to the revert of the revert, not to
-	// the commit that stated the line, so the line is back but in doubt.
+	// Blame credits the restored code to the revert of the revert, which
+	// stands for the commit that stated the line, so the line is open.
 	const line = await lineOf(repo.dir, PORT_ID);
-	expect(line).toMatchObject({state: 'in-doubt', sources: [stated]});
+	expect(line).toMatchObject({state: 'open', sources: [stated]});
 	expect(line?.revertedBy).toBeUndefined();
 });
 
@@ -640,5 +640,44 @@ test('with diff.relative on, a build from a subdirectory still gives replacedBy'
 		state: 'in-doubt',
 		files: ['src/server.ts'],
 		replacedBy: await rev(repo.dir, 'HEAD'),
+	});
+});
+
+test('a line restored by a revert of a revert is open', async () => {
+	repo = await createRepo([
+		{
+			commit: '✨ Add server',
+			body: `Constraint: ${PORT}`,
+			files: {'server.ts': 'listen(3000)\n'},
+		},
+	]);
+	const stated = await rev(repo.dir, 'HEAD');
+	await gitOutput(repo.dir, ['revert', '--no-edit', 'HEAD']);
+	await gitOutput(repo.dir, ['revert', '--no-edit', 'HEAD']);
+
+	expect(await lineOf(repo.dir, PORT_ID)).toMatchObject({
+		state: 'open',
+		sources: [stated],
+		files: ['server.ts'],
+	});
+});
+
+test('once the restored code is replaced, the line is in doubt and replacedBy names the commit that replaced it', async () => {
+	repo = await createRepo([
+		{
+			commit: '✨ Add server',
+			body: `Constraint: ${PORT}`,
+			files: {'server.ts': 'listen(3000)\n'},
+		},
+	]);
+	await gitOutput(repo.dir, ['revert', '--no-edit', 'HEAD']);
+	await gitOutput(repo.dir, ['revert', '--no-edit', 'HEAD']);
+	const rewrite = await commit(repo.dir, '♻️ Rewrite server', {
+		'server.ts': 'serve()\n',
+	});
+
+	expect(await lineOf(repo.dir, PORT_ID)).toMatchObject({
+		state: 'in-doubt',
+		replacedBy: rewrite,
 	});
 });
