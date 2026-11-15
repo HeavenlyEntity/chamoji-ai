@@ -22,14 +22,13 @@ import {stripControl, stripControlLines} from './text.js';
 import {MAX_WHY, cleanReason} from './why-draft.js';
 import {
 	cluesWithLines,
-	findWorkstream,
 	readingCards,
 	readStateFor,
-	readWhy,
 	replyLines,
 	unavailable,
 	withLines,
-} from './why.js';
+} from './line-states.js';
+import {findWorkstream, readWhy} from './why.js';
 
 /**
  * What the three tools do. Each answers with plain data, which becomes the

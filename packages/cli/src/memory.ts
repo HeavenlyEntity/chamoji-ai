@@ -34,7 +34,7 @@ import {
 	unavailable,
 	warnUnavailable,
 	withLines,
-} from './why.js';
+} from './line-states.js';
 
 /** Same code run.ts uses for a command that was used wrongly. */
 const USAGE_ERROR = 2;
