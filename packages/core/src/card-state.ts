@@ -103,8 +103,9 @@ export function foldCardState(input: FoldInput): CardState {
  * names it, so a revert that was itself reverted undoes nothing, whatever
  * order the commits come in. A revert that is not among the commits undoes
  * nothing, and reverts that name each other in a cycle all count as live.
+ * Exported so what reads the repository judges a commit the way the fold does.
  */
-function liveCommits(
+export function liveCommits(
 	commits: FoldCommit[],
 	voids: Map<string, string[]>,
 ): FoldCommit[] {

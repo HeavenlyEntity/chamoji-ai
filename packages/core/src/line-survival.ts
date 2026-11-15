@@ -110,7 +110,7 @@ export async function readSurvival(
  * The top of the work tree `cwd` is in. A repository with no work tree has
  * none, and its paths are already from the top.
  */
-async function topLevel(cwd: string): Promise<string> {
+export async function topLevel(cwd: string): Promise<string> {
 	try {
 		const top = (await runGit(['rev-parse', '--show-toplevel'], cwd)).trim();
 		return top === '' ? cwd : top;

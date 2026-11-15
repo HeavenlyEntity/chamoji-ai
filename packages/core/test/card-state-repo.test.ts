@@ -570,3 +570,75 @@ test('a card-state cache file with the old version is rebuilt', async () => {
 		version: 3,
 	});
 });
+
+test('replacedBy skips a commit that a revert undid', async () => {
+	repo = await createRepo([
+		{
+			commit: '✨ Add server',
+			body: `Constraint: ${PORT}`,
+			files: {'server.ts': 'listen(3000)\n'},
+		},
+		{commit: '♻️ Rewrite server', files: {'server.ts': 'serve()\n'}},
+		{
+			commit: '✨ Add a flag',
+			files: {'server.ts': 'serve(flag)\n', 'flag.ts': 'flag\n'},
+		},
+	]);
+	const rewrite = await rev(repo.dir, 'HEAD~1');
+	// The revert keeps server.ts as the flag commit left it, so the newest
+	// commit that touched server.ts is one the revert undid.
+	await gitOutput(repo.dir, ['revert', '--no-commit', 'HEAD']);
+	await gitOutput(repo.dir, ['checkout', 'HEAD', '--', 'server.ts']);
+	await gitOutput(repo.dir, ['commit', '-q', '--no-edit']);
+
+	expect(await lineOf(repo.dir, PORT_ID)).toMatchObject({
+		state: 'in-doubt',
+		replacedBy: rewrite,
+	});
+});
+
+test('replacedBy skips a commit older than every source', async () => {
+	repo = await createRepo([
+		{commit: '🎉 Init', files: {'server.ts': 'start\n'}},
+	]);
+	await gitOutput(repo.dir, ['switch', '-q', '-c', 'side']);
+	await commit(repo.dir, '♻️ Rewrite server', {'server.ts': 'serve()\n'});
+	await gitOutput(repo.dir, ['switch', '-q', 'main']);
+	await commit(repo.dir, `✨ Add port\n\nConstraint: ${PORT}`, {
+		'server.ts': 'listen(3000)\n',
+	});
+	// The merge takes the side's server.ts, which was written before the
+	// line was stated, so no commit on HEAD replaced the line's code.
+	await gitOutput(repo.dir, [
+		'merge',
+		'-q',
+		'--no-ff',
+		'-X',
+		'theirs',
+		'-m',
+		'Merge',
+		'side',
+	]);
+
+	const line = await lineOf(repo.dir, PORT_ID);
+	expect(line?.state).toBe('in-doubt');
+	expect(line?.replacedBy).toBeUndefined();
+});
+
+test('with diff.relative on, a build from a subdirectory still gives replacedBy', async () => {
+	repo = await createRepo([
+		{
+			commit: '✨ Add server',
+			body: `Constraint: ${PORT}`,
+			files: {'src/server.ts': 'listen(3000)\n'},
+		},
+		{commit: '♻️ Rewrite server', files: {'src/server.ts': 'serve()\n'}},
+	]);
+	await gitOutput(repo.dir, ['config', 'diff.relative', 'true']);
+	const line = await lineOf(path.join(repo.dir, 'src'), PORT_ID);
+	expect(line).toMatchObject({
+		state: 'in-doubt',
+		files: ['src/server.ts'],
+		replacedBy: await rev(repo.dir, 'HEAD'),
+	});
+});

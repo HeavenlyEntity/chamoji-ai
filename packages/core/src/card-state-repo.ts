@@ -4,6 +4,7 @@ import path from 'node:path';
 import {CARD_ID} from './card-lines.js';
 import {
 	foldCardState,
+	liveCommits,
 	type CardLine,
 	type CardState,
 	type FoldCommit,
@@ -11,7 +12,7 @@ import {
 	type LineState,
 } from './card-state.js';
 import {readCommitFiles, readCommits, runGit} from './git.js';
-import {readSurvival, type Survival} from './line-survival.js';
+import {readSurvival, topLevel, type Survival} from './line-survival.js';
 import {MEMORY_REF, headOf, listMemory, shallowStamp} from './memory.js';
 import {parseCommit} from './parse.js';
 import {
@@ -123,7 +124,7 @@ async function build(cwd: string, head: string): Promise<CardState> {
 		}
 	}
 
-	await fillReplacedBy(cwd, head, state.lines);
+	await fillReplacedBy(cwd, input, state.lines);
 	return state;
 }
 
@@ -287,21 +288,30 @@ function filesOf(sources: string[], survival: Map<string, Survival>): string[] {
 }
 
 /**
- * For each line in doubt, the newest commit on HEAD, other than its own
- * sources, that changed one of its files: the likeliest place it went.
+ * For each line in doubt, the newest commit on HEAD that changed one of its
+ * files and could have replaced its code: not one of its sources, live, as
+ * the fold judges it, and a descendant of at least one source. A commit a
+ * revert undid or one written before the line was stated can't be where it
+ * went. Paths are listed from the top of the work tree, so neither the
+ * caller's folder nor `diff.relative` can make them differ from `files`.
  */
 async function fillReplacedBy(
 	cwd: string,
-	head: string,
+	input: FoldInput,
 	lines: CardLine[],
 ): Promise<void> {
 	const inDoubt = lines.filter(line => line.state === 'in-doubt');
 	if (inDoubt.length === 0) return;
-	const changed = await readCommitFiles(cwd, head);
+	const live = new Set(
+		liveCommits(input.commits, input.voids).map(c => c.hash),
+	);
+	const changed = await readCommitFiles(await topLevel(cwd), input.head);
 	for (const line of inDoubt) {
 		for (const [hash, files] of changed) {
 			if (
 				!line.sources.includes(hash) &&
+				live.has(hash) &&
+				line.sources.some(source => input.isAncestor(source, hash)) &&
 				files.some(file => line.files.includes(file))
 			) {
 				line.replacedBy = hash;
