@@ -362,7 +362,10 @@ function commitHook(viaNpx: boolean): Merge {
 /**
  * The SessionStart entry that hands the project brief to a new session, and
  * to one after `/clear` or a compaction. A resumed or forked session still
- * has the brief it was given, so the matcher leaves those out.
+ * has the brief it was given, so the matcher leaves those out. The timeout,
+ * in seconds, bounds what the hook's own 5-second limit can't: Node starting
+ * and `npx` finding or downloading the package, while the first reply
+ * waits. It goes in now, since an entry already there is never rewritten.
  */
 function sessionHook(viaNpx: boolean): Merge {
 	return {
@@ -374,7 +377,13 @@ function sessionHook(viaNpx: boolean): Merge {
 			if (present) return false;
 			list.push({
 				matcher: 'startup|clear|compact',
-				hooks: [{type: 'command', command: runChamoji(viaNpx, 'agent-hook')}],
+				hooks: [
+					{
+						type: 'command',
+						command: runChamoji(viaNpx, 'agent-hook'),
+						timeout: 15,
+					},
+				],
 			});
 			return true;
 		},

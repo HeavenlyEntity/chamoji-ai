@@ -93,7 +93,8 @@ Both files are meant to be committed, so everyone who uses Claude Code in the re
         "hooks": [
           {
             "type": "command",
-            "command": "chamoji agent-hook || true"
+            "command": "chamoji agent-hook || true",
+            "timeout": 15
           }
         ]
       }
@@ -114,7 +115,9 @@ When `chamoji` isn’t on your PATH, the server starts with `npx --yes @chamoji/
 	<Property name=".claude/settings.json">
 		Gets an entry in `hooks.PreToolUse` that runs `chamoji agent-hook` before
 		Claude Code’s Bash tool runs a `git commit`, and one in `hooks.SessionStart`
-		that runs it when a session starts. In each list, any entry whose command
+		that runs it when a session starts. The session entry has a `timeout` of 15
+		seconds, so a slow start, such as npx downloading chamoji, can’t hold up the
+		session’s first reply for long. In each list, any entry whose command
 		already runs `chamoji agent-hook` counts as there. The `|| true` is for a
 		chamoji too old to know the hook: it would exit 2, which Claude Code reads
 		as “block this”, and the file is shared.
@@ -260,7 +263,8 @@ These files are meant to be committed, so everyone who uses Claude Code here get
 				"hooks": [
 					{
 						"type": "command",
-						"command": "npx --yes @chamoji/cli agent-hook || true"
+						"command": "npx --yes @chamoji/cli agent-hook || true",
+						"timeout": 15
 					}
 				]
 			}
