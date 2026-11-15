@@ -165,7 +165,7 @@ test('a revert that is itself reverted undoes nothing', () => {
 	expect(line(state.lines, PORT_ID)?.resolvedBy?.hash).toBe(R);
 });
 
-test("reverting a line's only source removes the line", () => {
+test("reverting a line's only source makes it reverted, by that revert", () => {
 	const state = fold(
 		[
 			commit(D, 3),
@@ -175,8 +175,127 @@ test("reverting a line's only source removes the line", () => {
 		{voids: new Map([[D, [A]]])},
 	);
 
-	expect(line(state.lines, PORT_ID)).toBeUndefined();
-	expect(state.lines.map(l => [l.id, l.state])).toEqual([[FLAKY_ID, 'open']]);
+	expect(line(state.lines, PORT_ID)).toEqual({
+		id: PORT_ID,
+		kind: 'constraint',
+		text: PORT,
+		state: 'reverted',
+		sources: [A],
+		date: '2026-11-01T00:00:00Z',
+		files: [],
+		revertedBy: D,
+	});
+	expect(line(state.lines, FLAKY_ID)?.state).toBe('open');
+});
+
+test('a reverted line lists every voided source, newest first, and names the newest revert', () => {
+	const state = fold(
+		[
+			commit(D, 5),
+			commit(C, 4),
+			commit(B, 2, {card: card({constraint: [PORT]})}),
+			commit(A, 1, {card: card({constraint: [PORT]})}),
+		],
+		{
+			voids: new Map([
+				[C, [A]],
+				[D, [B]],
+			]),
+		},
+	);
+
+	expect(line(state.lines, PORT_ID)).toMatchObject({
+		state: 'reverted',
+		sources: [B, A],
+		date: '2026-11-02T00:00:00Z',
+		revertedBy: D,
+	});
+});
+
+test('a live source on HEAD comes before a voided one: the line is open', () => {
+	const state = fold(
+		[
+			commit(D, 3),
+			commit(B, 2, {card: card({constraint: [PORT]})}),
+			commit(A, 1, {card: card({constraint: [PORT]})}),
+		],
+		{voids: new Map([[D, [A]]])},
+	);
+
+	const found = line(state.lines, PORT_ID);
+	expect(found?.state).toBe('open');
+	expect(found?.sources).toEqual([B]);
+	expect(found?.revertedBy).toBeUndefined();
+});
+
+test('a remembered commit comes before a voided one: the line is off branch', () => {
+	const state = fold(
+		[commit(D, 3), commit(A, 1, {card: card({constraint: [PORT]})})],
+		{
+			voids: new Map([[D, [A]]]),
+			remembered: [
+				remembered('old-port', 'dropped', {
+					hash: B,
+					subject: 'Pin the port',
+					date: '2026-11-02T00:00:00Z',
+					card: card({constraint: [PORT]}),
+				}),
+			],
+		},
+	);
+
+	const found = line(state.lines, PORT_ID);
+	expect(found?.state).toBe('off-branch');
+	expect(found?.sources).toEqual([B]);
+	expect(found?.revertedBy).toBeUndefined();
+});
+
+test('liveness does not depend on the order reverts are given in', () => {
+	// D reverts A, and E reverts D; D comes first, as a skewed clock leaves it.
+	const E = '9'.repeat(40);
+	const state = fold(
+		[
+			commit(D, 6),
+			commit(E, 5),
+			commit(A, 1, {card: card({constraint: [PORT]})}),
+		],
+		{
+			voids: new Map([
+				[D, [A]],
+				[E, [D]],
+			]),
+		},
+	);
+
+	const found = line(state.lines, PORT_ID);
+	expect(found?.state).toBe('open');
+	expect(found?.sources).toEqual([A]);
+});
+
+test('reverts that name each other in a cycle are both live', () => {
+	const state = fold(
+		[
+			commit(D, 3, {card: card({gotcha: [FLAKY]})}),
+			commit(C, 2, {card: card({constraint: [PORT]})}),
+		],
+		{
+			voids: new Map([
+				[D, [C]],
+				[C, [D]],
+			]),
+		},
+	);
+
+	expect(line(state.lines, PORT_ID)?.state).toBe('open');
+	expect(line(state.lines, FLAKY_ID)?.state).toBe('open');
+});
+
+test('a void whose revert is not on HEAD is ignored', () => {
+	const state = fold([commit(A, 1, {card: card({constraint: [PORT]})})], {
+		voids: new Map([[D, [A]]]),
+	});
+
+	expect(line(state.lines, PORT_ID)?.state).toBe('open');
 });
 
 test('an open line whose sources all have survives false is in doubt', () => {
@@ -362,7 +481,7 @@ test('with two resolving commits where only the older covers the source, resolve
 	});
 });
 
-test('a Resolves: for an id stated only in a voided commit is dangling', () => {
+test('a Resolves: for an id stated only in a voided commit is not dangling, and the line stays reverted', () => {
 	const state = fold(
 		[
 			commit(R, 3, {resolves: [{id: PORT_ID}]}),
@@ -372,8 +491,12 @@ test('a Resolves: for an id stated only in a voided commit is dangling', () => {
 		{voids: new Map([[D, [A]]])},
 	);
 
-	expect(line(state.lines, PORT_ID)).toBeUndefined();
-	expect(state.dangling).toEqual([{id: PORT_ID, hash: R}]);
+	expect(line(state.lines, PORT_ID)).toMatchObject({
+		state: 'reverted',
+		revertedBy: D,
+	});
+	expect(line(state.lines, PORT_ID)?.resolvedBy).toBeUndefined();
+	expect(state.dangling).toEqual([]);
 });
 
 test('a remembered commit that is also on HEAD is not counted as remembered', () => {

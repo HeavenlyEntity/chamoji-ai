@@ -1,5 +1,9 @@
 import {expect, test} from 'vitest';
-import {readResolves, readRevertedHash} from '../src/resolves.js';
+import {
+	readResolves,
+	readRevertedHash,
+	readRevertedMainline,
+} from '../src/resolves.js';
 
 test('a trailer gives the id and the reason after it', () => {
 	expect(
@@ -112,4 +116,20 @@ test("readRevertedHash reads git revert's line, for a commit and for a merge", (
 		),
 	).toBe(hash);
 	expect(readRevertedHash('Reverts the layout change')).toBeUndefined();
+});
+
+test('readRevertedMainline reads the parent a merge revert kept, wrapped or not', () => {
+	const merge = 'a'.repeat(40);
+	const mainline = 'b'.repeat(40);
+	expect(
+		readRevertedMainline(
+			`This reverts commit ${merge}, reversing\nchanges made to ${mainline}.`,
+		),
+	).toBe(mainline);
+	expect(
+		readRevertedMainline(
+			`This reverts commit ${merge}, reversing changes made to ${mainline}.`,
+		),
+	).toBe(mainline);
+	expect(readRevertedMainline(`This reverts commit ${merge}.`)).toBeUndefined();
 });

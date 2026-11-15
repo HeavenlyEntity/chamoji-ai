@@ -470,6 +470,12 @@ function stateTag(line: PublicLine): string {
 		case 'off-branch': {
 			return `${id}, off branch`;
 		}
+
+		case 'reverted': {
+			return line.revertedBy === undefined
+				? `${id}, reverted`
+				: `${id}, reverted by ${shortHash(line.revertedBy)}`;
+		}
 	}
 }
 
@@ -559,7 +565,7 @@ export function withLines<T extends {card?: IntentCard}>(
 }
 
 function cleanLine(line: PublicLine): PublicLine {
-	const {resolvedBy, replacedBy, replaces, workstream} = line;
+	const {resolvedBy, replacedBy, replaces, workstream, revertedBy} = line;
 	return {
 		...line,
 		id: stripControl(line.id),
@@ -576,5 +582,6 @@ function cleanLine(line: PublicLine): PublicLine {
 		...(workstream && {
 			workstream: {...workstream, slug: stripControl(workstream.slug)},
 		}),
+		...(revertedBy === undefined ? {} : {revertedBy: stripControl(revertedBy)}),
 	};
 }

@@ -8,6 +8,9 @@ const RESOLVES_LINE = /^resolves:[ \t]*(\S.*)$/i;
 /** An id in backticks, as a pull request description writes it. */
 const BACKTICKED = /^`([^`]*)`$/;
 const REVERTS_LINE = /^This reverts commit ([0-9a-f]{40,64})\b/m;
+/** Git's line for a merge revert, which it may wrap onto two lines. */
+const MAINLINE =
+	/^This reverts commit [0-9a-f]{40,64},\s+reversing\s+changes\s+made\s+to\s+([0-9a-f]{40,64})\b/m;
 
 /**
  * The card lines a commit resolves, from `Resolves: <id> [reason]` lines.
@@ -49,4 +52,13 @@ export function readResolves(trailers: Trailer[], body: string): Resolve[] {
 /** The full hash in git's "This reverts commit <hash>" line. */
 export function readRevertedHash(body: string): string | undefined {
 	return REVERTS_LINE.exec(body)?.[1];
+}
+
+/**
+ * The parent a merge revert kept, from git's "reversing changes made to
+ * <hash>", which may wrap onto a second line. Undefined for a revert of a
+ * plain commit, or a message that doesn't say.
+ */
+export function readRevertedMainline(body: string): string | undefined {
+	return MAINLINE.exec(body)?.[1];
 }

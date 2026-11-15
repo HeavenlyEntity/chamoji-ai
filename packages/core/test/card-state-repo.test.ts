@@ -1,6 +1,8 @@
 import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
+import {execFile} from 'node:child_process';
 import path from 'node:path';
+import {promisify} from 'node:util';
 import {afterEach, expect, test} from 'vitest';
 import {cardLineId} from '../src/card-lines.js';
 import {cardStatePath, readCardState} from '../src/card-state-repo.js';
@@ -12,6 +14,8 @@ import {
 	gitOutput,
 	type FixtureRepo,
 } from './helpers/fixture-repo.js';
+
+const execFileAsync = promisify(execFile);
 
 let repo: FixtureRepo | undefined;
 afterEach(async () => {
@@ -120,6 +124,84 @@ test('reverting the merge that brought the resolving commit in reopens the line'
 
 	await gitOutput(repo.dir, ['revert', '--no-edit', '-m', '1', 'HEAD']);
 	expect((await lineOf(repo.dir, PORT_ID))?.state).toBe('open');
+});
+
+test('git revert -m 2 of a merge undoes the mainline side: the line it resolved reopens and the kept side stays', async () => {
+	repo = await createRepo([
+		{
+			commit: '✨ Add server',
+			body: `Constraint: ${PORT}`,
+			files: {'server.ts': 'listen(3000)\n'},
+		},
+	]);
+	await gitOutput(repo.dir, ['switch', '-q', '-c', 'side']);
+	await commit(repo.dir, `✨ Add upload\n\nGotcha: ${FLAKY}`, {
+		'upload.ts': 'upload\n',
+	});
+	await gitOutput(repo.dir, ['switch', '-q', 'main']);
+	await commit(repo.dir, `♻️ Move the port\n\nResolves: ${PORT_ID}`, {
+		'proxy.ts': 'proxy\n',
+	});
+	await gitOutput(repo.dir, ['merge', '-q', '--no-ff', '-m', 'Merge', 'side']);
+	expect((await lineOf(repo.dir, PORT_ID))?.state).toBe('resolved');
+	expect((await lineOf(repo.dir, FLAKY_ID))?.state).toBe('open');
+
+	await gitOutput(repo.dir, ['revert', '--no-edit', '-m', '2', 'HEAD']);
+	expect((await lineOf(repo.dir, PORT_ID))?.state).toBe('open');
+	expect((await lineOf(repo.dir, FLAKY_ID))?.state).toBe('open');
+});
+
+test("after git revert of a line's only source, the line is reverted, by that revert", async () => {
+	repo = await createRepo([
+		{commit: '🎉 Init', files: {'README.md': 'hi\n'}},
+		{
+			commit: '✨ Add server',
+			body: `Constraint: ${PORT}`,
+			files: {'server.ts': 'listen(3000)\n'},
+		},
+	]);
+	const stated = await rev(repo.dir, 'HEAD');
+	await gitOutput(repo.dir, ['revert', '--no-edit', 'HEAD']);
+	const state = await readCardState(repo.dir);
+	expect(state.lines.find(line => line.id === PORT_ID)).toEqual({
+		id: PORT_ID,
+		kind: 'constraint',
+		text: PORT,
+		state: 'reverted',
+		sources: [stated],
+		date: state.lines[0]!.date,
+		files: [],
+		revertedBy: await rev(repo.dir, 'HEAD'),
+	});
+	// And the same when read back from the cache.
+	expect(await readCardState(repo.dir)).toEqual(state);
+});
+
+test('a revert of a revert restores the line, even when the first revert is dated later', async () => {
+	repo = await createRepo([
+		{
+			commit: '✨ Add server',
+			body: `Constraint: ${PORT}`,
+			files: {'server.ts': 'listen(3000)\n'},
+		},
+	]);
+	const stated = await rev(repo.dir, 'HEAD');
+	// A skewed clock dates the first revert after the revert of it, so git
+	// log lists it first once a merge joins the two.
+	await execFileAsync('git', ['revert', '--no-edit', 'HEAD'], {
+		cwd: repo.dir,
+		env: {...process.env, GIT_COMMITTER_DATE: '2030-01-01T00:00:00Z'},
+	});
+	await gitOutput(repo.dir, ['switch', '-q', '-c', 'side']);
+	await gitOutput(repo.dir, ['revert', '--no-edit', 'HEAD']);
+	await gitOutput(repo.dir, ['switch', '-q', 'main']);
+	await gitOutput(repo.dir, ['merge', '-q', '--no-ff', '-m', 'Merge', 'side']);
+
+	// Blame credits the restored code to the revert of the revert, not to
+	// the commit that stated the line, so the line is back but in doubt.
+	const line = await lineOf(repo.dir, PORT_ID);
+	expect(line).toMatchObject({state: 'in-doubt', sources: [stated]});
+	expect(line?.revertedBy).toBeUndefined();
 });
 
 test('a Constraint: line added in a note gets an id, and its source is the noted commit', async () => {
@@ -266,7 +348,7 @@ test('the state is read back from the cache file, and rebuilt when the notes ref
 	await readCardState(repo.dir);
 	const file = await cardStatePath(repo.dir);
 	const saved = JSON.parse(await readFile(file, 'utf8'));
-	expect(saved).toMatchObject({version: 1, head: await rev(repo.dir, 'HEAD')});
+	expect(saved).toMatchObject({version: 2, head: await rev(repo.dir, 'HEAD')});
 	saved.state.lines[0].text = 'edited in place';
 	await writeFile(file, JSON.stringify(saved));
 	expect((await lineOf(repo.dir, PORT_ID))?.text).toBe('edited in place');
@@ -288,7 +370,8 @@ test('a cache file that does not check out is rebuilt', async () => {
 	const saved = JSON.parse(await readFile(file, 'utf8'));
 	for (const damage of [
 		'not json',
-		JSON.stringify({...saved, version: 2}),
+		JSON.stringify({...saved, version: 1}),
+		JSON.stringify({...saved, version: 3}),
 		JSON.stringify({...saved, state: {...saved.state, lines: 'none'}}),
 		JSON.stringify({
 			...saved,
@@ -302,6 +385,13 @@ test('a cache file that does not check out is rebuilt', async () => {
 			state: {
 				...saved.state,
 				lines: [{...saved.state.lines[0], sources: ['nope'], text: 'x'}],
+			},
+		}),
+		JSON.stringify({
+			...saved,
+			state: {
+				...saved.state,
+				lines: [{...saved.state.lines[0], revertedBy: 'nope', text: 'x'}],
 			},
 		}),
 	]) {
