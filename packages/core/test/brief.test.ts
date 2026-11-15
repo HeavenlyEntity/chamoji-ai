@@ -324,10 +324,13 @@ test('with section constraints, only that section prints and it takes the whole 
 	expect(only.startsWith(`${FIRST}\n\nConstraints\n`)).toBe(true);
 	expect(only.endsWith(`\n\n${LAST}`)).toBe(true);
 	expect(only).not.toContain('Gotchas');
-	const count = (text: string) =>
-		text.split('\n').filter(l => l.startsWith('  open ')).length;
-	expect(count(only)).toBeGreaterThan(count(all));
+	// The whole brief hands the room gotchas leave back to constraints, so
+	// both show as many as fit; with the section, the rest of 2,000
+	// characters is less than one more 136-character line.
+	expect(shownUnder(all, 'Constraints')).toBe(12);
+	expect(shownUnder(only, 'Constraints')).toBe(12);
 	expect(only.length).toBeLessThanOrEqual(2000);
+	expect(2000 - only.length).toBeLessThan(137);
 });
 
 test('with a section that has nothing to print, the result is empty', () => {
@@ -665,4 +668,85 @@ test('with a section, a full budget still prints it in full', () => {
 	});
 	expect(brief).toContain('Off branch\n  off branch ');
 	expect(brief).not.toContain('not shown');
+	expect(brief.length).toBeLessThanOrEqual(MIN_BRIEF_BUDGET * 4);
+});
+
+test('a section view of a later section keeps to the budget', () => {
+	for (const section of ['gotchas', 'follow-ups', 'recent'] as const) {
+		for (const budget of [MIN_BRIEF_BUDGET, DEFAULT_BRIEF_BUDGET]) {
+			expect(
+				renderBrief(crowded(), {budget, section}).length,
+				`${section} ${budget}`,
+			).toBeLessThanOrEqual(budget * 4);
+		}
+	}
+});
+
+/** `n` open lines of `kind`, each with a text `length` characters long. */
+function many(kind: CardLine['kind'], n: number, length = 150): CardLine[] {
+	return Array.from({length: n}, (_, i) =>
+		line(`${kind[0]}-${String(i).padStart(8, '0')}`, {
+			kind,
+			text: `${kind} ${i} `.padEnd(length, 'x'),
+		}),
+	);
+}
+
+/** How many lines print under `title`, a section's full form. */
+function shownUnder(brief: string, title: string): number {
+	const rows = brief.split('\n');
+	const at = rows.indexOf(title);
+	if (at < 0) return 0;
+	let shown = 0;
+	for (let i = at + 1; i < rows.length && rows[i] !== ''; i++) {
+		if (rows[i]!.startsWith('  open ')) shown++;
+	}
+
+	return shown;
+}
+
+/** Each of these lines is 186 characters and a newline. */
+const LINE_ROOM = 187;
+
+test('60 constraints alone fill the default budget', () => {
+	const brief = renderBrief(input(many('constraint', 60)));
+	const shown = shownUnder(brief, 'Constraints');
+	expect(brief.length).toBeLessThanOrEqual(6000);
+	expect(shown === 60 || 6000 - brief.length < 300, `${shown}`).toBe(true);
+	expect(shown).toBe(30);
+});
+
+test('60 follow-ups alone fill the default budget', () => {
+	const brief = renderBrief(input(many('followUp', 60)));
+	const shown = shownUnder(brief, 'Follow-ups');
+	expect(brief.length).toBeLessThanOrEqual(6000);
+	expect(shown === 60 || 6000 - brief.length < 300, `${shown}`).toBe(true);
+	expect(shown).toBe(30);
+});
+
+test('room left after the last section goes back to the first section that was cut', () => {
+	const brief = renderBrief(
+		input([...many('constraint', 60), ...many('followUp', 60)], {
+			workstreams: [{slug: 'w', title: 't', commits: 1}],
+		}),
+	);
+	// The first pass gives constraints their 40%, room for 12 lines, and
+	// follow-ups their 10% with the 30% resolved and gotchas leave: 12 lines.
+	// What off-branch, workstreams and recent leave goes to constraints, not
+	// to follow-ups, until not one more constraint fits.
+	expect(shownUnder(brief, 'Constraints')).toBe(18);
+	expect(shownUnder(brief, 'Follow-ups')).toBe(12);
+	expect(6000 - brief.length).toBeLessThan(LINE_ROOM);
+});
+
+test('at the smallest budget, constraints print lines before follow-ups do', () => {
+	const brief = renderBrief(
+		input([...many('constraint', 24, 300), ...many('followUp', 3, 20)]),
+		{budget: MIN_BRIEF_BUDGET},
+	);
+	expect(brief.length).toBeLessThanOrEqual(800);
+	expect(shownUnder(brief, 'Constraints')).toBeGreaterThanOrEqual(1);
+	expect(brief).toContain(
+		'\n  and 23 more: the constraints section lists them.\n',
+	);
 });

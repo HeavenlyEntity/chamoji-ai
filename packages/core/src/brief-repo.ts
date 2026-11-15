@@ -16,7 +16,7 @@ import {stripControlLines} from './text.js';
 import {WORKSTREAMS_FILE, readWorkstreams} from './workstreams.js';
 
 /** Bump it when the file's layout or what goes into it changes. */
-const CACHE_VERSION = 1;
+const CACHE_VERSION = 2;
 
 const DAY = 24 * 60 * 60 * 1000;
 /** How far back "resolved recently" reaches when there are fewer than two tags. */

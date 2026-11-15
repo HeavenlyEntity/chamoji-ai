@@ -134,30 +134,78 @@ function clampBudget(budget: number | undefined): number {
 	);
 }
 
+/** A section and the block it prints for now. */
+type Placed = {section: Section; block: string};
+
 /**
- * Gives each section its share plus what the sections before it left over.
- * A section whose full form does not fit prints its one-line form instead,
- * for which room was set aside, so nothing is dropped without a count.
+ * The sections' blocks within `room`, which is what is left once each
+ * section's one-line form is set aside. A section whose full form does not
+ * fit prints its one-line form instead, so nothing is dropped without a count.
  */
 function fitSections(
 	sections: Section[],
 	room: number,
 	wholeRoom: boolean,
 ): string[] {
-	const blocks: string[] = [];
+	const placed = shareRoom(sections, room, wholeRoom);
+	const used = placed.reduce(
+		(sum, p) => sum + p.block.length - notShown(p.section).length,
+		0,
+	);
+	handBack(placed, room - used);
+	return placed.map(p => p.block);
+}
+
+/**
+ * The first pass: each section gets its share plus what the sections before
+ * it left over, and a section that is absent leaves its whole share over.
+ * With `wholeRoom` there is one section, and it gets all of `room`.
+ */
+function shareRoom(
+	sections: Section[],
+	room: number,
+	wholeRoom: boolean,
+): Placed[] {
+	const placed: Placed[] = [];
 	let carry = 0;
 	for (const name of BRIEF_SECTIONS) {
 		const section = sections.find(s => s.name === name);
-		if (!section) continue;
+		if (wholeRoom && !section) continue;
 		const share = wholeRoom ? room : Math.floor((room * SHARES[name]) / 100);
+		if (!section) {
+			carry += share;
+			continue;
+		}
+
 		const brief = notShown(section);
-		const available = share + carry + SEPARATOR.length + brief.length;
-		const block = fitSection(section, available - SEPARATOR.length) ?? brief;
-		blocks.push(block);
-		carry = available - SEPARATOR.length - block.length;
+		const available = share + carry + brief.length;
+		const block = fitSection(section, available) ?? brief;
+		placed.push({section, block});
+		carry = available - block.length;
 	}
 
-	return blocks;
+	return placed;
+}
+
+/**
+ * The second pass: the room still left goes to the sections that were cut,
+ * in section order, so the first one that was cut fills up before the next
+ * one gets more. A section in its one-line form can come back in full. It
+ * goes round again while any section grew, since a section that now shows
+ * every line drops its count line and frees a little room.
+ */
+function handBack(placed: Placed[], left: number): void {
+	let grew = true;
+	while (grew && left > 0) {
+		grew = false;
+		for (const p of placed) {
+			const block = fitSection(p.section, p.block.length + left);
+			if (block === undefined || block === p.block) continue;
+			left -= block.length - p.block.length;
+			p.block = block;
+			grew = true;
+		}
+	}
 }
 
 /** What a section prints when there is no room for its title and one line. */
