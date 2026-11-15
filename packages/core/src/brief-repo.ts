@@ -58,7 +58,12 @@ export async function readBrief(
 	const state = await cardStateAt(cwd, cardStamp);
 	const stored = stamp && (await readCache(cwd, stamp));
 	if (stored !== undefined) return {head: cardStamp.head, text: stored, state};
-	const text = renderBrief(await readBriefInput(cwd, state), options);
+	// A shallow clone never read the notes past its boundary, so it says so.
+	const input = {
+		...(await readBriefInput(cwd, state)),
+		shallow: cardStamp.shallow !== '',
+	};
+	const text = renderBrief(input, options);
 	if (stamp) await writeCache(cwd, stamp, text).catch(() => undefined);
 	return {head: cardStamp.head, text, state};
 }
