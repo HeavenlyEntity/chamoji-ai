@@ -21,7 +21,9 @@ import type {Io} from './run.js';
 import {stripControl, stripControlLines} from './text.js';
 import {MAX_WHY, cleanReason} from './why-draft.js';
 import {
+	cluesWithLines,
 	findWorkstream,
+	readingCards,
 	readStateFor,
 	readWhy,
 	replyLines,
@@ -88,8 +90,6 @@ const MAX_BODY = 4000;
 const MAX_TEXT = 500; // A subject, a title, a card line or any string in its state.
 const MAX_OTHER = 2000; // Any other string.
 const MAX_CARD_LINES = 20;
-/** A card's constraints, gotchas and follow-ups, each list at its cap. */
-const MAX_STATE_LINES = 3 * MAX_CARD_LINES;
 const MAX_COMMITS = 50;
 const MAX_REPLY = 100_000;
 const MAX_MESSAGE = 1000;
@@ -318,10 +318,8 @@ export function createTools(cwd: string, rerank?: MemoryReranker): McpTools {
 				return {kind: 'uncommitted', file, line};
 			const {hash, subject, body, authorName, date, workstream} = result.commit;
 			const reading = await readWhy(cwd, result.commit, file);
-			const lines = replyLines(
-				await readStateFor(cwd, [reading.card]),
-				reading.card,
-			);
+			const state = await readStateFor(cwd, readingCards(reading));
+			const lines = replyLines(state, reading.card);
 			const found =
 				workstream === undefined
 					? undefined
@@ -345,7 +343,7 @@ export function createTools(cwd: string, rerank?: MemoryReranker): McpTools {
 					reading.quality === 'thin' && reading.reasons[0] !== undefined
 						? WHY_ADVICE[reading.reasons[0]]
 						: undefined,
-				clues: reading.clues,
+				clues: cluesWithLines(reading.clues, state),
 				workstream:
 					workstream === undefined
 						? undefined
@@ -457,13 +455,15 @@ function limitReply(data: unknown): string {
 			const max =
 				within === 'card'
 					? MAX_CARD_LINES
-					: within === 'lines'
-						? MAX_STATE_LINES
-						: key === 'commits'
-							? MAX_COMMITS
-							: Number.POSITIVE_INFINITY;
-			if (value.length > max) truncated = true;
-			return value.slice(0, max).map(item => walk(item, key, within));
+					: key === 'commits'
+						? MAX_COMMITS
+						: Number.POSITIVE_INFINITY;
+			const kept =
+				within === 'lines' && key === 'lines'
+					? perKind(value, MAX_CARD_LINES)
+					: value.slice(0, max);
+			if (kept.length < value.length) truncated = true;
+			return kept.map(item => walk(item, key, within));
 		}
 
 		if (isRecord(value)) {
@@ -513,6 +513,20 @@ function limitReply(data: unknown): string {
 	}
 
 	return JSON.stringify(truncated ? {...root, truncated: true} : root);
+}
+
+/**
+ * The first `max` lines of each kind, in order. A card keeps the first lines
+ * of each of its lists, so each line it keeps keeps its state too.
+ */
+function perKind(lines: unknown[], max: number): unknown[] {
+	const counts = new Map<unknown, number>();
+	return lines.filter(line => {
+		const kind = isRecord(line) ? line['kind'] : undefined;
+		const count = (counts.get(kind) ?? 0) + 1;
+		counts.set(kind, count);
+		return count <= max;
+	});
 }
 
 /** Every array under `value`, only those under a key in `names` when given. */

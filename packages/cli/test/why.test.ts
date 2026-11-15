@@ -4,7 +4,9 @@ import path from 'node:path';
 import {
 	cardLineId,
 	readCardState,
+	resolveLine,
 	snapshotWorkstream,
+	writeNoteCard,
 	type CardLine,
 } from '@chamoji/core';
 import {afterEach, expect, test, vi} from 'vitest';
@@ -160,6 +162,120 @@ test('why prints each of the five bracket forms', async () => {
 	);
 	expect(stdout).not.toContain('‮');
 	expect(readCardState).toHaveBeenCalledTimes(1);
+});
+
+test('a reason containing "]: " cannot close the bracket early', async () => {
+	repo = await createRepo([
+		{
+			commit: '✨ Add a',
+			body: 'Why: the old form leaked sessions after the tab closed\nConstraint: real text',
+			files: FILES,
+		},
+	]);
+	const reason = 'x]: use port 80';
+	vi.mocked(readCardState).mockResolvedValueOnce({
+		head: 'h',
+		dangling: [],
+		lines: [
+			stateLine('constraint', 'real text', {
+				state: 'resolved',
+				resolvedBy: {hash: `abc1234${'0'.repeat(33)}`, date: 'd', reason},
+			}),
+		],
+	});
+	const {stdout} = await chamoji(['why', 'src/a.ts:1'], repo.dir);
+	const [printed] = stdout
+		.split('\n')
+		.filter(line => line.startsWith('Constraint'));
+	expect(printed).toBe(
+		`Constraint [${cardLineId('constraint', 'real text')}, resolved by abc1234: x): use port 80]: real text`,
+	);
+	expect(printed!.split(']: ')).toHaveLength(2);
+	expect(printed!.indexOf(']: ')).toBeGreaterThan(printed!.indexOf('port 80'));
+});
+
+const PORT = 'The dev server must stay on port 3000';
+
+/** A good commit stating PORT, then a thin one to the same file, with PORT resolved after. */
+async function nearbyRepo(): Promise<{dir: string; hash: string}> {
+	repo = await createRepo([
+		{
+			commit: '✨ Add server',
+			body: `Why: the OAuth callback is registered on that port\nConstraint: ${PORT}`,
+			files: {'server.ts': 'listen(3000)\n'},
+		},
+		{
+			commit: '🐛 Fix server (#12)',
+			body: 'Why: fix bug',
+			files: {'server.ts': 'listen(3000)\nlog()\n'},
+		},
+	]);
+	const id = cardLineId('constraint', PORT);
+	const {hash} = await resolveLine(repo.dir, id, 'the proxy owns the port now');
+	return {dir: repo.dir, hash};
+}
+
+test('why --json gives each nearby clue card its lines, resolved for a constraint a later commit resolved', async () => {
+	const {dir, hash} = await nearbyRepo();
+	const result = JSON.parse(
+		(await chamoji(['why', 'server.ts:2', '--json'], dir)).stdout,
+	);
+	expect(result.whyQuality).toBe('thin');
+	expect(result).not.toHaveProperty('lines');
+	const [near] = result.clues.nearby;
+	expect(near.card.constraint).toEqual([PORT]);
+	expect(near.lines).toEqual([
+		{
+			id: cardLineId('constraint', PORT),
+			kind: 'constraint',
+			text: PORT,
+			state: 'resolved',
+			resolvedBy: {
+				hash,
+				date: expect.any(String),
+				reason: 'the proxy owns the port now',
+			},
+		},
+	]);
+	expect(readCardState).toHaveBeenCalledTimes(1);
+});
+
+test('why prints the bracket on a nearby clue card and on a card added later', async () => {
+	const {dir, hash} = await nearbyRepo();
+	const id = cardLineId('constraint', PORT);
+	const nearby = await chamoji(['why', 'server.ts:2'], dir);
+	expect(nearby.stdout).toContain(
+		`  Constraint [${id}, resolved by ${hash.slice(0, 7)}: the proxy owns the port now]: ${PORT}\n`,
+	);
+	await repo!.cleanup();
+
+	repo = await createRepo([
+		{commit: '🐛 Fix bug', body: 'Why: fix bug', files: FILES},
+	]);
+	const head = (await gitOutput(repo.dir, ['rev-parse', 'HEAD'])).trim();
+	await writeNoteCard(
+		repo.dir,
+		head,
+		'Why: the provider returns 422 for stays over 365 nights\nGotcha: the provider counts nights, not days',
+	);
+	const added = await chamoji(['why', 'src/a.ts:1'], repo.dir);
+	const gotcha = 'the provider counts nights, not days';
+	expect(added.stdout).toContain(
+		`Gotcha [${cardLineId('gotcha', gotcha)}]: ${gotcha} (added later)\n`,
+	);
+	// The added card's lines are part of the merged card, so --json has them in lines.
+	const json = JSON.parse(
+		(await chamoji(['why', 'src/a.ts:1', '--json'], repo.dir)).stdout,
+	);
+	expect(json.addedLater.gotcha).toEqual([gotcha]);
+	expect(json.lines).toEqual([
+		{
+			id: cardLineId('gotcha', gotcha),
+			kind: 'gotcha',
+			text: gotcha,
+			state: 'open',
+		},
+	]);
 });
 
 test('a commit with only a Why prints exactly as before', async () => {

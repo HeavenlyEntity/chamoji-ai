@@ -100,12 +100,7 @@ export async function runWhy(
 			if (result.kind === 'uncommitted') return {result};
 			const {workstream} = result.commit;
 			const reading = await readWhy(io.cwd, result.commit, file);
-			const state = await readStateFor(io.cwd, [
-				reading.card,
-				...(flags.json ? [] : (reading.clues?.nearby ?? [])).map(
-					near => near.card,
-				),
-			]);
+			const state = await readStateFor(io.cwd, readingCards(reading));
 			if (flags.json) return {result, reading, state};
 			const summary =
 				reading.quality !== 'ok' && workstream !== undefined
@@ -133,7 +128,7 @@ export async function runWhy(
 		const {quality, reasons, clues, added, card} = reading!;
 		const lines = replyLines(state, card);
 		io.stdout(
-			`${JSON.stringify({...result, card, ...(lines && {lines}), whyQuality: quality, whyReasons: reasons, clues, addedLater: added}, null, 2)}\n`,
+			`${JSON.stringify({...result, card, ...(lines && {lines}), whyQuality: quality, whyReasons: reasons, clues: cluesWithLines(clues, state), addedLater: added}, null, 2)}\n`,
 		);
 	} else {
 		io.stdout(describe(result.commit, reading!, state, summary));
@@ -459,7 +454,8 @@ function stateTag(line: PublicLine): string {
 
 		case 'resolved': {
 			if (!line.resolvedBy) return `${id}, resolved`;
-			const reason = [...oneLine(line.resolvedBy.reason)]
+			// A `]` in the reason would read as the end of the brackets.
+			const reason = [...oneLine(line.resolvedBy.reason).replaceAll(']', ')')]
 				.slice(0, MAX_REASON)
 				.join('');
 			return `${id}, resolved by ${shortHash(line.resolvedBy.hash)}: ${reason}`;
@@ -512,6 +508,35 @@ export function replyLines(
 	if (!state) return undefined;
 	const lines = linesFor(state, card).map(line => cleanLine(publicLine(line)));
 	return lines.length > 0 ? lines : undefined;
+}
+
+/**
+ * Every card a reading shows: the merged card, which holds any added later,
+ * and each nearby clue's. Its state is read once, for all of them.
+ */
+export function readingCards(
+	reading: WhyReading,
+): Array<IntentCard | undefined> {
+	return [
+		reading.card,
+		...(reading.clues?.nearby ?? []).map(near => near.card),
+	];
+}
+
+/**
+ * Clues with each nearby commit's lines beside its card. An agent reads them
+ * when a Why is thin, so a line that ended there must not look open.
+ */
+export function cluesWithLines(
+	clues: WhyClues | undefined,
+	state: CardState | undefined,
+): WhyClues | undefined {
+	return (
+		clues && {
+			...clues,
+			nearby: clues.nearby.map(near => withLines(near, state)),
+		}
+	);
 }
 
 /** `item` with its card's lines right after `card`, or as it was when there are none. */
