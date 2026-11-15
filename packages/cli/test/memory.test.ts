@@ -4,6 +4,7 @@ import path from 'node:path';
 import {
 	cardLineId,
 	listMemory,
+	readBrief,
 	readCardState,
 	readTree,
 	snapshotWorkstream,
@@ -21,18 +22,23 @@ import {recordingFace} from './helpers/recording-face.js';
 // The real card state, wrapped so a test can make it fail.
 vi.mock('@chamoji/core', async importOriginal => {
 	const original = await importOriginal<typeof import('@chamoji/core')>();
-	return {...original, readCardState: vi.fn(original.readCardState)};
+	return {
+		...original,
+		readCardState: vi.fn(original.readCardState),
+		readBrief: vi.fn(original.readBrief),
+	};
 });
 
 let repo: FixtureRepo | undefined;
 let loose: string | undefined;
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
+	const actual =
+		await vi.importActual<typeof import('@chamoji/core')>('@chamoji/core');
 	vi.mocked(readCardState).mockReset();
-	vi.mocked(readCardState).mockImplementation(
-		(await vi.importActual<typeof import('@chamoji/core')>('@chamoji/core'))
-			.readCardState,
-	);
+	vi.mocked(readCardState).mockImplementation(actual.readCardState);
+	vi.mocked(readBrief).mockReset();
+	vi.mocked(readBrief).mockImplementation(actual.readBrief);
 	await Promise.all(cleanups.splice(0).map(async cleanup => cleanup()));
 	await repo?.cleanup();
 	repo = undefined;
@@ -419,7 +425,7 @@ test('an unknown subcommand is a usage error', async () => {
 	const {code, stderr} = await chamoji(['memory', 'nope'], dir);
 	expect(code).toBe(2);
 	expect(stderr).toContain(
-		'memory needs list, show, search, reindex, archive, sync or resolve',
+		'memory needs list, show, search, reindex, archive, sync, resolve or brief',
 	);
 });
 
@@ -944,4 +950,151 @@ test('memory resolve --because "" exits 1 with the reason message', async () => 
 		stderr: 'chamoji: The reason must be one line of 1 to 200 characters\n',
 	});
 	expect(await gitOutput(dir, ['rev-parse', 'HEAD'])).toBe(head);
+});
+
+const BRIEF_PORT = 'The dev server must stay on port 3000';
+const BRIEF_PORT_ID = cardLineId('constraint', BRIEF_PORT);
+const BRIEF_FLAKY = 'The upload test is flaky on CI';
+const BRIEF_FLAKY_ID = cardLineId('gotcha', BRIEF_FLAKY);
+
+/** A constraint and a gotcha, both open. */
+async function briefRepo(): Promise<string> {
+	repo = await createRepo([
+		{
+			commit: '✨ Add server',
+			body: `Constraint: ${BRIEF_PORT}\nGotcha: ${BRIEF_FLAKY}`,
+			files: {'server.ts': 'listen(3000)\n'},
+		},
+	]);
+	return repo.dir;
+}
+
+test('memory brief prints the text and exits 0, and prints nothing for a repo with no cards', async () => {
+	const dir = await briefRepo();
+	const {text} = await readBrief(dir);
+	const {code, stdout, stderr} = await chamoji(['memory', 'brief'], dir);
+	expect(stderr).toBe('');
+	expect(code).toBe(0);
+	expect(stdout).toBe(`${text}\n`);
+	expect(stdout).toContain(`Constraints\n  open       ${BRIEF_PORT_ID}`);
+	expect(stdout).toContain(`Gotchas\n  open       ${BRIEF_FLAKY_ID}`);
+
+	await repo!.cleanup();
+	repo = await createRepo([{commit: '🎉 Init'}, {commit: '✨ Add search'}]);
+	const bare = await chamoji(['memory', 'brief'], repo.dir);
+	expect(bare).toEqual({code: 0, stdout: '', stderr: ''});
+});
+
+test('memory brief --section constraints --budget 4000 prints only constraints', async () => {
+	const dir = await briefRepo();
+	const {code, stdout, stderr} = await chamoji(
+		['memory', 'brief', '--section', 'constraints', '--budget', '4000'],
+		dir,
+	);
+	expect(stderr).toBe('');
+	expect(code).toBe(0);
+	expect(stdout).toBe(
+		`${(await readBrief(dir, {section: 'constraints', budget: 4000})).text}\n`,
+	);
+	expect(stdout).toContain(BRIEF_PORT_ID);
+	expect(stdout).not.toContain('Gotchas');
+	expect(stdout).not.toContain(BRIEF_FLAKY_ID);
+});
+
+test('memory brief --budget 50 and --section nope each exit 2', async () => {
+	const dir = await briefRepo();
+	const budget = 'chamoji: --budget must be a whole number from 200 to 20000\n';
+	for (const value of ['50', '20001', '1500.5', 'lots', '']) {
+		const result = await chamoji(['memory', 'brief', '--budget', value], dir);
+		expect(result, value).toEqual({code: 2, stdout: '', stderr: budget});
+	}
+
+	expect(await chamoji(['memory', 'brief', '--section', 'nope'], dir)).toEqual({
+		code: 2,
+		stdout: '',
+		stderr:
+			'chamoji: --section must be one of: constraints, resolved, gotchas, follow-ups, off-branch, workstreams, recent\n',
+	});
+	expect(await chamoji(['memory', 'brief', 'extra'], dir)).toEqual({
+		code: 2,
+		stdout: '',
+		stderr:
+			'chamoji: memory brief takes no arguments: chamoji memory brief [--budget <tokens>] [--section <name>]\n',
+	});
+	for (const value of ['200', '20000']) {
+		const result = await chamoji(['memory', 'brief', '--budget', value], dir);
+		expect(result.code, value).toBe(0);
+	}
+});
+
+test('memory brief --json lists every line in every state', async () => {
+	repo = await createRepo([
+		{
+			commit: '✨ Add server',
+			body: `Constraint: ${BRIEF_PORT}\nGotcha: ${BRIEF_FLAKY}`,
+			files: {'server.ts': 'listen(3000)\n'},
+		},
+		{
+			commit: '✨ Add banner',
+			body: 'Follow-up: fade the \u001B[31mbanner',
+			files: {'banner.ts': 'banner\n'},
+		},
+		{
+			commit: '🔥 Drop the flaky test',
+			body: `Resolves: ${BRIEF_FLAKY_ID} the test is gone\nResolves: c-00000000 nothing`,
+		},
+	]);
+	const dir = repo.dir;
+	await gitOutput(dir, ['revert', '--no-edit', 'HEAD~1']);
+	const followUp = cardLineId('followUp', 'fade the \u001B[31mbanner');
+	const head = (await gitOutput(dir, ['rev-parse', 'HEAD'])).trim();
+
+	const {code, stdout, stderr} = await chamoji(
+		['memory', 'brief', '--json'],
+		dir,
+	);
+	expect(stderr).toBe('');
+	expect(code).toBe(0);
+	const reply = JSON.parse(stdout);
+	expect(Object.keys(reply)).toEqual(['head', 'text', 'lines', 'dangling']);
+	expect(reply.head).toBe(head);
+	expect(reply.text).toBe((await readBrief(dir)).text);
+	const states = Object.fromEntries(
+		reply.lines.map((line: {id: string; state: string}) => [
+			line.id,
+			line.state,
+		]),
+	);
+	expect(states).toEqual({
+		[BRIEF_PORT_ID]: 'open',
+		[BRIEF_FLAKY_ID]: 'resolved',
+		[followUp]: 'reverted',
+	});
+	const reverted = reply.lines.find(
+		(line: {id: string}) => line.id === followUp,
+	);
+	expect(reverted.text).toBe('fade the [31mbanner');
+	expect(reverted).not.toHaveProperty('sources');
+	// The brief text never prints a reverted line.
+	expect(reply.text).not.toContain(followUp);
+	expect(reply.dangling).toEqual([
+		{
+			id: 'c-00000000',
+			hash: (await gitOutput(dir, ['rev-parse', 'HEAD~1'])).trim(),
+		},
+	]);
+});
+
+test('memory brief reports a git failure and exits 1', async () => {
+	const dir = await briefRepo();
+	vi.mocked(readBrief).mockRejectedValue(new Error('git log failed'));
+	expect(await chamoji(['memory', 'brief'], dir)).toEqual({
+		code: 1,
+		stdout: '',
+		stderr: 'chamoji: git log failed\n',
+	});
+	expect(await chamoji(['memory', 'brief', '--json'], dir)).toMatchObject({
+		code: 1,
+		stdout: '',
+	});
 });

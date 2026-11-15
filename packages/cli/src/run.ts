@@ -296,6 +296,8 @@ const HELP = `
 	  $ chamoji memory resolve <id> --because <reason>
 	                                   Record that a card line ended, as an
 	                                   empty commit with a Resolves: line
+	  $ chamoji memory brief           Print the project's standing notes at
+	                                   HEAD, as an agent reads them
 
 	Commit
 	  $ chamoji commit [-a]            Write a commit with the composer
@@ -378,15 +380,20 @@ const HELP = `
 	             why: print the blame result; memory list and show: print
 	             the entries; memory search: print the matches;
 	             memory sync: print the result; memory resolve: print
-	             the id and the commit's hash; setup: print what it
-	             found and did (with no --yes, what it would do, writing
-	             nothing; exits 2 when something would change)
+	             the id and the commit's hash; memory brief: print the
+	             text and every card line in every state; setup: print
+	             what it found and did (with no --yes, what it would do,
+	             writing nothing; exits 2 when something would change)
 	  --none     ws switch: clear the active workstream
 	  --archived memory list: include archived entries
 	  --purge    memory archive: delete the entry and its history instead;
 	             memory sync then says what origin needs to lose it too
 	  --because  memory resolve: why the line no longer holds (one line,
 	             up to 200 characters)
+	  --budget   memory brief: the most tokens it may take, 200 to 20000
+	             (default 1500)
+	  --section  memory brief: only this section: constraints, resolved,
+	             gotchas, follow-ups, off-branch, workstreams or recent
 	  --agents   init: also add chamoji to .mcp.json and .claude/settings.json.
 	             Both are shared files meant to be committed; existing
 	             entries are kept.
@@ -510,6 +517,8 @@ function parse(argv: string[]) {
 			purge: {type: 'boolean'},
 			archived: {type: 'boolean'},
 			because: {type: 'string'},
+			budget: {type: 'string'},
+			section: {type: 'string'},
 			agents: {type: 'boolean'},
 			yes: {type: 'boolean'},
 			explain: {type: 'boolean'},

@@ -39,7 +39,12 @@ const STATES: LineState[] = [
 ];
 
 /** What a state was worked out from; when any of it differs the state is stale. */
-type Stamp = {head: string; memory: string; notes: string; shallow: string};
+export type CardStateStamp = {
+	head: string;
+	memory: string;
+	notes: string;
+	shallow: string;
+};
 
 /** Where this worktree keeps the state of its card lines; the git directory is per worktree. */
 export async function cardStatePath(cwd: string): Promise<string> {
@@ -60,7 +65,17 @@ export async function cardStatePath(cwd: string): Promise<string> {
  * reply or running in a hook must catch it.
  */
 export async function readCardState(cwd: string): Promise<CardState> {
-	const stamp = await currentStamp(cwd);
+	return cardStateAt(cwd, await cardStateStamp(cwd));
+}
+
+/**
+ * `readCardState` for a stamp the caller already read, so a cache of its own
+ * built on the same stamp costs no second read of it.
+ */
+export async function cardStateAt(
+	cwd: string,
+	stamp: CardStateStamp,
+): Promise<CardState> {
 	if (stamp.head === '') return {head: '', lines: [], dangling: []};
 	const cached = await readCache(cwd, stamp);
 	if (cached) return cached;
@@ -70,7 +85,7 @@ export async function readCardState(cwd: string): Promise<CardState> {
 }
 
 /** Read before the content is, so a move in between only costs the next call a rebuild. */
-async function currentStamp(cwd: string): Promise<Stamp> {
+export async function cardStateStamp(cwd: string): Promise<CardStateStamp> {
 	return {
 		head: (await headOf(cwd, 'HEAD')) ?? '',
 		memory: (await headOf(cwd, MEMORY_REF)) ?? '',
@@ -392,7 +407,7 @@ async function fillReplacedBy(
  */
 async function readCache(
 	cwd: string,
-	stamp: Stamp,
+	stamp: CardStateStamp,
 ): Promise<CardState | undefined> {
 	let raw: unknown;
 	try {
@@ -526,7 +541,7 @@ function isHash(value: unknown): value is string {
 /** Written aside and renamed, so a call racing this one never reads half a file. */
 async function writeCache(
 	cwd: string,
-	stamp: Stamp,
+	stamp: CardStateStamp,
 	state: CardState,
 ): Promise<void> {
 	const file = await cardStatePath(cwd);

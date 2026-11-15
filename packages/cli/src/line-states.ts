@@ -187,6 +187,23 @@ export function withLines<T extends {card?: IntentCard}>(
 	) as T & {lines: PublicLine[]};
 }
 
+/**
+ * Every line of a state, whatever its state, and every `Resolves:` that
+ * matches none, cleaned as `replyLines` cleans them.
+ */
+export function stateLines(state: CardState): {
+	lines: PublicLine[];
+	dangling: CardState['dangling'];
+} {
+	return {
+		lines: state.lines.map(line => cleanLine(publicLine(line))),
+		dangling: state.dangling.map(({id, hash}) => ({
+			id: stripControl(id),
+			hash: stripControl(hash),
+		})),
+	};
+}
+
 function cleanLine(line: PublicLine): PublicLine {
 	const {resolvedBy, replacedBy, replaces, workstream, revertedBy} = line;
 	return {

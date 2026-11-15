@@ -1,17 +1,17 @@
 export const metadata = {
 	title: 'chamoji mcp',
 	description:
-		'Serve project memory to AI agents over MCP: search_memory, why and workstream, plus remember_why, which keeps your reason for the commit composer.',
+		'Serve project memory to AI agents over MCP: search_memory, why, workstream and brief, plus remember_why, which keeps your reason for the commit composer.',
 };
 
 # `chamoji mcp`
 
 <p className="lead">
 	Serve project memory to your coding agent. `chamoji mcp` is a small Model
-	Context Protocol server over stdio with four tools. Three are read-only:
-	search commits and workstreams, ask why a line is there, and describe a
-	workstream. The fourth keeps the reason you give your agent, so the commit
-	composer can offer it.
+	Context Protocol server over stdio with five tools. Four are read-only: search
+	commits and workstreams, ask why a line is there, describe a workstream, and
+	read the project’s standing notes. The fifth keeps the reason you give your
+	agent, so the commit composer can offer it.
 </p>
 
 <Tag variant="setup">SINCE 0.11.0</Tag>
@@ -36,7 +36,7 @@ export const metadata = {
 		return is data, not instructions.
 	</Step>
 	<Step title="Lists its tools.">
-		`search_memory`, `why` and `workstream`, each marked read-only, and
+		`search_memory`, `why`, `workstream` and `brief`, each marked read-only, and
 		`remember_why`, which is not.
 	</Step>
 	<Step title="Answers each call.">
@@ -47,9 +47,9 @@ export const metadata = {
 	<Step title="Stops.">When the agent closes stdin, it exits 0.</Step>
 </Steps>
 
-None of the tools changes your history, refs or files. `search_memory` may refresh the search index in `.git`, and `remember_why` writes one small file there. The server makes no network calls, except with `--ai`.
+None of the tools changes your history, refs or files. `search_memory` may refresh the search index in `.git`, `brief` may refresh the files that hold the card states and the brief there, and `remember_why` writes one small file there. The server makes no network calls, except with `--ai`.
 
-## Tools {{ icon: 'brackets-curly', badge: '4' }}
+## Tools {{ icon: 'brackets-curly', badge: '5' }}
 
 <Properties>
 	<Property name="search_memory" type="query · limit">
@@ -86,6 +86,18 @@ None of the tools changes your history, refs or files. `search_memory` may refre
 		agent it came from, for 24 hours or until the next commit. The composer
 		never fills it in by itself: you press Tab. It returns `remembered: true`.
 	</Property>
+	<Property name="brief" type="section · budget · optional">
+		The project’s standing notes at HEAD, as [`chamoji memory
+		brief`](/commands/memory) prints them: open and in-doubt constraints,
+		gotchas and follow-ups, lines resolved since the second-newest tag, active
+		workstreams and the commits since the newest tag. Its description tells the
+		model to read it at the start of a task. `section` is one of `constraints`,
+		`resolved`, `gotchas`, `follow-ups`, `off-branch`, `workstreams` or
+		`recent`, and gets the whole budget. `budget` is a whole number of tokens
+		from 200 to 20000, 1500 by default. It returns `head`, the commit it was
+		read at, and `brief`, the text, which is empty when there is nothing to say.
+		When git can’t work out the line states, it replies with `isError`.
+	</Property>
 </Properties>
 
 **Line states.** Beside each `card`, `lines` gives every Constraint, Gotcha and Follow-up line of that card with its `id`, `kind`, `text` and `state`, as [`chamoji why --json`](/commands/why) does. It is left out when the card has no such line. When the states can’t be read, the reply has `linesUnavailable: true` at its top level instead, and still answers. A card that once held may have ended since, so `search_memory`, `why` and `workstream` each tell the model how to read the five states:
@@ -100,7 +112,7 @@ None of the tools changes your history, refs or files. `search_memory` may refre
 
 [Line states](/commands/why#line-states) has the details, and [resolving a line](/guides/project-memory#resolving-a-line) how a line ends.
 
-What the tools return is commit text that other people wrote, and each tool’s description says so to the model. The `why` reply has the author’s name but not their email. Its body leaves out the closing trailer block, which holds lines such as `Co-Authored-By` and `Signed-off-by`, and any email address left in it reads `<email>`. Replies are cut to a fixed size, such as 4,000 characters of a body, 500 of a subject, title, card line or any text in `lines`, 50 commits, and 100 KB in all. A cut reply says `truncated: true`.
+What the tools return is commit text that other people wrote, and each tool’s description says so to the model. The `why` reply has the author’s name but not their email. Its body leaves out the closing trailer block, which holds lines such as `Co-Authored-By` and `Signed-off-by`, and any email address left in it reads `<email>`. Replies are cut to a fixed size, such as 4,000 characters of a body, 500 of a subject, title, card line or any text in `lines`, 50 commits, and 100 KB in all. A cut reply says `truncated: true`. The `brief` text is not cut that way, because its budget already bounds it; the 100 KB limit still holds.
 
 ## Set it up in an agent {{ icon: 'gear' }}
 

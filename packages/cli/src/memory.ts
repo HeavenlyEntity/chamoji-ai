@@ -1,16 +1,21 @@
 import {
+	BRIEF_SECTIONS,
+	MAX_BRIEF_BUDGET,
 	MEMORY_REF,
+	MIN_BRIEF_BUDGET,
 	MemoryError,
 	archiveMemory,
 	assertGitRepo,
 	inspectMemory,
 	purgeMemory,
+	readBrief,
 	readMemory,
 	reindexMemory,
 	resolveLine,
 	searchMemory,
 	syncMemory,
 	linesFor,
+	type BriefSection,
 	type CardState,
 	type MemoryEntry,
 	type MemoryHit,
@@ -31,6 +36,7 @@ import {stripControl} from './text.js';
 import {
 	cardLines,
 	readStateFor,
+	stateLines,
 	unavailable,
 	warnUnavailable,
 	withLines,
@@ -61,6 +67,8 @@ export async function runMemory(
 		ai?: boolean;
 		archived?: boolean;
 		because?: string;
+		budget?: string;
+		section?: string;
 	},
 	io: Io,
 	reranker: () => Promise<MemoryReranker | undefined> = async () => undefined,
@@ -125,10 +133,19 @@ export async function runMemory(
 					);
 		}
 
+		case 'brief': {
+			return args.length === 0
+				? brief(io, flags)
+				: usage(
+						io,
+						'memory brief takes no arguments: chamoji memory brief [--budget <tokens>] [--section <name>]',
+					);
+		}
+
 		default: {
 			return usage(
 				io,
-				`memory needs list, show, search, reindex, archive, sync or resolve, not "${command}"`,
+				`memory needs list, show, search, reindex, archive, sync, resolve or brief, not "${command}"`,
 			);
 		}
 	}
@@ -333,6 +350,55 @@ async function resolve(
 	io.stdout(
 		`Resolved ${stripControl(line.id)}: ${text}\nRecorded in ${hash.slice(0, 7)}. Push it like any commit.\n`,
 	);
+	return 0;
+}
+
+/**
+ * The project's standing notes at HEAD, as an agent gets them. `renderBrief`
+ * cleans every text in it; `--json` adds every line in every state, cleaned
+ * the same way as other replies. A state git can't work out throws, and
+ * run.ts reports it.
+ */
+async function brief(
+	io: Io,
+	flags: {json?: boolean; budget?: string; section?: string},
+): Promise<number> {
+	let budget: number | undefined;
+	if (flags.budget !== undefined) {
+		budget = /^\d{1,9}$/.test(flags.budget) ? Number(flags.budget) : Number.NaN;
+		if (
+			Number.isNaN(budget) ||
+			budget < MIN_BRIEF_BUDGET ||
+			budget > MAX_BRIEF_BUDGET
+		) {
+			return usage(
+				io,
+				`--budget must be a whole number from ${MIN_BRIEF_BUDGET} to ${MAX_BRIEF_BUDGET}`,
+			);
+		}
+	}
+
+	const {section} = flags;
+	if (
+		section !== undefined &&
+		!(BRIEF_SECTIONS as readonly string[]).includes(section)
+	) {
+		return usage(io, `--section must be one of: ${BRIEF_SECTIONS.join(', ')}`);
+	}
+
+	const options = {
+		...(budget === undefined ? {} : {budget}),
+		...(section === undefined ? {} : {section: section as BriefSection}),
+	};
+	const {head, text, state} = await readBrief(io.cwd, options);
+	if (flags.json) {
+		io.stdout(
+			`${JSON.stringify({head, text, ...stateLines(state)}, null, 2)}\n`,
+		);
+	} else if (text !== '') {
+		io.stdout(`${text}\n`);
+	}
+
 	return 0;
 }
 
