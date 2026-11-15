@@ -72,17 +72,16 @@ export async function readBriefInput(
 	state: CardState,
 ): Promise<BriefInput> {
 	const {head} = state;
-	const tags = await listTags(cwd, head);
-	const [newest, second] = tags;
+	const [newest, second] = await releases(cwd, head);
 	const resolvedSince =
 		second === undefined
 			? daysBefore(await authorDate(cwd, head), RECENT_DAYS)
-			: daysBefore(await authorDate(cwd, tagRef(second.name)), 0);
+			: daysBefore(await authorDate(cwd, second.commit), 0);
 
 	const recentCommits = (
 		await readCommits(
 			cwd,
-			newest === undefined ? head : `${tagRef(newest.name)}..${head}`,
+			newest === undefined ? head : `${newest.commit}..${head}`,
 		)
 	)
 		.map(raw => parseCommit(raw))
@@ -103,9 +102,43 @@ export async function readBriefInput(
 	};
 }
 
-/** A tag by its full ref, so no branch or file of the same name is read instead. */
-function tagRef(name: string): string {
-	return `refs/tags/${name}^{commit}`;
+/** A tagged commit and the tag that names it. */
+type Release = {commit: string; name: string};
+
+/**
+ * The tagged commits reachable from `head`, newest first, each once however
+ * many tags it has, since a monorepo release tags each unit on one commit.
+ * A commit is named by its first tag in code-unit order, not `listTags`'s
+ * `localeCompare`, so the name is the same on every machine. Commits with
+ * the same date go by hash, for the same reason.
+ */
+async function releases(cwd: string, head: string): Promise<Release[]> {
+	const dates = new Map(
+		(await listTags(cwd, head)).map(tag => [tag.name, tag.date]),
+	);
+	const listed = await runGit(
+		[
+			'tag',
+			`--merged=${head}`,
+			'--format=%(refname:strip=2)%1f%(objectname)%1f%(*objectname)',
+		],
+		cwd,
+	);
+	const byCommit = new Map<string, {name: string; date: string}>();
+	for (const line of listed.split('\n')) {
+		const [name, direct, dereferenced] = line.split('\u001F');
+		const commit = dereferenced || direct;
+		const date = name === undefined ? undefined : dates.get(name);
+		if (!name || !commit || date === undefined) continue;
+		const known = byCommit.get(commit);
+		if (!known || name < known.name) byCommit.set(commit, {name, date});
+	}
+
+	return [...byCommit]
+		.sort(([a, x], [b, y]) =>
+			x.date === y.date ? (a < b ? -1 : 1) : x.date < y.date ? 1 : -1,
+		)
+		.map(([commit, {name}]) => ({commit, name}));
 }
 
 /**

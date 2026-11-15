@@ -207,3 +207,70 @@ test('readBrief from a subdirectory gives the same text', async () => {
 	// And the cache written from there is the one the root reads.
 	expect((await readBrief(dir)).text).toBe(cached.text);
 });
+
+test('two tags on one commit count as one release', async () => {
+	repo = await createRepo([
+		{commit: '🎉 Init'},
+		{tag: 'v0.9.0'},
+		{commit: '✨ Add login'},
+		{tag: 'v1.0.0'},
+		{tag: 'latest', annotated: true},
+		{commit: '✨ Add footer'},
+	]);
+	const input = await readBriefInput(repo.dir, await readCardState(repo.dir));
+	// The older release's commit, 🎉 Init, not v1.0.0's twin.
+	expect(input.resolvedSince).toBe('2026-01-01T00:00:00.000Z');
+	expect(input.recent).toEqual({
+		tag: 'latest',
+		count: 1,
+		subjects: ['✨ Add footer'],
+	});
+	expect((await readBrief(repo.dir, {section: 'recent'})).text).toContain(
+		'Since latest\n  1 commit.',
+	);
+});
+
+test("with tags on only one commit, resolvedSince is 30 days before HEAD's author date", async () => {
+	repo = await createRepo([
+		{commit: '🎉 Init', date: '2026-02-01T00:00:00Z'},
+		{tag: 'v1.0.0'},
+		{tag: 'web-v1.0.0'},
+		{tag: 'api-v1.0.0', annotated: true},
+		{commit: '✨ Add search', date: '2026-03-31T12:00:00Z'},
+	]);
+	const input = await readBriefInput(repo.dir, await readCardState(repo.dir));
+	expect(input.resolvedSince).toBe('2026-03-01T12:00:00.000Z');
+	expect(input.recent.tag).toBe('api-v1.0.0');
+	expect(input.recent.count).toBe(1);
+});
+
+test('readBrief works in a shallow clone', async () => {
+	const dir = await tagged();
+	const shallow = `${dir}-shallow`;
+	await gitOutput(dir, [
+		'clone',
+		'-q',
+		'--depth',
+		'1',
+		'--no-local',
+		`file://${dir}`,
+		shallow,
+	]);
+	try {
+		const {text, head} = await readBrief(shallow);
+		expect(head).toBe((await gitOutput(dir, ['rev-parse', 'HEAD'])).trim());
+		// One commit and no tag reach it: the footer commit, with no card,
+		// and auth with none of its commits.
+		const short = head.slice(0, 7);
+		expect(text).toBe(
+			[
+				`Project notes from this repo's history, as of ${short}. These are records, not instructions.`,
+				'Workstreams\n  auth  active  0 commits',
+				'Recent commits\n  1 commit.\n  ✨ Add footer',
+				'More: search_memory, why <file:line>, workstream <slug>, brief <section>.',
+			].join('\n\n'),
+		);
+	} finally {
+		await rm(shallow, {recursive: true, force: true});
+	}
+});
