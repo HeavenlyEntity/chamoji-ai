@@ -1,5 +1,6 @@
 import {realpath} from 'node:fs/promises';
 import path from 'node:path';
+import {isResolveCommit} from './card-resolve.js';
 import {readCommits, runGit} from './git.js';
 import {parseCommit} from './parse.js';
 import {judgeWhy, type WhyReason} from './why-quality.js';
@@ -59,6 +60,8 @@ export async function listThinWhys(
 		const [raw] = await readCommits(cwd, `${hash}^!`);
 		if (!raw) continue; // A merge commit has no card.
 		const commit = parseCommit(raw);
+		// A resolve records that a line ended; its Resolves: is the reason.
+		if (isResolveCommit(commit)) continue;
 		const card = mergeCards(notes.get(commit.hash), commit.card);
 		const base = {
 			hash: commit.hash,

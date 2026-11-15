@@ -1,4 +1,5 @@
 import semver from 'semver';
+import {isResolveCommit} from './card-resolve.js';
 import {
 	assertGitRepo,
 	assertRevision,
@@ -16,6 +17,7 @@ import type {
 	Changelog,
 	CommitClassifier,
 	ParsedCommit,
+	RawCommit,
 	Release,
 } from './types.js';
 import {bumpFor, nextVersion} from './version.js';
@@ -100,13 +102,15 @@ export async function buildChangelog(
 	};
 	const pending: Pending[] = [];
 	const latest = tags[0]?.name ?? null;
-	const unreleased = await readCommits(
-		cwd,
-		since === undefined
-			? latest
-				? `${latest}..${to}`
-				: to
-			: `${since}..${to}`,
+	const unreleased = releasedCommits(
+		await readCommits(
+			cwd,
+			since === undefined
+				? latest
+					? `${latest}..${to}`
+					: to
+				: `${since}..${to}`,
+		),
 	);
 	if (unreleased.length > 0) {
 		pending.push({
@@ -116,7 +120,7 @@ export async function buildChangelog(
 				previousTag: latest,
 				date: release ? today : null,
 			},
-			commits: unreleased.map(parseCommit),
+			commits: unreleased,
 			isUnreleased: true,
 			ref: to,
 		});
@@ -139,7 +143,7 @@ export async function buildChangelog(
 				previousTag,
 				date: tag.date.slice(0, 10) || null,
 			},
-			commits: raw.map(parseCommit),
+			commits: releasedCommits(raw),
 			isUnreleased: false,
 			ref: tag.name,
 		});
@@ -176,6 +180,15 @@ export async function buildChangelog(
 
 	const repositoryUrl = config.repositoryUrl ?? (await getRemoteWebUrl(cwd));
 	return {...(repositoryUrl ? {repositoryUrl} : {}), releases};
+}
+
+/**
+ * The commits a release is made of: all of them but the ones that only
+ * record a resolved card line, which change no code and so are neither news
+ * nor a reason to bump.
+ */
+function releasedCommits(raw: RawCommit[]): ParsedCommit[] {
+	return raw.map(parseCommit).filter(commit => !isResolveCommit(commit));
 }
 
 /**

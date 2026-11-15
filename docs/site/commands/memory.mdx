@@ -1,7 +1,7 @@
 export const metadata = {
 	title: 'chamoji memory',
 	description:
-		'List, show, search, archive and sync project memory: what shipped and dropped workstreams left behind, with their commits and intent cards.',
+		'List, show, search, archive and sync project memory: what shipped and dropped workstreams left behind, with their commits and intent cards. Resolve a card line that ended.',
 };
 
 # `chamoji memory`
@@ -10,7 +10,8 @@ export const metadata = {
 	Read and look after project memory. When a workstream ships or is dropped,
 	chamoji saves a summary of it on a git ref of its own: its title, status, and
 	its commits with their intent cards. It outlives the branch. This command
-	lists it, shows it, searches it and shares it.
+	lists it, shows it, searches it and shares it, and records when a card line
+	has ended.
 </p>
 
 <Tag variant="setup">SINCE 0.11.0</Tag>
@@ -43,11 +44,15 @@ export const metadata = {
 		Fetches origin鈥檚 memory, merges it with yours, and pushes only the memory
 		ref. Two clones that remembered different workstreams keep both.
 	</Step>
+	<Step title="resolve closes a card line.">
+		Makes an empty commit on your branch whose `Resolves:` line names the line.
+		It leaves the memory ref alone; the commit is the record.
+	</Step>
 </Steps>
 
 Only `sync` touches the network, and `search --ai` the TypeSafe API. Git doesn鈥檛 clone the memory ref, so a fresh clone runs [init](/commands/init) once to take in origin鈥檚. [Project memory](/guides/project-memory) has the whole picture.
 
-## Subcommands {{ icon: 'terminal', badge: '6' }}
+## Subcommands {{ icon: 'terminal', badge: '7' }}
 
 <Properties>
 	<Property name="chamoji memory list">
@@ -79,6 +84,14 @@ Only `sync` touches the network, and `search --ai` the TypeSafe API. Git doesn鈥
 		pre-push hook like any other. It tries again only when it lost a race to
 		another clone, and never forces.
 	</Property>
+	<Property name="chamoji memory resolve <id> --because <reason>">
+		Record that a `Constraint:`, `Gotcha:` or `Follow-up:` line no longer
+		holds, when no code change says so. It makes an empty commit, `馃摑 Resolve
+		<id>`, with `Resolves: <id> <reason>` as its body. It runs `git commit`, so
+		your hooks, signing and name apply. The commit is left out of the changelog
+		and the next version. chamoji never resolves a line on its own; only this
+		command, or a `Resolves:` line you write, does.
+	</Property>
 </Properties>
 
 ## Arguments
@@ -92,19 +105,25 @@ Only `sync` touches the network, and `search --ai` the TypeSafe API. Git doesn鈥
 		The words to look for. Several words need no quotes; a match can have any of
 		them.
 	</Property>
+	<Property name="id" type="string 路 required by resolve">
+		A card line鈥檚 id, such as `c-7f3a91be`: `c` for a constraint, `g` for a
+		gotcha, `f` for a follow-up. A line that is open, in doubt or off branch can
+		be resolved; one that is already resolved exits 1.
+	</Property>
 </Properties>
 
-`reindex` and `sync` take no arguments, and a missing or extra argument exits 2.
+`reindex` and `sync` take no arguments, and a missing or extra argument exits 2. `resolve` needs one id and `--because`.
 
-## Flags {{ badge: '5', icon: 'flag' }}
+## Flags {{ badge: '6', icon: 'flag' }}
 
 <Properties>
-	<Property name="--json" type="boolean 路 list, show, search, sync">
+	<Property name="--json" type="boolean 路 list, show, search, sync, resolve">
 		Print the result as JSON on stdout. `list` prints an array of entries, and
 		`show` one entry: `version`, `slug`, `title`, `emoji`, `status`,
 		`updatedAt`, `archived` and `commits`. `search` prints the matches, each
 		with `kind` (`commit` or `workstream`), `id`, `title`, `card` and `score`.
 		`sync` prints `fetched`, `merged`, `needsForce`, `entries` and `pushed`.
+		`resolve` prints `resolved`, the line鈥檚 id, and `hash`, the new commit鈥檚.
 		`reindex` and `archive` ignore it.
 	</Property>
 	<Property name="--archived" type="boolean 路 list">
@@ -116,6 +135,10 @@ Only `sync` touches the network, and `search --ai` the TypeSafe API. Git doesn鈥
 		index, which held its text, and leaves a marker so a later sync can鈥檛 bring
 		it back. The slug can鈥檛 be saved to memory again, so start that workstream
 		again under a new name. Other clones that fetched the entry keep their copy.
+	</Property>
+	<Property name="--because" type="string 路 resolve">
+		Why the line no longer holds. One line of 1 to 200 characters, with no tabs
+		or other control characters. It becomes the rest of the `Resolves:` line.
 	</Property>
 	<Property name="--ai" type="boolean 路 search">
 		Let Jev reorder the ten best matches. Jev sees the query and, for each
@@ -151,6 +174,13 @@ Only `sync` touches the network, and `search --ai` the TypeSafe API. Git doesn鈥
 		code
 	>
 		Remove an entry for good, then run `memory sync`.
+	</Resource>
+	<Resource
+		name="chamoji memory resolve c-7f3a91be --because 'the proxy owns the port now'"
+		icon="check-circle"
+		code
+	>
+		Close a constraint that ended with no code change, then push.
 	</Resource>
 </Resources>
 
@@ -287,6 +317,20 @@ Purged dark-mode from local memory. If it was ever synced, origin still has it. 
 Merged memory here: 1 entry. A purged entry is still on origin, so nothing was pushed. Origin's memory is merged into yours already. To remove the entry there, replace origin's memory with yours. This overwrites origin's history, and drops anything pushed there since this sync: git push --force origin refs/chamoji/memory
 ```
 
+A resolve, of the constraint on the dialog. The commit is empty and is pushed like any other, with `git push`:
+
+```txt {{ title: 'chamoji memory resolve c-0ddd4939 --because "the dialog closes on its own now"' }}
+Resolved c-0ddd4939: the dialog must still close on Escape
+Recorded in 1e35040. Push it like any commit.
+```
+
+It refuses when something is staged, so that nothing rides along in the commit:
+
+```txt {{ title: 'With staged changes' }}
+$ chamoji memory resolve c-0ddd4939 --because "the dialog closes on its own now"
+chamoji: You have staged changes. Commit or unstage them first, so the resolve commit stays empty.
+```
+
 <CodeGroup title="Errors">
 
 ```txt {{ title: 'Unknown subcommand' }}
@@ -314,6 +358,16 @@ $ chamoji memory sync
 chamoji: No remote named origin
 ```
 
+```txt {{ title: 'No reason' }}
+$ chamoji memory resolve c-0ddd4939
+chamoji: memory resolve needs an id and a reason: chamoji memory resolve <id> --because "<reason>"
+```
+
+```txt {{ title: 'Already resolved' }}
+$ chamoji memory resolve c-0ddd4939 --because "it ended"
+chamoji: c-0ddd4939 is already resolved by 1e35040
+```
+
 </CodeGroup>
 
 ## Exit codes
@@ -323,11 +377,13 @@ chamoji: No remote named origin
 	<Property name="2">
 		It was used wrongly: an unknown subcommand, a missing slug or query, more
 		than one slug, or an argument to `reindex` or `sync`. Also `search --ai`
-		with no TypeSafe key.
+		with no TypeSafe key, and `resolve` without an id or `--because`.
 	</Property>
 	<Property name="1">
 		Anything else, such as an entry that doesn鈥檛 exist or is already archived,
 		`sync` with no `origin` or a failed fetch or push, or outside a git repo.
+		For `resolve`: an unknown or resolved id, a bad reason, staged changes, or a
+		commit git refused, such as one a hook stopped.
 	</Property>
 </Properties>
 

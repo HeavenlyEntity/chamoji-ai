@@ -7,6 +7,7 @@ import {
 	purgeMemory,
 	readMemory,
 	reindexMemory,
+	resolveLine,
 	searchMemory,
 	syncMemory,
 	type MemoryEntry,
@@ -46,7 +47,13 @@ export const FORCE_STEP = `A purged entry is still on origin, so nothing was pus
  */
 export async function runMemory(
 	input: string[],
-	flags: {json?: boolean; purge?: boolean; ai?: boolean; archived?: boolean},
+	flags: {
+		json?: boolean;
+		purge?: boolean;
+		ai?: boolean;
+		archived?: boolean;
+		because?: string;
+	},
 	io: Io,
 	reranker: () => Promise<MemoryReranker | undefined> = async () => undefined,
 ): Promise<number> {
@@ -101,10 +108,19 @@ export async function runMemory(
 				: usage(io, 'memory sync takes no arguments: chamoji memory sync');
 		}
 
+		case 'resolve': {
+			return args.length === 1 && flags.because !== undefined
+				? resolve(io, args[0]!, flags.because, flags.json ?? false)
+				: usage(
+						io,
+						'memory resolve needs an id and a reason: chamoji memory resolve <id> --because "<reason>"',
+					);
+		}
+
 		default: {
 			return usage(
 				io,
-				`memory needs list, show, search, reindex, archive or sync, not "${command}"`,
+				`memory needs list, show, search, reindex, archive, sync or resolve, not "${command}"`,
 			);
 		}
 	}
@@ -258,6 +274,34 @@ async function archive(io: Io, slug: string, purge: boolean): Promise<number> {
 		);
 	}
 
+	return 0;
+}
+
+/** How much of a line's text the confirmation shows. */
+const RESOLVED_TEXT = 80;
+
+/**
+ * Records that a card line ended, as an empty commit on HEAD. Only a person or
+ * an agent asking runs it. A ResolveError goes to run.ts, which prints it and
+ * exits 1. The line's text was written by whoever made the commit, so it is
+ * cleaned before it is cut.
+ */
+async function resolve(
+	io: Io,
+	id: string,
+	reason: string,
+	json: boolean,
+): Promise<number> {
+	const {hash, line} = await resolveLine(io.cwd, id, reason);
+	if (json) {
+		io.stdout(`${JSON.stringify({resolved: line.id, hash}, null, 2)}\n`);
+		return 0;
+	}
+
+	const text = [...stripControl(line.text)].slice(0, RESOLVED_TEXT).join('');
+	io.stdout(
+		`Resolved ${stripControl(line.id)}: ${text}\nRecorded in ${hash.slice(0, 7)}. Push it like any commit.\n`,
+	);
 	return 0;
 }
 

@@ -154,6 +154,11 @@ Commit trailers, the `Key: value` lines at the end of a message, are parsed and 
 - **`Why:`, `Constraint:`, `Gotcha:` and `Follow-up:`** are an intent card, which `chamoji why` and project memory show.
 - **`Workstream:`** puts the commit in a workstream, which the changelog shows as one Highlight once it ships.
 - **`Release:`** names units that release now, in a monorepo, such as `Release: mobile` or `Release: all`.
+- **`Resolves:`** marks a card line as ended, such as `Resolves: c-7f3a91be the proxy owns the port now`. The id comes first, then the reason on the same line. A line’s id is its kind, `c` for a constraint, `g` for a gotcha or `f` for a follow-up, then eight hex characters, and `chamoji memory resolve` shows it. Capitals are fine. Only a commit on your branch resolves a line, not a git note. A value that isn’t a card id, such as `Resolves: #123`, is left alone for GitHub to read.
+
+## Resolve commits {{ icon: 'check-circle' }}
+
+`chamoji memory resolve` records that a line ended by making an empty commit, `📝 Resolve <id>` with `Resolves: <id> <reason>` below it. A commit with that subject and a `Resolves:` for the same id changes no code, so it is left out of the changelog, the next version and `chamoji why --thin`. A 📝 commit with any other subject is read as usual.
 
 ## Related {{ anchor: false }}
 
