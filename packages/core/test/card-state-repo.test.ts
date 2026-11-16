@@ -6,6 +6,7 @@ import {promisify} from 'node:util';
 import {afterEach, expect, test} from 'vitest';
 import {cardLineId} from '../src/card-lines.js';
 import {
+	ancestry,
 	cardStatePath,
 	readCardState,
 	readRepoStamp,
@@ -108,6 +109,82 @@ test('the stamp read in two calls matches each part read alone, from anywhere in
 		gitDir,
 		topLevel: '',
 	});
+});
+
+/** A small seeded generator, so a failing graph can be made again. */
+function random(seed: number): () => number {
+	let state = seed >>> 0;
+	return () => {
+		state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0;
+		return state / 2 ** 32;
+	};
+}
+
+/**
+ * A commit graph as `rev-list --parents` gives it, newest first: some roots,
+ * mostly one parent, some merges of two or three, and now and then a parent
+ * that is not listed itself, as past a shallow boundary.
+ */
+function randomGraph(next: () => number, size: number): Map<string, string[]> {
+	const hashes = Array.from({length: size}, (_, i) =>
+		i.toString(16).padStart(40, '0'),
+	);
+	const parents = new Map<string, string[]>();
+	for (let i = size - 1; i >= 0; i--) {
+		const roll = next();
+		const count =
+			i === 0 || roll < 0.05 ? 0 : roll < 0.75 ? 1 : roll < 0.95 ? 2 : 3;
+		const picked = new Set<string>();
+		for (let p = 0; p < count; p++) {
+			picked.add(
+				next() < 0.03 ? `unlisted-${i}-${p}` : hashes[Math.floor(next() * i)]!,
+			);
+		}
+
+		parents.set(hashes[i]!, [...picked]);
+	}
+
+	return parents;
+}
+
+/** The plain walk: everything reachable from `descendant`, itself included. */
+function walk(parents: Map<string, string[]>, descendant: string): Set<string> {
+	const seen = new Set([descendant]);
+	const queue = [descendant];
+	while (queue.length > 0) {
+		for (const parent of parents.get(queue.pop()!) ?? []) {
+			if (!seen.has(parent)) {
+				seen.add(parent);
+				queue.push(parent);
+			}
+		}
+	}
+
+	return seen;
+}
+
+test("ancestry gives the plain walk's answer for every pair of random graphs with merges", () => {
+	const next = random(20_261_115);
+	for (let graph = 0; graph < 40; graph++) {
+		const parents = randomGraph(next, 2 + Math.floor(next() * 60));
+		const isAncestor = ancestry(parents);
+		const names = [
+			...new Set([...parents.keys(), ...[...parents.values()].flat()]),
+			'not-a-commit',
+		];
+		// Asked in a shuffled order, so cached answers meet fresh walks.
+		const pairs = names.flatMap(a => names.map(d => [a, d] as const));
+		for (let i = pairs.length - 1; i > 0; i--) {
+			const j = Math.floor(next() * (i + 1));
+			[pairs[i], pairs[j]] = [pairs[j]!, pairs[i]!];
+		}
+		for (const [ancestor, descendant] of pairs) {
+			expect(
+				isAncestor(ancestor, descendant),
+				`graph ${graph}: ${ancestor} ${descendant}`,
+			).toBe(walk(parents, descendant).has(ancestor));
+		}
+	}
 });
 
 test('a line resolved on a side branch is open on main, and resolved once the branch is merged', async () => {
