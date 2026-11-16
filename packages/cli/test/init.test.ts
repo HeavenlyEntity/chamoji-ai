@@ -1175,7 +1175,7 @@ test('init --agents adds the session brief hook beside a commit hook already the
 	expect(text).toContain('\n\t"hooks": {\n\t\t"PreToolUse"');
 });
 
-test('init --agents adds the commit hook beside a session brief hook already there', async () => {
+test('init --agents adds the commit hook beside a session brief hook already there, with its command', async () => {
 	const dir = await plainRepo();
 	await mkdir(path.join(dir, '.claude'));
 	await writeFile(
@@ -1188,12 +1188,45 @@ test('init --agents adds the commit hook beside a session brief hook already the
 	expect(stdout).toContain(
 		'.claude/settings.json: already has the session brief hook\n',
 	);
+	// chamoji is not on PATH, but the file already runs it as chamoji, so one
+	// file never holds both forms.
 	expect(JSON.parse(await read(dir, '.claude/settings.json'))).toEqual({
 		hooks: {
 			SessionStart: [sessionEntry(HOOK_COMMAND)],
+			PreToolUse: [hookEntry(HOOK_COMMAND)],
+			PostToolUse: [nudgeEntry(HOOK_COMMAND)],
+		},
+	});
+	// .mcp.json is chosen as before.
+	expect(JSON.parse(await read(dir, '.mcp.json'))).toEqual({
+		mcpServers: {
+			chamoji: {command: 'npx', args: ['--yes', '@chamoji/cli', 'mcp']},
+		},
+	});
+});
+
+test('init --agents adds new hooks with the npx command a hook already there uses, even with chamoji on PATH', async () => {
+	const dir = await plainRepo();
+	await mkdir(path.join(dir, '.claude'));
+	await writeFile(
+		path.join(dir, '.claude', 'settings.json'),
+		JSON.stringify({hooks: {PreToolUse: [hookEntry(NPX_HOOK_COMMAND)]}}),
+	);
+	const env = await withChamojiOnPath();
+	const {code, stdout} = await chamoji(['init', '--agents'], dir, env);
+	expect(code).toBe(0);
+	expect(stdout).toContain(
+		'.claude/settings.json: added the session brief hook\n',
+	);
+	expect(JSON.parse(await read(dir, '.claude/settings.json'))).toEqual({
+		hooks: {
 			PreToolUse: [hookEntry(NPX_HOOK_COMMAND)],
+			SessionStart: [sessionEntry(NPX_HOOK_COMMAND)],
 			PostToolUse: [nudgeEntry(NPX_HOOK_COMMAND)],
 		},
+	});
+	expect(JSON.parse(await read(dir, '.mcp.json'))).toEqual({
+		mcpServers: {chamoji: {command: 'chamoji', args: ['mcp']}},
 	});
 });
 
@@ -1296,7 +1329,7 @@ test('init --agents adds the resolve nudge hook beside the other two already the
 		hooks: {
 			PreToolUse: [hookEntry(HOOK_COMMAND)],
 			SessionStart: [sessionEntry(HOOK_COMMAND)],
-			PostToolUse: [lint, nudgeEntry(NPX_HOOK_COMMAND)],
+			PostToolUse: [lint, nudgeEntry(HOOK_COMMAND)],
 		},
 	});
 });
