@@ -232,28 +232,40 @@ export async function setUpAgents(io: Io): Promise<number> {
 		return 1;
 	}
 
+	// The plans for one file are chained, so its last plan with text holds
+	// every change, and that text is the only one written. A merge's line waits
+	// until the write that carries it has gone through.
+	const last = new Map<string, Plan>();
+	for (const each of plans) if (each.text !== null) last.set(each.path, each);
+	const unwritten = new Set<string>();
+	const held: string[] = [];
 	const changed: string[] = [];
-	for (const {file, path: target, text, mode, merge} of plans) {
-		if (text === null) {
-			io.stdout(`${file}: ${merge.present}\n`);
-			continue;
+	for (const each of plans) {
+		const {file, path: target, text, mode, merge} = each;
+		held.push(`${file}: ${text === null ? merge.present : merge.added}\n`);
+		if (text !== null && last.get(target) !== each) {
+			unwritten.add(target);
+		} else if (text !== null) {
+			try {
+				await writeAtomically(target, text, mode);
+			} catch (error) {
+				io.stderr(
+					`chamoji: couldn't write ${file} (${stripControlLines((error as Error).message)}). ${
+						changed.length > 0
+							? `${changed.join(' and ')} was already changed; run chamoji init --agents again once this is fixed.`
+							: 'Nothing was changed.'
+					}\n`,
+				);
+				return 1;
+			}
+
+			unwritten.delete(target);
+			changed.push(file);
 		}
 
-		try {
-			await writeAtomically(target, text, mode);
-		} catch (error) {
-			io.stderr(
-				`chamoji: couldn't write ${file} (${stripControlLines((error as Error).message)}). ${
-					changed.length > 0
-						? `${changed.join(' and ')} was already changed; run chamoji init --agents again once this is fixed.`
-						: 'Nothing was changed.'
-				}\n`,
-			);
-			return 1;
+		if (unwritten.size === 0) {
+			for (const line of held.splice(0)) io.stdout(line);
 		}
-
-		if (!changed.includes(file)) changed.push(file);
-		io.stdout(`${file}: ${merge.added}\n`);
 	}
 
 	if (changed.length > 0) {
