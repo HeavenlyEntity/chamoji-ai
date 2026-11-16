@@ -39,8 +39,8 @@ const SYNC_NOTE =
  *
  * With `--agents` it first wires Claude Code to chamoji in this repo: the MCP
  * server in `.mcp.json`, and the commit hook, the session brief hook and the
- * resolve nudge hook in `.claude/settings.json`. Those two files are shared, so they are merged
- * into, never replaced.
+ * resolve nudge hook in `.claude/settings.json`. Those two files are shared,
+ * so they are merged into, never replaced.
  */
 export async function runInit(
 	flags: {agents?: boolean},

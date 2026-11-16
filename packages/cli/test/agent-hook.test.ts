@@ -1197,6 +1197,14 @@ test('a first commit in a repo, with no parent, does not throw', async () => {
 	]);
 	cleanups.push(async () => repo.cleanup());
 	const head = (await gitOutput(repo.dir, ['rev-parse', 'HEAD'])).trim();
+	// The hook turns any throw into silence, so the reads it makes are checked
+	// here directly: with no parent, `^!` still names the root commit.
+	const commits = await readCommits(repo.dir, `${head}^!`);
+	expect(commits).toHaveLength(1);
+	expect(parseCommit(commits[0]!)).toMatchObject({
+		hash: head,
+		subject: '🎉 Init',
+	});
 	expect([...(await readCommitFiles(repo.dir, `${head}^!`))]).toEqual([
 		[head, ['src/server.ts']],
 	]);
