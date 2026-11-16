@@ -131,12 +131,21 @@ export function renderBrief(
 		(sum, s) => sum + SEPARATOR.length + notShown(s).length,
 		0,
 	);
-	const unmatched = withUnmatched
+	let unmatched = withUnmatched
 		? unmatchedBlock(dangling, Math.floor((free - reserved) / 2))
 		: undefined;
 	const room =
 		free - reserved - (unmatched ? SEPARATOR.length + unmatched.length : 0);
 	const blocks = fitSections(kept, room, only !== undefined);
+	// The room the sections leave, once the cut ones had theirs back, goes to
+	// more Unmatched lines. The block already fits there, so it never shrinks.
+	if (unmatched !== undefined) {
+		const used = blocks.reduce(
+			(sum, b) => sum + SEPARATOR.length + b.length,
+			0,
+		);
+		unmatched = unmatchedBlock(dangling, free - used);
+	}
 
 	return [first, ...blocks, ...(unmatched ? [unmatched] : []), last].join(
 		SEPARATOR,
