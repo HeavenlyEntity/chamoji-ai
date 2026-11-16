@@ -27,29 +27,30 @@ These apply to every milestone. A plan that breaks one needs a written reason.
 
 ## Status
 
-| #   | Milestone                           | Phase                      | Lever       | Size | Status                                     | Plan                                                                                                                                            |
-| --- | ----------------------------------- | -------------------------- | ----------- | ---- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Changelog engine                    | 0 Foundation               | Activation  | M    | ✅ Shipped in 0.1.0                        | [plan](superpowers/plans/2026-10-27-milestone-1-changelog-engine.md)                                                                            |
-| 1.5 | Plain commits, Dependencies, `--ai` | 0 Foundation               | Activation  | M    | ✅ Shipped in 0.2.0                        | — (built from chat scope)                                                                                                                       |
-| 1.6 | Use it ourselves                    | 0 Foundation               | Retention   | S    | ✅ Shipped in 0.3.0                        | [plan](superpowers/plans/2026-10-28-milestone-1.6-use-it-ourselves.md)                                                                          |
-| 2   | Public launch kit                   | 1 Activation & acquisition | Acquisition | S    | ✅ Done (all items shipped)                | [plan](superpowers/plans/2026-10-28-milestone-2-public-launch-kit.md)                                                                           |
-| 3   | GitHub Action                       | 1 Activation & acquisition | Acquisition | M    | ✅ Shipped in 0.5.0, on the Marketplace    | [plan](superpowers/plans/2026-10-28-milestone-3a-release-command.md)                                                                            |
-| 3.5 | Repo card                           | 1 Activation & acquisition | Acquisition | M    | ✅ Shipped in 0.9.0                        | [plan](superpowers/plans/2026-10-31-repo-card.md)                                                                                               |
-| 4   | Commit composer and git hook        | 2 Retention                | Retention   | L    | ✅ Shipped in 0.7.0                        | [plan](superpowers/plans/2026-10-28-milestone-4-commit-composer.md)                                                                             |
-| 5   | Jev in the composer                 | 2 Retention                | Retention   | M    | ✅ Shipped in 0.8.0                        | [plan](superpowers/plans/2026-10-28-milestone-5-jev-in-the-composer.md)                                                                         |
-| 5.5 | Terminal face                       | 2 Retention                | Activation  | S    | ✅ Shipped in 0.12.0 (real terminals left) | [plan](superpowers/plans/2026-11-03-terminal-face.md)                                                                                           |
-| 6   | Workstreams                         | 3 Differentiation          | Retention   | L    | ✅ Shipped in 0.10.0 (dogfooding left)     | [plan](superpowers/plans/2026-10-31-milestone-6-workstreams.md)                                                                                 |
-| 7   | Project memory                      | 3 Differentiation          | Retention   | L    | ✅ Shipped in 0.11.0 (dogfooding left)     | [plan](superpowers/plans/2026-11-01-milestone-7-project-memory.md)                                                                              |
-| 7.5 | Monorepo releases                   | 3 Differentiation          | Activation  | L    | ✅ Shipped in 0.14.0 (real use left)       | [engine](superpowers/plans/2026-11-03-milestone-7.5-monorepo-releases.md), [setup](superpowers/plans/2026-11-04-milestone-7.5-chamoji-setup.md) |
-| 7.6 | Publishing to npm                   | 3 Differentiation          | Activation  | M    | ⏭ Next                                     | —                                                                                                                                               |
-| 8   | Review packets                      | 3 Differentiation          | Expansion   | L    | Planned                                    | —                                                                                                                                               |
-| 9   | Retroactive grouping                | 3 Differentiation          | Activation  | M    | Planned                                    | —                                                                                                                                               |
-| 10  | Editor extension                    | 4 Surfaces                 | Acquisition | L    | Planned                                    | —                                                                                                                                               |
-| 11  | Local daemon on iii                 | 4 Surfaces                 | Retention   | M    | Planned                                    | —                                                                                                                                               |
-| 12  | Desktop app (Tauri)                 | 4 Surfaces                 | Retention   | L    | Planned                                    | —                                                                                                                                               |
-| 13  | Cloud: hosted release notes         | 5 Expansion                | Expansion   | L    | Planned                                    | —                                                                                                                                               |
-| 14  | Cloud: team memory and review       | 5 Expansion                | Expansion   | L    | Planned                                    | —                                                                                                                                               |
-| 15  | Cloud: billing and organizations    | 5 Expansion                | Expansion   | M    | Planned                                    | —                                                                                                                                               |
+| #   | Milestone                           | Phase                      | Lever       | Size | Status                                       | Plan                                                                                                                                            |
+| --- | ----------------------------------- | -------------------------- | ----------- | ---- | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Changelog engine                    | 0 Foundation               | Activation  | M    | ✅ Shipped in 0.1.0                          | [plan](superpowers/plans/2026-10-27-milestone-1-changelog-engine.md)                                                                            |
+| 1.5 | Plain commits, Dependencies, `--ai` | 0 Foundation               | Activation  | M    | ✅ Shipped in 0.2.0                          | — (built from chat scope)                                                                                                                       |
+| 1.6 | Use it ourselves                    | 0 Foundation               | Retention   | S    | ✅ Shipped in 0.3.0                          | [plan](superpowers/plans/2026-10-28-milestone-1.6-use-it-ourselves.md)                                                                          |
+| 2   | Public launch kit                   | 1 Activation & acquisition | Acquisition | S    | ✅ Done (all items shipped)                  | [plan](superpowers/plans/2026-10-28-milestone-2-public-launch-kit.md)                                                                           |
+| 3   | GitHub Action                       | 1 Activation & acquisition | Acquisition | M    | ✅ Shipped in 0.5.0, on the Marketplace      | [plan](superpowers/plans/2026-10-28-milestone-3a-release-command.md)                                                                            |
+| 3.5 | Repo card                           | 1 Activation & acquisition | Acquisition | M    | ✅ Shipped in 0.9.0                          | [plan](superpowers/plans/2026-10-31-repo-card.md)                                                                                               |
+| 4   | Commit composer and git hook        | 2 Retention                | Retention   | L    | ✅ Shipped in 0.7.0                          | [plan](superpowers/plans/2026-10-28-milestone-4-commit-composer.md)                                                                             |
+| 5   | Jev in the composer                 | 2 Retention                | Retention   | M    | ✅ Shipped in 0.8.0                          | [plan](superpowers/plans/2026-10-28-milestone-5-jev-in-the-composer.md)                                                                         |
+| 5.5 | Terminal face                       | 2 Retention                | Activation  | S    | ✅ Shipped in 0.12.0 (real terminals left)   | [plan](superpowers/plans/2026-11-03-terminal-face.md)                                                                                           |
+| 6   | Workstreams                         | 3 Differentiation          | Retention   | L    | ✅ Shipped in 0.10.0 (dogfooding left)       | [plan](superpowers/plans/2026-10-31-milestone-6-workstreams.md)                                                                                 |
+| 7   | Project memory                      | 3 Differentiation          | Retention   | L    | ✅ Shipped in 0.11.0 (dogfooding left)       | [plan](superpowers/plans/2026-11-01-milestone-7-project-memory.md)                                                                              |
+| 7.5 | Monorepo releases                   | 3 Differentiation          | Activation  | L    | ✅ Shipped in 0.14.0 (real use left)         | [engine](superpowers/plans/2026-11-03-milestone-7.5-monorepo-releases.md), [setup](superpowers/plans/2026-11-04-milestone-7.5-chamoji-setup.md) |
+| 7.6 | Publishing to npm                   | 3 Differentiation          | Activation  | M    | ⏭ Next                                       | —                                                                                                                                               |
+| 7.7 | Memory brief and card state         | 3 Differentiation          | Retention   | L    | 🚧 Built, unreleased (dogfood resolves left) | —                                                                                                                                               |
+| 8   | Review packets                      | 3 Differentiation          | Expansion   | L    | Planned                                      | —                                                                                                                                               |
+| 9   | Retroactive grouping                | 3 Differentiation          | Activation  | M    | Planned                                      | —                                                                                                                                               |
+| 10  | Editor extension                    | 4 Surfaces                 | Acquisition | L    | Planned                                      | —                                                                                                                                               |
+| 11  | Local daemon on iii                 | 4 Surfaces                 | Retention   | M    | Planned                                      | —                                                                                                                                               |
+| 12  | Desktop app (Tauri)                 | 4 Surfaces                 | Retention   | L    | Planned                                      | —                                                                                                                                               |
+| 13  | Cloud: hosted release notes         | 5 Expansion                | Expansion   | L    | Planned                                      | —                                                                                                                                               |
+| 14  | Cloud: team memory and review       | 5 Expansion                | Expansion   | L    | Planned                                      | —                                                                                                                                               |
+| 15  | Cloud: billing and organizations    | 5 Expansion                | Expansion   | M    | Planned                                      | —                                                                                                                                               |
 
 **Statuses:** ✅ shipped · 🚧 in progress · ⏭ next · Planned · ⏸ parked.
 
@@ -653,6 +654,57 @@ _Could have, later:_
 - On a pnpm monorepo, no published `package.json` contains `workspace:`.
 
 **Dependencies:** milestone 7.5 for the list of packages and their order. Single-package publishing doesn't need 7.5 and could ship first.
+
+### 7.7. Memory brief and card state — 🚧 built, unreleased
+
+**Why:** a new agent session starts knowing nothing about the constraints, gotchas and follow-ups the repo already carries. It can ask `chamoji why` about one line, but it has to know which line to ask about. And a `Constraint:` line never ends: once the work it guarded is done, it still reads as current. This milestone gives each line a state and gives a new session what stands now.
+
+**Scope:**
+
+- **Card state.** Every `Constraint:`, `Gotcha:` and `Follow-up:` line gets an id and a state, worked out from git each time: open, resolved, in doubt, off branch or reverted. A line ends only when a commit says so with `Resolves: <id> <reason>`, or with `chamoji memory resolve <id> --because "<reason>"`.
+- **The brief.** `chamoji memory brief`, the MCP `brief` tool and a Claude Code session hook give a new agent session what stands now, under a token budget.
+- **The resolve nudge.** After an agent commits, a second hook tells it which open lines sit on the files it changed, so it can say whether the commit ended one. The lines are records; the agent decides.
+- **No model, network call or daemon.** Nothing in it needs one.
+
+Built in three pull requests: [#25](https://github.com/HeavenlyEntity/chamoji-ai/pull/25) (card state), [#26](https://github.com/HeavenlyEntity/chamoji-ai/pull/26) (the brief) and the resolve nudge, on `feat/resolve-nudge`. The first two are merged to `main`. None is in a release.
+
+**Exit criteria:**
+
+- A cached `chamoji memory brief` on chamoji-ai takes under 300 ms.
+- A cold `chamoji memory brief` on Vite (about 9,800 commits) takes under 2 s.
+- On chamoji-ai, after one commit touching five files or fewer, the brief takes under 1 s.
+- The brief fits the default budget, with every open constraint shown or counted.
+- A fresh `claude -p` session answers "What constraints apply to the memory ref?" with no tool call.
+- A resolved line reads as resolved in the brief, in `search_memory` and in `chamoji why`.
+
+**Results (2026-11-15):** speed is whole CLI runs, median of five, on a loaded machine (`chamoji --version` took 206 ms in the same runs).
+
+| Criterion                                             | Target       | Result             |
+| ----------------------------------------------------- | ------------ | ------------------ |
+| A cached `chamoji memory brief` on chamoji-ai         | under 300 ms | 227 to 238 ms: met |
+| A cold `chamoji memory brief` on Vite (9,846 commits) | under 2 s    | 702 ms: met        |
+| On chamoji-ai, after one commit touching 3 files      | under 1 s    | 560 ms: met        |
+
+The cached run first measured 302 ms and missed. It made nine git calls one after another and parsed the card state though the stored brief answered. It now makes four, three of them at once, and skips the card state when only the text is wanted.
+
+- ✅ **The brief fits its budget:** on chamoji-ai the default brief is 5,988 characters against 6,000, with 19 of the 24 open constraints shown and the other 5 counted.
+- ✅ **A fresh session answers from the brief:** in real Claude Code (2.1.318), a fresh `claude -p` session in a clone of chamoji-ai answered "What constraints apply to the memory ref?" from the brief with no tool call. It named six constraints by id and said five more were not shown. The session hook ran in 427 ms.
+- ✅ **The nudge works in real Claude Code:** in a scratch repo, an agent committed a change to a file under an open constraint. The nudge ran in 460 ms and told it about the constraint; it said the commit hadn't ended it and resolved nothing. A commit with no `Why:` line was denied first, as before.
+- ✅ **A resolved line reads as resolved:** in a scratch clone of chamoji-ai, resolving the milestone 7 line `c-a2d5e3ba` made it read as resolved in the brief, in `search_memory` and in `chamoji why` on a line from d066fad.
+- ✅ **Branches and reverts:** covered by tests. A line resolved on an unmerged branch reads as open on `main`; `git revert` of the resolving commit, or of the merge that brought it in, reopens it; a line written again after its resolve reads as open; a line whose only source is a deleted branch reads as off branch.
+- ✅ **Fail open:** with the cache unwritable or git missing, the hooks print nothing and the session starts. Each hook gives itself 5 seconds and its settings entry 15.
+- ⬜ **Dogfood:** chamoji-ai has 57 card lines (24 constraints, 23 gotchas, 10 follow-ups) and all read as open. Four look ended (f-43f8f810, f-972374b0, g-192c3fab, f-0c7f1d33) and four are partly ended (c-a2d5e3ba, f-daac95ba, g-f52fa39b, f-e1d98957). None is resolved yet: each resolve waits for a yes from the maintainer.
+- ⬜ **Not verified:** `/clear` and compaction in a live session (tests cover the hook's input); Cursor and Codex calling the `brief` tool; repos larger than Vite.
+
+**Later work it leaves open:**
+
+- Sending only what a session hasn't seen.
+- Stored checkpoints.
+- Cards by file.
+
+**Known and left:** a `memory resolve` commit can't be undone with `git revert`, since it is empty, and a `chamoji memory reopen <id>` command is undecided. The nudge runs only after a command that succeeded, reads the repo the session is in, and says nothing about a commit older than 10 minutes.
+
+**Dependencies:** milestone 7.
 
 ### 8. Review packets
 
