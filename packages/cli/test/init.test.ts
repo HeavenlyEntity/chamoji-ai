@@ -20,7 +20,7 @@ import {
 	snapshotWorkstream,
 	syncMemory,
 } from '@chamoji/core';
-import {afterEach, expect, test} from 'vitest';
+import {afterEach, expect, test, vi} from 'vitest';
 import {
 	createRepo,
 	gitOutput,
@@ -30,12 +30,40 @@ import {agentsConnected} from '../src/init.js';
 import {run} from '../src/run.js';
 import {recordingFace} from './helpers/recording-face.js';
 
+/**
+ * Every rename's target, and a rule that makes one fail, so a test can count
+ * the writes `init --agents` makes and break one of them. Off, it renames.
+ */
+const renames = vi.hoisted(() => ({
+	targets: [] as string[],
+	fail: undefined as ((from: string) => Promise<boolean>) | undefined,
+}));
+
+vi.mock('node:fs/promises', async importOriginal => {
+	const actual = await importOriginal<typeof import('node:fs/promises')>();
+	return {
+		...actual,
+		async rename(from: string, to: string) {
+			renames.targets.push(to);
+			if (await renames.fail?.(from)) {
+				throw Object.assign(new Error('EIO: i/o error, rename'), {
+					code: 'EIO',
+				});
+			}
+
+			return actual.rename(from, to);
+		},
+	};
+});
+
 /** Native Windows has no POSIX modes, `/bin/sh` or unprivileged symlinks. */
 const WINDOWS = process.platform === 'win32';
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
 	await Promise.all(cleanups.splice(0).map(async cleanup => cleanup()));
+	renames.targets = [];
+	renames.fail = undefined;
 });
 
 async function chamoji(
@@ -362,6 +390,49 @@ test('init --agents writes both files in a repo that has neither', async () => {
 	expect(JSON.parse(await read(dir, '.claude/settings.json'))).toEqual({
 		hooks: allHooks(HOOK_COMMAND),
 	});
+});
+
+test('with all three hooks new, init --agents writes the settings file once', async () => {
+	const dir = await plainRepo();
+	const env = await withChamojiOnPath();
+	const {code, stdout} = await chamoji(['init', '--agents'], dir, env);
+	expect(code).toBe(0);
+	const settings = path.join('.claude', 'settings.json');
+	expect(
+		renames.targets.filter(target => target.endsWith(settings)),
+	).toHaveLength(1);
+	expect(stdout.split('\n').slice(0, 4)).toEqual([
+		'.mcp.json: added the chamoji MCP server',
+		'.claude/settings.json: added the commit hook',
+		'.claude/settings.json: added the session brief hook',
+		'.claude/settings.json: added the resolve nudge hook',
+	]);
+	expect(JSON.parse(await read(dir, '.claude/settings.json'))).toEqual({
+		hooks: allHooks(HOOK_COMMAND),
+	});
+});
+
+test('a settings write that fails leaves the file as it was', async () => {
+	const dir = await plainRepo();
+	await mkdir(path.join(dir, '.claude'));
+	const before = '{"model": "opus"}\n';
+	await writeFile(path.join(dir, '.claude', 'settings.json'), before);
+	// Only a write that holds the session hook fails.
+	renames.fail = async from =>
+		(await readFile(from, 'utf8')).includes('SessionStart');
+	const env = await withChamojiOnPath();
+	const {code, stdout, stderr} = await chamoji(['init', '--agents'], dir, env);
+	expect(code).toBe(1);
+	expect(await read(dir, '.claude/settings.json')).toBe(before);
+	expect(stdout).toBe('.mcp.json: added the chamoji MCP server\n');
+	expect(stderr).toBe(
+		"chamoji: couldn't write .claude/settings.json (EIO: i/o error, rename). .mcp.json was already changed; run chamoji init --agents again once this is fixed.\n",
+	);
+	expect(
+		(await readdir(path.join(dir, '.claude'))).filter(name =>
+			name.endsWith('.tmp'),
+		),
+	).toEqual([]);
 });
 
 test('init --agents runs chamoji through npx when it is not on PATH', async () => {
