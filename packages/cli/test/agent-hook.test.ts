@@ -9,16 +9,25 @@ import {
 	cardStatePath,
 	parseCommit,
 	readBrief,
+	readCardState,
+	readCommitFiles,
 	readCommits,
+	type CardState,
 } from '@chamoji/core';
 import {afterEach, expect, test} from 'vitest';
-import {createRepo, gitOutput} from '../../core/test/helpers/fixture-repo.js';
+import {
+	createRepo,
+	gitOutput,
+	type RepoStep,
+} from '../../core/test/helpers/fixture-repo.js';
 import {
 	DENY_REASON,
 	decideCommit,
+	isGitCommit,
 	judgeCommit,
 	runAgentHook,
 } from '../src/agent-hook.js';
+import {NUDGE_LIMIT, type NudgeOptions} from '../src/resolve-nudge.js';
 import {BRIEF_LIMIT, startWarmUp} from '../src/session-brief.js';
 
 const cliJs = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
@@ -836,4 +845,396 @@ test('the CLI prints the brief for a new session, and nothing outside a repo', a
 
 	// spawnHook runs in an empty temp directory, which is no repo.
 	expect(await spawnHook(session({source: 'startup'}))).toEqual(SILENT);
+});
+
+const COMMITS: string[] = [
+	'git commit -m x',
+	'CHAMOJI_NO_CARD=1 git commit -m x',
+	'git commit -F msg.txt',
+	'git commit --amend --no-edit',
+	'git -C sub commit -m x',
+	'git add . && git commit -m x',
+	'git commit',
+	'git commit -m "x\n\nWhy: the form crashed when the field was cleared"',
+];
+
+const NOT_COMMITS: string[] = [
+	'git status',
+	'echo git commit',
+	'git commit --dry-run',
+	'git commit --help',
+	'git commit -h',
+	'ls',
+	'',
+];
+
+test.each(COMMITS)('isGitCommit finds a commit in %j', command => {
+	expect(isGitCommit(command)).toBe(true);
+});
+
+test.each(NOT_COMMITS)('isGitCommit finds no commit in %j', command => {
+	expect(isGitCommit(command)).toBe(false);
+});
+
+const CONSTRAINT = 'Port 8080 is fixed by the proxy';
+
+/** A repo with an open constraint on src/server.ts, then `steps`. */
+async function nudgeRepo(steps: RepoStep[] = [FIX]): Promise<string> {
+	const repo = await createRepo([
+		{commit: '🎉 Init', files: {'readme.md': 'hi\n'}},
+		{
+			commit: '✨ Add the dev server',
+			body: `Why: the app needs a local server\nConstraint: ${CONSTRAINT}`,
+			files: {'src/server.ts': 'serve\n'},
+		},
+		...steps,
+	]);
+	cleanups.push(async () => repo.cleanup());
+	return repo.dir;
+}
+
+const FIX: RepoStep = {
+	commit: '🐛 Fix the start',
+	body: 'Why: the server crashed when it started',
+	files: {'src/server.ts': 'serve\nfixed\n'},
+};
+
+const postBash = (command: unknown, fields: Record<string, unknown> = {}) =>
+	JSON.stringify({
+		hook_event_name: 'PostToolUse',
+		tool_name: 'Bash',
+		tool_input: {command},
+		tool_response: {stdout: '', stderr: '', interrupted: false},
+		...fields,
+	});
+
+/** HEAD's committer time in milliseconds. */
+async function committedAt(dir: string): Promise<number> {
+	return (
+		Number((await gitOutput(dir, ['log', '-1', '--format=%ct'])).trim()) * 1000
+	);
+}
+
+async function nudgedFile(dir: string): Promise<string> {
+	return path.join(path.dirname(await cardStatePath(dir)), 'nudged');
+}
+
+/** Runs the hook on a PostToolUse input, with the clock a minute after HEAD's commit. */
+async function nudge(
+	input: string,
+	options: Partial<NudgeOptions> & {cwd?: string; at?: string} = {},
+) {
+	let stdout = '';
+	let stderr = '';
+	const at = options.at ?? options.cwd;
+	const now =
+		options.now ??
+		(at === undefined
+			? () => Date.now()
+			: await committedAt(at).then(time => () => time + 60_000));
+	const code = await runAgentHook({
+		cwd: options.cwd ?? process.cwd(),
+		stdout: text => (stdout += text),
+		stderr: text => (stderr += text),
+		stdin: Readable.from([input]),
+		now,
+		...(options.readCardState ? {readCardState: options.readCardState} : {}),
+		...(options.nudgeLimit === undefined
+			? {}
+			: {nudgeLimit: options.nudgeLimit}),
+		...(options.warmUp ? {warmUp: options.warmUp} : {}),
+		...(options.onTimeout ? {onTimeout: options.onTimeout} : {}),
+	});
+	return {code, stdout, stderr};
+}
+
+async function constraintId(dir: string): Promise<string> {
+	const {lines} = await readCardState(dir);
+	const line = lines.find(found => found.text === CONSTRAINT);
+	expect(line?.state).toBe('open');
+	return line!.id;
+}
+
+const nudged = (id: string) =>
+	`${JSON.stringify({
+		hookSpecificOutput: {
+			hookEventName: 'PostToolUse',
+			additionalContext: `This commit touched code under ${id} "${CONSTRAINT}". If it ended that, run chamoji memory resolve ${id} --because "<reason>".`,
+		},
+	})}\n`;
+
+test('after a commit that touches a file under an open constraint, the nudge is printed', async () => {
+	const dir = await nudgeRepo();
+	const id = await constraintId(dir);
+	expect(
+		await nudge(postBash('git commit -m "x\n\nWhy: y"', {cwd: dir}), {at: dir}),
+	).toEqual({code: 0, stdout: nudged(id), stderr: ''});
+});
+
+test('a commit that touches no file under a line gets no nudge', async () => {
+	const dir = await nudgeRepo([
+		{
+			commit: '📝 Say hello',
+			body: 'Why: the readme was empty',
+			files: {'readme.md': 'hello\n'},
+		},
+	]);
+	expect(
+		await nudge(postBash('git commit -m x', {cwd: dir}), {at: dir}),
+	).toEqual(SILENT);
+});
+
+test('a commit that carries a Resolves: gets no nudge', async () => {
+	// Any Resolves:, even one for another line, means the agent already thought about it.
+	const dir = await nudgeRepo([
+		{...FIX, body: `${FIX.body!}\n\nResolves: c-00000000 gone`},
+	]);
+	expect(
+		await nudge(postBash('git commit -m x', {cwd: dir}), {at: dir}),
+	).toEqual(SILENT);
+	expect((await readFile(await nudgedFile(dir), 'utf8')).trim()).toBe(
+		(await gitOutput(dir, ['rev-parse', 'HEAD'])).trim(),
+	);
+});
+
+test('a resolve commit gets no nudge', async () => {
+	const dir = await nudgeRepo([]);
+	const id = await constraintId(dir);
+	const repo = await createRepo([
+		{commit: '🎉 Init', files: {'readme.md': 'hi\n'}},
+		{
+			commit: '✨ Add the dev server',
+			body: `Why: the app needs a local server\nConstraint: ${CONSTRAINT}`,
+			files: {'src/server.ts': 'serve\n'},
+		},
+		// A resolve commit names its line in the subject; this one also changes the file.
+		{
+			commit: `📝 Resolve ${id}`,
+			body: `Resolves: ${id} the proxy is gone`,
+			files: {'src/server.ts': 'serve\nfixed\n'},
+		},
+	]);
+	cleanups.push(async () => repo.cleanup());
+	expect(
+		await nudge(postBash('git commit -m x', {cwd: repo.dir}), {at: repo.dir}),
+	).toEqual(SILENT);
+});
+
+test('a commit that states the constraint itself gets no nudge for it', async () => {
+	// HEAD is the constraint's own commit, and it touched src/server.ts.
+	const dir = await nudgeRepo([]);
+	expect(
+		await nudge(postBash('git commit -m x', {cwd: dir}), {at: dir}),
+	).toEqual(SILENT);
+
+	// A later commit that states it again, beside another line on the same file,
+	// is asked only about the other one.
+	const other = 'The server must start in under a second';
+	const again = await nudgeRepo([
+		{
+			commit: '✨ Start the server faster',
+			body: `Why: the first page took two seconds\nGotcha: ${other}`,
+			files: {'src/server.ts': 'serve\nfast\n'},
+		},
+		{
+			commit: '🐛 Fix the start',
+			body: `Why: the server crashed when it started\nConstraint: ${CONSTRAINT}`,
+			files: {'src/server.ts': 'serve\nfast\nfixed\n'},
+		},
+	]);
+	const {lines} = await readCardState(again);
+	const gotcha = lines.find(found => found.text === other)!;
+	const result = await nudge(postBash('git commit -m x', {cwd: again}), {
+		at: again,
+	});
+	expect(JSON.parse(result.stdout)).toEqual({
+		hookSpecificOutput: {
+			hookEventName: 'PostToolUse',
+			additionalContext: `This commit touched code under ${gotcha.id} "${other}". If it ended that, run chamoji memory resolve ${gotcha.id} --because "<reason>".`,
+		},
+	});
+});
+
+test('the same HEAD is never nudged twice, so a failed git commit says nothing', async () => {
+	const dir = await nudgeRepo();
+	const id = await constraintId(dir);
+	const input = postBash('git commit -m x', {cwd: dir});
+	expect((await nudge(input, {at: dir})).stdout).toBe(nudged(id));
+	// A second commit command that left HEAD where it was.
+	expect(await nudge(input, {at: dir})).toEqual(SILENT);
+	expect(await readFile(await nudgedFile(dir), 'utf8')).toBe(
+		`${(await gitOutput(dir, ['rev-parse', 'HEAD'])).trim()}\n`,
+	);
+});
+
+test('a Bash command that is not a git commit prints nothing', async () => {
+	const dir = await nudgeRepo();
+	for (const command of [...NOT_COMMITS, 42, undefined]) {
+		expect(await nudge(postBash(command, {cwd: dir}), {at: dir})).toEqual(
+			SILENT,
+		);
+	}
+
+	// None of them used up the nudge for HEAD.
+	expect(
+		(await nudge(postBash('git commit -m x', {cwd: dir}), {at: dir})).stdout,
+	).not.toBe('');
+});
+
+test('the output never carries permissionDecision', async () => {
+	const dir = await nudgeRepo();
+	// A commit with no card at all, which PreToolUse would deny.
+	const result = await nudge(postBash('git commit -m x', {cwd: dir}), {
+		at: dir,
+	});
+	expect(result.stdout).not.toBe('');
+	expect(result.stdout).not.toContain('permissionDecision');
+	expect(Object.keys(JSON.parse(result.stdout).hookSpecificOutput)).toEqual([
+		'hookEventName',
+		'additionalContext',
+	]);
+});
+
+test('a HEAD committed more than ten minutes ago gets no nudge, and is still recorded', async () => {
+	const dir = await nudgeRepo();
+	const id = await constraintId(dir);
+	const time = await committedAt(dir);
+	const input = postBash('git commit -m x', {cwd: dir});
+	expect(await nudge(input, {now: () => time + 600_001})).toEqual(SILENT);
+	expect((await readFile(await nudgedFile(dir), 'utf8')).trim()).toBe(
+		(await gitOutput(dir, ['rev-parse', 'HEAD'])).trim(),
+	);
+	// Recorded, so it is not asked about later either.
+	expect(await nudge(input, {now: () => time})).toEqual(SILENT);
+
+	// Exactly ten minutes is within, and so is a committer time in the future.
+	for (const now of [time + 600_000, time - 3_600_000]) {
+		await rm(await nudgedFile(dir));
+		expect((await nudge(input, {now: () => now})).stdout).toBe(nudged(id));
+	}
+});
+
+test('a nudge that takes longer than the limit prints nothing and starts the warm-up', async () => {
+	const dir = await nudgeRepo();
+	const order: string[] = [];
+	const warmed: string[] = [];
+	const result = await nudge(postBash('git commit -m x', {cwd: dir}), {
+		at: dir,
+		readCardState: async () => new Promise<CardState>(() => undefined),
+		nudgeLimit: 50,
+		warmUp: cwd => {
+			warmed.push(cwd);
+			order.push('warm-up');
+		},
+		onTimeout: () => order.push('exit'),
+	});
+	expect(result).toEqual(SILENT);
+	expect(warmed).toEqual([dir]);
+	expect(order).toEqual(['warm-up', 'exit']);
+	// HEAD was recorded before the state was read, so it is not asked about again.
+	expect((await readFile(await nudgedFile(dir), 'utf8')).trim()).toBe(
+		(await gitOutput(dir, ['rev-parse', 'HEAD'])).trim(),
+	);
+	expect(NUDGE_LIMIT).toBe(5000);
+});
+
+test('a nudge that fails prints nothing and exits 0', async () => {
+	const dir = await nudgeRepo();
+	expect(
+		await nudge(postBash('git commit -m x', {cwd: dir}), {
+			at: dir,
+			readCardState: async () => {
+				throw new Error('git failed');
+			},
+		}),
+	).toEqual(SILENT);
+
+	const empty = await mkdtemp(path.join(tmpdir(), 'chamoji-not-a-repo-'));
+	cleanups.push(async () => rm(empty, {recursive: true, force: true}));
+	expect(
+		await nudge(postBash('git commit -m x', {cwd: empty}), {
+			now: () => Date.now(),
+		}),
+	).toEqual(SILENT);
+	await gitOutput(empty, ['init', '-q']);
+	expect(
+		await nudge(postBash('git commit -m x', {cwd: empty}), {
+			now: () => Date.now(),
+		}),
+	).toEqual(SILENT);
+});
+
+test('the nudge reads the repo at the input cwd, and works from a subdirectory', async () => {
+	const dir = await nudgeRepo();
+	const id = await constraintId(dir);
+	const sub = path.join(dir, 'src');
+	expect(
+		(await nudge(postBash('git commit -m x', {cwd: sub}), {at: dir})).stdout,
+	).toBe(nudged(id));
+	// The record is the repo's, wherever the hook ran from.
+	expect(
+		await nudge(postBash('git commit -m x', {cwd: dir}), {at: dir}),
+	).toEqual(SILENT);
+
+	// Without a usable cwd in the input, the hook's own directory is read.
+	for (const cwd of [undefined, '', 42]) {
+		await rm(await nudgedFile(dir));
+		const fields = cwd === undefined ? {} : {cwd};
+		expect(
+			(await nudge(postBash('git commit -m x', fields), {cwd: sub, at: dir}))
+				.stdout,
+		).toBe(nudged(id));
+	}
+});
+
+test('a first commit in a repo, with no parent, does not throw', async () => {
+	const repo = await createRepo([
+		{
+			commit: '🎉 Init',
+			body: `Why: a start\nConstraint: ${CONSTRAINT}`,
+			files: {'src/server.ts': 'serve\n'},
+		},
+	]);
+	cleanups.push(async () => repo.cleanup());
+	const head = (await gitOutput(repo.dir, ['rev-parse', 'HEAD'])).trim();
+	expect([...(await readCommitFiles(repo.dir, `${head}^!`))]).toEqual([
+		[head, ['src/server.ts']],
+	]);
+	expect(
+		await nudge(postBash('git commit -m x', {cwd: repo.dir}), {at: repo.dir}),
+	).toEqual(SILENT);
+	expect((await readFile(await nudgedFile(repo.dir), 'utf8')).trim()).toBe(
+		head,
+	);
+});
+
+test('a PostToolUse input for another tool prints nothing', async () => {
+	const dir = await nudgeRepo();
+	for (const tool of ['Edit', 'bash', undefined]) {
+		expect(
+			await nudge(postBash('git commit -m x', {cwd: dir, tool_name: tool}), {
+				at: dir,
+			}),
+		).toEqual(SILENT);
+	}
+
+	await expect(readFile(await nudgedFile(dir), 'utf8')).rejects.toThrow();
+});
+
+test('a PostToolUse input with a thin Why prints no denial', async () => {
+	const dir = await nudgeRepo();
+	const id = await constraintId(dir);
+	const thin = postBash('git commit -m "x\n\nWhy: fix"', {cwd: dir});
+	expect(await nudge(thin, {at: dir})).toEqual({
+		code: 0,
+		stdout: nudged(id),
+		stderr: '',
+	});
+	const empty = await mkdtemp(path.join(tmpdir(), 'chamoji-not-a-repo-'));
+	cleanups.push(async () => rm(empty, {recursive: true, force: true}));
+	expect(
+		await nudge(postBash('git commit -m "x\n\nWhy: fix"', {cwd: empty}), {
+			now: () => Date.now(),
+		}),
+	).toEqual(SILENT);
 });

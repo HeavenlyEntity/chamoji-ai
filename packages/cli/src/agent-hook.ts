@@ -1,5 +1,6 @@
 import {judgeWhy, parseCommit, readIntent} from '@chamoji/core';
 import {isRecord, own} from './records.js';
+import {resolveNudge, type NudgeOptions} from './resolve-nudge.js';
 import type {Io} from './run.js';
 import {sessionBrief, type SessionBriefOptions} from './session-brief.js';
 
@@ -485,13 +486,15 @@ export function decideCommit(command: string): 'allow' | 'deny' {
 	return judgeCommit(command) === 'deny' ? 'deny' : 'allow';
 }
 
+/** One `git commit` in shell text: what follows `commit`, and the heredocs fed to it. */
+type GitCommit = {args: string[]; heredocs: string[]; optedOut: boolean};
+
 /**
- * Like `decideCommit`, and for a commit with a readable card it also judges
- * the Why: the first thin one comes back as a `ThinCard`. A `deny` anywhere
- * wins over a thin card.
+ * Every `git commit` in the shell text, in order, with whether it was
+ * prefixed with `CHAMOJI_NO_CARD=1`. Leading `VAR=value` words and `env` are
+ * skipped, and so are git's own options before the subcommand.
  */
-export function judgeCommit(command: string): 'allow' | 'deny' | ThinCard {
-	let thin: ThinCard | undefined;
+function* gitCommits(command: string): Generator<GitCommit> {
 	for (const {words, heredocs} of split(command)) {
 		let at = 0;
 		let optedOut = false;
@@ -515,14 +518,79 @@ export function judgeCommit(command: string): 'allow' | 'deny' | ThinCard {
 		}
 
 		if (words[at] !== 'commit') continue;
+		yield {args: words.slice(at + 1), heredocs, optedOut};
+	}
+}
+
+/**
+ * Like `decideCommit`, and for a commit with a readable card it also judges
+ * the Why: the first thin one comes back as a `ThinCard`. A `deny` anywhere
+ * wins over a thin card.
+ */
+export function judgeCommit(command: string): 'allow' | 'deny' | ThinCard {
+	let thin: ThinCard | undefined;
+	for (const {args, heredocs, optedOut} of gitCommits(command)) {
 		if (optedOut) continue;
-		const parts = readParts(words.slice(at + 1));
+		const parts = readParts(args);
 		if (!parts) continue;
 		if (!hasCard(parts.messages, parts.trailers, heredocs)) return 'deny';
 		thin ??= thinCard(parts, heredocs);
 	}
 
 	return thin ?? 'allow';
+}
+
+/** Long flags of `git commit` whose next word is their value. */
+const COMMIT_TAKES_VALUE = new Set([
+	...TAKES_VALUE,
+	'--message',
+	'--trailer',
+	'--file',
+	'--reuse-message',
+	'--reedit-message',
+	'--fixup',
+	'--squash',
+]);
+
+/** Whether these `git commit` arguments commit, rather than only show help or check (`--dry-run`). */
+function commitsSomething(args: string[]): boolean {
+	for (let i = 0; i < args.length; i++) {
+		const word = args[i]!;
+		if (word === '--') break;
+		if (word.startsWith('--')) {
+			const equals = word.indexOf('=');
+			const name = equals === -1 ? word : word.slice(0, equals);
+			if (name === '--dry-run' || name === '--help') return false;
+			if (equals === -1 && COMMIT_TAKES_VALUE.has(name)) i++;
+		} else if (word.startsWith('-') && word.length > 1) {
+			// A cluster such as -am: the first flag that takes a value ends it.
+			for (let at = 1; at < word.length; at++) {
+				const flag = word[at]!;
+				if (flag === 'h') return false;
+				if ('mtFCc'.includes(flag)) {
+					if (at === word.length - 1) i++;
+					break;
+				}
+
+				if (flag === 'S' || flag === 'u') break;
+			}
+		}
+	}
+
+	return true;
+}
+
+/**
+ * Whether the shell text runs a `git commit` that commits: every one
+ * `judgeCommit` reads, opted out or not, whatever its message, except
+ * `--dry-run` and `--help`.
+ */
+export function isGitCommit(command: string): boolean {
+	for (const {args} of gitCommits(command)) {
+		if (commitsSomething(args)) return true;
+	}
+
+	return false;
 }
 
 /** Said to the agent when its Why line is there but says nothing. */
@@ -548,32 +616,47 @@ async function readInput(
 	return Buffer.concat(chunks).toString('utf8');
 }
 
+/** The command of a Bash tool call, or undefined for another tool or a malformed input. */
+function bashCommand(input: Record<string, unknown>): string | undefined {
+	if (own(input, 'tool_name') !== 'Bash') return undefined;
+	const toolInput = own(input, 'tool_input');
+	const command = isRecord(toolInput) ? own(toolInput, 'command') : undefined;
+	return typeof command === 'string' ? command : undefined;
+}
+
 /**
- * `chamoji agent-hook`: what Claude Code runs before a Bash command and when
- * a session starts. Before a command it denies a `git commit` that carries no
- * intent card, so the agent can write one while it still can. At the start of
- * a session it hands over the project brief. It prints nothing for anything
- * else. Whatever goes wrong, it prints nothing and exits 0: a broken hook must
- * not stop the agent.
+ * `chamoji agent-hook`: what Claude Code runs before a Bash command, after
+ * one and when a session starts. Before a command it denies a `git commit`
+ * that carries no intent card, so the agent can write one while it still
+ * can. After a `git commit` it says which open lines sit on the files the
+ * commit changed. At the start of a session it hands over the project brief.
+ * It prints nothing for anything else. Whatever goes wrong, it prints nothing
+ * and exits 0: a broken hook must not stop the agent.
  */
 export async function runAgentHook(
-	io: Io & {stdin: NodeJS.ReadableStream} & SessionBriefOptions,
+	io: Io & {stdin: NodeJS.ReadableStream} & SessionBriefOptions & NudgeOptions,
 ): Promise<number> {
 	try {
 		const raw = await readInput(io.stdin);
 		if (raw === undefined) return 0;
 		const input: unknown = JSON.parse(raw);
 		if (!isRecord(input)) return 0;
-		if (own(input, 'hook_event_name') === 'SessionStart') {
+		const event = own(input, 'hook_event_name');
+		if (event === 'SessionStart') {
 			const brief = await sessionBrief(input, io.cwd, io);
 			if (brief !== undefined) io.stdout(brief);
 			return 0;
 		}
 
-		if (own(input, 'tool_name') !== 'Bash') return 0;
-		const toolInput = own(input, 'tool_input');
-		const command = isRecord(toolInput) ? own(toolInput, 'command') : undefined;
-		if (typeof command !== 'string') return 0;
+		const command = bashCommand(input);
+		if (event === 'PostToolUse') {
+			if (command === undefined || !isGitCommit(command)) return 0;
+			const nudge = await resolveNudge(input, io.cwd, io);
+			if (nudge !== undefined) io.stdout(nudge);
+			return 0;
+		}
+
+		if (command === undefined) return 0;
 		const verdict = judgeCommit(command);
 		if (verdict === 'allow') return 0;
 		const reason = verdict === 'deny' ? DENY_REASON : thinReason(verdict);

@@ -94,7 +94,7 @@ export function foldCardState(input: FoldInput): CardState {
 			.map(resolve => ({id: resolve.id, hash: c.hash})),
 	);
 
-	lines.sort((a, b) => newerFirst(a.date, b.date) || compare(a.id, b.id));
+	lines.sort(lineOrder);
 	return {head: input.head, lines, dangling};
 }
 
@@ -379,6 +379,11 @@ export function publicLine(line: CardLine): PublicLine {
 		...(workstream === undefined ? {} : {workstream}),
 		...(revertedBy === undefined ? {} : {revertedBy}),
 	};
+}
+
+/** The order a state keeps its lines in: newest first, then by id in code-unit order. */
+export function lineOrder(a: CardLine, b: CardLine): number {
+	return newerFirst(a.date, b.date) || compare(a.id, b.id);
 }
 
 /**
