@@ -1394,10 +1394,17 @@ test('a nudge that takes longer than the limit prints nothing and starts the war
 	const dir = await nudgeRepo();
 	const order: string[] = [];
 	const warmed: string[] = [];
+	let asked = () => {};
+	const stateAsked = new Promise<void>(resolve => {
+		asked = resolve;
+	});
 	// The limit may come before or after git answers; either way the state never does.
 	const result = await nudge(postBash('git commit -m x', {cwd: dir}), {
 		at: dir,
-		readCardState: async () => new Promise<CardState>(() => undefined),
+		async readCardState() {
+			asked();
+			return new Promise<CardState>(() => undefined);
+		},
 		nudgeLimit: 50,
 		warmUp: cwd => {
 			warmed.push(cwd);
@@ -1409,6 +1416,10 @@ test('a nudge that takes longer than the limit prints nothing and starts the war
 	expect(warmed).toEqual([dir]);
 	expect(order).toEqual(['warm-up', 'exit']);
 	expect(NUDGE_LIMIT).toBe(5000);
+	// The test's limit doesn't exit, so the nudge's git calls carry on past it.
+	// Windows can't remove the repo while one still runs in it, so wait for the
+	// last of them, which comes just before the state is asked for.
+	await stateAsked;
 });
 
 test('HEAD is recorded before the state is read, so a nudge cut off there is not asked about again', async () => {
