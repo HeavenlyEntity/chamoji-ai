@@ -342,6 +342,18 @@ export async function shallowStamp(cwd: string): Promise<string> {
 		const file = (
 			await runGit(['rev-parse', '--git-path', 'shallow'], cwd)
 		).trim();
+		return await shallowStampOf(cwd, file);
+	} catch {
+		return '';
+	}
+}
+
+/** `shallowStamp` for the path `git rev-parse --git-path shallow` printed in `cwd`. */
+export async function shallowStampOf(
+	cwd: string,
+	file: string,
+): Promise<string> {
+	try {
 		const content = await readFile(path.resolve(cwd, file));
 		return createHash('sha256').update(content).digest('hex');
 	} catch {
