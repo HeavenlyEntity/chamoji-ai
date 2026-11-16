@@ -23,7 +23,12 @@ import {
 import {NOTES_REF, mergeCards, readNoteCards} from './why-notes.js';
 import {STATUSES, isSlug, type WorkstreamStatus} from './workstreams.js';
 
-/** Bump it when the file's layout or what goes into it changes. */
+/**
+ * Bump it when the file's layout or what goes into it changes. Bump the
+ * brief's version in `brief-repo.ts` with it: a stored brief is served
+ * without reading the card state, so a brief from the old state would be
+ * served until HEAD moves.
+ */
 const CACHE_VERSION = 4;
 
 const OBJECT_ID = /^[0-9a-f]{40,64}$/;
