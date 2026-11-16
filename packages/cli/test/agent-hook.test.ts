@@ -1,9 +1,10 @@
-import {spawn} from 'node:child_process';
-import {mkdtemp, readFile, rm} from 'node:fs/promises';
+import {execFile, spawn} from 'node:child_process';
+import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {PassThrough, Readable} from 'node:stream';
 import {fileURLToPath} from 'node:url';
+import {promisify} from 'node:util';
 import {
 	WHY_ADVICE,
 	cardStatePath,
@@ -919,7 +920,20 @@ async function nudgedFile(dir: string): Promise<string> {
 	return path.join(path.dirname(await cardStatePath(dir)), 'nudged');
 }
 
-/** Runs the hook on a PostToolUse input, with the clock a minute after HEAD's commit. */
+/** The HEAD the nudge recorded: the first line of its file. */
+async function recordedHead(dir: string): Promise<string> {
+	return (await readFile(await nudgedFile(dir), 'utf8')).split('\n')[0]!;
+}
+
+async function headOf(dir: string): Promise<string> {
+	return (await gitOutput(dir, ['rev-parse', 'HEAD'])).trim();
+}
+
+/**
+ * Runs the hook on a PostToolUse input, with the clock a minute after HEAD's
+ * commit. The limit is longer than any test may take unless a test sets one,
+ * so no result depends on how fast git is.
+ */
 async function nudge(
 	input: string,
 	options: Partial<NudgeOptions> & {cwd?: string; at?: string} = {},
@@ -939,9 +953,7 @@ async function nudge(
 		stdin: Readable.from([input]),
 		now,
 		...(options.readCardState ? {readCardState: options.readCardState} : {}),
-		...(options.nudgeLimit === undefined
-			? {}
-			: {nudgeLimit: options.nudgeLimit}),
+		nudgeLimit: options.nudgeLimit ?? 10 * 60 * 1000,
 		...(options.warmUp ? {warmUp: options.warmUp} : {}),
 		...(options.onTimeout ? {onTimeout: options.onTimeout} : {}),
 	});
@@ -992,6 +1004,8 @@ test('a commit that touches no file under a line gets no nudge', async () => {
 	expect(
 		await nudge(postBash('git commit -m x', {cwd: dir}), {at: dir}),
 	).toEqual(SILENT);
+	// Recorded, so the silence is the hook's answer and not an error.
+	expect(await recordedHead(dir)).toBe(await headOf(dir));
 });
 
 test('a commit that carries a Resolves: gets no nudge', async () => {
@@ -1002,9 +1016,7 @@ test('a commit that carries a Resolves: gets no nudge', async () => {
 	expect(
 		await nudge(postBash('git commit -m x', {cwd: dir}), {at: dir}),
 	).toEqual(SILENT);
-	expect((await readFile(await nudgedFile(dir), 'utf8')).trim()).toBe(
-		(await gitOutput(dir, ['rev-parse', 'HEAD'])).trim(),
-	);
+	expect(await recordedHead(dir)).toBe(await headOf(dir));
 });
 
 test('a resolve commit gets no nudge', async () => {
@@ -1028,6 +1040,7 @@ test('a resolve commit gets no nudge', async () => {
 	expect(
 		await nudge(postBash('git commit -m x', {cwd: repo.dir}), {at: repo.dir}),
 	).toEqual(SILENT);
+	expect(await recordedHead(repo.dir)).toBe(await headOf(repo.dir));
 });
 
 test('a commit that states the constraint itself gets no nudge for it', async () => {
@@ -1036,6 +1049,7 @@ test('a commit that states the constraint itself gets no nudge for it', async ()
 	expect(
 		await nudge(postBash('git commit -m x', {cwd: dir}), {at: dir}),
 	).toEqual(SILENT);
+	expect(await recordedHead(dir)).toBe(await headOf(dir));
 
 	// A later commit that states it again, beside another line on the same file,
 	// is asked only about the other one.
@@ -1072,9 +1086,241 @@ test('the same HEAD is never nudged twice, so a failed git commit says nothing',
 	expect((await nudge(input, {at: dir})).stdout).toBe(nudged(id));
 	// A second commit command that left HEAD where it was.
 	expect(await nudge(input, {at: dir})).toEqual(SILENT);
-	expect(await readFile(await nudgedFile(dir), 'utf8')).toBe(
-		`${(await gitOutput(dir, ['rev-parse', 'HEAD'])).trim()}\n`,
+	expect(await recordedHead(dir)).toBe(await headOf(dir));
+});
+
+/**
+ * Writes `files` and commits them in a fixture repo, with the fixture's own
+ * empty git config, or amends HEAD with them.
+ */
+async function commitIn(
+	dir: string,
+	files: Record<string, string>,
+	message: string | {amend: true},
+): Promise<void> {
+	for (const [name, text] of Object.entries(files)) {
+		await mkdir(path.dirname(path.join(dir, name)), {recursive: true});
+		await writeFile(path.join(dir, name), text);
+	}
+
+	const env = {
+		...process.env,
+		GIT_CONFIG_GLOBAL: `${dir}.gitconfig`,
+		GIT_CONFIG_NOSYSTEM: '1',
+	};
+	const git = async (args: string[]) =>
+		promisify(execFile)('git', args, {cwd: dir, env});
+	await git(['add', '--', ...Object.keys(files)]);
+	await git(
+		typeof message === 'string'
+			? ['commit', '-q', '-m', message]
+			: ['commit', '-q', '--amend', '--no-edit'],
 	);
+}
+
+/** What the nudge's file says besides HEAD: the session and the ids asked in it. */
+async function askedIn(dir: string): Promise<unknown> {
+	return JSON.parse(
+		(await readFile(await nudgedFile(dir), 'utf8')).split('\n')[1]!,
+	);
+}
+
+const OTHER = 'The client retries a failed request once';
+
+/** An open constraint on src/server.ts and an open gotcha on src/client.ts. */
+async function twoLineRepo(): Promise<{
+	dir: string;
+	server: string;
+	client: string;
+}> {
+	const dir = await nudgeRepo([
+		{
+			commit: '✨ Add the client',
+			body: `Why: the app calls the server\nGotcha: ${OTHER}`,
+			files: {'src/client.ts': 'call\n'},
+		},
+		FIX,
+	]);
+	const {lines} = await readCardState(dir);
+	return {
+		dir,
+		server: lines.find(found => found.text === CONSTRAINT)!.id,
+		client: lines.find(found => found.text === OTHER)!.id,
+	};
+}
+
+test('a line is asked about once per session', async () => {
+	const {dir, server, client} = await twoLineRepo();
+	const inSession = (session: string) =>
+		postBash('git commit -m x', {cwd: dir, session_id: session});
+	expect((await nudge(inSession('s1'), {at: dir})).stdout).toBe(nudged(server));
+	expect(await askedIn(dir)).toEqual({session: 's1', asked: [server]});
+
+	// The next commit on both files is asked only about the line not yet shown.
+	await commitIn(
+		dir,
+		{'src/server.ts': 'serve\nfixed\nagain\n', 'src/client.ts': 'call\n2\n'},
+		'🐛 Fix both',
+	);
+	expect((await nudge(inSession('s1'), {at: dir})).stdout).toBe(
+		printed(paragraph(client, OTHER)),
+	);
+	expect(await askedIn(dir)).toEqual({session: 's1', asked: [server, client]});
+
+	// Every near line was asked, so the next commit says nothing, and is recorded.
+	await commitIn(dir, {'src/server.ts': 'serve\n3\n'}, '🐛 Fix it again');
+	expect(await nudge(inSession('s1'), {at: dir})).toEqual(SILENT);
+	expect(await recordedHead(dir)).toBe(await headOf(dir));
+	expect(await askedIn(dir)).toEqual({session: 's1', asked: [server, client]});
+
+	// Another session starts an empty list.
+	await commitIn(dir, {'src/server.ts': 'serve\n4\n'}, '🐛 Fix it once more');
+	expect((await nudge(inSession('s2'), {at: dir})).stdout).toBe(nudged(server));
+	expect(await askedIn(dir)).toEqual({session: 's2', asked: [server]});
+});
+
+test('an input with no session_id counts as one session of its own', async () => {
+	const dir = await nudgeRepo();
+	const id = await constraintId(dir);
+	const input = postBash('git commit -m x', {cwd: dir});
+	expect((await nudge(input, {at: dir})).stdout).toBe(nudged(id));
+	expect(await askedIn(dir)).toEqual({session: '', asked: [id]});
+	await commitIn(dir, {'src/server.ts': 'serve\n2\n'}, '🐛 Fix it again');
+	expect(await nudge(input, {at: dir})).toEqual(SILENT);
+	for (const session of [42, null]) {
+		await commitIn(dir, {'src/server.ts': `serve\n${session}\n`}, '🐛 Again');
+		expect(
+			await nudge(
+				postBash('git commit -m x', {cwd: dir, session_id: session}),
+				{at: dir},
+			),
+		).toEqual(SILENT);
+	}
+
+	await commitIn(
+		dir,
+		{'src/server.ts': 'serve\n3\n'},
+		'🐛 Fix it a third time',
+	);
+	expect(
+		(
+			await nudge(postBash('git commit -m x', {cwd: dir, session_id: 's1'}), {
+				at: dir,
+			})
+		).stdout,
+	).toBe(nudged(id));
+});
+
+test('an amend in the same session says nothing when every near line was asked', async () => {
+	const dir = await nudgeRepo();
+	const id = await constraintId(dir);
+	const input = postBash('git commit --amend --no-edit', {
+		cwd: dir,
+		session_id: 's1',
+	});
+	expect((await nudge(input, {at: dir})).stdout).toBe(nudged(id));
+	const before = await headOf(dir);
+	await commitIn(
+		dir,
+		{'src/server.ts': 'serve\nfixed\nformatted\n'},
+		{
+			amend: true,
+		},
+	);
+	expect(await headOf(dir)).not.toBe(before);
+	expect(await nudge(input, {at: dir})).toEqual(SILENT);
+	expect(await recordedHead(dir)).toBe(await headOf(dir));
+});
+
+test('lines asked before are left out before the limit of five', async () => {
+	const texts = ['One', 'Two', 'Three', 'Four', 'Five', 'Six'].map(
+		word => `${word} rule for the server`,
+	);
+	const dir = await nudgeRepo([
+		...texts.map((text, at) => ({
+			commit: `✨ Add rule ${at}`,
+			body: `Why: the server needs it\nConstraint: ${text}`,
+			files: {'src/server.ts': `serve\n${at}\n`},
+		})),
+		FIX,
+	]);
+	const {lines} = await readCardState(dir);
+	const idOf = (text: string) => lines.find(found => found.text === text)!.id;
+	const input = postBash('git commit -m x', {cwd: dir, session_id: 's1'});
+	// The constraint from nudgeRepo is the oldest of seven; the five newest come first.
+	expect((await nudge(input, {at: dir})).stdout).toBe(
+		printed(
+			...texts
+				.slice(1)
+				.reverse()
+				.map(text => paragraph(idOf(text), text)),
+		),
+	);
+	await commitIn(dir, {'src/server.ts': 'serve\nagain\n'}, '🐛 Fix it again');
+	expect((await nudge(input, {at: dir})).stdout).toBe(
+		printed(
+			paragraph(idOf(texts[0]!), texts[0]!),
+			paragraph(idOf(CONSTRAINT), CONSTRAINT),
+		),
+	);
+});
+
+test('a record from before sessions, or one that does not parse, counts as nothing asked', async () => {
+	const dir = await nudgeRepo();
+	const id = await constraintId(dir);
+	const input = postBash('git commit -m x', {cwd: dir, session_id: 's1'});
+	const file = await nudgedFile(dir);
+	await mkdir(path.dirname(file), {recursive: true});
+	const parent = (await gitOutput(dir, ['rev-parse', 'HEAD^'])).trim();
+
+	// A file the earlier code wrote: one line, a hash.
+	await writeFile(file, `${parent}\n`);
+	expect((await nudge(input, {at: dir})).stdout).toBe(nudged(id));
+	expect(await recordedHead(dir)).toBe(await headOf(dir));
+	expect(await askedIn(dir)).toEqual({session: 's1', asked: [id]});
+	// And one that holds HEAD is that HEAD, already asked about.
+	await writeFile(file, `${await headOf(dir)}\n`);
+	expect(await nudge(input, {at: dir})).toEqual(SILENT);
+
+	for (const garbled of [
+		`${parent}\n{"session":"s1","asked":`,
+		`${parent}\n{"session":"s1","asked":"${id}"}\n`,
+		`${parent}\n{"session":"s1","asked":[42,"${id}"]}\n`,
+		`${parent}\n["s1"]\n`,
+		'\u0000\u0001 not a record',
+		'',
+	]) {
+		await writeFile(file, garbled);
+		expect((await nudge(input, {at: dir})).stdout).toBe(nudged(id));
+		expect(await askedIn(dir)).toEqual({session: 's1', asked: [id]});
+	}
+});
+
+test('the record keeps at most the newest 500 ids', async () => {
+	const dir = await nudgeRepo();
+	const id = await constraintId(dir);
+	const parent = (await gitOutput(dir, ['rev-parse', 'HEAD^'])).trim();
+	const old = Array.from(
+		{length: 500},
+		(_, at) => `c-${at.toString(16).padStart(8, '0')}`,
+	);
+	const file = await nudgedFile(dir);
+	await mkdir(path.dirname(file), {recursive: true});
+	await writeFile(
+		file,
+		`${parent}\n${JSON.stringify({session: 's1', asked: old})}\n`,
+	);
+	expect(
+		(
+			await nudge(postBash('git commit -m x', {cwd: dir, session_id: 's1'}), {
+				at: dir,
+			})
+		).stdout,
+	).toBe(nudged(id));
+	expect(await askedIn(dir)).toEqual({
+		session: 's1',
+		asked: [...old.slice(1), id],
+	});
 });
 
 test('a Bash command that is not a git commit prints nothing', async () => {
@@ -1111,9 +1357,7 @@ test('a HEAD committed more than ten minutes ago gets no nudge, and is still rec
 	const time = await committedAt(dir);
 	const input = postBash('git commit -m x', {cwd: dir});
 	expect(await nudge(input, {now: () => time + 600_001})).toEqual(SILENT);
-	expect((await readFile(await nudgedFile(dir), 'utf8')).trim()).toBe(
-		(await gitOutput(dir, ['rev-parse', 'HEAD'])).trim(),
-	);
+	expect(await recordedHead(dir)).toBe(await headOf(dir));
 	// Recorded, so it is not asked about later either.
 	expect(await nudge(input, {now: () => time})).toEqual(SILENT);
 
@@ -1128,6 +1372,7 @@ test('a nudge that takes longer than the limit prints nothing and starts the war
 	const dir = await nudgeRepo();
 	const order: string[] = [];
 	const warmed: string[] = [];
+	// The limit may come before or after git answers; either way the state never does.
 	const result = await nudge(postBash('git commit -m x', {cwd: dir}), {
 		at: dir,
 		readCardState: async () => new Promise<CardState>(() => undefined),
@@ -1141,11 +1386,21 @@ test('a nudge that takes longer than the limit prints nothing and starts the war
 	expect(result).toEqual(SILENT);
 	expect(warmed).toEqual([dir]);
 	expect(order).toEqual(['warm-up', 'exit']);
-	// HEAD was recorded before the state was read, so it is not asked about again.
-	expect((await readFile(await nudgedFile(dir), 'utf8')).trim()).toBe(
-		(await gitOutput(dir, ['rev-parse', 'HEAD'])).trim(),
-	);
 	expect(NUDGE_LIMIT).toBe(5000);
+});
+
+test('HEAD is recorded before the state is read, so a nudge cut off there is not asked about again', async () => {
+	const dir = await nudgeRepo();
+	const seen: string[] = [];
+	const result = await nudge(postBash('git commit -m x', {cwd: dir}), {
+		at: dir,
+		async readCardState(root) {
+			seen.push(await recordedHead(dir));
+			return readCardState(root);
+		},
+	});
+	expect(seen).toEqual([await headOf(dir)]);
+	expect(result.stdout).toBe(nudged(await constraintId(dir)));
 });
 
 test('a nudge that fails prints nothing and exits 0', async () => {
@@ -1158,6 +1413,7 @@ test('a nudge that fails prints nothing and exits 0', async () => {
 			},
 		}),
 	).toEqual(SILENT);
+	expect(await recordedHead(dir)).toBe(await headOf(dir));
 
 	const empty = await mkdtemp(path.join(tmpdir(), 'chamoji-not-a-repo-'));
 	cleanups.push(async () => rm(empty, {recursive: true, force: true}));
@@ -1221,9 +1477,7 @@ test('a first commit in a repo, with no parent, does not throw', async () => {
 	expect(
 		await nudge(postBash('git commit -m x', {cwd: repo.dir}), {at: repo.dir}),
 	).toEqual(SILENT);
-	expect((await readFile(await nudgedFile(repo.dir), 'utf8')).trim()).toBe(
-		head,
-	);
+	expect(await recordedHead(repo.dir)).toBe(head);
 });
 
 test('a PostToolUse input for another tool prints nothing', async () => {
