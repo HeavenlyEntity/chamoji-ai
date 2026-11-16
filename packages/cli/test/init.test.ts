@@ -26,6 +26,7 @@ import {
 	gitOutput,
 	type FixtureRepo,
 } from '../../core/test/helpers/fixture-repo.js';
+import {agentsConnected} from '../src/init.js';
 import {run} from '../src/run.js';
 import {recordingFace} from './helpers/recording-face.js';
 
@@ -327,9 +328,16 @@ const sessionEntry = (command: string) => ({
 	hooks: [{type: 'command', command, timeout: 15}],
 });
 
-const bothHooks = (command: string) => ({
+/** Runs the hook after a `git commit` that went through. */
+const nudgeEntry = (command: string) => ({
+	matcher: 'Bash',
+	hooks: [{type: 'command', if: 'Bash(git commit *)', command, timeout: 15}],
+});
+
+const allHooks = (command: string) => ({
 	PreToolUse: [hookEntry(command)],
 	SessionStart: [sessionEntry(command)],
+	PostToolUse: [nudgeEntry(command)],
 });
 
 test('init --agents writes both files in a repo that has neither', async () => {
@@ -343,13 +351,16 @@ test('init --agents writes both files in a repo that has neither', async () => {
 	expect(stdout).toContain(
 		'.claude/settings.json: added the session brief hook',
 	);
+	expect(stdout).toContain(
+		'.claude/settings.json: added the resolve nudge hook',
+	);
 	expect(stdout).toContain('meant to be committed');
 	expect(stdout).not.toContain('npx');
 	expect(await read(dir, '.mcp.json')).toBe(
 		`${JSON.stringify({mcpServers: {chamoji: {command: 'chamoji', args: ['mcp']}}}, null, 2)}\n`,
 	);
 	expect(JSON.parse(await read(dir, '.claude/settings.json'))).toEqual({
-		hooks: bothHooks(HOOK_COMMAND),
+		hooks: allHooks(HOOK_COMMAND),
 	});
 });
 
@@ -363,7 +374,7 @@ test('init --agents runs chamoji through npx when it is not on PATH', async () =
 		},
 	});
 	expect(JSON.parse(await read(dir, '.claude/settings.json'))).toEqual({
-		hooks: bothHooks(NPX_HOOK_COMMAND),
+		hooks: allHooks(NPX_HOOK_COMMAND),
 	});
 });
 
@@ -449,7 +460,10 @@ test('init --agents keeps existing settings and hooks', async () => {
 	const after = JSON.parse(text);
 	expect(after.permissions).toEqual(before.permissions);
 	expect(after.model).toBe('opus');
-	expect(after.hooks.PostToolUse).toEqual(before.hooks.PostToolUse);
+	expect(after.hooks.PostToolUse).toEqual([
+		...before.hooks.PostToolUse,
+		nudgeEntry(HOOK_COMMAND),
+	]);
 	expect(after.hooks.PreToolUse).toEqual([
 		...before.hooks.PreToolUse,
 		hookEntry(HOOK_COMMAND),
@@ -472,7 +486,7 @@ test('init --agents adds a hooks section to settings that have none', async () =
 	await writeFile(path.join(dir, '.claude', 'settings.json'), '{}\n');
 	await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
 	expect(JSON.parse(await read(dir, '.claude/settings.json'))).toEqual({
-		hooks: bothHooks(NPX_HOOK_COMMAND),
+		hooks: allHooks(NPX_HOOK_COMMAND),
 	});
 });
 
@@ -519,6 +533,9 @@ test('init --agents twice adds nothing new', async () => {
 	expect(again.stdout).toContain(
 		'.claude/settings.json: already has the session brief hook',
 	);
+	expect(again.stdout).toContain(
+		'.claude/settings.json: already has the resolve nudge hook',
+	);
 	expect(again.stdout).not.toContain('meant to be committed');
 	expect(await texts()).toEqual(firstTexts);
 	expect(await times()).toEqual(firstTimes);
@@ -534,6 +551,9 @@ test('init --agents sees a hook that runs through a full path', async () => {
 			SessionStart: [
 				{hooks: [{type: 'command', command: '/opt/bin/chamoji agent-hook'}]},
 			],
+			PostToolUse: [
+				{hooks: [{type: 'command', command: '/opt/bin/chamoji agent-hook'}]},
+			],
 		},
 	});
 	await mkdir(path.join(dir, '.claude'));
@@ -544,6 +564,9 @@ test('init --agents sees a hook that runs through a full path', async () => {
 	);
 	expect(stdout).toContain(
 		'.claude/settings.json: already has the session brief hook',
+	);
+	expect(stdout).toContain(
+		'.claude/settings.json: already has the resolve nudge hook',
 	);
 	expect(await read(dir, '.claude/settings.json')).toBe(text);
 });
@@ -996,6 +1019,7 @@ test('a session hook already there without a timeout still counts and is not rew
 					},
 				],
 				PreToolUse: [hookEntry(HOOK_COMMAND)],
+				PostToolUse: [nudgeEntry(HOOK_COMMAND)],
 			},
 		},
 		null,
@@ -1074,6 +1098,7 @@ test('init --agents adds the session brief hook beside a commit hook already the
 				...before.hooks.SessionStart,
 				sessionEntry(NPX_HOOK_COMMAND),
 			],
+			PostToolUse: [nudgeEntry(NPX_HOOK_COMMAND)],
 		},
 	});
 	expect(text).toContain('\n\t"hooks": {\n\t\t"PreToolUse"');
@@ -1096,8 +1121,153 @@ test('init --agents adds the commit hook beside a session brief hook already the
 		hooks: {
 			SessionStart: [sessionEntry(HOOK_COMMAND)],
 			PreToolUse: [hookEntry(NPX_HOOK_COMMAND)],
+			PostToolUse: [nudgeEntry(NPX_HOOK_COMMAND)],
 		},
 	});
+});
+
+test('init --agents adds a PostToolUse entry for Bash(git commit *), once', async () => {
+	const dir = await plainRepo();
+	const env = await withChamojiOnPath();
+	const {code, stdout, stderr} = await chamoji(['init', '--agents'], dir, env);
+	expect(stderr).toBe('');
+	expect(code).toBe(0);
+	expect(stdout).toContain(
+		'.claude/settings.json: added the resolve nudge hook\n',
+	);
+	const first = await read(dir, '.claude/settings.json');
+	expect(JSON.parse(first).hooks.PostToolUse).toEqual([
+		nudgeEntry(HOOK_COMMAND),
+	]);
+	// Only after a command that went through: nothing for a failed one.
+	expect(JSON.parse(first).hooks).not.toHaveProperty('PostToolUseFailure');
+
+	const again = await chamoji(['init', '--agents'], dir, env);
+	expect(again.stdout).toContain(
+		'.claude/settings.json: already has the resolve nudge hook\n',
+	);
+	expect(await read(dir, '.claude/settings.json')).toBe(first);
+});
+
+test('the PostToolUse entry carries timeout 15, and an entry already there is left alone', async () => {
+	const dir = await plainRepo();
+	const {code} = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+	expect(code).toBe(0);
+	const {PostToolUse} = JSON.parse(
+		await read(dir, '.claude/settings.json'),
+	).hooks;
+	expect(PostToolUse).toEqual([nudgeEntry(NPX_HOOK_COMMAND)]);
+	// In seconds, and after the command, as Claude Code reads it.
+	expect(Object.keys(PostToolUse[0].hooks[0])).toEqual([
+		'type',
+		'if',
+		'command',
+		'timeout',
+	]);
+
+	// An entry the user wrote their own way counts, and is never rewritten.
+	const other = await plainRepo();
+	await mkdir(path.join(other, '.claude'));
+	const text = `${JSON.stringify(
+		{
+			hooks: {
+				PreToolUse: [hookEntry(HOOK_COMMAND)],
+				SessionStart: [sessionEntry(HOOK_COMMAND)],
+				PostToolUse: [
+					{
+						matcher: 'Bash',
+						hooks: [{type: 'command', command: HOOK_COMMAND}],
+					},
+				],
+			},
+		},
+		null,
+		2,
+	)}\n`;
+	await writeFile(path.join(other, '.claude', 'settings.json'), text);
+	const result = await chamoji(['init', '--agents'], other, NO_CHAMOJI);
+	expect(result.code).toBe(0);
+	expect(result.stdout).toContain(
+		'.claude/settings.json: already has the resolve nudge hook\n',
+	);
+	expect(await read(other, '.claude/settings.json')).toBe(text);
+});
+
+test('init --agents adds the resolve nudge hook beside the other two already there, keeping other PostToolUse entries', async () => {
+	const dir = await plainRepo();
+	await mkdir(path.join(dir, '.claude'));
+	const lint = {
+		matcher: 'Edit',
+		hooks: [{type: 'command', command: 'lint.sh'}],
+	};
+	await writeFile(
+		path.join(dir, '.claude', 'settings.json'),
+		JSON.stringify({
+			hooks: {
+				PreToolUse: [hookEntry(HOOK_COMMAND)],
+				SessionStart: [sessionEntry(HOOK_COMMAND)],
+				PostToolUse: [lint],
+			},
+		}),
+	);
+	const {code, stdout} = await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+	expect(code).toBe(0);
+	expect(stdout).toContain(
+		'.claude/settings.json: already has the commit hook\n',
+	);
+	expect(stdout).toContain(
+		'.claude/settings.json: already has the session brief hook\n',
+	);
+	expect(stdout).toContain(
+		'.claude/settings.json: added the resolve nudge hook\n',
+	);
+	expect(JSON.parse(await read(dir, '.claude/settings.json'))).toEqual({
+		hooks: {
+			PreToolUse: [hookEntry(HOOK_COMMAND)],
+			SessionStart: [sessionEntry(HOOK_COMMAND)],
+			PostToolUse: [lint, nudgeEntry(NPX_HOOK_COMMAND)],
+		},
+	});
+});
+
+test('Claude Code counts as connected only with all four entries', async () => {
+	const dir = await plainRepo();
+	const io = {
+		cwd: dir,
+		stdout: () => undefined,
+		stderr: () => undefined,
+		env: NO_CHAMOJI,
+	};
+	expect(await agentsConnected(io)).toBe(false);
+	await chamoji(['init', '--agents'], dir, NO_CHAMOJI);
+	expect(await agentsConnected(io)).toBe(true);
+
+	// The three entries from before the resolve nudge are not enough.
+	const settings = JSON.parse(await read(dir, '.claude/settings.json'));
+	delete settings.hooks.PostToolUse;
+	await writeFile(
+		path.join(dir, '.claude', 'settings.json'),
+		JSON.stringify(settings),
+	);
+	expect(await agentsConnected(io)).toBe(false);
+});
+
+test('a PostToolUse that is not a list is refused, like PreToolUse', async () => {
+	const dir = await plainRepo();
+	await mkdir(path.join(dir, '.claude'));
+	const text = '{"hooks": {"PostToolUse": {}}}';
+	await writeFile(path.join(dir, '.claude', 'settings.json'), text);
+	const {code, stdout, stderr} = await chamoji(
+		['init', '--agents'],
+		dir,
+		NO_CHAMOJI,
+	);
+	expect(code).toBe(1);
+	expect(stdout).toBe('');
+	expect(stderr).toBe(
+		'chamoji: .claude/settings.json has a "hooks.PostToolUse" that is not a list, so chamoji left it alone. Fix it and run chamoji init --agents again. Nothing was changed.\n',
+	);
+	expect(await read(dir, '.claude/settings.json')).toBe(text);
 });
 
 async function withFace(argv: string[], cwd: string) {

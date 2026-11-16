@@ -66,21 +66,52 @@ export async function sessionBrief(
 ): Promise<string | undefined> {
 	const source = own(input, 'source');
 	if (typeof source !== 'string' || !SOURCES.has(source)) return undefined;
-	const dir = own(input, 'cwd');
-	const at = typeof dir === 'string' && dir !== '' ? dir : cwd;
+	const at = hookDir(input, cwd);
 	const read = options.readBrief ?? (async (where: string) => readBrief(where));
+	const text = await inTime(
+		async () => (await read(at)).text,
+		at,
+		options.briefLimit ?? BRIEF_LIMIT,
+		options,
+	);
+	if (text === undefined || text === '') return undefined;
+	return `${JSON.stringify({
+		hookSpecificOutput: {
+			hookEventName: 'SessionStart',
+			additionalContext: text,
+		},
+	})}\n`;
+}
+
+/** The directory a hook input names, or the hook's own when it names none. */
+export function hookDir(input: Record<string, unknown>, cwd: string): string {
+	const dir = own(input, 'cwd');
+	return typeof dir === 'string' && dir !== '' ? dir : cwd;
+}
+
+const LATE: unique symbol = Symbol('late');
+
+/**
+ * What `work` gives, or undefined when it fails or takes longer than `limit`
+ * milliseconds. At the limit it calls `warmUp` with `at` and then
+ * `onTimeout`, and a result that comes in later has nobody waiting for it.
+ */
+export async function inTime<T>(
+	work: () => Promise<T>,
+	at: string,
+	limit: number,
+	options: Pick<SessionBriefOptions, 'warmUp' | 'onTimeout'>,
+): Promise<T | undefined> {
 	let timer: NodeJS.Timeout | undefined;
-	const late = new Promise<undefined>(resolve => {
-		timer = setTimeout(resolve, options.briefLimit ?? BRIEF_LIMIT, undefined);
+	const late = new Promise<typeof LATE>(resolve => {
+		timer = setTimeout(resolve, limit, LATE);
 	});
-	const reading = Promise.resolve()
-		.then(async () => read(at))
-		.then(brief => brief.text);
-	// A brief that fails after the limit has nobody waiting for it.
-	reading.catch(() => undefined);
+	const working = Promise.resolve().then(work);
+	// Work that fails after the limit has nobody waiting for it.
+	working.catch(() => undefined);
 	try {
-		const text = await Promise.race([reading, late]);
-		if (text === undefined) {
+		const result = await Promise.race([working, late]);
+		if (result === LATE) {
 			try {
 				options.warmUp?.(at);
 			} catch {
@@ -91,13 +122,7 @@ export async function sessionBrief(
 			return undefined;
 		}
 
-		if (text === '') return undefined;
-		return `${JSON.stringify({
-			hookSpecificOutput: {
-				hookEventName: 'SessionStart',
-				additionalContext: text,
-			},
-		})}\n`;
+		return result;
 	} catch {
 		return undefined;
 	} finally {

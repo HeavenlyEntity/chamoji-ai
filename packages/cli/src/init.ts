@@ -38,8 +38,8 @@ const SYNC_NOTE =
  * push only memory and leave the branch behind. It pushes nothing.
  *
  * With `--agents` it first wires Claude Code to chamoji in this repo: the MCP
- * server in `.mcp.json`, and the commit hook and the session brief hook in
- * `.claude/settings.json`. Those two files are shared, so they are merged
+ * server in `.mcp.json`, and the commit hook, the session brief hook and the
+ * resolve nudge hook in `.claude/settings.json`. Those two files are shared, so they are merged
  * into, never replaced.
  */
 export async function runInit(
@@ -188,17 +188,21 @@ async function agentPlans(io: Io): Promise<{plans: Plan[]; viaNpx: boolean}> {
 	const root = (await runGit(['rev-parse', '--show-toplevel'], io.cwd)).trim();
 	const viaNpx = !onPath('chamoji', io.env ?? process.env);
 	const commit = await plan(root, commitHook(viaNpx));
+	const session = await plan(root, sessionHook(viaNpx), commit);
+	// A plan that changes nothing has no text, so the nudge builds on the
+	// newest one that does, or the file.
+	const nudge = await plan(
+		root,
+		nudgeHook(viaNpx),
+		session.text === null ? commit : session,
+	);
 	return {
-		plans: [
-			await plan(root, mcpServer(viaNpx)),
-			commit,
-			await plan(root, sessionHook(viaNpx), commit),
-		],
+		plans: [await plan(root, mcpServer(viaNpx)), commit, session, nudge],
 		viaNpx,
 	};
 }
 
-/** Whether both shared files already have chamoji. A file chamoji refuses counts as not. */
+/** Whether both shared files already have every chamoji entry. A file chamoji refuses counts as not. */
 export async function agentsConnected(io: Io): Promise<boolean> {
 	try {
 		const {plans} = await agentPlans(io);
@@ -380,6 +384,36 @@ function sessionHook(viaNpx: boolean): Merge {
 				hooks: [
 					{
 						type: 'command',
+						command: runChamoji(viaNpx, 'agent-hook'),
+						timeout: 15,
+					},
+				],
+			});
+			return true;
+		},
+	};
+}
+
+/**
+ * The PostToolUse entry that, after a `git commit` went through, tells the
+ * agent which open lines sit on the files it changed. Claude Code runs it only
+ * after a command that succeeded, so it has no `PostToolUseFailure` twin. The
+ * timeout is the session hook's, for the same reason.
+ */
+function nudgeHook(viaNpx: boolean): Merge {
+	return {
+		file: '.claude/settings.json',
+		added: 'added the resolve nudge hook',
+		present: 'already has the resolve nudge hook',
+		apply(data) {
+			const {list, present} = agentHookList(data, 'PostToolUse');
+			if (present) return false;
+			list.push({
+				matcher: 'Bash',
+				hooks: [
+					{
+						type: 'command',
+						if: 'Bash(git commit *)',
 						command: runChamoji(viaNpx, 'agent-hook'),
 						timeout: 15,
 					},

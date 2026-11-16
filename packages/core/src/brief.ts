@@ -410,7 +410,7 @@ function short(hash: string): string {
  * or other space becomes a plain space, the controls go, and only then are
  * runs of spaces collapsed, so a control between two spaces leaves one.
  */
-function clean(text: string, max = MAX_TEXT): string {
+export function clean(text: string, max = MAX_TEXT): string {
 	const oneLine = stripControl(text.replace(/\s/g, ' '))
 		.replace(/ +/g, ' ')
 		.trim();

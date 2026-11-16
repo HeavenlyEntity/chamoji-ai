@@ -748,11 +748,12 @@ export async function run(argv: string[], given: Io): Promise<number> {
 				}
 
 				case 'agent-hook': {
-					// Claude Code runs this before a Bash command and when a session
-					// starts. Whatever happens it prints a decision, the brief or
-					// nothing, and exits 0. A brief that runs late has printed nothing,
-					// and exiting then keeps a slow git from holding the session; a
-					// warm-up started first finishes the brief for the next session.
+					// Claude Code runs this before and after a Bash command and when a
+					// session starts. Whatever happens it prints a decision, the brief,
+					// a nudge or nothing, and exits 0. A brief or nudge that runs late
+					// has printed nothing, and exiting then keeps a slow git from
+					// holding the agent; a warm-up started first finishes the work for
+					// next time.
 					return await runAgentHook({
 						...io,
 						stdin: process.stdin,
