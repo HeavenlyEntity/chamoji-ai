@@ -3,6 +3,7 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {afterEach, expect, test} from 'vitest';
 import {readBrief, readBriefInput} from '../src/brief-repo.js';
+import {DEFAULT_BRIEF_BUDGET} from '../src/brief.js';
 import {cardLineId} from '../src/card-lines.js';
 import {cardStatePath, readCardState} from '../src/card-state-repo.js';
 import {
@@ -161,6 +162,44 @@ test('the default brief is rebuilt when a tag is added and HEAD has not moved', 
 	const {text} = await readBrief(dir);
 	expect(text).not.toBe('from the cache');
 	expect(text).not.toContain('Since ');
+});
+
+test('a cached read that only wants the text needs no card state', async () => {
+	const dir = await tagged();
+	const uncached = await readBrief(dir, {budget: DEFAULT_BRIEF_BUDGET});
+	const built = await readBrief(dir);
+	expect(built.text).toBe(uncached.text);
+
+	// Missing: the text comes from the brief's cache and no state is rebuilt.
+	const stateFile = await cardStatePath(dir);
+	await rm(stateFile);
+	const missing = await readBrief(dir, {textOnly: true});
+	expect(missing).toEqual({head: built.head, text: uncached.text});
+	await expect(readFile(stateFile)).rejects.toThrow();
+
+	// Unreadable: a directory where the file goes.
+	await mkdir(stateFile);
+	expect(await readBrief(dir, {textOnly: true})).toEqual({
+		head: built.head,
+		text: uncached.text,
+	});
+	await rm(stateFile, {recursive: true});
+
+	// A read that wants the state still gets it.
+	expect((await readBrief(dir)).state).toEqual(uncached.state);
+});
+
+test('a text-only read with no cache builds the brief and its state', async () => {
+	const dir = await tagged();
+	const read = await readBrief(dir, {textOnly: true});
+	expect(read).toEqual({
+		head: (await readBrief(dir)).head,
+		text: (await readBrief(dir, {budget: DEFAULT_BRIEF_BUDGET})).text,
+	});
+	expect(JSON.parse(await readFile(await briefFile(dir), 'utf8')).text).toBe(
+		read.text,
+	);
+	await readFile(await cardStatePath(dir));
 });
 
 test('a cache text holding a control character is not used', async () => {

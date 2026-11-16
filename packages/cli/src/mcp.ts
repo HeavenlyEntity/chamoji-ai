@@ -380,6 +380,7 @@ export function createTools(cwd: string, rerank?: MemoryReranker): McpTools {
 			const {head, text} = await readBrief(cwd, {
 				...(section === undefined ? {} : {section}),
 				...(budget === undefined ? {} : {budget}),
+				textOnly: true,
 			});
 			return {head, brief: text};
 		},

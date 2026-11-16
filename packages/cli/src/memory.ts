@@ -390,14 +390,17 @@ async function brief(
 		...(budget === undefined ? {} : {budget}),
 		...(section === undefined ? {} : {section: section as BriefSection}),
 	};
-	const {head, text, state} = await readBrief(io.cwd, options);
 	if (flags.json) {
+		const {head, text, state} = await readBrief(io.cwd, options);
 		io.stdout(
 			`${JSON.stringify({head, text, ...stateLines(state)}, null, 2)}\n`,
 		);
-	} else if (text !== '') {
-		io.stdout(`${text}\n`);
+		return 0;
 	}
+
+	// Only `--json` prints the state, so a stored brief is all this reads.
+	const {text} = await readBrief(io.cwd, {...options, textOnly: true});
+	if (text !== '') io.stdout(`${text}\n`);
 
 	return 0;
 }

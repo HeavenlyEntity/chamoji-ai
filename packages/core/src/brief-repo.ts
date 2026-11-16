@@ -5,8 +5,7 @@ import {renderBrief, type BriefInput, type BriefSection} from './brief.js';
 import {isResolveCommit} from './card-resolve.js';
 import {
 	cardStateAt,
-	cardStatePath,
-	cardStateStamp,
+	readRepoStamp,
 	type CardStateStamp,
 } from './card-state-repo.js';
 import type {CardState} from './card-state.js';
@@ -32,40 +31,70 @@ type BriefStamp = CardStateStamp & {workstreams: string; tags: string};
 
 export type Brief = {head: string; text: string; state: CardState};
 
+/** A brief without the state it was rendered from, for a caller that only prints it. */
+export type BriefText = Omit<Brief, 'state'>;
+
+type BriefOptions = {budget?: number; section?: BriefSection};
+
 /**
  * The brief at HEAD, as `renderBrief` prints it, with the state it was
  * rendered from. The default one, with no options, is kept in the git
  * directory under a stamp of everything it was read from, so a hook that runs
  * at the start of every session pays for it once per change. Empty text for a
  * repo with no commits. It throws when git fails, as `readCardState` does.
+ * With `textOnly` it leaves the state out, so a stored brief is all it reads.
  */
 export async function readBrief(
 	cwd: string,
-	options: {budget?: number; section?: BriefSection} = {},
-): Promise<Brief> {
-	const cardStamp = await cardStateStamp(cwd);
-	const empty = {head: '', lines: [], dangling: []};
-	if (cardStamp.head === '') return {head: '', text: '', state: empty};
-	const cached = options.budget === undefined && options.section === undefined;
-	// Read before the content is, as the card state's stamp is.
-	const stamp: BriefStamp | undefined = cached
-		? {
-				...cardStamp,
-				workstreams: await workstreamsStamp(cwd),
-				tags: await tagsStamp(cwd),
-			}
-		: undefined;
-	const state = await cardStateAt(cwd, cardStamp);
-	const stored = stamp && (await readCache(cwd, stamp));
-	if (stored !== undefined) return {head: cardStamp.head, text: stored, state};
+	options: BriefOptions & {textOnly: true},
+): Promise<BriefText>;
+export async function readBrief(
+	cwd: string,
+	options?: BriefOptions & {textOnly?: false},
+): Promise<Brief>;
+export async function readBrief(
+	cwd: string,
+	options: BriefOptions & {textOnly?: boolean} = {},
+): Promise<Brief | BriefText> {
+	const {budget, section, textOnly = false} = options;
+	const cached = budget === undefined && section === undefined;
+	// Every part of the stamp is read before the content it guards is, so a
+	// ref that moves in between costs only a rebuild on the next call. The
+	// tags matter only once there is a HEAD, so their failure waits till then.
+	const tags = cached ? tagsStamp(cwd) : undefined;
+	tags?.catch(() => undefined);
+	const {stamp: cardStamp, gitDir, topLevel} = await readRepoStamp(cwd);
+	const {head} = cardStamp;
+	if (head === '') {
+		const text = {head: '', text: ''};
+		return textOnly
+			? text
+			: {...text, state: {head: '', lines: [], dangling: []}};
+	}
+
+	const stamp: BriefStamp | undefined = tags && {
+		...cardStamp,
+		workstreams: await workstreamsStamp(topLevel),
+		tags: await tags,
+	};
+	const file = briefPath(gitDir);
+	const stored =
+		stamp && file !== undefined ? await readCache(file, stamp) : undefined;
+	if (stored !== undefined && textOnly) return {head, text: stored};
+	const state = await cardStateAt(cwd, cardStamp, gitDir);
+	if (stored !== undefined) return {head, text: stored, state};
 	// A shallow clone never read the notes past its boundary, so it says so.
 	const input = {
 		...(await readBriefInput(cwd, state)),
 		shallow: cardStamp.shallow !== '',
 	};
-	const text = renderBrief(input, options);
-	if (stamp) await writeCache(cwd, stamp, text).catch(() => undefined);
-	return {head: cardStamp.head, text, state};
+	const text = renderBrief(input, {
+		...(budget === undefined ? {} : {budget}),
+		...(section === undefined ? {} : {section}),
+	});
+	if (stamp && file !== undefined)
+		await writeCache(file, stamp, text).catch(() => undefined);
+	return textOnly ? {head, text} : {head, text, state};
 }
 
 /**
@@ -195,14 +224,14 @@ async function readActive(
 }
 
 /**
- * The sha256 of the workstreams file, or '' when there is none. Only a
- * regular file is read, so a pipe planted there can't hang the hook; anything
- * else reads as no workstreams anyway.
+ * The sha256 of the workstreams file under `topLevel`, or '' when there is
+ * none. Only a regular file is read, so a pipe planted there can't hang the
+ * hook; anything else reads as no workstreams anyway.
  */
-async function workstreamsStamp(cwd: string): Promise<string> {
+async function workstreamsStamp(topLevel: string): Promise<string> {
+	if (topLevel === '') return '';
 	try {
-		const root = (await runGit(['rev-parse', '--show-toplevel'], cwd)).trim();
-		const file = path.join(root, WORKSTREAMS_FILE);
+		const file = path.join(topLevel, WORKSTREAMS_FILE);
 		if (!(await lstat(file)).isFile()) return '';
 		return sha256(await readFile(file));
 	} catch {
@@ -223,9 +252,14 @@ function sha256(content: string | Buffer): string {
 	return createHash('sha256').update(content).digest('hex');
 }
 
-/** Beside the card state, in this worktree's git directory. */
-async function briefPath(cwd: string): Promise<string> {
-	return path.join(path.dirname(await cardStatePath(cwd)), 'brief.json');
+/**
+ * Beside the card state, in this worktree's git directory, or undefined when
+ * git couldn't name that directory, and then nothing is cached.
+ */
+function briefPath(gitDir: string | undefined): string | undefined {
+	return gitDir === undefined
+		? undefined
+		: path.join(gitDir, 'chamoji', 'brief.json');
 }
 
 const STAMP_FIELDS = [
@@ -243,12 +277,12 @@ const STAMP_FIELDS = [
  * character `renderBrief` never writes is not used either.
  */
 async function readCache(
-	cwd: string,
+	file: string,
 	stamp: BriefStamp,
 ): Promise<string | undefined> {
 	let raw: unknown;
 	try {
-		raw = JSON.parse(await readFile(await briefPath(cwd), 'utf8'));
+		raw = JSON.parse(await readFile(file, 'utf8'));
 	} catch {
 		return undefined;
 	}
@@ -272,11 +306,10 @@ async function readCache(
 
 /** Written aside and renamed, so a call racing this one never reads half a file. */
 async function writeCache(
-	cwd: string,
+	file: string,
 	stamp: BriefStamp,
 	text: string,
 ): Promise<void> {
-	const file = await briefPath(cwd);
 	const temporary = `${file}.${randomUUID()}.tmp`;
 	await mkdir(path.dirname(file), {recursive: true});
 	try {

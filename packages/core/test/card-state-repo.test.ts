@@ -5,9 +5,13 @@ import path from 'node:path';
 import {promisify} from 'node:util';
 import {afterEach, expect, test} from 'vitest';
 import {cardLineId} from '../src/card-lines.js';
-import {cardStatePath, readCardState} from '../src/card-state-repo.js';
+import {
+	cardStatePath,
+	readCardState,
+	readRepoStamp,
+} from '../src/card-state-repo.js';
 import {linesFor, publicLine} from '../src/card-state.js';
-import {snapshotWorkstream} from '../src/memory.js';
+import {headOf, shallowStamp, snapshotWorkstream} from '../src/memory.js';
 import {writeNoteCard} from '../src/why-notes.js';
 import {
 	createRepo,
@@ -60,6 +64,51 @@ async function commit(
 
 const lineOf = async (dir: string, id: string) =>
 	(await readCardState(dir)).lines.find(line => line.id === id);
+
+test('the stamp read in two calls matches each part read alone, from anywhere in the repo', async () => {
+	repo = await createRepo([{commit: '🎉 Init'}, {commit: '✨ Add search'}]);
+	const {dir} = repo;
+	const alone = async (cwd: string) => ({
+		head: (await headOf(cwd, 'HEAD')) ?? '',
+		memory: (await headOf(cwd, 'refs/chamoji/memory')) ?? '',
+		notes: (await headOf(cwd, 'refs/notes/chamoji')) ?? '',
+		shallow: await shallowStamp(cwd),
+	});
+	const gitDir = (
+		await gitOutput(dir, ['rev-parse', '--absolute-git-dir'])
+	).trim();
+	const top = (await gitOutput(dir, ['rev-parse', '--show-toplevel'])).trim();
+
+	expect(await readRepoStamp(dir)).toEqual({
+		stamp: await alone(dir),
+		gitDir,
+		topLevel: top,
+	});
+	expect((await readRepoStamp(dir)).stamp).toMatchObject({
+		memory: '',
+		notes: '',
+	});
+
+	// A memory ref that names a tree names no commit; a notes ref names one.
+	const tree = (await gitOutput(dir, ['rev-parse', 'HEAD^{tree}'])).trim();
+	await gitOutput(dir, ['update-ref', 'refs/chamoji/memory', tree]);
+	await gitOutput(dir, ['notes', '--ref=chamoji', 'add', '-m', 'note', 'HEAD']);
+	const sub = path.join(dir, 'src');
+	await mkdir(sub, {recursive: true});
+	for (const cwd of [dir, sub]) {
+		const read = await readRepoStamp(cwd);
+		expect(read).toEqual({stamp: await alone(cwd), gitDir, topLevel: top});
+		expect(read.stamp.notes).toMatch(/^[0-9a-f]{40}$/);
+		expect(read.stamp.memory).toBe('');
+	}
+
+	// Inside the git directory there is no work tree, and the rest still reads.
+	expect(await readRepoStamp(gitDir)).toEqual({
+		stamp: await alone(gitDir),
+		gitDir,
+		topLevel: '',
+	});
+});
 
 test('a line resolved on a side branch is open on main, and resolved once the branch is merged', async () => {
 	repo = await createRepo([

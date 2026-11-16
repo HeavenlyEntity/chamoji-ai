@@ -67,7 +67,9 @@ export async function sessionBrief(
 	const source = own(input, 'source');
 	if (typeof source !== 'string' || !SOURCES.has(source)) return undefined;
 	const at = hookDir(input, cwd);
-	const read = options.readBrief ?? (async (where: string) => readBrief(where));
+	const read =
+		options.readBrief ??
+		(async (where: string) => readBrief(where, {textOnly: true}));
 	const text = await inTime(
 		async () => (await read(at)).text,
 		at,

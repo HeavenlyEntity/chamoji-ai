@@ -11,9 +11,9 @@ import {
 	type FoldInput,
 	type LineState,
 } from './card-state.js';
-import {readCommitFiles, readCommits, runGit} from './git.js';
+import {readCommitFiles, readCommits, runGit, runGitWithInput} from './git.js';
 import {readSurvival, topLevel, type Survival} from './line-survival.js';
-import {MEMORY_REF, headOf, listMemory, shallowStamp} from './memory.js';
+import {MEMORY_REF, listMemory, shallowStampOf} from './memory.js';
 import {parseCommit} from './parse.js';
 import {
 	readResolves,
@@ -51,6 +51,15 @@ export async function cardStatePath(cwd: string): Promise<string> {
 	const gitDir = (
 		await runGit(['rev-parse', '--absolute-git-dir'], cwd)
 	).trim();
+	return stateFileIn(gitDir);
+}
+
+/** `cardStatePath` for a git directory already read, or read now when there is none. */
+async function stateFile(cwd: string, gitDir?: string): Promise<string> {
+	return gitDir === undefined ? cardStatePath(cwd) : stateFileIn(gitDir);
+}
+
+function stateFileIn(gitDir: string): string {
 	return path.join(gitDir, 'chamoji', 'card-state.json');
 }
 
@@ -65,33 +74,116 @@ export async function cardStatePath(cwd: string): Promise<string> {
  * reply or running in a hook must catch it.
  */
 export async function readCardState(cwd: string): Promise<CardState> {
-	return cardStateAt(cwd, await cardStateStamp(cwd));
+	const {stamp, gitDir} = await readRepoStamp(cwd);
+	return cardStateAt(cwd, stamp, gitDir);
 }
 
 /**
  * `readCardState` for a stamp the caller already read, so a cache of its own
- * built on the same stamp costs no second read of it.
+ * built on the same stamp costs no second read of it. `gitDir` is the one
+ * `readRepoStamp` gave, so the cache's path costs no git call either.
  */
 export async function cardStateAt(
 	cwd: string,
 	stamp: CardStateStamp,
+	gitDir?: string,
 ): Promise<CardState> {
 	if (stamp.head === '') return {head: '', lines: [], dangling: []};
-	const cached = await readCache(cwd, stamp);
+	const cached = await readCache(cwd, stamp, gitDir);
 	if (cached) return cached;
 	const state = await build(cwd, stamp.head);
-	await writeCache(cwd, stamp, state).catch(() => undefined);
+	await writeCache(cwd, stamp, state, gitDir).catch(() => undefined);
 	return state;
 }
 
-/** Read before the content is, so a move in between only costs the next call a rebuild. */
-export async function cardStateStamp(cwd: string): Promise<CardStateStamp> {
+/**
+ * A stamp and the paths read in the same git calls, which the caches it
+ * guards live under. It is read before the content is, so a move in between
+ * only costs the next call a rebuild.
+ */
+export type RepoStamp = {
+	stamp: CardStateStamp;
+	/** The git directory, or undefined when git couldn't name it. */
+	gitDir: string | undefined;
+	/** The top of the work tree, or '' when there is none, as in a bare repo. */
+	topLevel: string;
+};
+
+/** The refs a stamp holds, in its order, each peeled to its commit as `headOf` peels it. */
+const STAMP_REFS = ['HEAD', MEMORY_REF, NOTES_REF];
+
+/**
+ * The card state's stamp in two git calls run side by side, one for the refs
+ * and one for the paths, where reading each part alone took four. Like
+ * `headOf` and `shallowStamp`, a part git can't read is ''.
+ */
+export async function readRepoStamp(cwd: string): Promise<RepoStamp> {
+	const [[head = '', memory = '', notes = ''], paths] = await Promise.all([
+		refCommits(cwd),
+		repoPaths(cwd),
+	]);
+	const shallow =
+		paths.shallow === undefined ? '' : await shallowStampOf(cwd, paths.shallow);
 	return {
-		head: (await headOf(cwd, 'HEAD')) ?? '',
-		memory: (await headOf(cwd, MEMORY_REF)) ?? '',
-		notes: (await headOf(cwd, NOTES_REF)) ?? '',
-		shallow: await shallowStamp(cwd),
+		stamp: {head, memory, notes, shallow},
+		gitDir: paths.gitDir,
+		topLevel: paths.topLevel,
 	};
+}
+
+/** The commit each of `STAMP_REFS` names, or '' for one that names none. */
+async function refCommits(cwd: string): Promise<string[]> {
+	let listed: string;
+	try {
+		listed = await runGitWithInput(
+			['cat-file', '--batch-check'],
+			cwd,
+			STAMP_REFS.map(ref => `${ref}^{commit}\n`).join(''),
+		);
+	} catch {
+		return STAMP_REFS.map(() => '');
+	}
+
+	// `<hash> commit <size>`, or `<name> missing` for a ref that isn't there.
+	const rows = listed.split('\n');
+	return STAMP_REFS.map((_, index) => {
+		const [hash = '', type] = (rows[index] ?? '').split(' ');
+		return type === 'commit' && OBJECT_ID.test(hash) ? hash : '';
+	});
+}
+
+/**
+ * The git directory, the shallow file's path as git names it from `cwd`, and
+ * the top of the work tree, in one call. Outside a work tree, as in a bare
+ * repo, `--show-toplevel` fails the call, so the first two are asked again.
+ */
+async function repoPaths(
+	cwd: string,
+): Promise<{gitDir?: string; shallow?: string; topLevel: string}> {
+	const ask = async (...args: string[]) =>
+		(await runGit(['rev-parse', ...args], cwd))
+			.split('\n')
+			.map(row => row.trim());
+	const paths = ['--absolute-git-dir', '--git-path', 'shallow'];
+	try {
+		const [gitDir, shallow, topLevel] = await ask(...paths, '--show-toplevel');
+		return {
+			...(gitDir ? {gitDir} : {}),
+			...(shallow ? {shallow} : {}),
+			topLevel: topLevel ?? '',
+		};
+	} catch {
+		try {
+			const [gitDir, shallow] = await ask(...paths);
+			return {
+				...(gitDir ? {gitDir} : {}),
+				...(shallow ? {shallow} : {}),
+				topLevel: '',
+			};
+		} catch {
+			return {topLevel: ''};
+		}
+	}
 }
 
 /**
@@ -408,10 +500,11 @@ async function fillReplacedBy(
 async function readCache(
 	cwd: string,
 	stamp: CardStateStamp,
+	gitDir: string | undefined,
 ): Promise<CardState | undefined> {
 	let raw: unknown;
 	try {
-		raw = JSON.parse(await readFile(await cardStatePath(cwd), 'utf8'));
+		raw = JSON.parse(await readFile(await stateFile(cwd, gitDir), 'utf8'));
 	} catch {
 		return undefined;
 	}
@@ -543,8 +636,9 @@ async function writeCache(
 	cwd: string,
 	stamp: CardStateStamp,
 	state: CardState,
+	gitDir: string | undefined,
 ): Promise<void> {
-	const file = await cardStatePath(cwd);
+	const file = await stateFile(cwd, gitDir);
 	const temporary = `${file}.${randomUUID()}.tmp`;
 	await mkdir(path.dirname(file), {recursive: true});
 	try {
