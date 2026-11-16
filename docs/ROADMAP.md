@@ -663,10 +663,10 @@ _Could have, later:_
 
 - **Card state.** Every `Constraint:`, `Gotcha:` and `Follow-up:` line gets an id and a state, worked out from git each time: open, resolved, in doubt, off branch or reverted. A line ends only when a commit says so with `Resolves: <id> <reason>`, or with `chamoji memory resolve <id> --because "<reason>"`.
 - **The brief.** `chamoji memory brief`, the MCP `brief` tool and a Claude Code session hook give a new agent session what stands now, under a token budget.
-- **The resolve nudge.** After an agent commits, a second hook tells it which open lines sit on the files it changed, so it can say whether the commit ended one. The lines are records; the agent decides.
+- **The resolve nudge.** After an agent commits, a second hook tells it which open lines sit on the files it changed, so it can say whether the commit ended one. A line is asked about once per session. The lines are records; the agent decides.
 - **No model, network call or daemon.** Nothing in it needs one.
 
-Built in three pull requests: [#25](https://github.com/HeavenlyEntity/chamoji-ai/pull/25) (card state), [#26](https://github.com/HeavenlyEntity/chamoji-ai/pull/26) (the brief) and the resolve nudge, on `feat/resolve-nudge`. The first two are merged to `main`. None is in a release.
+Built in three pull requests: [#25](https://github.com/HeavenlyEntity/chamoji-ai/pull/25) (card state), [#26](https://github.com/HeavenlyEntity/chamoji-ai/pull/26) (the brief) and a third for the resolve nudge. The first two are merged to `main`. None is in a release.
 
 **Exit criteria:**
 
@@ -692,7 +692,7 @@ The cached run first measured 302 ms and missed. It made nine git calls one afte
 - ✅ **The nudge works in real Claude Code:** in a scratch repo, an agent committed a change to a file under an open constraint. The nudge ran in 460 ms and told it about the constraint; it said the commit hadn't ended it and resolved nothing. A commit with no `Why:` line was denied first, as before.
 - ✅ **A resolved line reads as resolved:** in a scratch clone of chamoji-ai, resolving the milestone 7 line `c-a2d5e3ba` made it read as resolved in the brief, in `search_memory` and in `chamoji why` on a line from d066fad.
 - ✅ **Branches and reverts:** covered by tests. A line resolved on an unmerged branch reads as open on `main`; `git revert` of the resolving commit, or of the merge that brought it in, reopens it; a line written again after its resolve reads as open; a line whose only source is a deleted branch reads as off branch.
-- ✅ **Fail open:** with the cache unwritable or git missing, the hooks print nothing and the session starts. Each hook gives itself 5 seconds and its settings entry 15.
+- ✅ **Fail open:** with the cache folder unwritable, the session hook still prints the brief and only the nudge is silent; with git missing, both print nothing. Either way the session starts. Each hook gives itself 5 seconds and its settings entry 15.
 - ⬜ **Dogfood:** chamoji-ai has 57 card lines (24 constraints, 23 gotchas, 10 follow-ups) and all read as open. Four look ended (f-43f8f810, f-972374b0, g-192c3fab, f-0c7f1d33) and four are partly ended (c-a2d5e3ba, f-daac95ba, g-f52fa39b, f-e1d98957). None is resolved yet: each resolve waits for a yes from the maintainer.
 - ⬜ **Not verified:** `/clear` and compaction in a live session (tests cover the hook's input); Cursor and Codex calling the `brief` tool; repos larger than Vite.
 
@@ -702,7 +702,7 @@ The cached run first measured 302 ms and missed. It made nine git calls one afte
 - Stored checkpoints.
 - Cards by file.
 
-**Known and left:** a `memory resolve` commit can't be undone with `git revert`, since it is empty, and a `chamoji memory reopen <id>` command is undecided. The nudge runs only after a command that succeeded, reads the repo the session is in, and says nothing about a commit older than 10 minutes.
+**Known and left:** a `memory resolve` commit can't be undone with `git revert`, since it is empty, and a `chamoji memory reopen <id>` command is undecided. The nudge runs only after a command that succeeded, reads the repo the session is in, and says nothing about a commit older than 10 minutes. It matches on files, not on code, so on a repo with many lines it can ask about lines the commit didn't really touch; whether to match on code is undecided.
 
 **Dependencies:** milestone 7.
 
