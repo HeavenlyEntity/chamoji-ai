@@ -327,6 +327,24 @@ test('bad JSON on stdin prints nothing and exits 0', async () => {
 	}
 });
 
+test('only a PreToolUse input, or one that names no event, is denied', async () => {
+	const input = (event: unknown) =>
+		JSON.stringify({
+			...(event === undefined ? {} : {hook_event_name: event}),
+			tool_name: 'Bash',
+			tool_input: {command: 'git commit -m "x\n\nWhy: fix"'},
+		});
+	for (const event of ['PreToolUse', undefined]) {
+		expect(JSON.parse((await hook(input(event))).stdout)).toMatchObject({
+			hookSpecificOutput: {permissionDecision: 'deny'},
+		});
+	}
+
+	for (const event of ['PostToolUseFailure', 'Stop', 'pretooluse', 42, null]) {
+		expect(await hook(input(event))).toEqual(SILENT);
+	}
+});
+
 test('a tool other than Bash prints nothing', async () => {
 	for (const input of [
 		JSON.stringify({
@@ -865,6 +883,10 @@ const NOT_COMMITS: string[] = [
 	'git commit --dry-run',
 	'git commit --help',
 	'git commit -h',
+	// Each of these implies --dry-run.
+	'git commit --short',
+	'git commit -a --porcelain',
+	'git commit --long -m x',
 	'ls',
 	'',
 ];

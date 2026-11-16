@@ -552,6 +552,9 @@ const COMMIT_TAKES_VALUE = new Set([
 	'--squash',
 ]);
 
+/** Flags of `git commit` that only check: `--dry-run`, and the formats that imply it. */
+const ONLY_CHECKS = new Set(['--dry-run', '--short', '--porcelain', '--long']);
+
 /** Whether these `git commit` arguments commit, rather than only show help or check (`--dry-run`). */
 function commitsSomething(args: string[]): boolean {
 	for (let i = 0; i < args.length; i++) {
@@ -560,7 +563,7 @@ function commitsSomething(args: string[]): boolean {
 		if (word.startsWith('--')) {
 			const equals = word.indexOf('=');
 			const name = equals === -1 ? word : word.slice(0, equals);
-			if (name === '--dry-run' || name === '--help') return false;
+			if (ONLY_CHECKS.has(name) || name === '--help') return false;
 			if (equals === -1 && COMMIT_TAKES_VALUE.has(name)) i++;
 		} else if (word.startsWith('-') && word.length > 1) {
 			// A cluster such as -am: the first flag that takes a value ends it.
@@ -583,7 +586,8 @@ function commitsSomething(args: string[]): boolean {
 /**
  * Whether the shell text runs a `git commit` that commits: every one
  * `judgeCommit` reads, opted out or not, whatever its message, except
- * `--dry-run` and `--help`.
+ * `--help`, `--dry-run`, and `--short`, `--porcelain` and `--long`, which
+ * imply it.
  */
 export function isGitCommit(command: string): boolean {
 	for (const {args} of gitCommits(command)) {
@@ -656,6 +660,8 @@ export async function runAgentHook(
 			return 0;
 		}
 
+		// An event this hook isn't wired for, such as PostToolUseFailure, gets nothing.
+		if (event !== undefined && event !== 'PreToolUse') return 0;
 		if (command === undefined) return 0;
 		const verdict = judgeCommit(command);
 		if (verdict === 'allow') return 0;

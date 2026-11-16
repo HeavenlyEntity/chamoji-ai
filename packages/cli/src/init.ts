@@ -337,18 +337,43 @@ function agentHookList(
 		throw new Refusal(`a "hooks.${event}" that is not a list`);
 	}
 
-	const present = list.some(
-		entry =>
-			isRecord(entry) &&
-			Array.isArray(own(entry, 'hooks')) &&
-			(own(entry, 'hooks') as unknown[]).some(
-				hook =>
-					isRecord(hook) &&
-					typeof own(hook, 'command') === 'string' &&
-					RUNS_AGENT_HOOK.test(own(hook, 'command') as string),
-			),
-	);
+	const present = list.some(entry => agentHookIn(entry) !== undefined);
 	return {list, present};
+}
+
+/** The command of a hook in this entry that runs `chamoji agent-hook`, if one does. */
+function agentHookIn(entry: unknown): string | undefined {
+	const hooks = isRecord(entry) ? own(entry, 'hooks') : undefined;
+	if (!Array.isArray(hooks)) return undefined;
+	for (const hook of hooks) {
+		const command = isRecord(hook) ? own(hook, 'command') : undefined;
+		if (typeof command === 'string' && RUNS_AGENT_HOOK.test(command)) {
+			return command;
+		}
+	}
+
+	return undefined;
+}
+
+/**
+ * The command a new entry runs: the one an entry already in the file runs,
+ * under any event, so one file never holds both `chamoji` and `npx`, or else
+ * the one `viaNpx` picks.
+ */
+function agentHookCommand(
+	data: Record<string, unknown>,
+	viaNpx: boolean,
+): string {
+	const hooks = own(data, 'hooks');
+	for (const list of isRecord(hooks) ? Object.values(hooks) : []) {
+		if (!Array.isArray(list)) continue;
+		for (const entry of list) {
+			const command = agentHookIn(entry);
+			if (command !== undefined) return command;
+		}
+	}
+
+	return runChamoji(viaNpx, 'agent-hook');
 }
 
 /** The PreToolUse entry that sends a `git commit` without a card back to the agent. */
@@ -360,13 +385,14 @@ function commitHook(viaNpx: boolean): Merge {
 		apply(data) {
 			const {list, present} = agentHookList(data, 'PreToolUse');
 			if (present) return false;
+			const command = agentHookCommand(data, viaNpx);
 			list.push({
 				matcher: 'Bash',
 				hooks: [
 					{
 						type: 'command',
 						if: 'Bash(git commit *)',
-						command: runChamoji(viaNpx, 'agent-hook'),
+						command,
 					},
 				],
 			});
@@ -391,12 +417,13 @@ function sessionHook(viaNpx: boolean): Merge {
 		apply(data) {
 			const {list, present} = agentHookList(data, 'SessionStart');
 			if (present) return false;
+			const command = agentHookCommand(data, viaNpx);
 			list.push({
 				matcher: 'startup|clear|compact',
 				hooks: [
 					{
 						type: 'command',
-						command: runChamoji(viaNpx, 'agent-hook'),
+						command,
 						timeout: 15,
 					},
 				],
@@ -420,13 +447,14 @@ function nudgeHook(viaNpx: boolean): Merge {
 		apply(data) {
 			const {list, present} = agentHookList(data, 'PostToolUse');
 			if (present) return false;
+			const command = agentHookCommand(data, viaNpx);
 			list.push({
 				matcher: 'Bash',
 				hooks: [
 					{
 						type: 'command',
 						if: 'Bash(git commit *)',
-						command: runChamoji(viaNpx, 'agent-hook'),
+						command,
 						timeout: 15,
 					},
 				],
