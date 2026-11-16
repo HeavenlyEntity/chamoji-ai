@@ -297,29 +297,66 @@ async function readParents(
 /**
  * Whether one commit is reachable from another through the parent map, so
  * a resolve that came in through a merge covers what its side branch saw.
- * The fold asks about few descendants, so each one's ancestors are walked
- * once and kept.
+ * Both the fold and `fillReplacedBy` ask about the sources of a few lines
+ * against many commits, so each commit gets a number and each ancestor asked
+ * about is walked once, through its children, into a bit set of everything
+ * that descends from it: a bit per commit rather than a full hash. A walk
+ * that meets a commit already walked takes that commit's bits whole.
  */
-function ancestry(parents: Map<string, string[]>): FoldInput['isAncestor'] {
-	const reachable = new Map<string, Set<string>>();
-	return (ancestor, descendant) => {
-		let seen = reachable.get(descendant);
-		if (!seen) {
-			seen = new Set([descendant]);
-			const queue = [descendant];
-			while (queue.length > 0) {
-				for (const parent of parents.get(queue.pop()!) ?? []) {
-					if (!seen.has(parent)) {
-						seen.add(parent);
-						queue.push(parent);
-					}
+export function ancestry(
+	parents: Map<string, string[]>,
+): FoldInput['isAncestor'] {
+	// A parent not listed itself, as past a shallow boundary, is still reached.
+	const index = new Map<string, number>();
+	for (const [hash, list] of parents) {
+		for (const name of [hash, ...list]) {
+			if (!index.has(name)) index.set(name, index.size);
+		}
+	}
+
+	const children: number[][] = Array.from({length: index.size}, () => []);
+	for (const [hash, list] of parents) {
+		const child = index.get(hash)!;
+		for (const parent of new Set(list))
+			children[index.get(parent)!]!.push(child);
+	}
+
+	const words = Math.ceil(index.size / 32);
+	const descendants = new Map<number, Uint32Array>();
+	const walk = (from: number): Uint32Array => {
+		const bits = new Uint32Array(words);
+		bits[from >>> 5]! |= 1 << (from & 31);
+		const stack = [from];
+		while (stack.length > 0) {
+			for (const child of children[stack.pop()!]!) {
+				const word = child >>> 5;
+				const bit = 1 << (child & 31);
+				if ((bits[word]! & bit) !== 0) continue;
+				const known = descendants.get(child);
+				if (known) {
+					for (let i = 0; i < words; i++) bits[i]! |= known[i]!;
+				} else {
+					bits[word]! |= bit;
+					stack.push(child);
 				}
 			}
-
-			reachable.set(descendant, seen);
 		}
 
-		return seen.has(ancestor);
+		return bits;
+	};
+
+	return (ancestor, descendant) => {
+		if (ancestor === descendant) return true;
+		const from = index.get(ancestor);
+		const to = index.get(descendant);
+		if (from === undefined || to === undefined) return false;
+		let bits = descendants.get(from);
+		if (!bits) {
+			bits = walk(from);
+			descendants.set(from, bits);
+		}
+
+		return (bits[to >>> 5]! & (1 << (to & 31))) !== 0;
 	};
 }
 
