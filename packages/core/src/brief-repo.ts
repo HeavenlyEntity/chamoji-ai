@@ -14,7 +14,12 @@ import {parseCommit} from './parse.js';
 import {stripControlLines} from './text.js';
 import {WORKSTREAMS_FILE, readWorkstreams} from './workstreams.js';
 
-/** Bump it when the file's layout or what goes into it changes. */
+/**
+ * Bump it when the file's layout or what goes into it changes, and whenever
+ * the card state's version in `card-state-repo.ts` is bumped: a stored brief
+ * is served without reading the card state, so a brief from the old state
+ * would be served until HEAD moves.
+ */
 const CACHE_VERSION = 2;
 
 const DAY = 24 * 60 * 60 * 1000;
