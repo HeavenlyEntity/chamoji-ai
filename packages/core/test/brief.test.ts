@@ -571,6 +571,72 @@ test('at most 5 unmatched lines print, then a count of the rest', () => {
 	]);
 });
 
+/** The Unmatched lines that name a resolve, and the count the "more" line gives. */
+function unmatchedOf(brief: string): {shown: number; more: number} {
+	const rows = brief.split('\n').filter(l => l.startsWith('Unmatched:'));
+	const more = /^Unmatched: (\d+) more /.exec(rows.at(-1) ?? '');
+	return {
+		shown: rows.length - (more ? 1 : 0),
+		more: more ? Number(more[1]) : 0,
+	};
+}
+
+const sixDangling = () =>
+	Array.from({length: 6}, (_, i) => ({id: `c-0000000${i}`, hash: H2}));
+
+test('room the sections leave goes to more unmatched lines, up to 5', () => {
+	const probe = input([line('c-00000001')]);
+	probe.state.dangling = sixDangling();
+	const brief = renderBrief(probe, {budget: MIN_BRIEF_BUDGET});
+	expect(brief.length).toBeLessThanOrEqual(MIN_BRIEF_BUDGET * 4);
+	expect(brief.split('\n').filter(l => l.startsWith('Unmatched:'))).toEqual([
+		...Array.from(
+			{length: 5},
+			(_, i) =>
+				`Unmatched: Resolves: c-0000000${i} in 7654321 matches no card line.`,
+		),
+		'Unmatched: 1 more Resolves: lines match no card line.',
+	]);
+});
+
+test('a crowded brief prints fewer than 5 unmatched lines and counts the rest', () => {
+	for (const budget of [MIN_BRIEF_BUDGET, 201]) {
+		const crowd = crowded();
+		crowd.state.dangling = sixDangling();
+		const brief = renderBrief(crowd, {budget});
+		const {shown, more} = unmatchedOf(brief);
+		expect(shown, `${budget}`).toBeLessThan(5);
+		expect(shown + more, `${budget}`).toBe(6);
+		expect(brief.length).toBeLessThanOrEqual(budget * 4);
+	}
+});
+
+test('the unmatched lines shown and the count of the rest always add up to every dangling resolve', () => {
+	for (const budget of [
+		MIN_BRIEF_BUDGET,
+		201,
+		300,
+		500,
+		DEFAULT_BRIEF_BUDGET,
+	]) {
+		for (const count of [1, 2, 5, 6, 9, 50]) {
+			for (const lines of [[], [line('c-00000001')], many('constraint', 3)]) {
+				const probe = input(lines);
+				probe.state.dangling = Array.from({length: count}, (_, i) => ({
+					id: `c-${String(i).padStart(8, '0')}`,
+					hash: H2,
+				}));
+				const brief = renderBrief(probe, {budget});
+				const {shown, more} = unmatchedOf(brief);
+				const label = `${budget} ${count} ${lines.length}`;
+				expect(brief.length, label).toBeLessThanOrEqual(budget * 4);
+				expect(shown, label).toBeLessThanOrEqual(5);
+				if (shown + more > 0) expect(shown + more, label).toBe(count);
+			}
+		}
+	}
+});
+
 test('a dangling resolve is not reported with a section', () => {
 	const state = input([line('c-00000001')]);
 	state.state.dangling = [{id: 'c-deadbeef', hash: H2}];
