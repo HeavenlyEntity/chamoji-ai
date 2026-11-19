@@ -1,0 +1,122 @@
+[
+	{
+		"commit": "00efe43b3e72c520d6bf213e158b7aa78fbfd386",
+		"file": "docs/ROADMAP.md",
+		"line": 494,
+		"text": "- ⬜ **Real terminals:** checked in the Claude desktop app's Terminal panel on a dark background only. Terminal.app, iTerm2, Ghostty, the VS Code terminal, the light profiles, which terminals answer OSC 11 and Ctrl-C mid-sync are still to check before release."
+	},
+	{
+		"commit": "00f29ca6ff441e99fb515e723056e5fe8023d345",
+		"file": "packages/core/src/setup/questions.ts",
+		"line": 724,
+		"text": "\t\t// A repo that is one SDF project shows as that, not as a bare package."
+	},
+	{
+		"commit": "0226b5dc1baf55bda029b182e827b1c284c309c8",
+		"file": "packages/cli/test/run.test.ts",
+		"line": 525,
+		"text": "\t'%s refuses a config with a newer release schema',"
+	},
+	{
+		"commit": "02e9c94d9abe438aef2470d7acdc3f91fb033527",
+		"file": "packages/core/src/publish/frameworks.ts",
+		"line": 18,
+		"text": "\t/** Config file (relative to the package) -> regex source its text must match to count. */"
+	},
+	{
+		"commit": "032f1c195dcf0486b7826e0178f9fc651c55619b",
+		"file": "docs/site/commands/mcp.mdx",
+		"line": 72,
+		"text": "\t\tto the file whose cards do say why, each with its card and `lines`. Treat a"
+	},
+	{
+		"commit": "0353ac0438de363fc779d84476a734a9a7c2ee52",
+		"file": "packages/cli/test/helpers/compat-0.12.ts",
+		"line": 84,
+		"text": "\tconst today = new Date().toISOString().slice(0, 10);"
+	},
+	{
+		"commit": "03dfd8e18e7ffdd4ba13e848b854cc230985e078",
+		"file": "packages/core/src/group.ts",
+		"line": 28,
+		"text": "\t// Where a sync goes: Changed, else the first group that is shown and not collapsed."
+	},
+	{
+		"commit": "041af3d2795effa6a324b7100d3f733171ea1273",
+		"file": "packages/core/src/brief.ts",
+		"line": 134,
+		"text": "\tlet unmatched = withUnmatched"
+	},
+	{
+		"commit": "0454c45145cfe9b7e81aa4cb7edb8aaa4a86b507",
+		"file": "packages/core/src/publish/dist-tags.ts",
+		"line": 1,
+		"text": "import semver from 'semver';"
+	},
+	{
+		"commit": "0501fa468ef0401114124ef3c915374c54edde23",
+		"file": "docs/site/commands/setup.mdx",
+		"line": 90,
+		"text": "\t\teven when the section exists. A single package with no section is asked too,"
+	},
+	{
+		"commit": "052fddef6e798a642f94eb78e28157ab9de92373",
+		"file": "packages/cli/src/agent-hook.ts",
+		"line": 555,
+		"text": "/** Flags of `git commit` that only check: `--dry-run`, and the formats that imply it. */"
+	},
+	{
+		"commit": "070fe5715315c947ffd805b38e914d0054b54e57",
+		"file": ".github/ISSUE_TEMPLATE/config.yml",
+		"line": 4,
+		"text": "    url: https://github.com/HeavenlyEntity/chamoji-ai/security/advisories/new"
+	},
+	{
+		"commit": "07cdf941c2c8845e330b488ad726f6fc8f0769f0",
+		"file": "docs/site/reference/config.mdx",
+		"line": 179,
+		"text": "\t\tnothing, and an object sets any of `check`, `prereleaseTag`, `packages` and"
+	},
+	{
+		"commit": "07e5fd8289d239d4226da3b4fc5d8da880955a89",
+		"file": "packages/core/src/brief-repo.ts",
+		"line": 17,
+		"text": "/**"
+	},
+	{
+		"commit": "07e6ec92c2f467e960bad8cbeffc8e044c60add0",
+		"file": "packages/cli/src/face-settings.ts",
+		"line": 7,
+		"text": "export function shouldAnimate(options: Parameters<typeof shouldDrawIcons>[0]) {"
+	},
+	{
+		"commit": "08286d03f8cb8327f9bdc93f4631b8aa2f24022f",
+		"file": "docs/ROADMAP.md",
+		"line": 31,
+		"text": "| --- | ----------------------------------- | -------------------------- | ----------- | ---- | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |"
+	},
+	{
+		"commit": "08e13d2f2b8649a10cf4ae99d5b3116fd6c581cd",
+		"file": "packages/core/src/git.ts",
+		"line": 324,
+		"text": "/** `origin`'s HEAD as `git symbolic-ref --short` names it, or null when there is none. */"
+	},
+	{
+		"commit": "090e49c58ba2c11794826218bd360256ac230533",
+		"file": "docs/ROADMAP.md",
+		"line": 589,
+		"text": ""
+	},
+	{
+		"commit": "09eb3eec12a71fedd1a2e12c7038d4fcc7d8815f",
+		"file": "packages/core/src/units/settings.ts",
+		"line": 79,
+		"text": "/** Settings that only mean something with units. */"
+	},
+	{
+		"commit": "0acc5b077d841035497289026cc1ae4ee3905a8c",
+		"file": "docs/superpowers/specs/2026-11-03-terminal-face-design.md",
+		"line": 1,
+		"text": "# Terminal face: the animated logo, help screen and loading faces"
+	}
+]
