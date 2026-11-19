@@ -2,11 +2,14 @@
 // How many tokens an agent spends recovering this project's context, with
 // chamoji and with git alone: what stands (the brief against the log) and why
 // a line is the way it is (the card against blame-then-show and the file's
-// history), on a fixed sample of lines. It measures in a throwaway clone of
-// the checkout, so the checkout is never written to. Token figures are
-// estimates at 4 characters a token.
+// history), on a fixed sample of lines, and what stands at each release tag
+// from v0.11.0. It measures in a throwaway clone of the checkout, so the
+// checkout is never written to except by --write. Token figures are
+// estimates at 4 characters a token, except the exact column.
 //
 //   pnpm benchmark:memory                 print the figures
+//   pnpm benchmark:memory --write         also write docs/benchmarks/memory-tokens.json
+//   pnpm benchmark:memory --exact         add exact counts (needs ANTHROPIC_API_KEY)
 //   pnpm benchmark:memory --pick-sample   write scripts/memory-benchmark/sample.json
 //   pnpm benchmark:memory --sample <file> read the sample from another file
 import {execFileSync} from 'node:child_process';
@@ -25,11 +28,15 @@ import process from 'node:process';
 import {fileURLToPath} from 'node:url';
 import {
 	assertFullHistory,
+	exactCounts,
 	locateSample,
 	measureFileHistory,
+	measureGrowth,
 	measureWhatStands,
 	measureWhy,
+	releaseTags,
 	sampleCandidates,
+	textsForExact,
 } from './lib/memory-measure.mjs';
 import {
 	CHARS_PER_TOKEN,
@@ -49,6 +56,8 @@ const defaultSampleFile = path.join(
 const SAMPLE_SIZE = 20;
 const LOOKUPS = 5;
 const CHAT_EXAMPLE = 'packages/core/src/release.ts';
+const EXACT_MODEL = 'claude-sonnet-5-5';
+const RESULTS_FILE = 'docs/benchmarks/memory-tokens.json';
 
 /** @param {string[]} args @param {string} cwd */
 const git = (args, cwd) =>
@@ -59,17 +68,36 @@ const git = (args, cwd) =>
 		stdio: ['ignore', 'pipe', 'pipe'],
 	});
 
+/** @param {number} n */
+const oneDecimal = n => Math.round(n * 10) / 10;
+
 /**
- * Every figure the benchmark reports, measured in `repo` at its HEAD.
- * @param {{repo: string, sample: import('./lib/memory-measure.mjs').SampleLine[], ranAt: {tag: string | null, commit: string, date: string}}} input
+ * `summarize` with each figure to 1 decimal, as the results file keeps it.
+ * @param {number[]} numbers
  */
-function buildResults({repo, sample, ranAt}) {
+function summary(numbers) {
+	const {mean, median, min, max} = summarize(numbers);
+	return {
+		mean: oneDecimal(mean),
+		median: oneDecimal(median),
+		min: oneDecimal(min),
+		max: oneDecimal(max),
+	};
+}
+
+/**
+ * Every figure the benchmark reports, measured in `repo` at its HEAD, and what
+ * stands at each of `tags`. The typical switch is worked out from the rounded
+ * means, so the file agrees with itself.
+ * @param {{repo: string, sample: import('./lib/memory-measure.mjs').SampleLine[], tags: string[], ranAt: {tag: string | null, commit: string, date: string}}} input
+ */
+function buildResults({repo, sample, tags, ranAt}) {
 	const whatStands = measureWhatStands(repo, cli);
 	const {found, dropped} = locateSample(repo, sample);
 	const perLine = found.map(line => measureWhy(repo, cli, line));
-	const card = summarize(perLine.map(line => line.card));
-	const blameShow = summarize(perLine.map(line => line.blameShow));
-	const fileHistory = summarize(perLine.map(line => line.fileHistory));
+	const card = summary(perLine.map(line => line.card));
+	const blameShow = summary(perLine.map(line => line.blameShow));
+	const fileHistory = summary(perLine.map(line => line.fileHistory));
 	const withTokens = typicalSwitch({
 		whatStands: whatStands.brief.tokens,
 		whyMean: card.mean,
@@ -83,7 +111,11 @@ function buildResults({repo, sample, ranAt}) {
 	return {
 		version: 1,
 		ranAt,
-		method: {charsPerToken: CHARS_PER_TOKEN, lookups: LOOKUPS},
+		method: {
+			charsPerToken: CHARS_PER_TOKEN,
+			lookups: LOOKUPS,
+			refsAsOf: 'HEAD',
+		},
 		whatStands,
 		why: {
 			sampleSize: found.length,
@@ -104,7 +136,60 @@ function buildResults({repo, sample, ranAt}) {
 			file: CHAT_EXAMPLE,
 			fileHistory: measureFileHistory(repo, CHAT_EXAMPLE),
 		},
+		growth: measureGrowth(repo, cli, tags, {
+			onTag: (tag, index) =>
+				console.error(`Reading ${tag} (${index + 1} of ${tags.length})`),
+		}),
+		/** @type {{model: string, typicalSwitch: {with: number, without: number}} | null} */
+		exact: null,
 	};
+}
+
+/**
+ * The typical switch in exact tokens: the brief plus five times the mean exact
+ * why, against the log plus five times the mean exact blame-then-show. Null,
+ * with one line saying why, when there is no key or a request fails.
+ * @param {string} repo
+ * @param {Array<{location: string, commit: string}>} perLine
+ */
+async function exactColumn(repo, perLine) {
+	try {
+		const texts = textsForExact(repo, cli, perLine);
+		const counts = await exactCounts(
+			[texts.brief, texts.log, ...texts.why, ...texts.blameShow],
+			EXACT_MODEL,
+		);
+		if (!counts) {
+			console.error(
+				'No API key in the environment, so the exact column was skipped.',
+			);
+			return null;
+		}
+
+		const [brief, log, ...lines] = counts;
+		const why = lines.slice(0, perLine.length);
+		const blameShow = lines.slice(perLine.length);
+		return {
+			model: EXACT_MODEL,
+			typicalSwitch: {
+				with: typicalSwitch({
+					whatStands: brief,
+					whyMean: summarize(why).mean,
+					lookups: LOOKUPS,
+				}),
+				without: typicalSwitch({
+					whatStands: log,
+					whyMean: summarize(blameShow).mean,
+					lookups: LOOKUPS,
+				}),
+			},
+		};
+	} catch (error) {
+		console.error(
+			`The exact column was skipped: ${/** @type {Error} */ (error).message}.`,
+		);
+		return null;
+	}
 }
 
 /** @param {number} n */
@@ -160,17 +245,41 @@ function printSummary(results) {
 			percent(window.withoutShare),
 		);
 	}
+
+	if (results.growth.length > 0) {
+		console.log('\nWhat stands at each release');
+		row('', 'commits', 'brief', 'git log', 'notes');
+		for (const tag of results.growth) {
+			row(
+				tag.tag,
+				count(tag.commits),
+				count(tag.brief),
+				count(tag.log),
+				count(tag.notesFile),
+			);
+		}
+	}
+
+	if (results.exact) {
+		console.log(`\nTypical switch in exact tokens (${results.exact.model})`);
+		row('with chamoji', count(results.exact.typicalSwitch.with));
+		row('git alone', count(results.exact.typicalSwitch.without));
+	}
 }
 
 /**
  * @param {string[]} args
- * @returns {{picking: boolean, sampleFile: string} | {error: string}}
+ * @returns {{picking: boolean, writing: boolean, exact: boolean, sampleFile: string} | {error: string}}
  */
 function parseArgs(args) {
 	let picking = false;
+	let writing = false;
+	let exact = false;
 	let sampleFile = defaultSampleFile;
 	for (let i = 0; i < args.length; i++) {
 		if (args[i] === '--pick-sample') picking = true;
+		else if (args[i] === '--write') writing = true;
+		else if (args[i] === '--exact') exact = true;
 		else if (args[i] === '--sample') {
 			const file = args[++i];
 			if (!file) return {error: '--sample needs a file.'};
@@ -178,11 +287,11 @@ function parseArgs(args) {
 		} else return {error: `Unknown option ${args[i]}.`};
 	}
 
-	if (picking && sampleFile !== defaultSampleFile) {
-		return {error: '--pick-sample and --sample go separately.'};
+	if (picking && (sampleFile !== defaultSampleFile || writing || exact)) {
+		return {error: '--pick-sample goes on its own.'};
 	}
 
-	return {picking, sampleFile};
+	return {picking, writing, exact, sampleFile};
 }
 
 /** The tag at HEAD, or null. @param {string} checkout */
@@ -197,7 +306,7 @@ function tagAtHead(checkout) {
 	}
 }
 
-function main() {
+async function main() {
 	if (!existsSync(cli)) {
 		console.error('Run pnpm build first.');
 		return 2;
@@ -206,12 +315,12 @@ function main() {
 	const options = parseArgs(process.argv.slice(2));
 	if ('error' in options) {
 		console.error(
-			`${options.error} Usage: pnpm benchmark:memory [--pick-sample | --sample <file>]`,
+			`${options.error} Usage: pnpm benchmark:memory [--write] [--exact] [--sample <file>] | --pick-sample`,
 		);
 		return 2;
 	}
 
-	const {picking, sampleFile} = options;
+	const {picking, writing, exact, sampleFile} = options;
 	const checkout = git(['rev-parse', '--show-toplevel'], process.cwd()).trim();
 	if (picking && realpathSync(checkout) !== realpathSync(root)) {
 		console.error(
@@ -272,21 +381,29 @@ function main() {
 		}
 
 		const sample = JSON.parse(readFileSync(sampleFile, 'utf8'));
-		printSummary(
-			buildResults({
-				repo,
-				sample,
-				ranAt: {
-					tag: tagAtHead(checkout),
-					commit,
-					date: new Date().toISOString().slice(0, 10),
-				},
-			}),
-		);
+		const results = buildResults({
+			repo,
+			sample,
+			tags: releaseTags(repo),
+			ranAt: {
+				tag: tagAtHead(checkout),
+				commit,
+				date: new Date().toISOString().slice(0, 10),
+			},
+		});
+		if (exact) results.exact = await exactColumn(repo, results.why.perLine);
+		printSummary(results);
+		if (writing) {
+			const file = path.join(checkout, ...RESULTS_FILE.split('/'));
+			mkdirSync(path.dirname(file), {recursive: true});
+			writeFileSync(file, `${JSON.stringify(results, null, '\t')}\n`);
+			console.log(`\nWrote ${RESULTS_FILE}.`);
+		}
+
 		return 0;
 	} finally {
 		rmSync(scratch, {recursive: true, force: true});
 	}
 }
 
-process.exitCode = main();
+process.exitCode = await main();

@@ -4,6 +4,7 @@ import {
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
+	readdirSync,
 	readFileSync,
 	rmSync,
 	writeFileSync,
@@ -23,11 +24,13 @@ import {
 	assertFullHistory,
 	locateSample,
 	measureFileHistory,
+	measureGrowth,
 	measureWhatStands,
 	measureWhy,
+	releaseTags,
 	sampleCandidates,
 } from './lib/memory-measure.mjs';
-import {estimateTokens} from './lib/memory-tokens.mjs';
+import {estimateTokens, typicalSwitch} from './lib/memory-tokens.mjs';
 
 const execFileAsync = promisify(execFile);
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -455,3 +458,142 @@ async function repoStep(dir: string, files: Record<string, string>) {
 
 	await gitOutput(dir, ['commit', '-q', '-m', '♻️ Move things']);
 }
+
+const tag = (dir: string, name: string) => gitOutput(dir, ['tag', name]);
+
+test('growth has one row per tag from v0.11.0 that is an ancestor of HEAD, oldest first', async () => {
+	const dir = await repo([{commit: '🎉 Start', files: {'a.txt': 'a\n'}}]);
+	await tag(dir, 'v0.9.0');
+	await repoStep(dir, {'a.txt': 'b\n'});
+	await tag(dir, 'v0.11.0');
+	await repoStep(dir, {'a.txt': 'c\n'});
+	await tag(dir, 'v0.12.0');
+	await tag(dir, 'nightly');
+	await repoStep(dir, {'a.txt': 'd\n'});
+	await tag(dir, 'v0.100.0');
+	await tag(dir, 'v1.0.0-rc.1');
+	await gitOutput(dir, ['switch', '-q', '-c', 'side']);
+	await repoStep(dir, {'b.txt': 'side\n'});
+	await tag(dir, 'v0.13.0');
+	await gitOutput(dir, ['switch', '-q', 'main']);
+
+	const tags = releaseTags(dir);
+	const growth = measureGrowth(dir, cli, tags);
+
+	expect(tags).toEqual(['v0.11.0', 'v0.12.0', 'v0.100.0']);
+	expect(growth.map(row => row.tag)).toEqual(tags);
+	expect(growth.map(row => row.commits)).toEqual([2, 3, 4]);
+});
+
+test('a tag with no card lines gives brief 0 and cardLines 0, and the row has no NaN or Infinity', async () => {
+	const dir = await repo([{commit: '🎉 Start', files: {'a.txt': 'a\n'}}]);
+	await tag(dir, 'v0.11.0');
+	await repoStep(dir, {'a.txt': 'b\n'});
+	await gitOutput(dir, [
+		'commit',
+		'-q',
+		'--allow-empty',
+		'-m',
+		'✨ Add b',
+		'-m',
+		'Why: b is needed\nGotcha: b is slow',
+	]);
+	await tag(dir, 'v0.12.0');
+
+	const [bare, carded] = measureGrowth(dir, cli, ['v0.11.0', 'v0.12.0']);
+
+	expect(bare).toMatchObject({tag: 'v0.11.0', brief: 0, cardLines: 0});
+	expect(carded.cardLines).toBe(1);
+	expect(carded.brief).toBeGreaterThan(0);
+	for (const row of [bare, carded]) {
+		for (const value of Object.values(row)) {
+			if (typeof value === 'number') expect(Number.isFinite(value)).toBe(true);
+		}
+	}
+});
+
+test('the worktrees made for the tags are gone afterwards, and the checkout is untouched', async () => {
+	const dir = await repo([
+		{
+			commit: '✨ Add a',
+			body: 'Why: a is needed',
+			files: {'a.txt': 'a\n'},
+		},
+	]);
+	await tag(dir, 'v0.11.0');
+	await repoStep(dir, {'a.txt': 'b\n'});
+	await tag(dir, 'v0.12.0');
+	const before = await head(dir);
+	const growthFolders = () =>
+		readdirSync(tmpdir()).filter(name =>
+			name.startsWith('chamoji-memory-growth-'),
+		);
+	const foldersBefore = growthFolders();
+
+	measureGrowth(dir, cli, ['v0.11.0', 'v0.12.0']);
+
+	expect(
+		(await gitOutput(dir, ['worktree', 'list', '--porcelain']))
+			.split('\n')
+			.filter(line => line.startsWith('worktree ')),
+	).toHaveLength(1);
+	expect(growthFolders()).toEqual(foldersBefore);
+	expect(await head(dir)).toBe(before);
+	expect(await gitOutput(dir, ['status', '--porcelain'])).toBe('');
+});
+
+/** The runner with --write in a fixture repo; the results file it wrote. */
+async function runWrite(extra: string[], env: NodeJS.ProcessEnv = process.env) {
+	const {dir, sampleFile} = await runnerFixture();
+	const output = await execFileAsync(
+		process.execPath,
+		[runner, '--sample', sampleFile, '--write', ...extra],
+		{cwd: dir, env},
+	);
+	const text = readFileSync(
+		path.join(dir, 'docs', 'benchmarks', 'memory-tokens.json'),
+		'utf8',
+	);
+	return {...output, text};
+}
+
+test('--write produces a file that parses, has version 1, and whose typicalSwitch equals typicalSwitch() of its own parts', async () => {
+	const {text} = await runWrite([]);
+	const results = JSON.parse(text);
+
+	expect(text.endsWith('}\n')).toBe(true);
+	expect(text).toContain('\n\t"version": 1,');
+	expect(results.version).toBe(1);
+	expect(results.why.sampleSize).toBe(1);
+	expect(results.method.refsAsOf).toBe('HEAD');
+	expect(results.growth).toEqual([]);
+	expect(results.typicalSwitch.with).toBe(
+		typicalSwitch({
+			whatStands: results.whatStands.brief.tokens,
+			whyMean: results.why.card.mean,
+			lookups: results.method.lookups,
+		}),
+	);
+	expect(results.typicalSwitch.without).toBe(
+		typicalSwitch({
+			whatStands: results.whatStands.log.tokens,
+			whyMean: results.why.blameShow.mean,
+			lookups: results.method.lookups,
+		}),
+	);
+	expect(results.typicalSwitch.saved).toBe(
+		results.typicalSwitch.without - results.typicalSwitch.with,
+	);
+});
+
+test('--exact with no API key prints the skip line and still writes the file with exact: null', async () => {
+	const env = {...process.env};
+	delete env.ANTHROPIC_API_KEY;
+
+	const {stderr, text} = await runWrite(['--exact'], env);
+
+	expect(stderr).toContain(
+		'No API key in the environment, so the exact column was skipped.',
+	);
+	expect(JSON.parse(text).exact).toBeNull();
+});
