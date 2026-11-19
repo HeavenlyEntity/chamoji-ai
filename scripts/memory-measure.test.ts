@@ -4,7 +4,9 @@ import {
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
+	readFileSync,
 	rmSync,
+	writeFileSync,
 } from 'node:fs';
 import {writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -254,6 +256,30 @@ test('a sample line that was rewritten is dropped and counted, not measured as a
 	});
 });
 
+test('a line with the same text is not accepted when blame gives it to a different commit', async () => {
+	const dir = await repo([
+		{
+			commit: '✨ Add the list',
+			body: 'Why: the menu needs items',
+			files: {'list.txt': 'x\ny\nz\n'},
+		},
+	]);
+	const commit = await head(dir);
+	const sample = {commit, file: 'list.txt', line: 2, text: 'y'};
+	await repoStep(dir, {'list.txt': 'x\nchanged\nz\ny\n'});
+	const blame = await gitOutput(dir, [
+		'blame',
+		'--porcelain',
+		'-L',
+		'4,4',
+		'--',
+		'list.txt',
+	]);
+	expect(blame.split(' ')[0]).not.toBe(commit);
+
+	expect(locateSample(dir, [sample])).toEqual({found: [], dropped: [sample]});
+});
+
 test('a shallow clone is refused with a message that says to fetch the full history', async () => {
 	const dir = await repo([
 		{commit: '🎉 Init', files: {'a.txt': 'a\n'}},
@@ -318,7 +344,15 @@ test('without a built CLI the runner prints "Run pnpm build first." and exits 2'
 	expect(error?.stderr).toContain('Run pnpm build first.');
 });
 
-test('the runner leaves the checkout it ran in untouched: git status is clean and no cache folder appears in its git directory', async () => {
+/** A folder outside any repo, removed after the test. */
+function scratchFolder(prefix: string): string {
+	const folder = mkdtempSync(path.join(tmpdir(), prefix));
+	cleanups.push(() => rmSync(folder, {recursive: true, force: true}));
+	return folder;
+}
+
+/** A repo with one carded commit, and a sample file for it outside the repo. */
+async function runnerFixture() {
 	const dir = await repo([
 		{
 			commit: '✨ Add the parser',
@@ -326,14 +360,91 @@ test('the runner leaves the checkout it ran in untouched: git status is clean an
 			files: {'parser.txt': lines(3)},
 		},
 	]);
+	const commit = await head(dir);
+	const sampleFile = path.join(scratchFolder('chamoji-sample-'), 'sample.json');
+	writeFileSync(
+		sampleFile,
+		JSON.stringify([{commit, file: 'parser.txt', line: 2, text: 'line 2'}]),
+	);
+	return {dir, sampleFile};
+}
 
-	const {stdout} = await execFileAsync(process.execPath, [runner], {
-		cwd: dir,
-	});
+test('the runner leaves the checkout it ran in untouched: git status is clean and no cache folder appears in its git directory', async () => {
+	const {dir, sampleFile} = await runnerFixture();
+
+	const {stdout} = await execFileAsync(
+		process.execPath,
+		[runner, '--sample', sampleFile],
+		{cwd: dir},
+	);
 
 	expect(stdout).toContain('What stands');
 	expect(await gitOutput(dir, ['status', '--porcelain'])).toBe('');
 	expect(existsSync(path.join(dir, '.git', 'chamoji'))).toBe(false);
+});
+
+test('with --sample the runner measures the lines of that sample, end to end', async () => {
+	const {dir, sampleFile} = await runnerFixture();
+
+	const {stdout} = await execFileAsync(
+		process.execPath,
+		[runner, '--sample', sampleFile],
+		{cwd: dir},
+	);
+
+	expect(stdout).toContain('(1 lines measured, 0 dropped)');
+});
+
+test('the figures are the same when the git config of whoever runs it sets format.pretty and diff.noprefix', async () => {
+	const {dir, sampleFile} = await runnerFixture();
+	const configs = scratchFolder('chamoji-gitconfig-');
+	const plain = path.join(configs, 'plain');
+	const noisy = path.join(configs, 'noisy');
+	writeFileSync(plain, '');
+	writeFileSync(
+		noisy,
+		'[format]\n\tpretty = oneline\n[diff]\n\tnoprefix = true\n[log]\n\tdecorate = full\n',
+	);
+	const runWith = async (config: string) =>
+		(
+			await execFileAsync(process.execPath, [runner, '--sample', sampleFile], {
+				cwd: dir,
+				env: {
+					...process.env,
+					GIT_CONFIG_GLOBAL: config,
+					GIT_CONFIG_NOSYSTEM: '1',
+				},
+			})
+		).stdout;
+
+	const withPlain = await runWith(plain);
+
+	expect(withPlain).toContain('(1 lines measured, 0 dropped)');
+	expect(await runWith(noisy)).toBe(withPlain);
+});
+
+test("--pick-sample refuses to run in another repo and leaves this repo's sample alone", async () => {
+	const {dir} = await runnerFixture();
+	const sampleFile = path.join(root, 'scripts/memory-benchmark/sample.json');
+	const before = readFileSync(sampleFile, 'utf8');
+
+	const error = await execFileAsync(
+		process.execPath,
+		[runner, '--pick-sample'],
+		{
+			cwd: dir,
+		},
+	).then(
+		() => undefined,
+		(error: {code: number; stderr: string}) => error,
+	);
+
+	expect(error?.code).toBe(2);
+	expect(error?.stderr).toContain(
+		"Run --pick-sample from this repo, since it writes this repo's sample.",
+	);
+	expect(readFileSync(sampleFile, 'utf8')).toBe(before);
+	expect(await gitOutput(dir, ['status', '--porcelain'])).toBe('');
 });
 
 async function repoStep(dir: string, files: Record<string, string>) {
