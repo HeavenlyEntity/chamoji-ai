@@ -2,7 +2,7 @@
 	"version": 1,
 	"ranAt": {
 		"tag": null,
-		"commit": "5eb57c6d91011528c22ec03f4874f9fc5cc14ede",
+		"commit": "de4046f305c717f7822f3626b084a766b19f4226",
 		"date": "2026-11-19"
 	},
 	"method": {
@@ -12,19 +12,19 @@
 	},
 	"whatStands": {
 		"brief": {
-			"chars": 5911,
-			"tokens": 1478
+			"chars": 5995,
+			"tokens": 1499
 		},
 		"log": {
-			"chars": 232734,
-			"tokens": 58184
+			"chars": 233999,
+			"tokens": 58500
 		},
 		"notesFile": {
 			"chars": 7485,
 			"tokens": 1872
 		},
 		"cardLines": 57,
-		"commits": 451
+		"commits": 454
 	},
 	"why": {
 		"sampleSize": 20,
@@ -191,31 +191,31 @@
 		]
 	},
 	"typicalSwitch": {
-		"with": 1817,
-		"without": 76370,
-		"saved": 74553,
-		"ratio": 42
+		"with": 1838,
+		"without": 76686,
+		"saved": 74848,
+		"ratio": 41.7
 	},
 	"windows": [
 		{
 			"window": 250000,
-			"withShare": 0.0073,
-			"withoutShare": 0.3055,
-			"withFits": 137,
+			"withShare": 0.0074,
+			"withoutShare": 0.3067,
+			"withFits": 136,
 			"withoutFits": 3
 		},
 		{
 			"window": 500000,
-			"withShare": 0.0036,
-			"withoutShare": 0.1527,
-			"withFits": 275,
+			"withShare": 0.0037,
+			"withoutShare": 0.1534,
+			"withFits": 272,
 			"withoutFits": 6
 		},
 		{
 			"window": 1000000,
 			"withShare": 0.0018,
-			"withoutShare": 0.0764,
-			"withFits": 550,
+			"withoutShare": 0.0767,
+			"withFits": 544,
 			"withoutFits": 13
 		}
 	],

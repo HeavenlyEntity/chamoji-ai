@@ -41,26 +41,26 @@ The git commands run with a default git config, so a setting on the machine that
 
 ## The numbers {{ icon: 'hash' }}
 
-Measured at commit `5eb57c6` on 2026-11-19 UTC. Every figure is an estimate at 4 characters a token, rounded half up to whole tokens.
+Measured at commit `de4046f` on 2026-11-19 UTC. Every figure is an estimate at 4 characters a token, rounded half up to whole tokens.
 
 ### A typical switch
 
-A typical switch is what stands, plus 5 why lookups at the mean cost of one. This repo has 451 commits and 57 card lines in its brief.
+A typical switch is what stands, plus 5 why lookups at the mean cost of one. This repo has 454 commits and 57 card lines in its brief.
 
 |              | What stands | One why, mean | Typical switch |
 | ------------ | ----------: | ------------: | -------------: |
-| With chamoji |       1,478 |            68 |          1,817 |
-| Git alone    |      58,184 |         3,637 |         76,370 |
+| With chamoji |       1,499 |            68 |          1,838 |
+| Git alone    |      58,500 |         3,637 |         76,686 |
 
-chamoji reads 74,553 fewer tokens: git alone reads 42.0× as many.
+chamoji reads 74,848 fewer tokens: git alone reads 41.7× as many.
 
 ### Share of a context window
 
 | Window | With chamoji | Git alone | Switches that fit, with chamoji | Switches that fit, git alone |
 | ------ | -----------: | --------: | ------------------------------: | ---------------------------: |
-| 250k   |        0.73% |     30.6% |                             137 |                            3 |
-| 500k   |        0.36% |     15.3% |                             275 |                            6 |
-| 1M     |        0.18% |      7.6% |                             550 |                           13 |
+| 250k   |        0.74% |     30.7% |                             136 |                            3 |
+| 500k   |        0.37% |     15.3% |                             272 |                            6 |
+| 1M     |        0.18% |      7.7% |                             544 |                           13 |
 
 ### One why
 
@@ -136,4 +136,17 @@ It asks five questions about this repo, each with a known answer, three times in
 
 ## A sample of real runs {{ icon: 'robot' }}
 
-The live sample has not been run yet.
+claude-sonnet-5-5 answered 5 questions about this repo 3 times each in Claude Code, in a clone with chamoji set up and in a plain clone, on 2026-11-19 UTC at commit `de4046f`. The figures are what each session reported, per run; input tokens include cached ones.
+
+|                             | Smallest | Median | Largest |
+| --------------------------- | -------: | -----: | ------: |
+| Input tokens, with chamoji  |   11,214 | 11,218 |  31,205 |
+| Input tokens, without       |   17,855 | 28,264 |  73,719 |
+| Output tokens, with chamoji |       92 |    225 |     294 |
+| Output tokens, without      |      422 |    702 |   1,531 |
+| Turns, with chamoji         |        1 |      1 |       2 |
+| Turns, without              |        3 |      3 |       7 |
+| Tool calls, with chamoji    |        0 |      0 |       1 |
+| Tool calls, without         |        2 |      2 |       6 |
+
+The answers have not been checked against the key yet.
