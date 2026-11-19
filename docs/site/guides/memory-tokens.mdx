@@ -1,0 +1,129 @@
+export const metadata = {
+	title: 'What memory costs in tokens',
+	description:
+		'How we measure the tokens an agent reads to recover a project’s context with chamoji and with git alone: the exact commands, the results, what they leave out, and how to run them.',
+};
+
+# What memory costs in tokens
+
+<p className="lead">
+	An agent that picks up a project reads before it works. This page shows how we
+	count what it has to read with chamoji and with git alone, gives the numbers
+	from a real run, and says what those numbers don’t tell you.
+</p>
+
+## What a context switch is {{ icon: 'arrow-counter-clockwise' }}
+
+A context switch is the moment an agent starts a session on a project it doesn’t remember. It needs two things before it can change anything safely:
+
+- **What stands.** The rules and limits that still hold: constraints, gotchas and follow-ups that haven’t ended.
+- **Why a line is the way it is.** The reason behind a line it is about to touch, so it doesn’t undo something on purpose.
+
+With chamoji, what stands is the brief, which [`chamoji memory brief`](/commands/memory) prints. Why is [`chamoji why`](/commands/why) for one line. With git alone, what stands is the whole log, and why is the commit that last wrote the line, read in full.
+
+## What is measured {{ icon: 'sliders' }}
+
+Four things are measured, each as the text the command prints, counted in estimated tokens:
+
+- **What stands, with chamoji:** the output of `chamoji memory brief`.
+- **What stands, with git alone:** the output of `git log --no-color`, in git’s default format.
+- **One why, with chamoji:** the output of `chamoji why <file>:<line>`.
+- **One why, with git alone:** `git blame -w -M` names the commit that wrote the line, which is how `chamoji why` finds it, and then `git show --no-color <commit>` is the text read.
+
+Two more figures are there for scale and are not part of the comparison:
+
+- **The history of the file:** `git log -p --no-color -- <file>`, which is what an agent reads if it asks for everything that happened to the file.
+- **A notes file:** every line in `chamoji memory brief --json`, in every state, written as `Constraint: …`, `Gotcha: …` or `Follow-up: …`, one to a line. It is what you would have if you kept the same rules by hand in a file in the repo. It is never the headline: the headline compares chamoji with git alone.
+
+The why figures come from a fixed sample of lines, each chosen because its commit has a card and the line still stands. The sample is in the repo, so a run measures the same lines every time. A typical switch is what stands plus a few why lookups, each at the mean cost of one why. The tables say how many.
+
+The git commands run with a default git config, so a setting on the machine that runs them, such as a diff or log format, can’t change a figure.
+
+## The numbers {{ icon: 'hash' }}
+
+Measured at commit `3d201b8` on 2026-11-19 UTC. Every figure is an estimate at 4 characters a token, rounded half up to whole tokens.
+
+### A typical switch
+
+A typical switch is what stands, plus 5 why lookups at the mean cost of one. This repo has 450 commits and 57 card lines in its brief.
+
+|              | What stands | One why, mean | Typical switch |
+| ------------ | ----------: | ------------: | -------------: |
+| With chamoji |       1,498 |            68 |          1,837 |
+| Git alone    |      58,091 |         3,637 |         76,277 |
+
+The saving is 74,440 tokens, or 41.5×.
+
+### Share of a context window
+
+| Window | With chamoji | Git alone | Switches that fit, with chamoji | Switches that fit, git alone |
+| ------ | -----------: | --------: | ------------------------------: | ---------------------------: |
+| 250k   |        0.73% |     30.5% |                             136 |                            3 |
+| 500k   |        0.37% |     15.3% |                             272 |                            6 |
+| 1M     |        0.18% |      7.6% |                             544 |                           13 |
+
+### One why
+
+20 lines were measured and 0 dropped.
+
+|                              |   Mean | Median | Smallest | Largest |
+| ---------------------------- | -----: | -----: | -------: | ------: |
+| `chamoji why`                |     68 |     63 |       44 |     143 |
+| `git blame`, then `git show` |  3,637 |  3,655 |      298 |   9,159 |
+| `git log -p` on the file     | 18,640 |  8,424 |      492 |  84,570 |
+
+### What stands at each release
+
+| Tag     | Commits | Card lines | Brief | Git log | Notes file |
+| ------- | ------: | ---------: | ----: | ------: | ---------: |
+| v0.11.0 |     175 |         54 | 1,478 |  22,194 |      1,765 |
+| v0.12.0 |     202 |         54 | 1,478 |  25,568 |      1,765 |
+| v0.12.1 |     208 |         55 | 1,482 |  26,204 |      1,816 |
+| v0.13.0 |     246 |         57 | 1,472 |  30,309 |      1,872 |
+| v0.14.0 |     273 |         57 | 1,477 |  33,461 |      1,872 |
+| v0.15.0 |     322 |         57 | 1,474 |  40,577 |      1,872 |
+| v0.16.0 |     370 |         57 | 1,474 |  48,141 |      1,872 |
+
+From v0.11.0 to v0.16.0 the git log went from 22,194 to 48,141 tokens, the brief from 1,478 to 1,474, and the notes file from 1,765 to 1,872.
+
+## What the numbers don’t say {{ icon: 'info' }}
+
+- **They are estimates.** A token here is four characters, counted as the text’s length divided by four and rounded up. A model’s own tokenizer gives other counts. Where a table says exact, a model counted them; every other figure is an estimate.
+- **They measure what an agent would have to read,** not whether its answer is right. A smaller read is cheaper and leaves more room, and it can still be the wrong read.
+- **The tokens saved are the same at any window size.** The window only changes the share: 250k, 500k and 1M tokens give the same saving and a different share of the window.
+- **The older tags are read with the current build,** and the memory and notes refs are today’s at every tag, since they aren’t versioned by tag. The growth table shows how the repo’s history changed what stands, not how old releases of chamoji behaved.
+- **On a young repo a notes file is about the size of the brief.** The difference is not size today. A notes file keeps growing as rules are written, and it has no states: a rule that has ended still reads as true. It also can’t answer why a given line is the way it is, which is what the why figures measure. In this repo few rules were written after the first release that had project memory, so its notes file barely grows in the table, and the log is what grows.
+- **One repo is one repo.** These are this project’s own commits, with its own mix of long and short messages. Run it on yours before you rely on the shape of the result.
+
+## Run it yourself {{ icon: 'play' }}
+
+From a full clone of the chamoji repo:
+
+```bash {{ title: 'Measure' }}
+pnpm benchmark:memory
+```
+
+It builds the CLI, measures in a throwaway clone under your temp folder, prints the tables and removes the clone. It makes no network call and needs no key. Your checkout is never written to, except by the flags below.
+
+<Properties>
+	<Property name="--write" type="flag">
+		Also writes the results to `docs/benchmarks/memory-tokens.json` and the
+		tables on this page.
+	</Property>
+	<Property name="--exact" type="flag">
+		Adds exact counts from a model’s token counter. It needs `ANTHROPIC_API_KEY`
+		in the environment, and sends the measured texts to Anthropic.
+	</Property>
+	<Property name="--pick-sample" type="flag">
+		Picks the sample of lines again. It goes on its own.
+	</Property>
+	<Property name="--sample <file>" type="path">
+		Reads the sample from another file.
+	</Property>
+</Properties>
+
+It needs the full history, so a shallow clone is refused with a message that says to fetch the rest.
+
+## A sample of real runs {{ icon: 'robot' }}
+
+The live sample has not been run yet.

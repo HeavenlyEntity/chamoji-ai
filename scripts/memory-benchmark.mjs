@@ -9,6 +9,7 @@
 //
 //   pnpm benchmark:memory                 print the figures
 //   pnpm benchmark:memory --write         also write docs/benchmarks/memory-tokens.json
+//                                         and the tables on the docs page
 //   pnpm benchmark:memory --exact         add exact counts (needs ANTHROPIC_API_KEY)
 //   pnpm benchmark:memory --pick-sample   write scripts/memory-benchmark/sample.json
 //   pnpm benchmark:memory --sample <file> read the sample from another file
@@ -43,6 +44,8 @@ import {
 	CHARS_PER_TOKEN,
 	pickSample,
 	ratio,
+	renderTables,
+	replaceSection,
 	summarize,
 	typicalSwitch,
 	windowShares,
@@ -59,6 +62,8 @@ const LOOKUPS = 5;
 const CHAT_EXAMPLE = 'packages/core/src/release.ts';
 const EXACT_MODEL = 'claude-sonnet-5-5';
 const RESULTS_FILE = 'docs/benchmarks/memory-tokens.json';
+const PAGE_FILE = 'docs/site/guides/memory-tokens.mdx';
+const NUMBERS_HEADING = '## The numbers';
 
 /**
  * The runner's own git calls (finding the checkout, making the clone), in the
@@ -351,6 +356,28 @@ async function main() {
 		return 2;
 	}
 
+	// --write also fills in the page, so check the page is there and has its
+	// heading before measuring: a run that can't write both writes neither.
+	const pageFile = path.join(checkout, ...PAGE_FILE.split('/'));
+	if (writing) {
+		if (!existsSync(pageFile)) {
+			console.error(
+				`There is no page at ${PAGE_FILE} in this checkout, so --write has nowhere to put the tables, and nothing was written.`,
+			);
+			return 2;
+		}
+
+		if (
+			replaceSection(readFileSync(pageFile, 'utf8'), NUMBERS_HEADING, '') ===
+			null
+		) {
+			console.error(
+				`${PAGE_FILE} has no "${NUMBERS_HEADING}" heading, so --write has nowhere to put the tables, and nothing was written.`,
+			);
+			return 2;
+		}
+	}
+
 	const commit = git(['rev-parse', 'HEAD'], checkout).trim();
 	// chamoji keeps caches in the git dir, so measure in a clone that shares
 	// the checkout's objects. It is removed only after every git and chamoji
@@ -400,10 +427,20 @@ async function main() {
 		if (exact) results.exact = await exactColumn(repo, results.why.perLine);
 		printSummary(results);
 		if (writing) {
+			// The page is built from the file's own text, so the two agree
+			// exactly. The results go first, then the page.
+			const text = `${JSON.stringify(results, null, '\t')}\n`;
+			const page = replaceSection(
+				readFileSync(pageFile, 'utf8'),
+				NUMBERS_HEADING,
+				renderTables(JSON.parse(text)),
+			);
+			if (page === null) throw new Error(`${PAGE_FILE} lost its heading.`);
 			const file = path.join(checkout, ...RESULTS_FILE.split('/'));
 			mkdirSync(path.dirname(file), {recursive: true});
-			writeFileSync(file, `${JSON.stringify(results, null, '\t')}\n`);
-			console.log(`\nWrote ${RESULTS_FILE}.`);
+			writeFileSync(file, text);
+			writeFileSync(pageFile, page);
+			console.log(`\nWrote ${RESULTS_FILE} and ${PAGE_FILE}.`);
 		}
 
 		return 0;
