@@ -32,6 +32,7 @@
 			{"title": "Writing commits", "href": "/guides/writing-commits"},
 			{"title": "Workstreams", "href": "/guides/workstreams"},
 			{"title": "Project memory", "href": "/guides/project-memory"},
+			{"title": "What memory costs in tokens", "href": "/guides/memory-tokens"},
 			{"title": "Monorepos", "href": "/guides/monorepos"},
 			{"title": "GitHub Action", "href": "/guides/github-action"},
 			{"title": "Repo card", "href": "/guides/repo-card"},

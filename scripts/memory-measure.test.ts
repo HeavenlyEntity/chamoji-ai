@@ -30,7 +30,12 @@ import {
 	releaseTags,
 	sampleCandidates,
 } from './lib/memory-measure.mjs';
-import {estimateTokens, typicalSwitch} from './lib/memory-tokens.mjs';
+import {
+	estimateTokens,
+	renderTables,
+	sectionBody,
+	typicalSwitch,
+} from './lib/memory-tokens.mjs';
 
 const execFileAsync = promisify(execFile);
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -613,9 +618,20 @@ test('the worktrees made for the tags are gone afterwards, and the checkout is u
 	expect(await gitOutput(dir, ['status', '--porcelain'])).toBe('');
 });
 
+const pageText = '# Page\n\n## The numbers\n\nOld.\n\n## After\n\nKept.\n';
+
+/** The page --write fills in, put in a fixture repo's working copy. */
+function writePage(dir: string) {
+	const file = path.join(dir, 'docs', 'site', 'guides', 'memory-tokens.mdx');
+	mkdirSync(path.dirname(file), {recursive: true});
+	writeFileSync(file, pageText);
+	return file;
+}
+
 /** The runner with --write in a fixture repo; the results file it wrote. */
 async function runWrite(extra: string[], env: NodeJS.ProcessEnv = process.env) {
 	const {dir, sampleFile} = await runnerFixture();
+	writePage(dir);
 	const output = await execFileAsync(
 		process.execPath,
 		[runner, '--sample', sampleFile, '--write', ...extra],
@@ -667,4 +683,79 @@ test('--exact with no API key prints the skip line and still writes the file wit
 		'No API key in the environment, so the exact column was skipped.',
 	);
 	expect(JSON.parse(text).exact).toBeNull();
+});
+
+test('--write fills in the page from the file it wrote, in the fixture and not in this repo', async () => {
+	const {dir, sampleFile} = await runnerFixture();
+	const pageFile = writePage(dir);
+	const ours = path.join(
+		path.dirname(runner),
+		'..',
+		'docs',
+		'benchmarks',
+		'memory-tokens.json',
+	);
+	const oursBefore = readFileSync(ours, 'utf8');
+
+	await execFileAsync(
+		process.execPath,
+		[runner, '--sample', sampleFile, '--write'],
+		{cwd: dir},
+	);
+
+	const results = JSON.parse(
+		readFileSync(
+			path.join(dir, 'docs', 'benchmarks', 'memory-tokens.json'),
+			'utf8',
+		),
+	);
+	const page = readFileSync(pageFile, 'utf8');
+	expect(sectionBody(page, '## The numbers')).toBe(
+		renderTables(results).trim(),
+	);
+	expect(sectionBody(page, '## After')).toBe('Kept.');
+	expect(readFileSync(ours, 'utf8')).toBe(oursBefore);
+});
+
+test('--write with no page fails with a message and writes no results file', async () => {
+	const {dir, sampleFile} = await runnerFixture();
+
+	const error = await execFileAsync(
+		process.execPath,
+		[runner, '--sample', sampleFile, '--write'],
+		{cwd: dir},
+	).then(
+		() => undefined,
+		(error: {code: number; stderr: string}) => error,
+	);
+
+	expect(error?.code).toBe(2);
+	expect(error?.stderr).toContain(
+		'There is no page at docs/site/guides/memory-tokens.mdx',
+	);
+	expect(
+		existsSync(path.join(dir, 'docs', 'benchmarks', 'memory-tokens.json')),
+	).toBe(false);
+});
+
+test('--write with a page that has no numbers heading fails and leaves the page as it was', async () => {
+	const {dir, sampleFile} = await runnerFixture();
+	const pageFile = writePage(dir);
+	writeFileSync(pageFile, '# Page\n');
+
+	const error = await execFileAsync(
+		process.execPath,
+		[runner, '--sample', sampleFile, '--write'],
+		{cwd: dir},
+	).then(
+		() => undefined,
+		(error: {code: number; stderr: string}) => error,
+	);
+
+	expect(error?.code).toBe(2);
+	expect(error?.stderr).toContain('has no "## The numbers" heading');
+	expect(readFileSync(pageFile, 'utf8')).toBe('# Page\n');
+	expect(
+		existsSync(path.join(dir, 'docs', 'benchmarks', 'memory-tokens.json')),
+	).toBe(false);
 });

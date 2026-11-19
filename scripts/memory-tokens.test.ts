@@ -1,8 +1,12 @@
+import {readFileSync} from 'node:fs';
 import {expect, test} from 'vitest';
 import {
 	estimateTokens,
 	pickSample,
 	ratio,
+	renderTables,
+	replaceSection,
+	sectionBody,
 	summarize,
 	typicalSwitch,
 	windowShares,
@@ -82,4 +86,124 @@ test('pickSample does not reorder its input', () => {
 	const c = [{commit: 'b'}, {commit: 'a'}];
 	pickSample(c, 1);
 	expect(c).toEqual([{commit: 'b'}, {commit: 'a'}]);
+});
+
+const resultsUrl = new URL(
+	'../docs/benchmarks/memory-tokens.json',
+	import.meta.url,
+);
+const pageUrl = new URL(
+	'../docs/site/guides/memory-tokens.mdx',
+	import.meta.url,
+);
+const results = () => JSON.parse(readFileSync(resultsUrl, 'utf8'));
+
+test('renderTables shows the three windows as 250k, 500k and 1M with both shares as percentages', () => {
+	const base = results();
+	const text = renderTables({
+		...base,
+		windows: [
+			{
+				window: 250_000,
+				withShare: 0.0073,
+				withoutShare: 0.3042,
+				withFits: 136,
+				withoutFits: 3,
+			},
+			{
+				window: 500_000,
+				withShare: 0.0037,
+				withoutShare: 0.1521,
+				withFits: 272,
+				withoutFits: 6,
+			},
+			{
+				window: 1_000_000,
+				withShare: 0.0018,
+				withoutShare: 0.076,
+				withFits: 544,
+				withoutFits: 13,
+			},
+		],
+	});
+
+	expect(text).toMatch(/\|\s*250k\s*\|\s*0\.73%\s*\|\s*30\.4%\s*\|/);
+	expect(text).toMatch(/\|\s*500k\s*\|\s*0\.37%\s*\|\s*15\.2%\s*\|/);
+	expect(text).toMatch(/\|\s*1M\s*\|\s*0\.18%\s*\|\s*7\.6%\s*\|/);
+});
+
+test('renderTables writes "not measured" for a null ratio and never prints NaN, Infinity or null', () => {
+	const base = results();
+	const text = renderTables({
+		...base,
+		typicalSwitch: {...base.typicalSwitch, ratio: null},
+		windows: base.windows.map((w: object) => ({
+			...w,
+			withFits: null,
+			withoutFits: null,
+		})),
+	});
+
+	expect(text).toContain('not measured');
+	expect(text).not.toMatch(/NaN|Infinity|null|undefined/);
+	expect(renderTables(base)).not.toMatch(/NaN|Infinity|null|undefined/);
+});
+
+test('renderTables formats tokens with separators, ratios with a times sign and the date as UTC', () => {
+	const text = renderTables(results());
+
+	expect(text).toMatch(/\d{1,3},\d{3}/);
+	expect(text).toMatch(/\d+\.\d×/);
+	expect(text).toMatch(/\d{4}-\d{2}-\d{2} UTC/);
+});
+
+test('renderTables rounds half up to whole tokens', () => {
+	const base = results();
+	const text = renderTables({
+		...base,
+		why: {...base.why, card: {mean: 67.5, median: 62.5, min: 44, max: 143}},
+	});
+
+	expect(text).toMatch(/\|\s+68 \|\s+63 \|\s+44 \|\s+143 \|/);
+});
+
+test('the page between its two markers equals renderTables of docs/benchmarks/memory-tokens.json', () => {
+	const page = readFileSync(pageUrl, 'utf8');
+
+	expect(sectionBody(page, '## The numbers')).toBe(
+		renderTables(results()).trim(),
+	);
+});
+
+test('every whole number of four digits or more in the generated part appears in the results file', () => {
+	const known = new Set<number>();
+	const collect = (value: unknown) => {
+		if (typeof value === 'number') {
+			known.add(value);
+			known.add(Math.round(value));
+		} else if (value && typeof value === 'object') {
+			Object.values(value).forEach(collect);
+		}
+	};
+	collect(results());
+	const text = renderTables(results());
+	const found = [
+		...text.matchAll(
+			/(?<![\w.,-])(?:\d{1,3}(?:,\d{3})+(?![\w.-]|,\d)|\d{4,}(?![\w.-]))/g,
+		),
+	].map(([match]) => Number(match.replaceAll(',', '')));
+
+	expect(found.length).toBeGreaterThan(10);
+	for (const number of found) expect(known.has(number)).toBe(true);
+});
+
+test('the page holds the live section with the not-run sentence, and replaceSection leaves other sections alone', () => {
+	const page = readFileSync(pageUrl, 'utf8');
+	const live = sectionBody(page, '## A sample of real runs');
+
+	expect(live).toContain('The live sample has not been run yet.');
+	const swapped = replaceSection(page, '## The numbers', 'Changed.');
+	expect(sectionBody(swapped ?? '', '## The numbers')).toBe('Changed.');
+	expect(sectionBody(swapped ?? '', '## A sample of real runs')).toBe(live);
+	expect(replaceSection(page, '## No such heading', 'x')).toBeNull();
 });
