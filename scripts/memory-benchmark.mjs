@@ -8,12 +8,14 @@
 //
 //   pnpm benchmark:memory                 print the figures
 //   pnpm benchmark:memory --pick-sample   write scripts/memory-benchmark/sample.json
+//   pnpm benchmark:memory --sample <file> read the sample from another file
 import {execFileSync} from 'node:child_process';
 import {
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
+	realpathSync,
 	rmSync,
 	writeFileSync,
 } from 'node:fs';
@@ -40,7 +42,10 @@ import {
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const cli = path.join(root, 'packages/cli/dist/cli.js');
-const sampleFile = path.join(root, 'scripts/memory-benchmark/sample.json');
+const defaultSampleFile = path.join(
+	root,
+	'scripts/memory-benchmark/sample.json',
+);
 const SAMPLE_SIZE = 20;
 const LOOKUPS = 5;
 const CHAT_EXAMPLE = 'packages/core/src/release.ts';
@@ -157,6 +162,29 @@ function printSummary(results) {
 	}
 }
 
+/**
+ * @param {string[]} args
+ * @returns {{picking: boolean, sampleFile: string} | {error: string}}
+ */
+function parseArgs(args) {
+	let picking = false;
+	let sampleFile = defaultSampleFile;
+	for (let i = 0; i < args.length; i++) {
+		if (args[i] === '--pick-sample') picking = true;
+		else if (args[i] === '--sample') {
+			const file = args[++i];
+			if (!file) return {error: '--sample needs a file.'};
+			sampleFile = path.resolve(file);
+		} else return {error: `Unknown option ${args[i]}.`};
+	}
+
+	if (picking && sampleFile !== defaultSampleFile) {
+		return {error: '--pick-sample and --sample go separately.'};
+	}
+
+	return {picking, sampleFile};
+}
+
 /** The tag at HEAD, or null. @param {string} checkout */
 function tagAtHead(checkout) {
 	try {
@@ -175,17 +203,23 @@ function main() {
 		return 2;
 	}
 
-	const args = process.argv.slice(2);
-	const unknown = args.filter(arg => arg !== '--pick-sample');
-	if (unknown.length > 0) {
+	const options = parseArgs(process.argv.slice(2));
+	if ('error' in options) {
 		console.error(
-			`Unknown option ${unknown[0]}. Usage: pnpm benchmark:memory [--pick-sample]`,
+			`${options.error} Usage: pnpm benchmark:memory [--pick-sample | --sample <file>]`,
 		);
 		return 2;
 	}
 
-	const picking = args.includes('--pick-sample');
+	const {picking, sampleFile} = options;
 	const checkout = git(['rev-parse', '--show-toplevel'], process.cwd()).trim();
+	if (picking && realpathSync(checkout) !== realpathSync(root)) {
+		console.error(
+			"Run --pick-sample from this repo, since it writes this repo's sample.",
+		);
+		return 2;
+	}
+
 	try {
 		assertFullHistory(checkout);
 	} catch (error) {
@@ -195,7 +229,9 @@ function main() {
 
 	if (!picking && !existsSync(sampleFile)) {
 		console.error(
-			'There is no sample yet: run pnpm benchmark:memory --pick-sample first.',
+			sampleFile === defaultSampleFile
+				? 'There is no sample yet: run pnpm benchmark:memory --pick-sample first.'
+				: `There is no sample at ${sampleFile}.`,
 		);
 		return 2;
 	}

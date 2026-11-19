@@ -5,6 +5,7 @@ import {execFileSync} from 'node:child_process';
 import {existsSync} from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import {fileURLToPath} from 'node:url';
 import {estimateTokens} from './memory-tokens.mjs';
 
 /**
@@ -12,11 +13,32 @@ import {estimateTokens} from './memory-tokens.mjs';
  * @typedef {{commit: string, file: string, line: number, text: string}} SampleLine
  */
 
-/** @param {string} command @param {string[]} args @param {string} cwd */
+/**
+ * A global git config that reads as empty on every OS: git skips a config
+ * file that isn't there, and nothing can be there, since the path runs
+ * through this module, which is a file. /dev/null doesn't exist on Windows,
+ * and an empty file would need a temp folder to clean up.
+ */
+const NO_GLOBAL_CONFIG = path.join(
+	fileURLToPath(import.meta.url),
+	'no-global-gitconfig',
+);
+
+/**
+ * Every git and chamoji call goes through here. Git reads no system config
+ * and an empty global one, so settings on the machine that runs this, such as
+ * format.pretty or diff.noprefix, can't change a figure.
+ * @param {string} command @param {string[]} args @param {string} cwd
+ */
 const run = (command, args, cwd) =>
 	execFileSync(command, args, {
 		cwd,
 		encoding: 'utf8',
+		env: {
+			...process.env,
+			GIT_CONFIG_NOSYSTEM: '1',
+			GIT_CONFIG_GLOBAL: NO_GLOBAL_CONFIG,
+		},
 		maxBuffer: 512 * 1024 * 1024,
 		stdio: ['ignore', 'pipe', 'pipe'],
 	});
@@ -123,12 +145,14 @@ function textFiles(repo) {
 }
 
 /**
- * Whether `chamoji why --json` gives the line a card.
- * @param {string} repo @param {string} cli @param {string} location
+ * Whether `chamoji why --json` gives the line a card from the commit blame
+ * found for it. When why names another commit, the line is not a candidate.
+ * @param {string} repo @param {string} cli @param {string} location @param {string} commit
  */
-function hasCard(repo, cli, location) {
-	/** @type {{card?: Record<string, string[]>}} */
+function hasCard(repo, cli, location, commit) {
+	/** @type {{commit?: {hash?: string}, card?: Record<string, string[]>}} */
 	const reply = JSON.parse(chamoji(repo, cli, ['why', location, '--json']));
+	if (reply.commit?.hash !== commit) return false;
 	return Object.values(reply.card ?? {}).some(
 		values => Array.isArray(values) && values.length > 0,
 	);
@@ -150,8 +174,8 @@ export function sampleCandidates(repo, cli) {
 		});
 	}
 
-	return [...firstLines.values()].filter(({file, line}) =>
-		hasCard(repo, cli, `${file}:${line}`),
+	return [...firstLines.values()].filter(({commit, file, line}) =>
+		hasCard(repo, cli, `${file}:${line}`, commit),
 	);
 }
 
