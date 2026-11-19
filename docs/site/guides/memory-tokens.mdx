@@ -126,6 +126,14 @@ It builds the CLI, measures in a throwaway clone under your temp folder, prints 
 
 It needs the full history, so a shallow clone is refused with a message that says to fetch the rest.
 
+The figures above count what an agent would have to read. To see what real sessions spend, ask Claude Code itself:
+
+```bash {{ title: 'Ask real sessions' }}
+pnpm benchmark:memory:live
+```
+
+It asks five questions about this repo, each with a known answer, three times in a clone with chamoji set up and three times in a plain clone, and writes what each session reported to `docs/benchmarks/memory-tokens-live.json`. Both sides get the same read-only tools; only the chamoji side has its session hook, its commands and its MCP tools. It needs `claude` on your PATH and signed in, and it spends usage. Add `--dry-run` to ask the first question once on each side and write nothing. We mark each answer against its key by hand, then `pnpm benchmark:memory --write` puts the sample below.
+
 ## A sample of real runs {{ icon: 'robot' }}
 
 The live sample has not been run yet.

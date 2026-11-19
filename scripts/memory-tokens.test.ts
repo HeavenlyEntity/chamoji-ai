@@ -1,9 +1,15 @@
-import {readFileSync} from 'node:fs';
+import {execFile} from 'node:child_process';
+import {existsSync, mkdtempSync, readFileSync, rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {promisify} from 'node:util';
 import {expect, test} from 'vitest';
 import {
 	estimateTokens,
 	pickSample,
 	ratio,
+	renderLive,
 	renderTables,
 	replaceSection,
 	sectionBody,
@@ -197,11 +203,27 @@ test('every whole number of four digits or more in the generated part appears in
 	for (const number of found) expect(known.has(number)).toBe(true);
 });
 
-test('the page holds the live section with the not-run sentence, and replaceSection leaves other sections alone', () => {
+const liveUrl = new URL(
+	'../docs/benchmarks/memory-tokens-live.json',
+	import.meta.url,
+);
+
+test('the live section of the page equals renderLive of docs/benchmarks/memory-tokens-live.json, or the not-run sentence when there is none', () => {
+	const page = readFileSync(pageUrl, 'utf8');
+	const live = existsSync(liveUrl)
+		? JSON.parse(readFileSync(liveUrl, 'utf8'))
+		: null;
+
+	expect(sectionBody(page, '## A sample of real runs')).toBe(
+		renderLive(live).trim(),
+	);
+});
+
+test('replaceSection leaves other sections alone', () => {
 	const page = readFileSync(pageUrl, 'utf8');
 	const live = sectionBody(page, '## A sample of real runs');
 
-	expect(live).toContain('The live sample has not been run yet.');
+	expect(live).not.toBeNull();
 	const swapped = replaceSection(page, '## The numbers', 'Changed.');
 	expect(sectionBody(swapped ?? '', '## The numbers')).toBe('Changed.');
 	expect(sectionBody(swapped ?? '', '## A sample of real runs')).toBe(live);
@@ -234,4 +256,163 @@ test('renderTables says how many times as many tokens git alone reads', () => {
 	expect(text).toContain(
 		`chamoji reads ${saved.toLocaleString('en-US')} fewer tokens: git alone reads ${ratio.toFixed(1)}× as many.`,
 	);
+});
+
+const figures = (min: number, median: number, max: number) => ({
+	mean: median,
+	median,
+	min,
+	max,
+});
+
+/** A live results file with made-up figures, as the live runner writes one. */
+function liveResults(overrides: Record<string, unknown> = {}) {
+	const run = (side: string, question: number, correct: boolean | null) => ({
+		question,
+		side,
+		run: 1,
+		inputTokens: 20_000,
+		outputTokens: 300,
+		turns: 2,
+		toolCalls: 1,
+		costUsd: 0.05,
+		answer: 'No.',
+		correct,
+	});
+	return {
+		version: 1,
+		model: 'claude-sonnet-5-5',
+		date: '2026-11-19',
+		commit: '0123456789abcdef0123456789abcdef01234567',
+		method: {},
+		runs: [
+			run('with', 1, null),
+			run('with', 2, null),
+			run('without', 1, null),
+			run('without', 2, null),
+		],
+		summary: {
+			with: {
+				runs: 2,
+				errors: 0,
+				inputTokens: figures(12_345, 20_000, 40_000),
+				outputTokens: figures(200, 300, 400),
+				turns: figures(1, 2, 3),
+				toolCalls: figures(0, 1, 2),
+			},
+			without: {
+				runs: 2,
+				errors: 0,
+				inputTokens: figures(55_000, 90_000, 150_500),
+				outputTokens: figures(500, 800, 1200),
+				turns: figures(4, 9, 15),
+				toolCalls: figures(3, 8, 14),
+			},
+		},
+		checked: false,
+		...overrides,
+	};
+}
+
+test('renderLive with no results says the live sample has not been run', () => {
+	expect(renderLive(null)).toBe('The live sample has not been run yet.\n');
+});
+
+test('renderLive names the model and the date and shows the spread (min to max) of input tokens on each side', () => {
+	const text = renderLive(liveResults());
+
+	expect(text).toContain('claude-sonnet-5-5');
+	expect(text).toContain('2026-11-19 UTC');
+	expect(text).toContain('`0123456`');
+	expect(text).toMatch(
+		/\|\s*Input tokens, with chamoji\s*\|\s*12,345\s*\|\s*20,000\s*\|\s*40,000\s*\|/,
+	);
+	expect(text).toMatch(
+		/\|\s*Input tokens, without\s*\|\s*55,000\s*\|\s*90,000\s*\|\s*150,500\s*\|/,
+	);
+	expect(text).toMatch(
+		/\|\s*Tool calls, without\s*\|\s*3\s*\|\s*8\s*\|\s*14\s*\|/,
+	);
+	expect(text).not.toMatch(/NaN|Infinity|null|undefined/);
+});
+
+test('renderLive says the answers are unchecked while checked is false, and shows the count of right answers once it is true', () => {
+	expect(renderLive(liveResults())).toContain(
+		'The answers have not been checked against the key yet.',
+	);
+
+	const checked = liveResults({checked: true});
+	checked.runs = [
+		{...checked.runs[0], correct: true},
+		{...checked.runs[1], correct: true},
+		{...checked.runs[2], correct: true},
+		{...checked.runs[3], correct: false},
+	];
+	const text = renderLive(checked);
+
+	expect(text).not.toContain('have not been checked');
+	expect(text).toContain(
+		'Checked against the key by hand: 2 of 2 answers with chamoji were right, and 1 of 2 without.',
+	);
+});
+
+test('renderLive counts the runs that failed and leaves them out of the figures', () => {
+	const base = liveResults();
+	const text = renderLive({
+		...base,
+		runs: [
+			...base.runs,
+			{question: 3, side: 'without', run: 1, error: 'timed out', correct: null},
+		],
+		summary: {...base.summary, without: {...base.summary.without, errors: 1}},
+	});
+
+	expect(text).toContain('1 of 5 runs failed and is left out of the figures.');
+});
+
+const execFileAsync = promisify(execFile);
+const root = fileURLToPath(new URL('..', import.meta.url));
+
+test('the live runner without claude on PATH prints "claude is not on PATH, so the live sample was not run." and exits 2', async () => {
+	const empty = mkdtempSync(path.join(tmpdir(), 'chamoji-no-claude-'));
+	try {
+		const env: NodeJS.ProcessEnv = {};
+		for (const [name, value] of Object.entries(process.env)) {
+			if (name.toUpperCase() !== 'PATH') env[name] = value;
+		}
+		env.PATH = empty;
+
+		const error = await execFileAsync(
+			process.execPath,
+			[path.join(root, 'scripts', 'memory-benchmark-live.mjs')],
+			{cwd: empty, env},
+		).then(
+			() => undefined,
+			(error: {code: number; stderr: string}) => error,
+		);
+
+		expect(error?.code).toBe(2);
+		expect(error?.stderr).toContain(
+			'claude is not on PATH, so the live sample was not run.',
+		);
+	} finally {
+		rmSync(empty, {recursive: true, force: true});
+	}
+});
+
+test('questions.json has five questions, each with a well-formed, unique rule id and a key', () => {
+	const questions = JSON.parse(
+		readFileSync(
+			new URL('./memory-benchmark/questions.json', import.meta.url),
+			'utf8',
+		),
+	);
+
+	expect(questions).toHaveLength(5);
+	for (const {question, rule, key} of questions) {
+		expect(question).toMatch(/\?$/);
+		expect(rule).toMatch(/^[cgf]-[0-9a-f]{8}$/);
+		expect(key.length).toBeGreaterThan(10);
+	}
+	expect(new Set(questions.map((q: {rule: string}) => q.rule)).size).toBe(5);
 });
