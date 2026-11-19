@@ -1,0 +1,888 @@
+{
+	"version": 1,
+	"model": "claude-sonnet-5-5",
+	"date": "2026-11-19",
+	"commit": "de4046f305c717f7822f3626b084a766b19f4226",
+	"method": {
+		"claudeVersion": "2.1.318 (Claude Code)",
+		"runsPerQuestion": 3,
+		"promptSuffix": "Answer in at most three sentences, and name the commit or rule you relied on if you can.",
+		"inputTokens": "the sum of inputTokens, cacheCreationInputTokens, cacheReadInputTokens over every model in modelUsage of the --output-format json result (usage.input_tokens + usage.cache_creation_input_tokens + usage.cache_read_input_tokens when there is no modelUsage); the page shows this. A run whose top-level usage differs also keeps usageInputTokens.",
+		"outputTokens": "the sum of outputTokens over every model in modelUsage (usage.output_tokens when there is none); the page shows this. A run whose top-level usage differs also keeps usageOutputTokens.",
+		"usageByModel": "each model's inputTokens, cacheCreationInputTokens, cacheReadInputTokens, outputTokens, costUSD from modelUsage, as reported",
+		"turns": "num_turns",
+		"toolCalls": "the distinct toolUseId values on \"tool_dispatch_start\" lines in the --debug-file log; null when the session took more than one turn and the log has no such line, and such runs are left out of the tool-call figures",
+		"order": [
+			{
+				"question": 1,
+				"run": 1,
+				"first": "with"
+			},
+			{
+				"question": 1,
+				"run": 2,
+				"first": "without"
+			},
+			{
+				"question": 1,
+				"run": 3,
+				"first": "with"
+			},
+			{
+				"question": 2,
+				"run": 1,
+				"first": "without"
+			},
+			{
+				"question": 2,
+				"run": 2,
+				"first": "with"
+			},
+			{
+				"question": 2,
+				"run": 3,
+				"first": "without"
+			},
+			{
+				"question": 3,
+				"run": 1,
+				"first": "with"
+			},
+			{
+				"question": 3,
+				"run": 2,
+				"first": "without"
+			},
+			{
+				"question": 3,
+				"run": 3,
+				"first": "with"
+			},
+			{
+				"question": 4,
+				"run": 1,
+				"first": "without"
+			},
+			{
+				"question": 4,
+				"run": 2,
+				"first": "with"
+			},
+			{
+				"question": 4,
+				"run": 3,
+				"first": "without"
+			},
+			{
+				"question": 5,
+				"run": 1,
+				"first": "with"
+			},
+			{
+				"question": 5,
+				"run": 2,
+				"first": "without"
+			},
+			{
+				"question": 5,
+				"run": 3,
+				"first": "with"
+			}
+		],
+		"costUsd": "total_cost_usd",
+		"flags": {
+			"both": [
+				"--model",
+				"claude-sonnet-5-5",
+				"--output-format",
+				"json",
+				"--debug-file",
+				"<debug file>",
+				"--setting-sources",
+				"project,local",
+				"--strict-mcp-config",
+				"--no-session-persistence",
+				"--permission-prompts",
+				"none",
+				"--tools",
+				"Read,Grep,Glob,Bash",
+				"--allowedTools",
+				"Read",
+				"Grep",
+				"Glob",
+				"Bash(git *)"
+			],
+			"withOnly": [
+				"--mcp-config",
+				"<clone>/.mcp.json",
+				"Bash(chamoji *)",
+				"mcp__chamoji"
+			]
+		}
+	},
+	"questions": [
+		{
+			"question": "May I add a new top-level folder to the tree in `refs/chamoji/memory`?",
+			"rule": "c-87e43576",
+			"key": "No: the layout is fixed until a new format gets its own ref or a version bump, because older clients drop what they don't know."
+		},
+		{
+			"question": "Should `chamoji init` set `remote.origin.push` so a plain `git push` also pushes memory?",
+			"rule": "c-bfd4b51d",
+			"key": "No: it must not set it, and the fetch refspec must be a wildcard, or plain push, fetch and pull break."
+		},
+		{
+			"question": "Why does the command in the Claude Code hook entries end in `|| true`?",
+			"rule": "c-f3ea2f10",
+			"key": "Claude Code reads exit 2 as a block; a denial is JSON on stdout with exit 0 and still gets through."
+		},
+		{
+			"question": "Can I add the official MCP SDK as a dependency for `chamoji mcp`?",
+			"rule": "c-bef828d1",
+			"key": "No: it would double chamoji's install for five methods."
+		},
+		{
+			"question": "Why does `chamoji why` blame the working copy and not HEAD?",
+			"rule": "c-7a4d905c",
+			"key": "So line numbers match the editor, and an edited line is reported as uncommitted."
+		}
+	],
+	"runs": [
+		{
+			"question": 1,
+			"side": "with",
+			"run": 1,
+			"briefArrived": true,
+			"inputTokens": 11218,
+			"outputTokens": 131,
+			"turns": 1,
+			"toolCalls": 0,
+			"costUsd": 0.0223334,
+			"permissionDenials": 0,
+			"usageByModel": {
+				"claude-sonnet-5-5": {
+					"inputTokens": 2,
+					"cacheCreationInputTokens": 5102,
+					"cacheReadInputTokens": 6114,
+					"outputTokens": 131,
+					"costUSD": 0.0223334
+				}
+			},
+			"answer": "No, not safely. Constraint c-87e43576 (commit 2af8565) says older clients drop what they don't know, so the memory ref's layout is fixed until a new format gets its own ref or a version bump. Follow-up f-3540243a says the same, and c-116fabaa (46fbf39) adds that foreign tree entries are rebuilt only when their names are safe and their depth is bounded.",
+			"correct": null
+		},
+		{
+			"question": 1,
+			"side": "without",
+			"run": 1,
+			"inputTokens": 72122,
+			"outputTokens": 1462,
+			"turns": 7,
+			"toolCalls": 6,
+			"costUsd": 0.05420150000000001,
+			"permissionDenials": 0,
+			"usageByModel": {
+				"claude-sonnet-5-5": {
+					"inputTokens": 14,
+					"cacheCreationInputTokens": 8293,
+					"cacheReadInputTokens": 63815,
+					"outputTokens": 1462,
+					"costUSD": 0.05420150000000001
+				}
+			},
+			"answer": "Not usefully. `isMemoryPath` in `packages/core/src/memory.ts:402` only accepts `workstreams/<slug>.json`, `archive/<slug>.json` and `purged/<slug>`, so a new top-level folder would be ignored on read. The ref doesn't exist in this clone, and the layout is described in `docs/superpowers/plans/2026-11-01-milestone-7-project-memory.md` and \"The memory ref\" in `docs/site/guides/project-memory.mdx`. I found no commit that permits extra folders. To add one, you'd also change `isMemoryPath`.",
+			"correct": null
+		},
+		{
+			"question": 1,
+			"side": "without",
+			"run": 2,
+			"inputTokens": 48140,
+			"outputTokens": 1374,
+			"turns": 7,
+			"toolCalls": 6,
+			"costUsd": 0.035967,
+			"permissionDenials": 0,
+			"usageByModel": {
+				"claude-sonnet-5-5": {
+					"inputTokens": 10,
+					"cacheCreationInputTokens": 4460,
+					"cacheReadInputTokens": 43670,
+					"outputTokens": 1374,
+					"costUSD": 0.035967
+				}
+			},
+			"answer": "Technically yes, but not safely, and I can't point to a rule that forbids or permits it. The ref doesn't exist in this clone, so there's no commit to cite. The only layout I found is in `docs/superpowers/plans/2026-11-01-milestone-7-project-memory.md:139`, which defines three folders: `workstreams/`, `archive/` and `purged/`. The merge rules at line 180 only cover those three, so a new top-level folder wouldn't be merged by `chamoji memory sync`. I'd add it only after updating that layout and those merge rules.",
+			"correct": null
+		},
+		{
+			"question": 1,
+			"side": "with",
+			"run": 2,
+			"briefArrived": true,
+			"inputTokens": 11218,
+			"outputTokens": 225,
+			"turns": 1,
+			"toolCalls": 0,
+			"costUsd": 0.0033756000000000003,
+			"permissionDenials": 0,
+			"usageByModel": {
+				"claude-sonnet-5-5": {
+					"inputTokens": 2,
+					"cacheCreationInputTokens": 0,
+					"cacheReadInputTokens": 11216,
+					"outputTokens": 225,
+					"costUSD": 0.0033756000000000003
+				}
+			},
+			"answer": "No, not under the current format. Constraint c-87e43576 (commit 2af8565) fixes the memory ref's layout, because older clients drop paths and modes they don't know. A new top-level folder needs its own ref or a version bump, as follow-up f-3540243a also says.",
+			"correct": null
+		},
+		{
+			"question": 1,
+			"side": "with",
+			"run": 3,
+			"briefArrived": true,
+			"inputTokens": 11218,
+			"outputTokens": 251,
+			"turns": 1,
+			"toolCalls": 0,
+			"costUsd": 0.0036356,
+			"permissionDenials": 0,
+			"usageByModel": {
+				"claude-sonnet-5-5": {
+					"inputTokens": 2,
+					"cacheCreationInputTokens": 0,
+					"cacheReadInputTokens": 11216,
+					"outputTokens": 251,
+					"costUSD": 0.0036356
+				}
+			},
+			"answer": "No, not under the current format. Constraint c-87e43576 (commit 2af8565) says older clients drop paths and modes they don't know, so the memory ref's layout is fixed until a new format gets its own ref or a version bump. Follow-up f-3540243a says the same, and c-116fabaa (commit 46fbf39) adds that foreign tree entries are rebuilt only when their names are safe and their depth is bounded.",
+			"correct": null
+		},
+		{
+			"question": 1,
+			"side": "without",
+			"run": 3,
+			"inputTokens": 73719,
+			"outputTokens": 1531,
+			"turns": 7,
+			"toolCalls": 6,
+			"costUsd": 0.046206000000000004,
+			"permissionDenials": 0,
+			"usageByModel": {
+				"claude-sonnet-5-5": {
+					"inputTokens": 14,
+					"cacheCreationInputTokens": 6025,
+					"cacheReadInputTokens": 67680,
+					"outputTokens": 1531,
+					"costUSD": 0.046206000000000004
+				}
+			},
+			"answer": "I've finished checking the code, so here is the answer.\n\nNot usefully. The ref doesn't exist in this repo yet, so there's no commit to cite. The rule is `isMemoryPath` in `packages/core/src/memory.ts:402`, which only reads `workstreams/<slug>.json`, `archive/<slug>.json` and `purged/<slug>`, so a new top-level folder would be ignored on read. The plan (`docs/superpowers/plans/2026-11-01-milestone-7-project-memory.md`) also says \"a tree path that isn't a slug is ignored on read\". To make a new folder count, you'd have to extend `isMemoryPath` first.",
+			"correct": null
+		},
+		{
+			"question": 2,
+			"side": "without",
+			"run": 1,
+			"inputTokens": 28855,
+			"outputTokens": 702,
+			"turns": 3,
+			"toolCalls": 2,
+			"costUsd": 0.033118,
+			"permissionDenials": 0,
+			"usageByModel": {
+				"claude-sonnet-5-5": {
+					"inputTokens": 6,
+					"cacheCreationInputTokens": 5949,
+					"cacheReadInputTokens": 22900,
+					"outputTokens": 702,
+					"costUSD": 0.033118
+				}
+			},
+			"answer": "No. The project tested it and decided against it: setting `remote.origin.push` made a plain `git push` push only the memory ref and leave the branch behind, and an explicit `git push origin main` ignored the setting anyway. I relied on the \"`init` leaves `git push` alone\" paragraph in `readme.md:224` and the \"Departure: no `remote.origin.push`\" note in `docs/ROADMAP.md:556`. Memory goes out through `chamoji memory sync` and `chamoji release --push`, and `init` sets only the fetch refspec.",
+			"correct": null
+		},
+		{
+			"question": 2,
+			"side": "with",
+			"run": 1,
+			"briefArrived": true,
+			"inputTokens": 31202,
+			"outputTokens": 274,
+			"turns": 2,
+			"toolCalls": 1,
+			"costUsd": 0.0537013,
+			"permissionDenials": 0,
+			"usageByModel": {
+				"claude-sonnet-5-5": {
+					"inputTokens": 4,
+					"cacheCreationInputTokens": 12265,
+					"cacheReadInputTokens": 18933,
+					"outputTokens": 274,
+					"costUSD": 0.0537013
+				}
+			},
+			"answer": "No. Constraint c-bfd4b51d, recorded in commit 635063c (\"✨ Share project memory between clones\"), says `init` must not set `remote.origin.push`, because setting it breaks plain `git push`, fetch and pull. The follow-up on the same commit (f-e7a804a9) says nothing forces a push, so people push memory explicitly with `memory sync`. After a purge they run the force-push that `sync` prints.",
+			"correct": null
+		},
+		{
+			"question": 2,
+			"side": "with",
+			"run": 2,
+			"briefArrived": true,
+			"inputTokens": 31205,
+			"outputTokens": 279,
+			"turns": 2,
+			"toolCalls": 1,
+			"costUsd": 0.0400704,
+			"permissionDenials": 0,
+			"usageByModel": {
+				"claude-sonnet-5-5": {
+					"inputTokens": 4,
+					"cacheCreationInputTokens": 8757,
+					"cacheReadInputTokens": 22444,
+					"outputTokens": 279,
+					"costUSD": 0.0400704
+				}
+			},
+			"answer": "No. Commit 635063c (\"Share project memory between clones\") records the open constraint c-bfd4b51d: \"init must not set remote.origin.push, and the fetch refspec must be a wildcard, or plain git push, fetch and pull break.\" Setting it would override git's default push behavior for the whole repo. Pushing memory stays an explicit step (`memory sync`), and follow-up f-e7a804a9 notes that nothing forces a push.",
+			"correct": null
+		},
+		{
+			"question": 2,
+			"side": "without",
+			"run": 2,
+			"inputTokens": 17855,
+			"outputTokens": 532,
+			"turns": 3,
+			"toolCalls": 2,
+			"costUsd": 0.0196594,
+			"permissionDenials": 0,
+			"usageByModel": {
+				"claude-sonnet-5-5": {
+					"inputTokens": 4,
+					"cacheCreationInputTokens": 3217,
+					"cacheReadInputTokens": 14634,
+					"outputTokens": 532,
+					"costUSD": 0.0196594
+				}
+			},
+			"answer": "No. `chamoji init` should leave `remote.origin.push` unset, because setting it made a plain `git push` push only the memory ref and leave the branch behind. An explicit `git push origin main` also ignored the setting. Memory goes out through `chamoji memory sync` and `chamoji release --push` instead, and `init` adds only a wildcard fetch refspec (`+refs/chamoji/*:refs/chamoji/remotes/origin/*`) so plain `git fetch` and `git pull` still work before the remote has any memory.\n\nThis comes from the \"no `remote.origin.push`\" departure in `docs/ROADMAP.md:556` and the milestone 7 plan, `docs/superpowers/plans/2026-11-01-milestone-7-project-memory.md:34`. The code comment in `packages/cli/src/init.ts:36-37` records the same decision.",
+			"correct": null
+		},
+		{
+			"question": 2,
+			"side": "without",
+			"run": 3,
+			"inputTokens": 17949,
+			"outputTokens": 424,
+			"turns": 3,
+			"toolCalls": 2,
+			"costUsd": 0.0189554,
+			"permissionDenials": 0,
+			"usageByModel": {
+				"claude-sonnet-5-5": {
+					"inputTokens": 4,
+					"cacheCreationInputTokens": 3311,
+					"cacheReadInputTokens": 14634,
+					"outputTokens": 424,
+					"costUSD": 0.0189554
+				}
+			},
+			"answer": "No. The project tested this and decided against it: with `remote.origin.push` set, a plain `git push` pushed only the memory ref and left the branch behind, and an explicit `git push origin main` ignored the setting anyway (`docs/ROADMAP.md:556`, `readme.md:224`, milestone 7 plan `docs/superpowers/plans/2026-11-01-milestone-7-project-memory.md:34`). So `init` sets only the fetch line, and memory is shared through `chamoji memory sync` and `chamoji release --push`.",
+			"correct": null
+		},
+		{
+			"question": 2,
+			"side": "with",
+			"run": 3,
+			"briefArrived": true,
+			"inputTokens": 30904,
+			"outputTokens": 260,
+			"turns": 2,
+			"toolCalls": 1,
+			"costUsd": 0.0386764,
+			"permissionDenials": 0,
+			"usageByModel": {
+				"claude-sonnet-5-5": {
+					"inputTokens": 4,
+					"cacheCreationInputTokens": 8456,
+					"cacheReadInputTokens": 22444,
+					"outputTokens": 260,
+					"costUSD": 0.0386764
+				}
+			},
+			"answer": "No. Constraint `c-bfd4b51d`, recorded in commit 635063c (\"Share project memory between clones\"), says `init` must not set `remote.origin.push`, because that breaks plain `git push`, fetch and pull. The same commit's follow-up `f-e7a804a9` says nothing forces a push of memory. After a purge, the user runs the force-push that `memory sync` prints.",
+			"correct": null
+		},
+		{
+			"question": 3,
+			"side": "with",
+			"run": 1,
+			"briefArrived": true,
+			"inputTokens": 11214,
+			"outputTokens": 139,
+			"turns": 1,
+			"toolCalls": 0,
+			"costUsd": 0.016169100000000002,
+			"permissionDenials": 0,
+			"usageByModel": {
+				"claude-sonnet-5-5": {
+					"inputTokens": 2,
+					"cacheCreationInputTokens": 3501,
+					"cacheReadInputTokens": 7711,
+					"outputTokens": 139,
+					"costUSD": 0.016169100000000002
+				}
+			},
+			"answer": "Claude Code treats a hook exit code of 2 as a block, so ending both command forms with `|| true` forces a successful exit and a failing hook can't stop the agent. A real denial is still delivered as JSON on stdout with exit 0, so it gets through. I relied on constraint c-f3ea2f10 (commit 800050c), which fits c-5833401c (commit 6617b21): the hook must always exit 0.",
+			"correct": null
+		},
+		{
+			"question": 3,
+			"side": "without",
+			"run": 1,
+			"inputTokens": 24641,
+			"outputTokens": 422,
+			"turns": 3,
+			"toolCalls": 2,
+			"costUsd": 0.0171241,
+			"permissionDenials": 0,
+			"usageByModel": {
+				"claude-sonnet-5-5": {
+					"inputTokens": 6,
+					"cacheCreationInputTokens": 2674,
+					"cacheReadInputTokens": 21961,
+					"outputTokens": 422,
+					"costUSD": 0.0171241
+				}
+			},
+			"answer": "The `|| true` makes the hook always exit 0. An older installed chamoji exits 2 on the unknown `agent-hook` command, and Claude Code would treat that as a blocking error, so it would block every commit. I didn't rely on a specific commit or rule. The source is the comment at `packages/cli/test/init.test.ts:343-344`, which sits next to the `HOOK_COMMAND` definitions.",
+			"correct": null
+		},
+		{
+			"question": 3,
+			"side": "without",
+			"run": 2,
+			"inputTokens": 25032,
+			"outputTokens": 461,
+			"turns": 3,
+			"toolCalls": 2,
+			"costUsd": 0.014207000000000001,
+			"permissionDenials": 0,
+			"usageByModel": {
+				"claude-sonnet-5-5": {
+					"inputTokens": 6,
+					"cacheCreationInputTokens": 1816,
+					"cacheReadInputTokens": 23210,
+					"outputTokens": 461,
+					"costUSD": 0.014207000000000001
+				}
+			},
+			"answer": "The `|| true` is there because an older chamoji that doesn't know the subcommand prints help and exits 2, and Claude Code treats exit 2 as \"block this action\". Since the hook file is committed, that would block every commit. A real denial is JSON on stdout with exit 0, so it still gets through. I relied on the comment on `runChamoji` in `packages/cli/src/init.ts:170-178`, and on the project plan's ledger note that the hook command ends in `|| true`. I didn't check git history for the specific commit.",
+			"correct": null
+		},
+		{
+			"question": 3,
+			"side": "with",
+			"run": 2,
+			"briefArrived": true,
+			"inputTokens": 11214,
+			"outputTokens": 138,
+			"turns": 1,
+			"toolCalls": 0,
+			"costUsd": 0.0025052,
+			"permissionDenials": 0,
+			"usageByModel": {
+				"claude-sonnet-5-5": {
+					"inputTokens": 2,
+					"cacheCreationInputTokens": 0,
+					"cacheReadInputTokens": 11212,
+					"outputTokens": 138,
+					"costUSD": 0.0025052
+				}
+			},
+			"answer": "Claude Code treats a hook's exit code 2 as a block, so ending both command forms in `|| true` forces a successful exit and a failing hook can't stop the agent. A denial still gets through because it is JSON printed on stdout with exit 0. I'm relying on constraint c-f3ea2f10 (commit 800050c), plus c-5833401c (commit 6617b21), which says the hook must always exit 0.",
+			"correct": null
+		},
+		{
+			"question": 3,
+			"side": "with",
+			"run": 3,
+			"briefArrived": true,
+			"inputTokens": 11214,
+			"outputTokens": 143,
+			"turns": 1,
+			"toolCalls": 0,
+			"costUsd": 0.0025552,
+			"permissionDenials": 0,
+			"usageByModel": {
+				"claude-sonnet-5-5": {
+					"inputTokens": 2,
+					"cacheCreationInputTokens": 0,
+					"cacheReadInputTokens": 11212,
+					"outputTokens": 143,
+					"costUSD": 0.0025552
+				}
+			},
+			"answer": "Claude Code treats a hook exit code of 2 as a block, so both forms of the hook command end in `|| true` to force exit 0, and a real denial is still delivered as JSON on stdout with exit 0. This is recorded in constraint c-f3ea2f10 (commit 800050c), which fits constraint c-5833401c (commit 6617b21): the hook must always exit 0 so a broken hook never stops the agent's work.",
+			"correct": null
+		},
+		{
+			"question": 3,
+			"side": "without",
+			"run": 3,
+			"inputTokens": 25825,
+			"outputTokens": 483,
+			"turns": 3,
+			"toolCalls": 2,
+			"costUsd": 0.015844000000000004,
+			"permissionDenials": 0,
+			"usageByModel": {
+				"claude-sonnet-5-5": {
+					"inputTokens": 6,
+					"cacheCreationInputTokens": 2159,
+					"cacheReadInputTokens": 23660,
+					"outputTokens": 483,
+					"costUSD": 0.015844000000000004
+				}
+			},
+			"answer": "The `|| true` guards against a chamoji install that's older than the `agent-hook` command. That older version prints help and exits 2, and Claude Code reads exit 2 as \"block this\". Because the hook file is committed, that would block every commit. A real denial is JSON on stdout with exit 0, so it still gets through.\n\nI relied on the code comment at `packages/cli/src/init.ts:171-175`. The ledger note in `docs/superpowers/plans/2026-11-01-milestone-7-project-memory.md` records the same decision, but I couldn't name a specific commit.",
+			"correct": null
+		},
+		{
+			"question": 4,
+			"side": "without",
+			"run": 1,
+			"inputTokens": 41742,
+			"outputTokens": 1038,
+			"turns": 5,
+			"toolCalls": 4,
+			"costUsd": 0.0376769,
+			"permissionDenials": 0,
+			"usageByModel": {
+				"claude-sonnet-5-5": {
+					"inputTokens": 8,
+					"cacheCreationInputTokens": 5925,
+					"cacheReadInputTokens": 35809,
+					"outputTokens": 1038,
+					"costUSD": 0.0376769
+				}
+			},
+			"answer": "Nothing I found forbids it. There's no written rule against adding the SDK, but `chamoji mcp` is deliberately SDK-free today: `docs/ROADMAP.md:557` lists \"`chamoji mcp` has no SDK\" as a deliberate departure from the plan, and `packages/cli/src/mcp.ts` implements the protocol itself. The `packages/cli` dependencies (meow, chalk, ink, semver) are also small. So adding it would reverse that decision, and you'd want to update that roadmap line and weigh the install size, rather than treat it as a routine dependency add. I didn't find an introducing commit for that choice, and I haven't read the rest of `mcp.ts`.",
+			"correct": null
+		},
+		{
+			"question": 4,
+			"side": "with",
+			"run": 1,
+			"briefArrived": true,
+			"inputTokens": 11218,
+			"outputTokens": 138,
+			"turns": 1,
+			"toolCalls": 0,
+			"costUsd": 0.016175099999999998,
+			"permissionDenials": 0,
+			"usageByModel": {
+				"claude-sonnet-5-5": {
+					"inputTokens": 2,
+					"cacheCreationInputTokens": 3505,
+					"cacheReadInputTokens": 7711,
+					"outputTokens": 138,
+					"costUSD": 0.016175099999999998
+				}
+			},
+			"answer": "Probably not: an open constraint recorded in commit 0e561b5 (c-bef828d1) says \"no MCP SDK; it would double chamoji's install for five methods.\" That is a project record rather than a hard rule, so you could revisit it, but you'd be overturning a past decision. The same commit has an open follow-up (f-8c98b2bd) to try the server with the real Claude Code client via `claude mcp add`.",
+			"correct": null
+		},
+		{
+			"question": 4,
+			"side": "with",
+			"run": 2,
+			"briefArrived": true,
+			"inputTokens": 11218,
+			"outputTokens": 132,
+			"turns": 1,
+			"toolCalls": 0,
+			"costUsd": 0.0024456,
+			"permissionDenials": 0,
+			"usageByModel": {
+				"claude-sonnet-5-5": {
+					"inputTokens": 2,
+					"cacheCreationInputTokens": 0,
+					"cacheReadInputTokens": 11216,
+					"outputTokens": 132,
+					"costUSD": 0.0024456
+				}
+			},
+			"answer": "Probably not: an open constraint, c-bef828d1 (commit 0e561b5), says \"no MCP SDK; it would double chamoji's install for five methods.\" That's a recorded project decision rather than a hard technical block, so you could revisit it, but you'd be reversing it. A follow-up from the same commit (f-8c98b2bd) also says the server still needs trying with the real Claude Code client.",
+			"correct": null
+		},
+		{
+			"question": 4,
+			"side": "without",
+			"run": 2,
+			"inputTokens": 40763,
+			"outputTokens": 1018,
+			"turns": 5,
+			"toolCalls": 4,
+			"costUsd": 0.0316694,
+			"permissionDenials": 0,
+			"usageByModel": {
+				"claude-sonnet-5-5": {
+					"inputTokens": 8,
+					"cacheCreationInputTokens": 4461,
+					"cacheReadInputTokens": 36294,
+					"outputTokens": 1018,
+					"costUSD": 0.0316694
+				}
+			},
+			"answer": "Not without reversing an earlier decision. Commit `0e561b5` (\"Serve project memory to AI agents with chamoji mcp\") deliberately hand-wrote the server and recorded the constraint \"no MCP SDK; it would double chamoji's install for five methods\". `docs/ROADMAP.md:557` repeats it (\"`chamoji mcp` has no SDK\"). If you want to revisit it, you would need to show that the SDK's install cost is now acceptable, and then update that roadmap line.",
+			"correct": null
+		},
+		{
+			"question": 4,
+			"side": "without",
+			"run": 3,
+			"inputTokens": 28264,
+			"outputTokens": 889,
+			"turns": 4,
+			"toolCalls": 3,
+			"costUsd": 0.0258731,
+			"permissionDenials": 0,
+			"usageByModel": {
+				"claude-sonnet-5-5": {
+					"inputTokens": 6,
+					"cacheCreationInputTokens": 3627,
+					"cacheReadInputTokens": 24631,
+					"outputTokens": 889,
+					"costUSD": 0.0258731
+				}
+			},
+			"answer": "Not without reopening a recorded decision: `chamoji mcp` is deliberately a small hand-written stdio JSON-RPC server with no MCP SDK. The Milestone 7 plan (`docs/superpowers/plans/2026-11-01-milestone-7-project-memory.md:36`) gives the reason. The SDK would install 91 packages and 26 MB, which doubles chamoji's 47 packages and 26 MB, and it pulls in express and hono for a transport chamoji doesn't use. `docs/ROADMAP.md:557` lists \"`chamoji mcp` has no SDK\" as a departure. The tradeoff the plan accepts is that chamoji tracks protocol versions itself.",
+			"correct": null
+		},
+		{
+			"question": 4,
+			"side": "with",
+			"run": 3,
+			"briefArrived": true,
+			"inputTokens": 11218,
+			"outputTokens": 92,
+			"turns": 1,
+			"toolCalls": 0,
+			"costUsd": 0.0020456000000000003,
+			"permissionDenials": 0,
+			"usageByModel": {
+				"claude-sonnet-5-5": {
+					"inputTokens": 2,
+					"cacheCreationInputTokens": 0,
+					"cacheReadInputTokens": 11216,
+					"outputTokens": 92,
+					"costUSD": 0.0020456000000000003
+				}
+			},
+			"answer": "Probably not. An open constraint recorded in commit 0e561b5 (c-bef828d1) says \"no MCP SDK; it would double chamoji's install for five methods.\" If you want to revisit it, that would mean changing a standing decision, so it's worth confirming with the team first.",
+			"correct": null
+		},
+		{
+			"question": 5,
+			"side": "with",
+			"run": 1,
+			"briefArrived": true,
+			"inputTokens": 23844,
+			"outputTokens": 274,
+			"turns": 2,
+			"toolCalls": 1,
+			"costUsd": 0.0243122,
+			"permissionDenials": 0,
+			"usageByModel": {
+				"claude-sonnet-5-5": {
+					"inputTokens": 4,
+					"cacheCreationInputTokens": 4918,
+					"cacheReadInputTokens": 18922,
+					"outputTokens": 274,
+					"costUSD": 0.0243122
+				}
+			},
+			"answer": "It blames the working copy so that line numbers match what you see in the editor. An edited but uncommitted line is then reported as uncommitted, not blamed on an older commit. This is constraint `c-7a4d905c` from commit `2fd0da6` (\"✨ Add chamoji why to explain a line\").",
+			"correct": null
+		},
+		{
+			"question": 5,
+			"side": "without",
+			"run": 1,
+			"inputTokens": 27363,
+			"outputTokens": 462,
+			"turns": 3,
+			"toolCalls": 2,
+			"costUsd": 0.0258342,
+			"permissionDenials": 0,
+			"usageByModel": {
+				"claude-sonnet-5-5": {
+					"inputTokens": 6,
+					"cacheCreationInputTokens": 4735,
+					"cacheReadInputTokens": 22622,
+					"outputTokens": 462,
+					"costUSD": 0.0258342
+				}
+			},
+			"answer": "It's deliberate. In `packages/core/src/blame.ts:49-50`, `blameLine` runs `git blame` with no revision argument, so it blames the working copy. The comment there says this keeps line numbers matching what an editor shows, and a line you haven't committed yet comes back as `uncommitted` instead of being blamed on the wrong commit (`blame.ts:61`). The readme's `why` section (`readme.md:191`) says the same. I didn't look through git history for the commit that introduced this choice, so I can't name one.",
+			"correct": null
+		},
+		{
+			"question": 5,
+			"side": "without",
+			"run": 2,
+			"inputTokens": 26229,
+			"outputTokens": 504,
+			"turns": 3,
+			"toolCalls": 2,
+			"costUsd": 0.0168783,
+			"permissionDenials": 0,
+			"usageByModel": {
+				"claude-sonnet-5-5": {
+					"inputTokens": 6,
+					"cacheCreationInputTokens": 2360,
+					"cacheReadInputTokens": 23863,
+					"outputTokens": 504,
+					"costUSD": 0.0168783
+				}
+			},
+			"answer": "`chamoji why` runs `git blame` with no revision argument, which blames the working copy (`packages/core/src/blame.ts:49`). That way the line numbers you give match the file you have open, and a line you haven't committed yet comes back as `uncommitted` instead of being pinned on an older commit. The design was introduced in commit `2fd0da6` (\"Add chamoji why to explain a line\") and is documented in `readme.md:191`. I didn't find a written rationale beyond the code comments and readme, so the \"why\" above is inferred from them.",
+			"correct": null
+		},
+		{
+			"question": 5,
+			"side": "with",
+			"run": 2,
+			"briefArrived": true,
+			"inputTokens": 23803,
+			"outputTokens": 273,
+			"turns": 2,
+			"toolCalls": 1,
+			"costUsd": 0.0104882,
+			"permissionDenials": 0,
+			"usageByModel": {
+				"claude-sonnet-5-5": {
+					"inputTokens": 4,
+					"cacheCreationInputTokens": 1377,
+					"cacheReadInputTokens": 22422,
+					"outputTokens": 273,
+					"costUSD": 0.0104882
+				}
+			},
+			"answer": "It blames the working copy so that line numbers match what you see in your editor. An edited line is then reported as uncommitted, instead of being wrongly blamed on an older commit. I relied on the constraint `c-7a4d905c`, recorded in commit 2fd0da6 (\"✨ Add chamoji why to explain a line\").",
+			"correct": null
+		},
+		{
+			"question": 5,
+			"side": "with",
+			"run": 3,
+			"briefArrived": true,
+			"inputTokens": 23860,
+			"outputTokens": 294,
+			"turns": 2,
+			"toolCalls": 1,
+			"costUsd": 0.0109262,
+			"permissionDenials": 0,
+			"usageByModel": {
+				"claude-sonnet-5-5": {
+					"inputTokens": 4,
+					"cacheCreationInputTokens": 1434,
+					"cacheReadInputTokens": 22422,
+					"outputTokens": 294,
+					"costUSD": 0.0109262
+				}
+			},
+			"answer": "It blames the working copy so that line numbers match what you see in your editor. An edited but uncommitted line is then reported as uncommitted, not blamed on an older commit. This is constraint `c-7a4d905c`, recorded in commit `2fd0da6` (\"✨ Add chamoji why to explain a line\").",
+			"correct": null
+		},
+		{
+			"question": 5,
+			"side": "without",
+			"run": 3,
+			"inputTokens": 36595,
+			"outputTokens": 795,
+			"turns": 6,
+			"toolCalls": 5,
+			"costUsd": 0.0258909,
+			"permissionDenials": 0,
+			"usageByModel": {
+				"claude-sonnet-5-5": {
+					"inputTokens": 8,
+					"cacheCreationInputTokens": 3658,
+					"cacheReadInputTokens": 32929,
+					"outputTokens": 795,
+					"costUSD": 0.0258909
+				}
+			},
+			"answer": "`chamoji why` takes a `file:line` location, and that location's line number comes from what the user sees in their editor. `blameLine` in `packages/core/src/blame.ts:49-52` runs `git blame` with no revision for that reason (the comment there says so). Blaming HEAD would shift the line numbers whenever there are uncommitted edits. Leaving out the revision also lets an uncommitted line come back as the all-zero hash, which the code reports as `{kind: 'uncommitted'}` instead of naming a commit. The function was added in commit `2fd0da6` (\"✨ Add chamoji why to explain a line\"), and the readme (line 191) documents the behavior.",
+			"correct": null
+		}
+	],
+	"summary": {
+		"with": {
+			"runs": 15,
+			"errors": 0,
+			"inputTokens": {
+				"mean": 17717.9,
+				"median": 11218,
+				"min": 11214,
+				"max": 31205
+			},
+			"outputTokens": {
+				"mean": 202.9,
+				"median": 225,
+				"min": 92,
+				"max": 294
+			},
+			"turns": {
+				"mean": 1.4,
+				"median": 1,
+				"min": 1,
+				"max": 2
+			},
+			"toolCalls": {
+				"mean": 0.4,
+				"median": 0,
+				"min": 0,
+				"max": 1
+			},
+			"toolCallsUnknown": 0
+		},
+		"without": {
+			"runs": 15,
+			"errors": 0,
+			"inputTokens": {
+				"mean": 35672.9,
+				"median": 28264,
+				"min": 17855,
+				"max": 73719
+			},
+			"outputTokens": {
+				"mean": 806.5,
+				"median": 702,
+				"min": 422,
+				"max": 1531
+			},
+			"turns": {
+				"mean": 4.3,
+				"median": 3,
+				"min": 3,
+				"max": 7
+			},
+			"toolCalls": {
+				"mean": 3.3,
+				"median": 2,
+				"min": 2,
+				"max": 6
+			},
+			"toolCallsUnknown": 0
+		}
+	},
+	"checked": false
+}
