@@ -42,6 +42,12 @@ test('windowShares and ratio give null, not Infinity, at zero tokens', () => {
 	expect(ratio(0, 10)).toBeNull();
 });
 
+test('windowShares gives null fits for a side with zero tokens', () => {
+	expect(
+		windowShares({withTokens: 10, withoutTokens: 0})[0].withoutFits,
+	).toBeNull();
+});
+
 test('ratio is without over with, to one decimal', () => {
 	expect(ratio(3, 10)).toBe(3.3);
 });
