@@ -84,10 +84,16 @@ export function pickSample(candidates, n = 20) {
 /** A whole number with thousands separators, rounded half up. @param {number} n */
 const tokens = n => Math.round(n).toLocaleString('en-US');
 
-/** A share of a window: one decimal, or two when under 1%. @param {number} share */
+/**
+ * A share of a window, rounded half up: one decimal, or two when under 1%.
+ * Shares are kept to 4 decimals, so this counts in whole hundredths of a
+ * percent and a tie is never lost to floating point.
+ * @param {number} share
+ */
 const percent = share => {
-	const value = share * 100;
-	return `${value.toFixed(value < 1 ? 2 : 1)}%`;
+	const hundredths = Math.round(share * 10_000);
+	if (hundredths < 100) return `${(hundredths / 100).toFixed(2)}%`;
+	return `${(Math.floor((hundredths + 5) / 10) / 10).toFixed(1)}%`;
 };
 
 /** A ratio as `27.1×`, or "not measured". @param {number | null} value */
@@ -161,7 +167,7 @@ export function renderTables(results) {
 				],
 			],
 		),
-		`The saving is ${tokens(change.saved)} tokens, or ${times(change.ratio)}.`,
+		`chamoji reads ${tokens(change.saved)} fewer tokens: git alone reads ${times(change.ratio)} as many.`,
 		'### Share of a context window',
 		table(
 			[

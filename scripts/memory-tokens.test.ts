@@ -207,3 +207,31 @@ test('the page holds the live section with the not-run sentence, and replaceSect
 	expect(sectionBody(swapped ?? '', '## A sample of real runs')).toBe(live);
 	expect(replaceSection(page, '## No such heading', 'x')).toBeNull();
 });
+
+test('renderTables rounds a share that lands on a tie half up', () => {
+	const base = results();
+	const text = renderTables({
+		...base,
+		windows: [
+			{
+				window: 250_000,
+				withShare: 0.0115,
+				withoutShare: 0.0125,
+				withFits: 1,
+				withoutFits: 1,
+			},
+		],
+	});
+
+	expect(text).toMatch(/\|\s*250k\s*\|\s*1\.2%\s*\|\s*1\.3%\s*\|/);
+});
+
+test('renderTables says how many times as many tokens git alone reads', () => {
+	const base = results();
+	const {saved, ratio} = base.typicalSwitch;
+	const text = renderTables(base);
+
+	expect(text).toContain(
+		`chamoji reads ${saved.toLocaleString('en-US')} fewer tokens: git alone reads ${ratio.toFixed(1)}× as many.`,
+	);
+});
