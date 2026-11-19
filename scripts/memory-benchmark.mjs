@@ -9,7 +9,8 @@
 //
 //   pnpm benchmark:memory                 print the figures
 //   pnpm benchmark:memory --write         also write docs/benchmarks/memory-tokens.json
-//                                         and the tables on the docs page
+//                                         and the tables on the docs page, with
+//                                         the live sample's when there is one
 //   pnpm benchmark:memory --exact         add exact counts (needs ANTHROPIC_API_KEY)
 //   pnpm benchmark:memory --pick-sample   write scripts/memory-benchmark/sample.json
 //   pnpm benchmark:memory --sample <file> read the sample from another file
@@ -44,6 +45,7 @@ import {
 	CHARS_PER_TOKEN,
 	pickSample,
 	ratio,
+	renderLive,
 	renderTables,
 	replaceSection,
 	summarize,
@@ -62,8 +64,10 @@ const LOOKUPS = 5;
 const CHAT_EXAMPLE = 'packages/core/src/release.ts';
 const EXACT_MODEL = 'claude-sonnet-5-5';
 const RESULTS_FILE = 'docs/benchmarks/memory-tokens.json';
+const LIVE_FILE = 'docs/benchmarks/memory-tokens-live.json';
 const PAGE_FILE = 'docs/site/guides/memory-tokens.mdx';
 const NUMBERS_HEADING = '## The numbers';
+const LIVE_HEADING = '## A sample of real runs';
 
 /**
  * The runner's own git calls (finding the checkout, making the clone), in the
@@ -357,7 +361,7 @@ async function main() {
 	}
 
 	// --write also fills in the page, so check the page is there and has its
-	// heading before measuring: a run that can't write both writes neither.
+	// headings before measuring: a run that can't write both writes neither.
 	const pageFile = path.join(checkout, ...PAGE_FILE.split('/'));
 	if (writing) {
 		if (!existsSync(pageFile)) {
@@ -367,14 +371,15 @@ async function main() {
 			return 2;
 		}
 
-		if (
-			replaceSection(readFileSync(pageFile, 'utf8'), NUMBERS_HEADING, '') ===
-			null
-		) {
-			console.error(
-				`${PAGE_FILE} has no "${NUMBERS_HEADING}" heading, so --write has nowhere to put the tables, and nothing was written.`,
-			);
-			return 2;
+		for (const heading of [NUMBERS_HEADING, LIVE_HEADING]) {
+			if (
+				replaceSection(readFileSync(pageFile, 'utf8'), heading, '') === null
+			) {
+				console.error(
+					`${PAGE_FILE} has no "${heading}" heading, so --write has nowhere to put the tables, and nothing was written.`,
+				);
+				return 2;
+			}
 		}
 	}
 
@@ -428,14 +433,23 @@ async function main() {
 		printSummary(results);
 		if (writing) {
 			// The page is built from the file's own text, so the two agree
-			// exactly. The results go first, then the page.
+			// exactly, and its live section from the live sample's file when
+			// there is one. The results go first, then the page.
 			const text = `${JSON.stringify(results, null, '\t')}\n`;
-			const page = replaceSection(
+			const liveFile = path.join(checkout, ...LIVE_FILE.split('/'));
+			const live = existsSync(liveFile)
+				? JSON.parse(readFileSync(liveFile, 'utf8'))
+				: null;
+			const numbers = replaceSection(
 				readFileSync(pageFile, 'utf8'),
 				NUMBERS_HEADING,
 				renderTables(JSON.parse(text)),
 			);
-			if (page === null) throw new Error(`${PAGE_FILE} lost its heading.`);
+			const page =
+				numbers === null
+					? null
+					: replaceSection(numbers, LIVE_HEADING, renderLive(live));
+			if (page === null) throw new Error(`${PAGE_FILE} lost a heading.`);
 			const file = path.join(checkout, ...RESULTS_FILE.split('/'));
 			mkdirSync(path.dirname(file), {recursive: true});
 			writeFileSync(file, text);

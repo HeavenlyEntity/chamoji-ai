@@ -234,6 +234,81 @@ export function renderTables(results) {
 	return `${out.join('\n\n')}\n`;
 }
 
+const LIVE_NOT_RUN = 'The live sample has not been run yet.';
+
+/**
+ * The Markdown for the page's live section, from the live results file's
+ * contents: the model, the date and the commit, and per side the smallest,
+ * median and largest input tokens, output tokens, turns and tool calls. It
+ * judges no answer itself: right answers are counted only once a person has
+ * checked them. With no results it is the not-run sentence.
+ * @param {any} live the parsed docs/benchmarks/memory-tokens-live.json, or null
+ * @returns {string}
+ */
+export function renderLive(live) {
+	if (!live) return `${LIVE_NOT_RUN}\n`;
+	const {model, date, commit, runs, summary, checked} = live;
+	const questions = new Set(runs.map((/** @type {any} */ r) => r.question))
+		.size;
+	const perQuestion = Math.max(
+		...runs.map((/** @type {any} */ r) => r.run ?? 1),
+	);
+	const failed = runs.filter((/** @type {any} */ r) => r.error).length;
+	const sides = /** @type {const} */ ([
+		['with', 'with chamoji'],
+		['without', 'without'],
+	]);
+	const metrics = /** @type {const} */ ([
+		['inputTokens', 'Input tokens'],
+		['outputTokens', 'Output tokens'],
+		['turns', 'Turns'],
+		['toolCalls', 'Tool calls'],
+	]);
+	const out = [
+		`${model} answered ${questions} ${questions === 1 ? 'question' : 'questions'} about this repo ${perQuestion === 1 ? 'once' : `${perQuestion} times`} each in Claude Code, in a clone with chamoji set up and in a plain clone, on ${date} UTC at commit \`${commit.slice(0, 7)}\`. The figures are what each session reported, per run; input tokens include cached ones.`,
+		table(
+			['', 'Smallest', 'Median', 'Largest'],
+			metrics.flatMap(([key, label]) =>
+				sides.map(([side, sideLabel]) => {
+					const f = summary[side][key];
+					return [
+						`${label}, ${sideLabel}`,
+						tokens(f.min),
+						tokens(f.median),
+						tokens(f.max),
+					];
+				}),
+			),
+		),
+	];
+	if (failed > 0) {
+		out.push(
+			`${failed} of ${runs.length} runs failed and ${failed === 1 ? 'is' : 'are'} left out of the figures.`,
+		);
+	}
+
+	if (checked) {
+		const right = (/** @type {string} */ side) => {
+			const answered = runs.filter(
+				(/** @type {any} */ r) => r.side === side && !r.error,
+			);
+			return [
+				answered.filter((/** @type {any} */ r) => r.correct === true).length,
+				answered.length,
+			];
+		};
+		const [withRight, withAnswered] = right('with');
+		const [withoutRight, withoutAnswered] = right('without');
+		out.push(
+			`Checked against the key by hand: ${withRight} of ${withAnswered} answers with chamoji were right, and ${withoutRight} of ${withoutAnswered} without.`,
+		);
+	} else {
+		out.push('The answers have not been checked against the key yet.');
+	}
+
+	return `${out.join('\n\n')}\n`;
+}
+
 /**
  * The line numbers of a page's `## ` headings, skipping code blocks.
  * @param {string[]} lines

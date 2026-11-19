@@ -32,6 +32,7 @@ import {
 } from './lib/memory-measure.mjs';
 import {
 	estimateTokens,
+	renderLive,
 	renderTables,
 	sectionBody,
 	typicalSwitch,
@@ -618,7 +619,8 @@ test('the worktrees made for the tags are gone afterwards, and the checkout is u
 	expect(await gitOutput(dir, ['status', '--porcelain'])).toBe('');
 });
 
-const pageText = '# Page\n\n## The numbers\n\nOld.\n\n## After\n\nKept.\n';
+const pageText =
+	'# Page\n\n## The numbers\n\nOld.\n\n## After\n\nKept.\n\n## A sample of real runs\n\nOld live.\n';
 
 /** The page --write fills in, put in a fixture repo's working copy. */
 function writePage(dir: string) {
@@ -714,7 +716,77 @@ test('--write fills in the page from the file it wrote, in the fixture and not i
 		renderTables(results).trim(),
 	);
 	expect(sectionBody(page, '## After')).toBe('Kept.');
+	expect(sectionBody(page, '## A sample of real runs')).toBe(
+		'The live sample has not been run yet.',
+	);
 	expect(readFileSync(ours, 'utf8')).toBe(oursBefore);
+});
+
+test('--write fills the live section from the live results file when there is one', async () => {
+	const {dir, sampleFile} = await runnerFixture();
+	const pageFile = writePage(dir);
+	const figures = {mean: 2, median: 2, min: 1, max: 3};
+	const side = {
+		runs: 1,
+		errors: 0,
+		inputTokens: figures,
+		outputTokens: figures,
+		turns: figures,
+		toolCalls: figures,
+	};
+	const live = {
+		version: 1,
+		model: 'claude-sonnet-5-5',
+		date: '2026-11-19',
+		commit: '0123456789abcdef0123456789abcdef01234567',
+		method: {},
+		runs: [
+			{question: 1, side: 'with', run: 1, inputTokens: 2, correct: null},
+			{question: 1, side: 'without', run: 1, inputTokens: 2, correct: null},
+		],
+		summary: {with: side, without: side},
+		checked: false,
+	};
+	mkdirSync(path.join(dir, 'docs', 'benchmarks'), {recursive: true});
+	writeFileSync(
+		path.join(dir, 'docs', 'benchmarks', 'memory-tokens-live.json'),
+		JSON.stringify(live),
+	);
+
+	await execFileAsync(
+		process.execPath,
+		[runner, '--sample', sampleFile, '--write'],
+		{cwd: dir},
+	);
+
+	const page = readFileSync(pageFile, 'utf8');
+	expect(sectionBody(page, '## A sample of real runs')).toBe(
+		renderLive(live).trim(),
+	);
+	expect(sectionBody(page, '## After')).toBe('Kept.');
+});
+
+test('--write with a page that has no live heading fails and leaves the page as it was', async () => {
+	const {dir, sampleFile} = await runnerFixture();
+	const pageFile = writePage(dir);
+	const text = '# Page\n\n## The numbers\n\nOld.\n';
+	writeFileSync(pageFile, text);
+
+	const error = await execFileAsync(
+		process.execPath,
+		[runner, '--sample', sampleFile, '--write'],
+		{cwd: dir},
+	).then(
+		() => undefined,
+		(error: {code: number; stderr: string}) => error,
+	);
+
+	expect(error?.code).toBe(2);
+	expect(error?.stderr).toContain('has no "## A sample of real runs" heading');
+	expect(readFileSync(pageFile, 'utf8')).toBe(text);
+	expect(
+		existsSync(path.join(dir, 'docs', 'benchmarks', 'memory-tokens.json')),
+	).toBe(false);
 });
 
 test('--write with no page fails with a message and writes no results file', async () => {
