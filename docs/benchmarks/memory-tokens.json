@@ -1,0 +1,285 @@
+{
+	"version": 1,
+	"ranAt": {
+		"tag": null,
+		"commit": "941d811c85c4f41d6340a81b115369d785e0d1f7",
+		"date": "2026-11-19"
+	},
+	"method": {
+		"charsPerToken": 4,
+		"lookups": 5,
+		"refsAsOf": "HEAD"
+	},
+	"whatStands": {
+		"brief": {
+			"chars": 5982,
+			"tokens": 1496
+		},
+		"log": {
+			"chars": 231451,
+			"tokens": 57863
+		},
+		"notesFile": {
+			"chars": 7485,
+			"tokens": 1872
+		},
+		"cardLines": 57,
+		"commits": 448
+	},
+	"why": {
+		"sampleSize": 20,
+		"dropped": 0,
+		"card": {
+			"mean": 67.8,
+			"median": 62.5,
+			"min": 44,
+			"max": 143
+		},
+		"blameShow": {
+			"mean": 3637.1,
+			"median": 3655,
+			"min": 298,
+			"max": 9159
+		},
+		"fileHistory": {
+			"mean": 18639.8,
+			"median": 8423.5,
+			"min": 492,
+			"max": 84570
+		},
+		"perLine": [
+			{
+				"location": "docs/ROADMAP.md:494",
+				"commit": "00efe43b3e72c520d6bf213e158b7aa78fbfd386",
+				"card": 54,
+				"blameShow": 667,
+				"fileHistory": 84570
+			},
+			{
+				"location": "packages/core/src/setup/questions.ts:724",
+				"commit": "00f29ca6ff441e99fb515e723056e5fe8023d345",
+				"card": 56,
+				"blameShow": 627,
+				"fileHistory": 17324
+			},
+			{
+				"location": "packages/cli/test/run.test.ts:525",
+				"commit": "0226b5dc1baf55bda029b182e827b1c284c309c8",
+				"card": 44,
+				"blameShow": 5690,
+				"fileHistory": 8360
+			},
+			{
+				"location": "packages/core/src/publish/frameworks.ts:18",
+				"commit": "02e9c94d9abe438aef2470d7acdc3f91fb033527",
+				"card": 79,
+				"blameShow": 7139,
+				"fileHistory": 3590
+			},
+			{
+				"location": "docs/site/commands/mcp.mdx:72",
+				"commit": "032f1c195dcf0486b7826e0178f9fc651c55619b",
+				"card": 67,
+				"blameShow": 4489,
+				"fileHistory": 11367
+			},
+			{
+				"location": "packages/cli/test/helpers/compat-0.12.ts:84",
+				"commit": "0353ac0438de363fc779d84476a734a9a7c2ee52",
+				"card": 48,
+				"blameShow": 3608,
+				"fileHistory": 1552
+			},
+			{
+				"location": "packages/core/src/group.ts:28",
+				"commit": "03dfd8e18e7ffdd4ba13e848b854cc230985e078",
+				"card": 61,
+				"blameShow": 1967,
+				"fileHistory": 1520
+			},
+			{
+				"location": "packages/core/src/brief.ts:134",
+				"commit": "041af3d2795effa6a324b7100d3f733171ea1273",
+				"card": 52,
+				"blameShow": 1068,
+				"fileHistory": 8058
+			},
+			{
+				"location": "packages/core/src/publish/dist-tags.ts:1",
+				"commit": "0454c45145cfe9b7e81aa4cb7edb8aaa4a86b507",
+				"card": 59,
+				"blameShow": 3702,
+				"fileHistory": 1206
+			},
+			{
+				"location": "docs/site/commands/setup.mdx:90",
+				"commit": "0501fa468ef0401114124ef3c915374c54edde23",
+				"card": 143,
+				"blameShow": 5470,
+				"fileHistory": 10221
+			},
+			{
+				"location": "packages/cli/src/agent-hook.ts:555",
+				"commit": "052fddef6e798a642f94eb78e28157ab9de92373",
+				"card": 88,
+				"blameShow": 2458,
+				"fileHistory": 13244
+			},
+			{
+				"location": ".github/ISSUE_TEMPLATE/config.yml:4",
+				"commit": "070fe5715315c947ffd805b38e914d0054b54e57",
+				"card": 65,
+				"blameShow": 298,
+				"fileHistory": 492
+			},
+			{
+				"location": "docs/site/reference/config.mdx:179",
+				"commit": "07cdf941c2c8845e330b488ad726f6fc8f0769f0",
+				"card": 84,
+				"blameShow": 6706,
+				"fileHistory": 8835
+			},
+			{
+				"location": "packages/core/src/brief-repo.ts:17",
+				"commit": "07e5fd8289d239d4226da3b4fc5d8da880955a89",
+				"card": 64,
+				"blameShow": 496,
+				"fileHistory": 5954
+			},
+			{
+				"location": "packages/cli/src/face-settings.ts:7",
+				"commit": "07e6ec92c2f467e960bad8cbeffc8e044c60add0",
+				"card": 78,
+				"blameShow": 2947,
+				"fileHistory": 1450
+			},
+			{
+				"location": "docs/ROADMAP.md:31",
+				"commit": "08286d03f8cb8327f9bdc93f4631b8aa2f24022f",
+				"card": 50,
+				"blameShow": 4957,
+				"fileHistory": 84570
+			},
+			{
+				"location": "packages/core/src/git.ts:324",
+				"commit": "08e13d2f2b8649a10cf4ae99d5b3116fd6c581cd",
+				"card": 53,
+				"blameShow": 4950,
+				"fileHistory": 8487
+			},
+			{
+				"location": "docs/ROADMAP.md:589",
+				"commit": "090e49c58ba2c11794826218bd360256ac230533",
+				"card": 90,
+				"blameShow": 9159,
+				"fileHistory": 84570
+			},
+			{
+				"location": "packages/core/src/units/settings.ts:79",
+				"commit": "09eb3eec12a71fedd1a2e12c7038d4fcc7d8815f",
+				"card": 68,
+				"blameShow": 2245,
+				"fileHistory": 9440
+			},
+			{
+				"location": "docs/superpowers/specs/2026-11-03-terminal-face-design.md:1",
+				"commit": "0acc5b077d841035497289026cc1ae4ee3905a8c",
+				"card": 53,
+				"blameShow": 4099,
+				"fileHistory": 7986
+			}
+		]
+	},
+	"typicalSwitch": {
+		"with": 1835,
+		"without": 76049,
+		"saved": 74214,
+		"ratio": 41.4
+	},
+	"windows": [
+		{
+			"window": 250000,
+			"withShare": 0.0073,
+			"withoutShare": 0.3042,
+			"withFits": 136,
+			"withoutFits": 3
+		},
+		{
+			"window": 500000,
+			"withShare": 0.0037,
+			"withoutShare": 0.1521,
+			"withFits": 272,
+			"withoutFits": 6
+		},
+		{
+			"window": 1000000,
+			"withShare": 0.0018,
+			"withoutShare": 0.076,
+			"withFits": 544,
+			"withoutFits": 13
+		}
+	],
+	"chatExample": {
+		"file": "packages/core/src/release.ts",
+		"fileHistory": 11524
+	},
+	"growth": [
+		{
+			"tag": "v0.11.0",
+			"commits": 175,
+			"cardLines": 54,
+			"brief": 1478,
+			"log": 22194,
+			"notesFile": 1765
+		},
+		{
+			"tag": "v0.12.0",
+			"commits": 202,
+			"cardLines": 54,
+			"brief": 1478,
+			"log": 25568,
+			"notesFile": 1765
+		},
+		{
+			"tag": "v0.12.1",
+			"commits": 208,
+			"cardLines": 55,
+			"brief": 1482,
+			"log": 26204,
+			"notesFile": 1816
+		},
+		{
+			"tag": "v0.13.0",
+			"commits": 246,
+			"cardLines": 57,
+			"brief": 1472,
+			"log": 30309,
+			"notesFile": 1872
+		},
+		{
+			"tag": "v0.14.0",
+			"commits": 273,
+			"cardLines": 57,
+			"brief": 1477,
+			"log": 33461,
+			"notesFile": 1872
+		},
+		{
+			"tag": "v0.15.0",
+			"commits": 322,
+			"cardLines": 57,
+			"brief": 1474,
+			"log": 40577,
+			"notesFile": 1872
+		},
+		{
+			"tag": "v0.16.0",
+			"commits": 370,
+			"cardLines": 57,
+			"brief": 1474,
+			"log": 48141,
+			"notesFile": 1872
+		}
+	],
+	"exact": null
+}

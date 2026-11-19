@@ -2,7 +2,8 @@
 // git alone, measured in one repo. Each function takes the repo to read and,
 // where it runs chamoji, the built CLI; each returns sizes, never the text.
 import {execFileSync} from 'node:child_process';
-import {existsSync} from 'node:fs';
+import {existsSync, mkdtempSync, rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import {fileURLToPath} from 'node:url';
@@ -257,4 +258,134 @@ export function measureWhy(repo, cli, {file, line}) {
  */
 export function measureFileHistory(repo, file) {
 	return estimateTokens(git(repo, ['log', '-p', '--no-color', '--', file]));
+}
+
+/**
+ * Every `v*` tag from `from` up to the newest that is an ancestor of HEAD, in
+ * version order. Only plain release tags count: vMAJOR.MINOR.PATCH.
+ * @param {string} repo
+ * @param {string} [from]
+ * @returns {string[]}
+ */
+export function releaseTags(repo, from = 'v0.11.0') {
+	/** @param {string} tag */
+	const version = tag => {
+		const match = /^v(\d+)\.(\d+)\.(\d+)$/.exec(tag);
+		return match ? match.slice(1).map(Number) : undefined;
+	};
+	/** @param {number[]} a @param {number[]} b */
+	const compare = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+	const start = version(from);
+	if (!start) throw new Error(`Not a release tag: ${from}`);
+	return git(repo, ['tag', '--list', 'v*', '--merged', 'HEAD'])
+		.split('\n')
+		.map(tag => ({tag, version: version(tag)}))
+		.filter(
+			/** @returns {entry is {tag: string, version: number[]}} */
+			entry =>
+				entry.version !== undefined && compare(entry.version, start) >= 0,
+		)
+		.sort((a, b) => compare(a.version, b.version))
+		.map(({tag}) => tag);
+}
+
+/**
+ * "What stands" at each tag, oldest first, each checked out in a temporary
+ * worktree of `repo` and read with the current build. Each worktree is removed
+ * before the next is made, and the folder that held them is removed last.
+ * The memory and notes refs aren't versioned by tag, so every tag reads the
+ * repo's current ones.
+ * @param {string} repo the throwaway clone; worktrees are added to it
+ * @param {string} cli
+ * @param {string[]} tags
+ * @param {{onTag?: (tag: string, index: number) => void}} [options]
+ * @returns {Array<{tag: string, commits: number, cardLines: number, brief: number, log: number, notesFile: number}>} tokens
+ */
+export function measureGrowth(repo, cli, tags, {onTag} = {}) {
+	const folder = mkdtempSync(path.join(tmpdir(), 'chamoji-memory-growth-'));
+	try {
+		return tags.map((tag, index) => {
+			onTag?.(tag, index);
+			const worktree = path.join(folder, String(index));
+			git(repo, ['worktree', 'add', '--quiet', '--detach', worktree, tag]);
+			try {
+				const stands = measureWhatStands(worktree, cli);
+				return {
+					tag,
+					commits: stands.commits,
+					cardLines: stands.cardLines,
+					brief: stands.brief.tokens,
+					log: stands.log.tokens,
+					notesFile: stands.notesFile.tokens,
+				};
+			} finally {
+				git(repo, ['worktree', 'remove', '--force', worktree]);
+			}
+		});
+	} finally {
+		// Every git and chamoji call above ran synchronously and has exited.
+		rmSync(folder, {recursive: true, force: true});
+		git(repo, ['worktree', 'prune']);
+	}
+}
+
+/**
+ * The texts the exact column counts: the brief, the log, and for each
+ * measured line the `chamoji why` text and the `git show` of its commit.
+ * @param {string} repo
+ * @param {string} cli
+ * @param {Array<{location: string, commit: string}>} perLine
+ * @returns {{brief: string, log: string, why: string[], blameShow: string[]}}
+ */
+export function textsForExact(repo, cli, perLine) {
+	return {
+		brief: chamoji(repo, cli, ['memory', 'brief']),
+		log: git(repo, ['log', '--no-color']),
+		why: perLine.map(({location}) => chamoji(repo, cli, ['why', location])),
+		blameShow: perLine.map(({commit}) =>
+			git(repo, ['show', '--no-color', commit]),
+		),
+	};
+}
+
+/**
+ * Exact counts from Anthropic's token counting endpoint for the texts given,
+ * each sent as one user message; null when ANTHROPIC_API_KEY is not set.
+ * Throws when a request fails. The key is sent in a header and never logged.
+ * @param {string[]} texts
+ * @param {string} model
+ * @returns {Promise<number[] | null>}
+ */
+export async function exactCounts(texts, model) {
+	const key = process.env.ANTHROPIC_API_KEY;
+	if (!key) return null;
+	const counts = [];
+	for (const text of texts) {
+		const response = await fetch(
+			'https://api.anthropic.com/v1/messages/count_tokens',
+			{
+				method: 'POST',
+				headers: {
+					'content-type': 'application/json',
+					'x-api-key': key,
+					'anthropic-version': '2026-10-21',
+				},
+				body: JSON.stringify({
+					model,
+					messages: [{role: 'user', content: text}],
+				}),
+			},
+		);
+		/** @type {{input_tokens?: number, error?: {type?: string, message?: string}}} */
+		const reply = await response.json().catch(() => ({}));
+		if (!response.ok || typeof reply.input_tokens !== 'number') {
+			throw new Error(
+				`the token counting endpoint answered ${response.status}${reply.error?.type ? ` (${reply.error.type})` : ''}`,
+			);
+		}
+
+		counts.push(reply.input_tokens);
+	}
+
+	return counts;
 }
