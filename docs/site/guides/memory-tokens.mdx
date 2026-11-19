@@ -132,7 +132,7 @@ The figures above count what an agent would have to read. To see what real sessi
 pnpm benchmark:memory:live
 ```
 
-It asks five questions about this repo, each with a known answer, three times in a clone with chamoji set up and three times in a plain clone, and writes what each session reported to `docs/benchmarks/memory-tokens-live.json`. Both sides get the same read-only tools; only the chamoji side has its session hook, its commands and its MCP tools. It needs `claude` on your PATH and signed in, and it spends usage. Add `--dry-run` to ask the first question once on each side and write nothing. We mark each answer against its key by hand, then `pnpm benchmark:memory --write` puts the sample below.
+It asks five questions about this repo, each with a known answer, three times in a clone with chamoji set up and three times in a plain clone, and writes what each session reported to `docs/benchmarks/memory-tokens-live.json`. Both sides get `Read`, `Grep`, `Glob` and `git` through Bash, and neither can edit or write files; only the chamoji side has its session hook, `chamoji` through Bash and chamoji’s MCP tools. It needs `claude` on your PATH and signed in, and it spends usage. Add `--dry-run` to ask the first question once on each side and write nothing. We mark each answer against its key by hand, then `pnpm benchmark:memory --write` puts the sample below.
 
 ## A sample of real runs {{ icon: 'robot' }}
 

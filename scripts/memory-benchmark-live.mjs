@@ -3,9 +3,9 @@
 // with chamoji set up and without it. It asks the questions in
 // scripts/memory-benchmark/questions.json three times on each side, in two
 // throwaway clones of this repo at HEAD: one after `chamoji init --agents`,
-// with the built CLI on PATH, and one plain. Both sides get the same
-// read-only tools; the "with" side also gets chamoji's commands and MCP
-// tools, and its session hook hands each session the brief. It records what
+// with the built CLI on PATH, and one plain. Both sides get Read, Grep, Glob
+// and git through Bash; the "with" side also gets chamoji through Bash and
+// chamoji's MCP tools, and its session hook hands each session the brief. It records what
 // each session reported (tokens, turns, tool calls) and the answer, and
 // never judges an answer: a person checks them against the keys later.
 //
@@ -20,6 +20,7 @@ import {
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
+	realpathSync,
 	rmSync,
 	writeFileSync,
 } from 'node:fs';
@@ -45,16 +46,23 @@ const PROMPT_SUFFIX =
 // What the debug log says when the session hook handed the session the brief.
 const BRIEF_LINE =
 	'Hook SessionStart (chamoji agent-hook || true) provided additionalContext';
-// The same read-only tools on both sides; nothing that edits or writes.
+// The same tools on both sides; no Edit or Write.
 const BUILT_IN_TOOLS = 'Read,Grep,Glob,Bash';
 const SHARED_ALLOWED = ['Read', 'Grep', 'Glob', 'Bash(git *)'];
 const WITH_ALLOWED = ['Bash(chamoji *)', 'mcp__chamoji'];
-// The input fields of the result's usage that are summed into input tokens.
+// The input fields summed into input tokens: those of the result's usage,
+// and those of each model in its modelUsage.
 const INPUT_FIELDS = [
 	'input_tokens',
 	'cache_creation_input_tokens',
 	'cache_read_input_tokens',
 ];
+const MODEL_INPUT_FIELDS = [
+	'inputTokens',
+	'cacheCreationInputTokens',
+	'cacheReadInputTokens',
+];
+const MODEL_FIELDS = [...MODEL_INPUT_FIELDS, 'outputTokens', 'costUSD'];
 
 /**
  * The first file called `name` in a PATH folder, found without `which` so it
@@ -193,10 +201,14 @@ function claudeArgs({prompt, debugFile, mcpConfig}) {
 /**
  * The tool calls a session made: the distinct tool use ids its debug log
  * shows being dispatched. A call that was denied is never dispatched; the
- * result counts those as permission denials.
+ * result counts those as permission denials. The log line is not a stable
+ * interface, so a session that took more than one turn but shows no
+ * dispatch line gives null, unknown, rather than a 0 that may be wrong.
  * @param {string} debug
+ * @param {number} turns
+ * @returns {number | null}
  */
-function countToolCalls(debug) {
+export function countToolCalls(debug, turns) {
 	const ids = new Set();
 	for (const match of debug.matchAll(
 		/tool_dispatch_start tool=\S+ toolUseId=(\S+)/g,
@@ -204,14 +216,108 @@ function countToolCalls(debug) {
 		ids.add(match[1]);
 	}
 
-	return ids.size;
+	return ids.size === 0 && turns > 1 ? null : ids.size;
+}
+
+/** @param {unknown} value @returns {value is Record<string, any>} */
+const isObject = value =>
+	typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** @param {unknown} n */
+const count = n => (typeof n === 'number' && Number.isFinite(n) ? n : 0);
+
+/**
+ * What one session recorded, from what claude printed and its debug log. A
+ * failure of any kind, including a result that is not an object, is an
+ * error with its text and no figures. Input and output tokens are the totals
+ * across every model in modelUsage; when those differ from the top-level
+ * usage, both are kept.
+ * @param {{stdout: string, stderr: string, error: Error | null, debug: string}} input
+ * @returns {Record<string, any>}
+ */
+export function recordFromResult({stdout, stderr, error, debug}) {
+	/** @type {unknown} */
+	let parsed;
+	try {
+		parsed = JSON.parse(stdout);
+	} catch {
+		return {
+			error:
+				(error?.message ?? 'The session printed no result.') +
+				(stderr ? `\n${stderr.trim()}` : ''),
+		};
+	}
+
+	if (!isObject(parsed)) {
+		return {
+			error: `The session printed ${JSON.stringify(parsed)}, not a result.`,
+		};
+	}
+
+	const result = parsed;
+	if (error || result.is_error || result.subtype !== 'success') {
+		return {
+			error: `${result.subtype ?? 'error'}: ${String(result.result ?? error?.message ?? '').trim()}`,
+		};
+	}
+
+	const usage = isObject(result.usage) ? result.usage : {};
+	const usageInputTokens = INPUT_FIELDS.reduce(
+		(sum, field) => sum + count(usage[field]),
+		0,
+	);
+	const usageOutputTokens = count(usage.output_tokens);
+	/** @type {Record<string, Record<string, number>>} */
+	const usageByModel = {};
+	for (const [model, figures] of Object.entries(
+		isObject(result.modelUsage) ? result.modelUsage : {},
+	)) {
+		if (!isObject(figures)) continue;
+		usageByModel[model] = Object.fromEntries(
+			MODEL_FIELDS.map(field => [field, count(figures[field])]),
+		);
+	}
+
+	const byModel = Object.values(usageByModel);
+	const inputTokens =
+		byModel.length === 0
+			? usageInputTokens
+			: byModel.reduce(
+					(sum, figures) =>
+						sum +
+						MODEL_INPUT_FIELDS.reduce(
+							(fields, field) => fields + figures[field],
+							0,
+						),
+					0,
+				);
+	const outputTokens =
+		byModel.length === 0
+			? usageOutputTokens
+			: byModel.reduce((sum, figures) => sum + figures.outputTokens, 0);
+	const turns = count(result.num_turns);
+	return {
+		inputTokens,
+		outputTokens,
+		...(inputTokens === usageInputTokens && outputTokens === usageOutputTokens
+			? {}
+			: {usageInputTokens, usageOutputTokens}),
+		turns,
+		toolCalls: countToolCalls(debug, turns),
+		costUsd: result.total_cost_usd,
+		permissionDenials: Array.isArray(result.permission_denials)
+			? result.permission_denials.length
+			: 0,
+		usageByModel,
+		answer: String(result.result ?? '').trim(),
+	};
 }
 
 /**
  * One session, run to the end. It never throws: a failure is recorded as an
  * error with its text and no figures.
  * @param {{claude: string, cwd: string, env: NodeJS.ProcessEnv, prompt: string, debugFile: string, mcpConfig: string | null}} input
- * @returns {Promise<{record: Record<string, unknown>, debug: string, raw: string}>}
+ * @returns {Promise<{record: Record<string, any>, debug: string, raw: string}>}
  */
 function runSession({claude, cwd, env, prompt, debugFile, mcpConfig}) {
 	const args = claudeArgs({prompt, debugFile, mcpConfig});
@@ -227,51 +333,55 @@ function runSession({claude, cwd, env, prompt, debugFile, mcpConfig}) {
 				timeout: RUN_TIMEOUT_MS,
 			},
 			(error, stdout, stderr) => {
-				const debug = existsSync(debugFile)
-					? readFileSync(debugFile, 'utf8')
-					: '';
-				const fail = (/** @type {string} */ text) =>
-					resolve({record: {error: text}, debug, raw: stdout});
-				/** @type {any} */
-				let result;
+				let debug = '';
 				try {
-					result = JSON.parse(stdout);
-				} catch {
-					fail(
-						(error?.message ?? 'The session printed no result.') +
-							(stderr ? `\n${stderr.trim()}` : ''),
-					);
-					return;
+					debug = existsSync(debugFile) ? readFileSync(debugFile, 'utf8') : '';
+					resolve({
+						record: recordFromResult({stdout, stderr, error, debug}),
+						debug,
+						raw: stdout,
+					});
+				} catch (thrown) {
+					resolve({
+						record: {error: /** @type {Error} */ (thrown).message},
+						debug,
+						raw: stdout,
+					});
 				}
-
-				if (error || result.is_error || result.subtype !== 'success') {
-					fail(
-						`${result.subtype ?? 'error'}: ${String(result.result ?? error?.message ?? '').trim()}`,
-					);
-					return;
-				}
-
-				const usage = result.usage ?? {};
-				resolve({
-					record: {
-						inputTokens: INPUT_FIELDS.reduce(
-							(sum, field) => sum + (usage[field] ?? 0),
-							0,
-						),
-						outputTokens: usage.output_tokens ?? 0,
-						turns: result.num_turns,
-						toolCalls: countToolCalls(debug),
-						costUsd: result.total_cost_usd,
-						permissionDenials: (result.permission_denials ?? []).length,
-						models: Object.keys(result.modelUsage ?? {}),
-						answer: String(result.result ?? '').trim(),
-					},
-					debug,
-					raw: stdout,
-				});
 			},
 		);
 	});
+}
+
+/**
+ * Why the check session means the live sample can't be run, or null when it
+ * can: the session failed, or the hook didn't hand it the brief.
+ * @param {{record: Record<string, any>, debug: string}} check
+ * @returns {string | null}
+ */
+export function checkProblem({record, debug}) {
+	if (record.error) {
+		return `The check session failed, so the live sample was not run:\n${record.error}`;
+	}
+
+	if (!debug.includes(BRIEF_LINE)) {
+		return `The debug log of the check session has no "${BRIEF_LINE}" line, so the session hook did not hand over the brief, and the live sample was not run.`;
+	}
+
+	return null;
+}
+
+/**
+ * Which side asks first, alternating from one run to the next so neither
+ * side always goes first.
+ * @param {number} question index into the questions
+ * @param {number} run from 1
+ * @returns {'with' | 'without'}
+ */
+export function firstSide(question, run) {
+	return (question * RUNS_PER_QUESTION + run - 1) % 2 === 0
+		? 'with'
+		: 'without';
 }
 
 /** @param {number} n */
@@ -279,14 +389,17 @@ const oneDecimal = n => Math.round(n * 10) / 10;
 
 /**
  * Per side: how many runs, how many failed, and each figure summarized over
- * the runs that didn't fail, to 1 decimal.
+ * the runs that didn't fail, to 1 decimal. A figure no run produced is null,
+ * never 0. Runs whose tool calls are unknown are left out of the tool-call
+ * figures and counted.
  * @param {Array<Record<string, any>>} runs
  */
-function summarizeSide(runs) {
+export function summarizeSide(runs) {
 	const answered = runs.filter(run => !run.error);
-	/** @param {string} key */
-	const figures = key => {
-		const {mean, median, min, max} = summarize(answered.map(run => run[key]));
+	/** @param {number[]} values */
+	const figures = values => {
+		if (values.length === 0) return null;
+		const {mean, median, min, max} = summarize(values);
 		return {
 			mean: oneDecimal(mean),
 			median: oneDecimal(median),
@@ -294,13 +407,15 @@ function summarizeSide(runs) {
 			max: oneDecimal(max),
 		};
 	};
+	const counted = answered.filter(run => typeof run.toolCalls === 'number');
 	return {
 		runs: runs.length,
 		errors: runs.length - answered.length,
-		inputTokens: figures('inputTokens'),
-		outputTokens: figures('outputTokens'),
-		turns: figures('turns'),
-		toolCalls: figures('toolCalls'),
+		inputTokens: figures(answered.map(run => run.inputTokens)),
+		outputTokens: figures(answered.map(run => run.outputTokens)),
+		turns: figures(answered.map(run => run.turns)),
+		toolCalls: figures(counted.map(run => run.toolCalls)),
+		toolCallsUnknown: answered.length - counted.length,
 	};
 }
 
@@ -342,6 +457,21 @@ async function main() {
 		return 2;
 	}
 
+	// Read before any session, so a failure here can't lose paid results.
+	let claudeVersion;
+	try {
+		claudeVersion = execFileSync(claude, ['--version'], {
+			encoding: 'utf8',
+			env: sessionEnv(null),
+			stdio: ['ignore', 'pipe', 'pipe'],
+		}).trim();
+	} catch (error) {
+		console.error(
+			`claude --version failed, so the live sample was not run: ${/** @type {Error} */ (error).message}`,
+		);
+		return 2;
+	}
+
 	/** @type {Array<{question: string, rule: string, key: string}>} */
 	const questions = JSON.parse(readFileSync(QUESTIONS_FILE, 'utf8'));
 	const checkout = git(['rev-parse', '--show-toplevel'], root).trim();
@@ -353,15 +483,22 @@ async function main() {
 	}
 
 	const commit = git(['rev-parse', 'HEAD'], checkout).trim();
-	// Every session has exited by the time this folder is removed: they run
-	// one at a time and each is awaited.
-	const scratch = mkdtempSync(path.join(tmpdir(), 'chamoji-memory-live-'));
+	// Each clone, the logs and the shim get a temp folder of their own, named
+	// so that none says which side it is, so a session in one clone doesn't
+	// find the other beside it. Every session has exited by the time they are
+	// removed: they run one at a time and each is awaited.
+	/** @type {string[]} */
+	const folders = [];
+	const tempFolder = () => {
+		const folder = mkdtempSync(path.join(tmpdir(), 'chamoji-live-'));
+		folders.push(folder);
+		return folder;
+	};
 	try {
-		const shim = path.join(scratch, 'bin');
-		const logs = path.join(scratch, 'logs');
-		const withDir = path.join(scratch, 'with');
-		const withoutDir = path.join(scratch, 'without');
-		mkdirSync(logs);
+		const shim = tempFolder();
+		const logs = tempFolder();
+		const withDir = path.join(tempFolder(), 'repo');
+		const withoutDir = path.join(tempFolder(), 'repo');
 		writeShim(shim);
 		const withEnv = sessionEnv(shim);
 		const withoutEnv = sessionEnv(null);
@@ -417,7 +554,7 @@ async function main() {
 				cwd: side === 'with' ? withDir : withoutDir,
 				env: side === 'with' ? withEnv : withoutEnv,
 				prompt: `${questions[question].question} ${PROMPT_SUFFIX}`,
-				debugFile: path.join(logs, `${count}-${side}.txt`),
+				debugFile: path.join(logs, `${count}.txt`),
 				mcpConfig: side === 'with' ? mcpConfig : null,
 			});
 		};
@@ -426,6 +563,7 @@ async function main() {
 		// brief. If it doesn't, the comparison would be meaningless.
 		console.error('Checking that the session hook hands over the brief.');
 		const check = await ask('with', 0);
+		const problem = checkProblem(check);
 		const briefArrived = check.debug.includes(BRIEF_LINE);
 		const mcpLines = check.debug
 			.split('\n')
@@ -438,6 +576,7 @@ async function main() {
 			console.log(
 				`The brief ${briefArrived ? 'arrived' : 'did not arrive'} on the "with" side.`,
 			);
+			if (problem) console.log(`A real run would stop here: ${problem}`);
 			for (const line of check.debug
 				.split('\n')
 				.filter(line => line.includes('Hook SessionStart'))) {
@@ -469,19 +608,24 @@ async function main() {
 			return 0;
 		}
 
-		if (!briefArrived) {
-			console.error(
-				`The debug log of the check session has no "${BRIEF_LINE}" line, so the session hook did not hand over the brief, and the live sample was not run.`,
-			);
+		if (problem) {
+			console.error(problem);
 			return 1;
 		}
 
-		/** @type {Array<Record<string, unknown>>} */
+		/** @type {Array<Record<string, any>>} */
 		const runs = [];
+		/** @type {Array<{question: number, run: number, first: 'with' | 'without'}>} */
+		const order = [];
 		const total = questions.length * RUNS_PER_QUESTION * 2;
 		for (let question = 0; question < questions.length; question++) {
 			for (let run = 1; run <= RUNS_PER_QUESTION; run++) {
-				for (const side of /** @type {const} */ (['with', 'without'])) {
+				const first = firstSide(question, run);
+				order.push({question: question + 1, run, first});
+				const sides = /** @type {const} */ (
+					first === 'with' ? ['with', 'without'] : ['without', 'with']
+				);
+				for (const side of sides) {
 					console.error(
 						`Question ${question + 1}, run ${run}, ${side} chamoji (${runs.length + 1} of ${total})`,
 					);
@@ -506,17 +650,17 @@ async function main() {
 			date: new Date().toISOString().slice(0, 10),
 			commit,
 			method: {
-				claudeVersion: execFileSync(claude, ['--version'], {
-					encoding: 'utf8',
-				}).trim(),
+				claudeVersion,
 				runsPerQuestion: RUNS_PER_QUESTION,
 				promptSuffix: PROMPT_SUFFIX,
-				inputTokens: `the sum of usage.${INPUT_FIELDS.join(', usage.')} in the --output-format json result`,
-				outputTokens: 'usage.output_tokens',
+				inputTokens: `the sum of ${MODEL_INPUT_FIELDS.join(', ')} over every model in modelUsage of the --output-format json result (usage.${INPUT_FIELDS.join(' + usage.')} when there is no modelUsage); the page shows this. A run whose top-level usage differs also keeps usageInputTokens.`,
+				outputTokens:
+					'the sum of outputTokens over every model in modelUsage (usage.output_tokens when there is none); the page shows this. A run whose top-level usage differs also keeps usageOutputTokens.',
+				usageByModel: `each model's ${MODEL_FIELDS.join(', ')} from modelUsage, as reported`,
 				turns: 'num_turns',
 				toolCalls:
-					'the distinct toolUseId values on "tool_dispatch_start" lines in the --debug-file log',
-				models: 'the keys of modelUsage',
+					'the distinct toolUseId values on "tool_dispatch_start" lines in the --debug-file log; null when the session took more than one turn and the log has no such line, and such runs are left out of the tool-call figures',
+				order,
 				costUsd: 'total_cost_usd',
 				flags: {
 					both: claudeArgs({
@@ -556,8 +700,16 @@ async function main() {
 		);
 		return 0;
 	} finally {
-		rmSync(scratch, {recursive: true, force: true});
+		for (const folder of folders) {
+			rmSync(folder, {recursive: true, force: true});
+		}
 	}
 }
 
-process.exitCode = await main();
+// Run only when started as a script, so the tests can import its parts.
+if (
+	process.argv[1] &&
+	realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)
+) {
+	process.exitCode = await main();
+}
