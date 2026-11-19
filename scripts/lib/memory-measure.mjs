@@ -25,21 +25,54 @@ const NO_GLOBAL_CONFIG = path.join(
 	'no-global-gitconfig',
 );
 
+/** Variables that would point git at another repo or add config to it. */
+const LEAKY_GIT_VARIABLES = new Set([
+	'GIT_CONFIG',
+	'GIT_CONFIG_PARAMETERS',
+	'GIT_CONFIG_COUNT',
+	'GIT_DIR',
+	'GIT_WORK_TREE',
+	'GIT_INDEX_FILE',
+	'GIT_OBJECT_DIRECTORY',
+	'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+]);
+
 /**
- * Every git and chamoji call goes through here. Git reads no system config
- * and an empty global one, so settings on the machine that runs this, such as
- * format.pretty or diff.noprefix, can't change a figure.
+ * The environment for every git and chamoji call: git reads no system
+ * config, an empty global one, and no config or repo given in the
+ * environment, so settings on the machine that runs this, such as
+ * format.pretty or diff.noprefix, can't change a figure, and a git hook's
+ * GIT_DIR can't point a call at another repo.
+ * @returns {NodeJS.ProcessEnv}
+ */
+export function isolatedGitEnv() {
+	/** @type {NodeJS.ProcessEnv} */
+	const env = {};
+	for (const [name, value] of Object.entries(process.env)) {
+		if (
+			LEAKY_GIT_VARIABLES.has(name) ||
+			/^GIT_CONFIG_(KEY|VALUE)_\d+$/.test(name)
+		) {
+			continue;
+		}
+
+		env[name] = value;
+	}
+
+	env.GIT_CONFIG_NOSYSTEM = '1';
+	env.GIT_CONFIG_GLOBAL = NO_GLOBAL_CONFIG;
+	return env;
+}
+
+/**
+ * Every git and chamoji call goes through here, in the isolated environment.
  * @param {string} command @param {string[]} args @param {string} cwd
  */
 const run = (command, args, cwd) =>
 	execFileSync(command, args, {
 		cwd,
 		encoding: 'utf8',
-		env: {
-			...process.env,
-			GIT_CONFIG_NOSYSTEM: '1',
-			GIT_CONFIG_GLOBAL: NO_GLOBAL_CONFIG,
-		},
+		env: isolatedGitEnv(),
 		maxBuffer: 512 * 1024 * 1024,
 		stdio: ['ignore', 'pipe', 'pipe'],
 	});
