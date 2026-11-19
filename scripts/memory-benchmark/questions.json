@@ -1,26 +1,31 @@
 [
 	{
 		"question": "May I add a new top-level folder to the tree in `refs/chamoji/memory`?",
+		"label": "A new folder in the memory ref",
 		"rule": "c-87e43576",
 		"key": "No: the layout is fixed until a new format gets its own ref or a version bump, because older clients drop what they don't know."
 	},
 	{
 		"question": "Should `chamoji init` set `remote.origin.push` so a plain `git push` also pushes memory?",
+		"label": "Init setting the push refspec",
 		"rule": "c-bfd4b51d",
 		"key": "No: it must not set it, and the fetch refspec must be a wildcard, or plain push, fetch and pull break."
 	},
 	{
 		"question": "Why does the command in the Claude Code hook entries end in `|| true`?",
+		"label": "Why the hooks end in `|| true`",
 		"rule": "c-f3ea2f10",
 		"key": "Claude Code reads exit 2 as a block; a denial is JSON on stdout with exit 0 and still gets through."
 	},
 	{
 		"question": "Can I add the official MCP SDK as a dependency for `chamoji mcp`?",
+		"label": "Adding the MCP SDK",
 		"rule": "c-bef828d1",
 		"key": "No: it would double chamoji's install for five methods."
 	},
 	{
 		"question": "Why does `chamoji why` blame the working copy and not HEAD?",
+		"label": "Why `chamoji why` blames the work tree",
 		"rule": "c-7a4d905c",
 		"key": "So line numbers match the editor, and an edited line is reported as uncommitted."
 	}

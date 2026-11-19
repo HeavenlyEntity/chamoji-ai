@@ -1,18 +1,28 @@
 #!/usr/bin/env node
-// How many tokens an agent spends recovering this project's context, with
-// chamoji and with git alone: what stands (the brief against the log) and why
-// a line is the way it is (the card against blame-then-show and the file's
-// history), on a fixed sample of lines, and what stands at each release tag
-// from v0.11.0. It measures in a throwaway clone of the checkout, so the
-// checkout is never written to except by --write. Token figures are
-// estimates at 4 characters a token, except the exact column.
+// How many tokens an agent would read to recover this project's context,
+// with chamoji and with git alone, if it read everything: what stands (the
+// brief and chamoji's MCP tool definitions against the log) and why a line
+// is the way it is (the card against blame-then-show, the commit's message
+// and the file's history), on a fixed sample of lines, and what stands at
+// each release tag from v0.11.0. It measures in a throwaway clone of the
+// checkout. Token figures are estimates at 4 characters a token, except the
+// exact column.
+//
+// The checkout is written to only by these flags: --write (the results file
+// and the page), --page-only (the page) and --pick-sample (a sample file).
 //
 //   pnpm benchmark:memory                 print the figures
 //   pnpm benchmark:memory --write         also write docs/benchmarks/memory-tokens.json
-//                                         and the tables on the docs page, with
-//                                         the live sample's when there is one
+//                                         and both data sections of the docs page,
+//                                         the live one from the live sample's file
+//   pnpm benchmark:memory --page-only     measure nothing; re-render both data
+//                                         sections of the page from the two
+//                                         results files as they are
 //   pnpm benchmark:memory --exact         add exact counts (needs ANTHROPIC_API_KEY)
 //   pnpm benchmark:memory --pick-sample   write scripts/memory-benchmark/sample.json
+//                                         (this repo only)
+//   pnpm benchmark:memory --pick-sample --sample <file>
+//                                         write a sample for the repo you run it in
 //   pnpm benchmark:memory --sample <file> read the sample from another file
 import {execFileSync} from 'node:child_process';
 import {
@@ -27,7 +37,7 @@ import {
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath, pathToFileURL} from 'node:url';
 import {
 	assertFullHistory,
 	exactCounts,
@@ -35,6 +45,7 @@ import {
 	locateSample,
 	measureFileHistory,
 	measureGrowth,
+	measureMcpTools,
 	measureWhatStands,
 	measureWhy,
 	releaseTags,
@@ -43,12 +54,14 @@ import {
 } from './lib/memory-measure.mjs';
 import {
 	CHARS_PER_TOKEN,
+	NO_LINES_MEASURED,
 	pickSample,
-	ratio,
 	renderLive,
 	renderTables,
 	replaceSection,
+	roundedSummary,
 	summarize,
+	switchFigures,
 	typicalSwitch,
 	windowShares,
 } from './lib/memory-tokens.mjs';
@@ -66,8 +79,8 @@ const EXACT_MODEL = 'claude-sonnet-5-5';
 const RESULTS_FILE = 'docs/benchmarks/memory-tokens.json';
 const LIVE_FILE = 'docs/benchmarks/memory-tokens-live.json';
 const PAGE_FILE = 'docs/site/guides/memory-tokens.mdx';
-const NUMBERS_HEADING = '## The numbers';
-const LIVE_HEADING = '## A sample of real runs';
+const LIVE_HEADING = '## What real sessions spent';
+const REPLAY_HEADING = '## The replay: reading everything';
 
 /**
  * The runner's own git calls (finding the checkout, making the clone), in the
@@ -83,75 +96,51 @@ const git = (args, cwd) =>
 		stdio: ['ignore', 'pipe', 'pipe'],
 	});
 
-/** @param {number} n */
-const oneDecimal = n => Math.round(n * 10) / 10;
-
-/**
- * `summarize` with each figure to 1 decimal, as the results file keeps it.
- * @param {number[]} numbers
- */
-function summary(numbers) {
-	const {mean, median, min, max} = summarize(numbers);
-	return {
-		mean: oneDecimal(mean),
-		median: oneDecimal(median),
-		min: oneDecimal(min),
-		max: oneDecimal(max),
-	};
-}
-
 /**
  * Every figure the benchmark reports, measured in `repo` at its HEAD, and what
  * stands at each of `tags`. The typical switch is worked out from the rounded
- * means, so the file agrees with itself.
- * @param {{repo: string, sample: import('./lib/memory-measure.mjs').SampleLine[], tags: string[], ranAt: {tag: string | null, commit: string, date: string}}} input
+ * means, so the file agrees with itself. With no line measured there is no
+ * typical switch and no window.
+ * @param {{repo: string, sample: import('./lib/memory-measure.mjs').SampleLine[], tags: string[], ranAt: {tag: string | null, commit: string, date: string}, budgets: {briefBudget: number, uncutBudget: number}}} input
  */
-function buildResults({repo, sample, tags, ranAt}) {
-	const whatStands = measureWhatStands(repo, cli);
+function buildResults({repo, sample, tags, ranAt, budgets}) {
+	const whatStands = {
+		...measureWhatStands(repo, cli, budgets.uncutBudget),
+		mcpTools: measureMcpTools(repo, cli),
+	};
 	const {found, dropped} = locateSample(repo, sample);
 	const perLine = found.map(line => measureWhy(repo, cli, line));
-	const card = summary(perLine.map(line => line.card));
-	const blameShow = summary(perLine.map(line => line.blameShow));
-	const fileHistory = summary(perLine.map(line => line.fileHistory));
-	const withTokens = typicalSwitch({
-		whatStands: whatStands.brief.tokens,
-		whyMean: card.mean,
-		lookups: LOOKUPS,
-	});
-	const withoutTokens = typicalSwitch({
-		whatStands: whatStands.log.tokens,
-		whyMean: blameShow.mean,
-		lookups: LOOKUPS,
-	});
+	const why = {
+		sampleSize: found.length,
+		dropped: dropped.length,
+		card: roundedSummary(perLine.map(line => line.card)),
+		blameShow: roundedSummary(perLine.map(line => line.blameShow)),
+		blameMessage: roundedSummary(perLine.map(line => line.blameMessage)),
+		fileHistory: roundedSummary(perLine.map(line => line.fileHistory)),
+		perLine,
+	};
+	const change = switchFigures({whatStands, why, lookups: LOOKUPS});
 	return {
-		version: 1,
+		version: 2,
 		ranAt,
 		method: {
 			charsPerToken: CHARS_PER_TOKEN,
 			lookups: LOOKUPS,
 			refsAsOf: 'HEAD',
+			...budgets,
 		},
 		whatStands,
-		why: {
-			sampleSize: found.length,
-			dropped: dropped.length,
-			card,
-			blameShow,
-			fileHistory,
-			perLine,
-		},
-		typicalSwitch: {
-			with: withTokens,
-			without: withoutTokens,
-			saved: withoutTokens - withTokens,
-			ratio: ratio(withTokens, withoutTokens),
-		},
-		windows: windowShares({withTokens, withoutTokens}),
+		why,
+		typicalSwitch: change,
+		windows: change
+			? windowShares({withTokens: change.with, withoutTokens: change.without})
+			: [],
 		chatExample: {
 			file: CHAT_EXAMPLE,
 			fileHistory: measureFileHistory(repo, CHAT_EXAMPLE),
 		},
 		growth: measureGrowth(repo, cli, tags, {
+			uncutBudget: budgets.uncutBudget,
 			onTag: (tag, index) =>
 				console.error(`Reading ${tag} (${index + 1} of ${tags.length})`),
 		}),
@@ -161,8 +150,9 @@ function buildResults({repo, sample, tags, ranAt}) {
 }
 
 /**
- * The typical switch in exact tokens: the brief plus five times the mean exact
- * why, against the log plus five times the mean exact blame-then-show. Null,
+ * The typical switch in exact tokens: the brief and the MCP tool definitions
+ * plus five times the mean exact why, against the log plus five times the
+ * mean exact blame-then-show. Null,
  * with one line saying why, when there is no key or a request fails.
  * @param {string} repo
  * @param {Array<{location: string, commit: string}>} perLine
@@ -171,7 +161,13 @@ async function exactColumn(repo, perLine) {
 	try {
 		const texts = textsForExact(repo, cli, perLine);
 		const counts = await exactCounts(
-			[texts.brief, texts.log, ...texts.why, ...texts.blameShow],
+			[
+				texts.brief,
+				texts.mcpTools,
+				texts.log,
+				...texts.why,
+				...texts.blameShow,
+			],
 			EXACT_MODEL,
 		);
 		if (!counts) {
@@ -181,14 +177,14 @@ async function exactColumn(repo, perLine) {
 			return null;
 		}
 
-		const [brief, log, ...lines] = counts;
+		const [brief, mcpTools, log, ...lines] = counts;
 		const why = lines.slice(0, perLine.length);
 		const blameShow = lines.slice(perLine.length);
 		return {
 			model: EXACT_MODEL,
 			typicalSwitch: {
 				with: typicalSwitch({
-					whatStands: brief,
+					whatStands: brief + mcpTools,
 					whyMean: summarize(why).mean,
 					lookups: LOOKUPS,
 				}),
@@ -226,49 +222,72 @@ function printSummary(results) {
 	);
 	console.log(`Tokens are estimates at ${CHARS_PER_TOKEN} characters a token.`);
 	console.log('\nWhat stands');
-	row('chamoji memory brief', count(whatStands.brief.tokens));
+	row(
+		'chamoji memory brief',
+		count(whatStands.brief.tokens),
+		`  ${whatStands.briefLines} of ${whatStands.cardLines} lines`,
+	);
+	row(
+		'brief, uncut',
+		count(whatStands.briefUncut.tokens),
+		`  ${whatStands.briefUncut.lines} of ${whatStands.cardLines} lines`,
+	);
+	row('MCP tool definitions', count(whatStands.mcpTools.tokens));
 	row('git log', count(whatStands.log.tokens));
 	row('notes file', count(whatStands.notesFile.tokens));
 
 	console.log(
 		`\nWhy, per line (${why.sampleSize} lines measured, ${why.dropped} dropped)`,
 	);
-	row('', 'mean', 'median');
-	for (const [label, figures] of /** @type {const} */ ([
-		['chamoji why', why.card],
-		['git blame, then git show', why.blameShow],
-		['git log -p on the file', why.fileHistory],
-	])) {
-		row(label, count(figures.mean), count(figures.median));
-	}
+	if (!change) {
+		console.log(NO_LINES_MEASURED);
+	} else {
+		row('', 'mean', 'median');
+		for (const [label, figures] of /** @type {const} */ ([
+			['chamoji why', why.card],
+			['git blame, then git show', why.blameShow],
+			['git blame, then the message', why.blameMessage],
+			['git log -p on the file', why.fileHistory],
+		])) {
+			row(label, count(figures.mean), count(figures.median));
+		}
 
-	console.log(`\nTypical switch: what stands plus ${LOOKUPS} whys`);
-	row('with chamoji', count(change.with));
-	row('git alone', count(change.without));
-	row(
-		'saved',
-		count(change.saved),
-		change.ratio === null ? '' : `${change.ratio}x`,
-	);
-
-	console.log('\nShare of a context window');
-	row('', 'with', 'without');
-	for (const window of windows) {
+		console.log(`\nTypical switch: what stands plus ${LOOKUPS} whys`);
+		row('', 'tokens', 'saved', 'ratio');
+		row('with chamoji', count(change.with));
 		row(
-			`${count(window.window)} tokens`,
-			percent(window.withShare),
-			percent(window.withoutShare),
+			'git alone, read in full',
+			count(change.without),
+			count(change.saved),
+			change.ratio === null ? '' : `${change.ratio}x`,
 		);
+		row(
+			'git alone, messages only',
+			count(change.messagesOnly.without),
+			count(change.messagesOnly.saved),
+			change.messagesOnly.ratio === null ? '' : `${change.messagesOnly.ratio}x`,
+		);
+
+		console.log('\nShare of a context window, if git alone read in full');
+		row('', 'with', 'without');
+		for (const window of windows) {
+			row(
+				`${count(window.window)} tokens`,
+				percent(window.withShare),
+				percent(window.withoutShare),
+			);
+		}
 	}
 
 	if (results.growth.length > 0) {
 		console.log('\nWhat stands at each release');
-		row('', 'commits', 'brief', 'git log', 'notes');
+		row('', 'commits', 'brief', 'uncut', 'git log', 'notes');
 		for (const tag of results.growth) {
 			row(
 				tag.tag,
 				count(tag.commits),
 				count(tag.brief),
+				count(tag.briefUncut),
 				count(tag.log),
 				count(tag.notesFile),
 			);
@@ -278,22 +297,24 @@ function printSummary(results) {
 	if (results.exact) {
 		console.log(`\nTypical switch in exact tokens (${results.exact.model})`);
 		row('with chamoji', count(results.exact.typicalSwitch.with));
-		row('git alone', count(results.exact.typicalSwitch.without));
+		row('git alone, read in full', count(results.exact.typicalSwitch.without));
 	}
 }
 
 /**
  * @param {string[]} args
- * @returns {{picking: boolean, writing: boolean, exact: boolean, sampleFile: string} | {error: string}}
+ * @returns {{picking: boolean, writing: boolean, pageOnly: boolean, exact: boolean, sampleFile: string} | {error: string}}
  */
 function parseArgs(args) {
 	let picking = false;
 	let writing = false;
+	let pageOnly = false;
 	let exact = false;
 	let sampleFile = defaultSampleFile;
 	for (let i = 0; i < args.length; i++) {
 		if (args[i] === '--pick-sample') picking = true;
 		else if (args[i] === '--write') writing = true;
+		else if (args[i] === '--page-only') pageOnly = true;
 		else if (args[i] === '--exact') exact = true;
 		else if (args[i] === '--sample') {
 			const file = args[++i];
@@ -302,11 +323,15 @@ function parseArgs(args) {
 		} else return {error: `Unknown option ${args[i]}.`};
 	}
 
-	if (picking && (sampleFile !== defaultSampleFile || writing || exact)) {
-		return {error: '--pick-sample goes on its own.'};
+	if (picking && (writing || exact || pageOnly)) {
+		return {error: '--pick-sample goes on its own, or with --sample.'};
 	}
 
-	return {picking, writing, exact, sampleFile};
+	if (pageOnly && (writing || exact || sampleFile !== defaultSampleFile)) {
+		return {error: '--page-only goes on its own.'};
+	}
+
+	return {picking, writing, pageOnly, exact, sampleFile};
 }
 
 /** The tag at HEAD, or null. @param {string} checkout */
@@ -321,25 +346,108 @@ function tagAtHead(checkout) {
 	}
 }
 
-async function main() {
-	if (!existsSync(cli)) {
-		console.error('Run pnpm build first.');
-		return 2;
+/**
+ * Why the page can't take both data sections, or null when it can.
+ * @param {string} pageFile @param {string} flag
+ */
+function pageProblem(pageFile, flag) {
+	if (!existsSync(pageFile)) {
+		return `There is no page at ${PAGE_FILE} in this checkout, so ${flag} has nowhere to put the tables, and nothing was written.`;
 	}
 
+	for (const heading of [LIVE_HEADING, REPLAY_HEADING]) {
+		if (replaceSection(readFileSync(pageFile, 'utf8'), heading, '') === null) {
+			return `${PAGE_FILE} has no "${heading}" heading, so ${flag} has nowhere to put the tables, and nothing was written.`;
+		}
+	}
+
+	return null;
+}
+
+/** The live sample's results in the checkout, or null. @param {string} checkout */
+function readLive(checkout) {
+	const liveFile = path.join(checkout, ...LIVE_FILE.split('/'));
+	return existsSync(liveFile)
+		? JSON.parse(readFileSync(liveFile, 'utf8'))
+		: null;
+}
+
+/**
+ * The page with both data sections rendered: the live sample's from its
+ * file, with the sentence that relates it to the replay, and the replay's
+ * from its results.
+ * @param {string} pageFile @param {any} results @param {any} live
+ */
+function renderPage(pageFile, results, live) {
+	const withLive = replaceSection(
+		readFileSync(pageFile, 'utf8'),
+		LIVE_HEADING,
+		renderLive(live, results),
+	);
+	const page =
+		withLive === null
+			? null
+			: replaceSection(withLive, REPLAY_HEADING, renderTables(results));
+	if (page === null) throw new Error(`${PAGE_FILE} lost a heading.`);
+	return page;
+}
+
+async function main() {
 	const options = parseArgs(process.argv.slice(2));
 	if ('error' in options) {
 		console.error(
-			`${options.error} Usage: pnpm benchmark:memory [--write] [--exact] [--sample <file>] | --pick-sample`,
+			`${options.error} Usage: pnpm benchmark:memory [--write] [--exact] [--sample <file>] | --page-only | --pick-sample [--sample <file>]`,
 		);
 		return 2;
 	}
 
-	const {picking, writing, exact, sampleFile} = options;
+	const {picking, writing, pageOnly, exact, sampleFile} = options;
+	if (!pageOnly && !existsSync(cli)) {
+		console.error('Run pnpm build first.');
+		return 2;
+	}
+
 	const checkout = git(['rev-parse', '--show-toplevel'], process.cwd()).trim();
-	if (picking && realpathSync(checkout) !== realpathSync(root)) {
+	const pageFile = path.join(checkout, ...PAGE_FILE.split('/'));
+	const resultsFile = path.join(checkout, ...RESULTS_FILE.split('/'));
+
+	// --write and --page-only fill in the page, so check the page is there and
+	// has its headings before anything else: a run that can't write both
+	// writes neither.
+	if (writing || pageOnly) {
+		const problem = pageProblem(pageFile, writing ? '--write' : '--page-only');
+		if (problem) {
+			console.error(problem);
+			return 2;
+		}
+	}
+
+	if (pageOnly) {
+		if (!existsSync(resultsFile)) {
+			console.error(
+				`There is no ${RESULTS_FILE} in this checkout, so --page-only has nothing to render, and nothing was written.`,
+			);
+			return 2;
+		}
+
+		const live = readLive(checkout);
+		writeFileSync(
+			pageFile,
+			renderPage(pageFile, JSON.parse(readFileSync(resultsFile, 'utf8')), live),
+		);
+		console.log(
+			`Wrote ${PAGE_FILE} from ${RESULTS_FILE}${live ? ` and ${LIVE_FILE}` : ''}.`,
+		);
+		return 0;
+	}
+
+	if (
+		picking &&
+		sampleFile === defaultSampleFile &&
+		realpathSync(checkout) !== realpathSync(root)
+	) {
 		console.error(
-			"Run --pick-sample from this repo, since it writes this repo's sample.",
+			"Run --pick-sample from this repo, since it writes this repo's sample. To pick a sample for another repo, add --sample <file>.",
 		);
 		return 2;
 	}
@@ -360,28 +468,14 @@ async function main() {
 		return 2;
 	}
 
-	// --write also fills in the page, so check the page is there and has its
-	// headings before measuring: a run that can't write both writes neither.
-	const pageFile = path.join(checkout, ...PAGE_FILE.split('/'));
-	if (writing) {
-		if (!existsSync(pageFile)) {
-			console.error(
-				`There is no page at ${PAGE_FILE} in this checkout, so --write has nowhere to put the tables, and nothing was written.`,
-			);
-			return 2;
-		}
-
-		for (const heading of [NUMBERS_HEADING, LIVE_HEADING]) {
-			if (
-				replaceSection(readFileSync(pageFile, 'utf8'), heading, '') === null
-			) {
-				console.error(
-					`${PAGE_FILE} has no "${heading}" heading, so --write has nowhere to put the tables, and nothing was written.`,
-				);
-				return 2;
-			}
-		}
-	}
+	/** @type {{DEFAULT_BRIEF_BUDGET: number, MAX_BRIEF_BUDGET: number}} */
+	const core = await import(
+		pathToFileURL(path.join(root, 'packages/core/dist/index.js')).href
+	);
+	const budgets = {
+		briefBudget: core.DEFAULT_BRIEF_BUDGET,
+		uncutBudget: core.MAX_BRIEF_BUDGET,
+	};
 
 	const commit = git(['rev-parse', 'HEAD'], checkout).trim();
 	// chamoji keeps caches in the git dir, so measure in a clone that shares
@@ -412,9 +506,11 @@ async function main() {
 			);
 			mkdirSync(path.dirname(sampleFile), {recursive: true});
 			writeFileSync(sampleFile, `${JSON.stringify(sample, null, '\t')}\n`);
-			console.log(
-				`Wrote ${sample.length} sample lines to ${path.relative(root, sampleFile).split(path.sep).join('/')}.`,
-			);
+			const shown =
+				sampleFile === defaultSampleFile
+					? path.relative(root, sampleFile).split(path.sep).join('/')
+					: sampleFile;
+			console.log(`Wrote ${sample.length} sample lines to ${shown}.`);
 			return 0;
 		}
 
@@ -428,31 +524,26 @@ async function main() {
 				commit,
 				date: new Date().toISOString().slice(0, 10),
 			},
+			budgets,
 		});
-		if (exact) results.exact = await exactColumn(repo, results.why.perLine);
+		if (exact && results.typicalSwitch) {
+			results.exact = await exactColumn(repo, results.why.perLine);
+		}
+
 		printSummary(results);
 		if (writing) {
+			if (!results.typicalSwitch) {
+				console.error(`${NO_LINES_MEASURED} Nothing was written.`);
+				return 2;
+			}
+
 			// The page is built from the file's own text, so the two agree
 			// exactly, and its live section from the live sample's file when
 			// there is one. The results go first, then the page.
 			const text = `${JSON.stringify(results, null, '\t')}\n`;
-			const liveFile = path.join(checkout, ...LIVE_FILE.split('/'));
-			const live = existsSync(liveFile)
-				? JSON.parse(readFileSync(liveFile, 'utf8'))
-				: null;
-			const numbers = replaceSection(
-				readFileSync(pageFile, 'utf8'),
-				NUMBERS_HEADING,
-				renderTables(JSON.parse(text)),
-			);
-			const page =
-				numbers === null
-					? null
-					: replaceSection(numbers, LIVE_HEADING, renderLive(live));
-			if (page === null) throw new Error(`${PAGE_FILE} lost a heading.`);
-			const file = path.join(checkout, ...RESULTS_FILE.split('/'));
-			mkdirSync(path.dirname(file), {recursive: true});
-			writeFileSync(file, text);
+			const page = renderPage(pageFile, JSON.parse(text), readLive(checkout));
+			mkdirSync(path.dirname(resultsFile), {recursive: true});
+			writeFileSync(resultsFile, text);
 			writeFileSync(pageFile, page);
 			console.log(`\nWrote ${RESULTS_FILE} and ${PAGE_FILE}.`);
 		}

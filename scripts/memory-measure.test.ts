@@ -25,6 +25,7 @@ import {
 	locateSample,
 	measureFileHistory,
 	measureGrowth,
+	measureMcpTools,
 	measureWhatStands,
 	measureWhy,
 	releaseTags,
@@ -32,11 +33,17 @@ import {
 } from './lib/memory-measure.mjs';
 import {
 	estimateTokens,
+	NO_LINES_MEASURED,
+	pickSample,
 	renderLive,
 	renderTables,
 	sectionBody,
-	typicalSwitch,
+	switchFigures,
 } from './lib/memory-tokens.mjs';
+
+const LIVE_HEADING = '## What real sessions spent';
+const REPLAY_HEADING = '## The replay: reading everything';
+const UNCUT = 20_000;
 
 const execFileAsync = promisify(execFile);
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -81,7 +88,7 @@ test('what stands: the brief, the log and a notes file are measured, and the not
 		{commit: '📝 Say more', files: {'readme.txt': 'hello\n'}},
 	]);
 
-	const result = measureWhatStands(dir, cli);
+	const result = measureWhatStands(dir, cli, UNCUT);
 
 	const brief = chamoji(dir, ['memory', 'brief']);
 	const log = await gitOutput(dir, ['log', '--no-color']);
@@ -100,7 +107,73 @@ test('what stands: the brief, the log and a notes file are measured, and the not
 		tokens: estimateTokens(notes),
 	});
 	expect(result.cardLines).toBe(3);
+	expect(result.briefLines).toBe(3);
+	expect(result.openLines).toBe(3);
 	expect(result.commits).toBe(3);
+});
+
+test('what stands counts the lines the default brief lists, which its budget can cut, and measures the brief uncut', async () => {
+	const reason = 'the reason is long enough to fill the budget '.repeat(3);
+	const dir = await repo([
+		{
+			commit: '✨ Add the rules',
+			body: [
+				'Why: many rules',
+				...Array.from(
+					{length: 40},
+					(_, i) => `Constraint: rule ${i + 1} holds because ${reason}`,
+				),
+			].join('\n'),
+			files: {'a.txt': 'a\n'},
+		},
+	]);
+
+	const result = measureWhatStands(dir, cli, UNCUT);
+
+	const uncut = chamoji(dir, ['memory', 'brief', '--budget', String(UNCUT)]);
+	expect(result.cardLines).toBe(40);
+	expect(result.briefLines).toBeGreaterThan(0);
+	expect(result.briefLines).toBeLessThan(40);
+	expect(result.briefUncut).toEqual({
+		chars: uncut.length,
+		tokens: estimateTokens(uncut),
+		lines: 40,
+	});
+	expect(result.briefUncut.tokens).toBeGreaterThan(result.brief.tokens);
+});
+
+test('the MCP tool definitions are measured from the tools/list reply of chamoji mcp, and the server has exited', async () => {
+	const dir = await repo([{commit: '🎉 Start', files: {'a.txt': 'a\n'}}]);
+	const reply = execFileSync(
+		process.execPath,
+		[cli, 'mcp', '--no-update-check'],
+		{
+			cwd: dir,
+			encoding: 'utf8',
+			input: [
+				JSON.stringify({
+					jsonrpc: '2.0',
+					id: 1,
+					method: 'initialize',
+					params: {protocolVersion: '2025-11-25', capabilities: {}},
+				}),
+				JSON.stringify({jsonrpc: '2.0', id: 2, method: 'tools/list'}),
+				'',
+			].join('\n'),
+		},
+	);
+	const list = reply
+		.split('\n')
+		.filter(Boolean)
+		.map(line => JSON.parse(line))
+		.find(message => message.id === 2);
+	const tools = JSON.stringify(list.result.tools);
+
+	expect(list.result.tools.length).toBeGreaterThan(0);
+	expect(measureMcpTools(dir, cli)).toEqual({
+		chars: tools.length,
+		tokens: estimateTokens(tools),
+	});
 });
 
 test('a line whose commit has no card is never a sample candidate', async () => {
@@ -196,6 +269,7 @@ test('why: for a commit that adds a 60-line file with a card, the card is smalle
 	expect(why.commit).toBe(first);
 	expect(why.card).toBeGreaterThan(0);
 	expect(why.card).toBeLessThan(why.blameShow);
+	expect(why.blameMessage).toBeLessThan(why.blameShow);
 	expect(why.blameShow).toBeLessThanOrEqual(why.fileHistory);
 	expect(why.fileHistory).toBe(measureFileHistory(dir, 'scheduler.txt'));
 });
@@ -218,6 +292,9 @@ test('why: for a one-line commit the three figures are still measured and report
 		card: estimateTokens(chamoji(dir, ['why', 'port.txt:1'])),
 		blameShow: estimateTokens(
 			await gitOutput(dir, ['show', '--no-color', commit]),
+		),
+		blameMessage: estimateTokens(
+			await gitOutput(dir, ['show', '-s', '--no-color', commit]),
 		),
 		fileHistory: estimateTokens(
 			await gitOutput(dir, ['log', '-p', '--no-color', '--', 'port.txt']),
@@ -392,20 +469,29 @@ function scratchFolder(prefix: string): string {
 	return folder;
 }
 
-/** A repo with one carded commit, and a sample file for it outside the repo. */
+/**
+ * A repo with two carded commits, the second changing a line in the middle of
+ * a file, and a sample file for that line outside the repo. A change with
+ * lines around it is one whose diff git's diff options can alter.
+ */
 async function runnerFixture() {
 	const dir = await repo([
 		{
 			commit: '✨ Add the parser',
 			body: 'Why: the old one choked on tabs\nGotcha: tabs count as one column',
-			files: {'parser.txt': lines(3)},
+			files: {'parser.txt': lines(9)},
+		},
+		{
+			commit: '🐛 Fix the fifth line',
+			body: 'Why: the fifth line was wrong\nConstraint: keep it short',
+			files: {'parser.txt': lines(9).replace('line 5', 'fixed 5')},
 		},
 	]);
 	const commit = await head(dir);
 	const sampleFile = path.join(scratchFolder('chamoji-sample-'), 'sample.json');
 	writeFileSync(
 		sampleFile,
-		JSON.stringify([{commit, file: 'parser.txt', line: 2, text: 'line 2'}]),
+		JSON.stringify([{commit, file: 'parser.txt', line: 5, text: 'fixed 5'}]),
 	);
 	return {dir, sampleFile};
 }
@@ -477,6 +563,56 @@ test('the figures are the same when the git config of whoever runs it sets forma
 			GIT_CONFIG_PARAMETERS: "'format.pretty'='oneline'",
 		}),
 	).toBe(withPlain);
+	expect(await runWith(plain, {GIT_DIFF_OPTS: '--unified=0'})).toBe(withPlain);
+});
+
+test('--pick-sample with --sample writes a sample for the repo being measured, and leaves that repo untouched', async () => {
+	const {dir} = await runnerFixture();
+	const sampleFile = path.join(scratchFolder('chamoji-picked-'), 'mine.json');
+
+	await execFileAsync(
+		process.execPath,
+		[runner, '--pick-sample', '--sample', sampleFile],
+		{cwd: dir},
+	);
+
+	const picked = JSON.parse(readFileSync(sampleFile, 'utf8'));
+	expect(picked).toEqual(pickSample(sampleCandidates(dir, cli), 20));
+	expect(picked).toHaveLength(2);
+	expect(await gitOutput(dir, ['status', '--porcelain'])).toBe('');
+});
+
+test('with no line measured the runner says so and shows no typical switch, and --write refuses and writes nothing', async () => {
+	const {dir} = await runnerFixture();
+	const sampleFile = path.join(scratchFolder('chamoji-empty-'), 'none.json');
+	writeFileSync(sampleFile, '[]\n');
+
+	const {stdout} = await execFileAsync(
+		process.execPath,
+		[runner, '--sample', sampleFile],
+		{cwd: dir},
+	);
+
+	expect(stdout).toContain(NO_LINES_MEASURED);
+	expect(stdout).not.toContain('Typical switch');
+	expect(stdout).not.toContain('Share of a context window');
+
+	const pageFile = writePage(dir);
+	const error = await execFileAsync(
+		process.execPath,
+		[runner, '--sample', sampleFile, '--write'],
+		{cwd: dir},
+	).then(
+		() => undefined,
+		(error: {code: number; stderr: string}) => error,
+	);
+
+	expect(error?.code).toBe(2);
+	expect(error?.stderr).toContain(NO_LINES_MEASURED);
+	expect(readFileSync(pageFile, 'utf8')).toBe(pageText);
+	expect(
+		existsSync(path.join(dir, 'docs', 'benchmarks', 'memory-tokens.json')),
+	).toBe(false);
 });
 
 test("--pick-sample refuses to run in another repo and leaves the script's own sample alone", async () => {
@@ -555,7 +691,7 @@ test('growth has one row per tag from v0.11.0 that is an ancestor of HEAD, oldes
 	await gitOutput(dir, ['switch', '-q', 'main']);
 
 	const tags = releaseTags(dir);
-	const growth = measureGrowth(dir, cli, tags);
+	const growth = measureGrowth(dir, cli, tags, {uncutBudget: UNCUT});
 
 	expect(tags).toEqual(['v0.11.0', 'v0.12.0', 'v0.100.0']);
 	expect(growth.map(row => row.tag)).toEqual(tags);
@@ -577,11 +713,19 @@ test('a tag with no card lines gives brief 0 and cardLines 0, and the row has no
 	]);
 	await tag(dir, 'v0.12.0');
 
-	const [bare, carded] = measureGrowth(dir, cli, ['v0.11.0', 'v0.12.0']);
+	const [bare, carded] = measureGrowth(dir, cli, ['v0.11.0', 'v0.12.0'], {
+		uncutBudget: UNCUT,
+	});
 
-	expect(bare).toMatchObject({tag: 'v0.11.0', brief: 0, cardLines: 0});
+	expect(bare).toMatchObject({
+		tag: 'v0.11.0',
+		brief: 0,
+		briefUncut: 0,
+		cardLines: 0,
+	});
 	expect(carded.cardLines).toBe(1);
 	expect(carded.brief).toBeGreaterThan(0);
+	expect(carded.briefUncut).toBe(carded.brief);
 	for (const row of [bare, carded]) {
 		for (const value of Object.values(row)) {
 			if (typeof value === 'number') expect(Number.isFinite(value)).toBe(true);
@@ -607,7 +751,7 @@ test('the worktrees made for the tags are gone afterwards, and the checkout is u
 		);
 	const foldersBefore = growthFolders();
 
-	measureGrowth(dir, cli, ['v0.11.0', 'v0.12.0']);
+	measureGrowth(dir, cli, ['v0.11.0', 'v0.12.0'], {uncutBudget: UNCUT});
 
 	expect(
 		(await gitOutput(dir, ['worktree', 'list', '--porcelain']))
@@ -619,8 +763,7 @@ test('the worktrees made for the tags are gone afterwards, and the checkout is u
 	expect(await gitOutput(dir, ['status', '--porcelain'])).toBe('');
 });
 
-const pageText =
-	'# Page\n\n## The numbers\n\nOld.\n\n## After\n\nKept.\n\n## A sample of real runs\n\nOld live.\n';
+const pageText = `# Page\n\n${LIVE_HEADING}\n\nOld live.\n\n## After\n\nKept.\n\n${REPLAY_HEADING}\n\nOld.\n`;
 
 /** The page --write fills in, put in a fixture repo's working copy. */
 function writePage(dir: string) {
@@ -646,32 +789,36 @@ async function runWrite(extra: string[], env: NodeJS.ProcessEnv = process.env) {
 	return {...output, text};
 }
 
-test('--write produces a file that parses, has version 1, and whose typicalSwitch equals typicalSwitch() of its own parts', async () => {
+test('--write produces a file that parses, has version 2, records the budgets and the tool definitions, and whose typicalSwitch equals switchFigures() of its own parts', async () => {
 	const {text} = await runWrite([]);
 	const results = JSON.parse(text);
 
 	expect(text.endsWith('}\n')).toBe(true);
-	expect(text).toContain('\n\t"version": 1,');
-	expect(results.version).toBe(1);
+	expect(text).toContain('\n\t"version": 2,');
+	expect(results.version).toBe(2);
 	expect(results.why.sampleSize).toBe(1);
-	expect(results.method.refsAsOf).toBe('HEAD');
+	expect(results.method).toMatchObject({
+		refsAsOf: 'HEAD',
+		briefBudget: 1500,
+		uncutBudget: 20_000,
+	});
+	expect(results.whatStands.mcpTools.tokens).toBeGreaterThan(0);
+	expect(results.whatStands.briefLines).toBe(2);
+	expect(results.why.perLine[0].blameMessage).toBeGreaterThan(0);
 	expect(results.growth).toEqual([]);
+	expect(results.typicalSwitch).toEqual(
+		switchFigures({
+			whatStands: results.whatStands,
+			why: results.why,
+			lookups: results.method.lookups,
+		}),
+	);
 	expect(results.typicalSwitch.with).toBe(
-		typicalSwitch({
-			whatStands: results.whatStands.brief.tokens,
-			whyMean: results.why.card.mean,
-			lookups: results.method.lookups,
-		}),
-	);
-	expect(results.typicalSwitch.without).toBe(
-		typicalSwitch({
-			whatStands: results.whatStands.log.tokens,
-			whyMean: results.why.blameShow.mean,
-			lookups: results.method.lookups,
-		}),
-	);
-	expect(results.typicalSwitch.saved).toBe(
-		results.typicalSwitch.without - results.typicalSwitch.with,
+		Math.round(
+			results.whatStands.brief.tokens +
+				results.whatStands.mcpTools.tokens +
+				5 * results.why.card.mean,
+		),
 	);
 });
 
@@ -712,11 +859,9 @@ test('--write fills in the page from the file it wrote, in the fixture and not i
 		),
 	);
 	const page = readFileSync(pageFile, 'utf8');
-	expect(sectionBody(page, '## The numbers')).toBe(
-		renderTables(results).trim(),
-	);
+	expect(sectionBody(page, REPLAY_HEADING)).toBe(renderTables(results).trim());
 	expect(sectionBody(page, '## After')).toBe('Kept.');
-	expect(sectionBody(page, '## A sample of real runs')).toBe(
+	expect(sectionBody(page, LIVE_HEADING)).toBe(
 		'The live sample has not been run yet.',
 	);
 	expect(readFileSync(ours, 'utf8')).toBe(oursBefore);
@@ -760,16 +905,100 @@ test('--write fills the live section from the live results file when there is on
 	);
 
 	const page = readFileSync(pageFile, 'utf8');
-	expect(sectionBody(page, '## A sample of real runs')).toBe(
-		renderLive(live).trim(),
+	const results = JSON.parse(
+		readFileSync(
+			path.join(dir, 'docs', 'benchmarks', 'memory-tokens.json'),
+			'utf8',
+		),
+	);
+	expect(sectionBody(page, LIVE_HEADING)).toBe(
+		renderLive(live, results).trim(),
 	);
 	expect(sectionBody(page, '## After')).toBe('Kept.');
+});
+
+test('--page-only re-renders both sections from the two results files as they are, measuring nothing', async () => {
+	const {dir, sampleFile} = await runnerFixture();
+	const pageFile = writePage(dir);
+	await execFileAsync(
+		process.execPath,
+		[runner, '--sample', sampleFile, '--write'],
+		{cwd: dir},
+	);
+	const resultsFile = path.join(
+		dir,
+		'docs',
+		'benchmarks',
+		'memory-tokens.json',
+	);
+	const resultsText = readFileSync(resultsFile, 'utf8');
+	// A replay figure no run could give, so a re-measure would show.
+	const results = {
+		...JSON.parse(resultsText),
+		ranAt: {tag: null, commit: 'f'.repeat(40), date: '2000-01-01'},
+	};
+	writeFileSync(resultsFile, `${JSON.stringify(results, null, '\t')}\n`);
+	const figures = {mean: 2, median: 2, min: 1, max: 3};
+	const side = {
+		runs: 1,
+		errors: 0,
+		inputTokens: figures,
+		outputTokens: figures,
+		turns: figures,
+		toolCalls: figures,
+	};
+	const live = {
+		version: 1,
+		model: 'claude-sonnet-5-5',
+		date: '2026-11-19',
+		commit: '0123456789abcdef0123456789abcdef01234567',
+		method: {},
+		questions: [
+			{question: 'One?', rule: 'c-00000001', key: 'Yes.', inBrief: true},
+		],
+		runs: [
+			{question: 1, side: 'with', run: 1, inputTokens: 2, correct: true},
+			{question: 1, side: 'without', run: 1, inputTokens: 2, correct: false},
+		],
+		summary: {with: side, without: side},
+		checked: true,
+	};
+	writeFileSync(
+		path.join(dir, 'docs', 'benchmarks', 'memory-tokens-live.json'),
+		JSON.stringify(live),
+	);
+
+	await execFileAsync(process.execPath, [runner, '--page-only'], {cwd: dir});
+
+	const page = readFileSync(pageFile, 'utf8');
+	expect(sectionBody(page, REPLAY_HEADING)).toBe(renderTables(results).trim());
+	expect(sectionBody(page, REPLAY_HEADING)).toContain('2000-01-01');
+	expect(sectionBody(page, LIVE_HEADING)).toBe(
+		renderLive(live, results).trim(),
+	);
+	expect(JSON.parse(readFileSync(resultsFile, 'utf8'))).toEqual(results);
+});
+
+test('--page-only with no results file refuses and leaves the page as it was', async () => {
+	const {dir} = await runnerFixture();
+	const pageFile = writePage(dir);
+
+	const error = await execFileAsync(process.execPath, [runner, '--page-only'], {
+		cwd: dir,
+	}).then(
+		() => undefined,
+		(error: {code: number; stderr: string}) => error,
+	);
+
+	expect(error?.code).toBe(2);
+	expect(error?.stderr).toContain('docs/benchmarks/memory-tokens.json');
+	expect(readFileSync(pageFile, 'utf8')).toBe(pageText);
 });
 
 test('--write with a page that has no live heading fails and leaves the page as it was', async () => {
 	const {dir, sampleFile} = await runnerFixture();
 	const pageFile = writePage(dir);
-	const text = '# Page\n\n## The numbers\n\nOld.\n';
+	const text = `# Page\n\n${REPLAY_HEADING}\n\nOld.\n`;
 	writeFileSync(pageFile, text);
 
 	const error = await execFileAsync(
@@ -782,7 +1011,7 @@ test('--write with a page that has no live heading fails and leaves the page as 
 	);
 
 	expect(error?.code).toBe(2);
-	expect(error?.stderr).toContain('has no "## A sample of real runs" heading');
+	expect(error?.stderr).toContain(`has no "${LIVE_HEADING}" heading`);
 	expect(readFileSync(pageFile, 'utf8')).toBe(text);
 	expect(
 		existsSync(path.join(dir, 'docs', 'benchmarks', 'memory-tokens.json')),
@@ -810,10 +1039,11 @@ test('--write with no page fails with a message and writes no results file', asy
 	).toBe(false);
 });
 
-test('--write with a page that has no numbers heading fails and leaves the page as it was', async () => {
+test('--write with a page that has no replay heading fails and leaves the page as it was', async () => {
 	const {dir, sampleFile} = await runnerFixture();
 	const pageFile = writePage(dir);
-	writeFileSync(pageFile, '# Page\n');
+	const text = `# Page\n\n${LIVE_HEADING}\n\nOld live.\n`;
+	writeFileSync(pageFile, text);
 
 	const error = await execFileAsync(
 		process.execPath,
@@ -825,8 +1055,8 @@ test('--write with a page that has no numbers heading fails and leaves the page 
 	);
 
 	expect(error?.code).toBe(2);
-	expect(error?.stderr).toContain('has no "## The numbers" heading');
-	expect(readFileSync(pageFile, 'utf8')).toBe('# Page\n');
+	expect(error?.stderr).toContain(`has no "${REPLAY_HEADING}" heading`);
+	expect(readFileSync(pageFile, 'utf8')).toBe(text);
 	expect(
 		existsSync(path.join(dir, 'docs', 'benchmarks', 'memory-tokens.json')),
 	).toBe(false);
