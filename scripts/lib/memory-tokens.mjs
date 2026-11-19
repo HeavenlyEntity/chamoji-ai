@@ -27,6 +27,23 @@ export function summarize(numbers) {
 	return {mean, median, min: sorted[0], max: sorted[sorted.length - 1]};
 }
 
+/** @param {number} n */
+const oneDecimal = n => Math.round(n * 10) / 10;
+
+/**
+ * `summarize` with each figure to 1 decimal, as the results files keep it.
+ * @param {number[]} numbers
+ */
+export function roundedSummary(numbers) {
+	const {mean, median, min, max} = summarize(numbers);
+	return {
+		mean: oneDecimal(mean),
+		median: oneDecimal(median),
+		min: oneDecimal(min),
+		max: oneDecimal(max),
+	};
+}
+
 /**
  * One "what stands" plus `lookups` whys at the mean cost, rounded to a whole token.
  * @param {{whatStands: number, whyMean: number, lookups?: number}} input
@@ -34,6 +51,41 @@ export function summarize(numbers) {
  */
 export function typicalSwitch({whatStands, whyMean, lookups = 5}) {
 	return Math.round(whatStands + lookups * whyMean);
+}
+
+/**
+ * The typical switch on each side, from the results file's own parts. With
+ * chamoji it is the brief and the MCP tool definitions plus the mean card;
+ * with git alone it is the log plus the mean commit read in full, and, as
+ * `messagesOnly`, the log plus the mean commit message. Null when no line
+ * was measured, since a why figure of no lines means nothing.
+ * @param {{whatStands: {brief: {tokens: number}, mcpTools: {tokens: number}, log: {tokens: number}}, why: {sampleSize: number, card: {mean: number}, blameShow: {mean: number}, blameMessage: {mean: number}}, lookups: number}} input
+ */
+export function switchFigures({whatStands, why, lookups}) {
+	if (why.sampleSize === 0) return null;
+	const withTokens = typicalSwitch({
+		whatStands: whatStands.brief.tokens + whatStands.mcpTools.tokens,
+		whyMean: why.card.mean,
+		lookups,
+	});
+	/** @param {number} whyMean */
+	const gitAlone = whyMean => {
+		const without = typicalSwitch({
+			whatStands: whatStands.log.tokens,
+			whyMean,
+			lookups,
+		});
+		return {
+			without,
+			saved: without - withTokens,
+			ratio: ratio(withTokens, without),
+		};
+	};
+	return {
+		with: withTokens,
+		...gitAlone(why.blameShow.mean),
+		messagesOnly: gitAlone(why.blameMessage.mean),
+	};
 }
 
 const toFourDecimals = (/** @type {number} */ n) =>
@@ -110,9 +162,13 @@ const windowName = window =>
 /**
  * A Markdown table laid out as the formatter lays one out (cells padded to
  * their column, figures to the right), so formatting the page changes nothing.
- * @param {string[]} header @param {string[][]} rows
+ * A pipe in a cell is escaped, so it can't start another column.
+ * @param {string[]} header @param {string[][]} cellRows
  */
-function table(header, rows) {
+function table(header, cellRows) {
+	const rows = cellRows.map(row =>
+		row.map(cell => cell.replaceAll('|', '\\|')),
+	);
 	const widths = header.map((cell, column) =>
 		Math.max(3, cell.length, ...rows.map(row => row[column].length)),
 	);
@@ -132,11 +188,22 @@ function table(header, rows) {
 	);
 }
 
+/** A figure to one decimal, with thousands separators. @param {number} n */
+const decimal = n =>
+	n.toLocaleString('en-US', {
+		minimumFractionDigits: 1,
+		maximumFractionDigits: 1,
+	});
+
+/** What the runner prints, and the page says, when no line was measured. */
+export const NO_LINES_MEASURED =
+	'No lines were measured, so there is no why figure and no typical switch.';
+
 /**
- * The Markdown for the page's generated part, from the results file's
- * contents: the typical switch, the three windows, the why sample, the growth
- * table, and what the figures were measured at. It names no figure that is
- * not in the results.
+ * The Markdown for the page's replay section, from the results file's
+ * contents: what stands, the typical switch, the three windows, the why
+ * sample, the growth table, and what the figures were measured at. It names
+ * no figure that is not in the results.
  * @param {any} results the parsed docs/benchmarks/memory-tokens.json
  * @returns {string}
  */
@@ -146,52 +213,91 @@ export function renderTables(results) {
 	const at = ranAt.tag
 		? `${ranAt.tag} (commit \`${ranAt.commit.slice(0, 7)}\`)`
 		: `commit \`${ranAt.commit.slice(0, 7)}\``;
+	const estimate = `${method.charsPerToken} characters a token`;
+	const listed =
+		whatStands.briefLines < whatStands.cardLines
+			? `lists ${tokens(whatStands.briefLines)} of the ${tokens(whatStands.cardLines)} card lines, and each section says how many more it has`
+			: `lists all ${tokens(whatStands.cardLines)} card lines`;
+	const open =
+		whatStands.openLines === whatStands.cardLines
+			? `All ${tokens(whatStands.cardLines)} card lines are open, so rule states made no difference to any figure here.`
+			: `${tokens(whatStands.openLines)} of the ${tokens(whatStands.cardLines)} card lines are open.`;
 	const out = [
-		`Measured at ${at} on ${ranAt.date} UTC. Every figure is an estimate at ${method.charsPerToken} characters a token, rounded half up to whole tokens${results.exact ? ', except the exact counts at the end' : ''}.`,
+		`Measured at ${at} on ${ranAt.date} UTC. Every figure is an estimate at ${estimate}, rounded half up to whole tokens${results.exact ? ', except the exact counts at the end' : ''}.${results.exact ? '' : ` No exact count has been made yet, so the estimate of ${estimate} has not been checked against a model’s own count.`}`,
+		'### What stands',
+		`With chamoji, what stands is the brief. \`chamoji memory brief\` cuts it to a budget of ${tokens(method.briefBudget)} tokens by default: on this repo it ${listed}. With a budget of ${tokens(method.uncutBudget)} tokens it lists ${tokens(whatStands.briefUncut.lines)} of them in ${tokens(whatStands.briefUncut.tokens)} tokens. ${open}`,
+		`\`chamoji init --agents\` also registers chamoji’s MCP server, whose tool definitions are sent with every request of a session: ${tokens(whatStands.mcpTools.tokens)} tokens. The replay counts them on the chamoji side. With git alone, it counts the whole log: ${tokens(whatStands.log.tokens)} tokens for ${tokens(whatStands.commits)} commits.`,
 		'### A typical switch',
-		`A typical switch is what stands, plus ${method.lookups} why lookups at the mean cost of one. This repo has ${tokens(whatStands.commits)} commits and ${tokens(whatStands.cardLines)} card lines in its brief.`,
-		table(
-			['', 'What stands', 'One why, mean', 'Typical switch'],
-			[
+	];
+
+	if (change === null) {
+		out.push(NO_LINES_MEASURED);
+	} else {
+		out.push(
+			`A typical switch is what stands, plus ${method.lookups} why lookups at the mean cost of one. With chamoji a why is \`chamoji why\`. With git alone it is the commit that last wrote the line, read in full or as its message only.`,
+			table(
 				[
+					'',
+					'What stands',
+					'Tool definitions',
+					'One why, mean',
+					'Typical switch',
+				],
+				[
+					[
+						'With chamoji',
+						tokens(whatStands.brief.tokens),
+						tokens(whatStands.mcpTools.tokens),
+						decimal(why.card.mean),
+						tokens(change.with),
+					],
+					[
+						'Git alone, read in full',
+						tokens(whatStands.log.tokens),
+						'0',
+						decimal(why.blameShow.mean),
+						tokens(change.without),
+					],
+					[
+						'Git alone, messages only',
+						tokens(whatStands.log.tokens),
+						'0',
+						decimal(why.blameMessage.mean),
+						tokens(change.messagesOnly.without),
+					],
+				],
+			),
+			`Read in full, git alone comes to ${times(change.ratio)} as many tokens as chamoji, ${tokens(change.saved)} more. With only each commit’s message for a why, it comes to ${times(change.messagesOnly.ratio)} as many, ${tokens(change.messagesOnly.saved)} more.`,
+			'### Share of a context window',
+			'These shares follow from the replay’s read-in-full model: each is what one typical switch above would take of the window. They are not what a live session used.',
+			table(
+				[
+					'Window',
 					'With chamoji',
-					tokens(whatStands.brief.tokens),
-					tokens(why.card.mean),
-					tokens(change.with),
+					'Git alone, read in full',
+					'Switches that fit, with chamoji',
+					'Switches that fit, git alone, read in full',
 				],
-				[
-					'Git alone',
-					tokens(whatStands.log.tokens),
-					tokens(why.blameShow.mean),
-					tokens(change.without),
-				],
-			],
-		),
-		`chamoji reads ${tokens(change.saved)} fewer tokens: git alone reads ${times(change.ratio)} as many.`,
-		'### Share of a context window',
-		table(
-			[
-				'Window',
-				'With chamoji',
-				'Git alone',
-				'Switches that fit, with chamoji',
-				'Switches that fit, git alone',
-			],
-			windows.map((/** @type {any} */ w) => [
-				windowName(w.window),
-				percent(w.withShare),
-				percent(w.withoutShare),
-				fits(w.withFits),
-				fits(w.withoutFits),
-			]),
-		),
+				windows.map((/** @type {any} */ w) => [
+					windowName(w.window),
+					percent(w.withShare),
+					percent(w.withoutShare),
+					fits(w.withFits),
+					fits(w.withoutFits),
+				]),
+			),
+		);
+	}
+
+	out.push(
 		'### One why',
-		`${tokens(why.sampleSize)} lines were measured and ${tokens(why.dropped)} dropped.`,
+		`${tokens(why.sampleSize)} lines were measured and ${tokens(why.dropped)} dropped. The message row is \`git show -s --no-color <commit>\`: the commit’s header and message, without its diff.`,
 		table(
 			['', 'Mean', 'Median', 'Smallest', 'Largest'],
 			[
 				['`chamoji why`', why.card],
 				['`git blame`, then `git show`', why.blameShow],
+				['`git blame`, then the commit’s message', why.blameMessage],
 				['`git log -p` on the file', why.fileHistory],
 			].map(([label, figures]) => [
 				/** @type {string} */ (label),
@@ -202,7 +308,7 @@ export function renderTables(results) {
 			]),
 		),
 		'### What stands at each release',
-	];
+	);
 	if (growth.length === 0) {
 		out.push('No release tags were measured.');
 	} else {
@@ -210,24 +316,33 @@ export function renderTables(results) {
 		const last = growth.at(-1);
 		out.push(
 			table(
-				['Tag', 'Commits', 'Card lines', 'Brief', 'Git log', 'Notes file'],
+				[
+					'Tag',
+					'Commits',
+					'Card lines',
+					'Brief',
+					'Brief, uncut',
+					'Git log',
+					'Notes file',
+				],
 				growth.map((/** @type {any} */ row) => [
 					row.tag,
 					tokens(row.commits),
 					tokens(row.cardLines),
 					tokens(row.brief),
+					tokens(row.briefUncut),
 					tokens(row.log),
 					tokens(row.notesFile),
 				]),
 			),
-			`From ${first.tag} to ${last.tag} the git log went from ${tokens(first.log)} to ${tokens(last.log)} tokens, the brief from ${tokens(first.brief)} to ${tokens(last.brief)}, and the notes file from ${tokens(first.notesFile)} to ${tokens(last.notesFile)}.`,
+			`From ${first.tag} to ${last.tag} the git log went from ${tokens(first.log)} to ${tokens(last.log)} tokens, the brief from ${tokens(first.brief)} to ${tokens(last.brief)}, the uncut brief from ${tokens(first.briefUncut)} to ${tokens(last.briefUncut)}, and the notes file from ${tokens(first.notesFile)} to ${tokens(last.notesFile)}. The brief is cut to its budget, so it can’t grow past it; the uncut brief shows how it would grow without the cut.`,
 		);
 	}
 
 	if (results.exact) {
 		out.push(
 			`### Exact counts`,
-			`${results.exact.model} counted the same texts: ${tokens(results.exact.typicalSwitch.with)} tokens for a typical switch with chamoji and ${tokens(results.exact.typicalSwitch.without)} with git alone.`,
+			`${results.exact.model} counted the same texts: ${tokens(results.exact.typicalSwitch.with)} tokens for a typical switch with chamoji and ${tokens(results.exact.typicalSwitch.without)} with git alone, read in full.`,
 		);
 	}
 
@@ -236,52 +351,83 @@ export function renderTables(results) {
 
 const LIVE_NOT_RUN = 'The live sample has not been run yet.';
 
+/** @param {number[]} values */
+const sum = values => values.reduce((total, n) => total + n, 0);
+
 /**
  * The Markdown for the page's live section, from the live results file's
- * contents: the model, the date and the commit, and per side the smallest,
- * median and largest input tokens, output tokens, turns and tool calls. It
- * judges no answer itself: right answers are counted only once a person has
- * checked them. With no results it is the not-run sentence.
+ * contents: the model, the date and the commit; per side the smallest,
+ * median, mean, largest and total input tokens, output tokens, turns and tool
+ * calls; per question whether its rule was in the brief and each side's
+ * medians; and one sentence relating the sample to the replay, when the
+ * replay's results are given. It judges no answer itself: right answers are
+ * counted only once a person has checked them. With no results it is the
+ * not-run sentence.
  * @param {any} live the parsed docs/benchmarks/memory-tokens-live.json, or null
+ * @param {any} [replay] the parsed docs/benchmarks/memory-tokens.json, or null
  * @returns {string}
  */
-export function renderLive(live) {
+export function renderLive(live, replay = null) {
 	if (!live) return `${LIVE_NOT_RUN}\n`;
 	const {model, date, commit, runs, summary, checked} = live;
+	/** @type {Array<{question: string, label?: string, inBrief?: boolean}>} */
+	const questionList = live.questions ?? [];
 	const questions = new Set(runs.map((/** @type {any} */ r) => r.question))
 		.size;
 	const perQuestion = Math.max(
 		...runs.map((/** @type {any} */ r) => r.run ?? 1),
 	);
 	const failed = runs.filter((/** @type {any} */ r) => r.error).length;
+	/** @param {string} side @param {number} [question] */
+	const answered = (side, question) =>
+		runs.filter(
+			(/** @type {any} */ r) =>
+				r.side === side &&
+				!r.error &&
+				(question === undefined || r.question === question),
+		);
 	// A side with no successful run has no figures, and gets no rows.
 	const sides = /** @type {const} */ ([
 		['with', 'with chamoji'],
 		['without', 'without'],
 	]).filter(([side]) => summary[side].inputTokens);
-	/** @param {{min: number, median: number, max: number} | null} f */
-	const cells = f =>
-		f
-			? [tokens(f.min), tokens(f.median), tokens(f.max)]
-			: ['not measured', 'not measured', 'not measured'];
 	const metrics = /** @type {const} */ ([
 		['inputTokens', 'Input tokens'],
 		['outputTokens', 'Output tokens'],
 		['turns', 'Turns'],
 		['toolCalls', 'Tool calls'],
 	]);
+	/** @param {string} side @param {string} key */
+	const total = (side, key) =>
+		sum(
+			answered(side)
+				.map((/** @type {any} */ r) => r[key])
+				.filter((/** @type {unknown} */ n) => typeof n === 'number'),
+		);
 	const out = [
-		`${model} answered ${questions} ${questions === 1 ? 'question' : 'questions'} about this repo ${perQuestion === 1 ? 'once' : `${perQuestion} times`} each in Claude Code, in a clone with chamoji set up and in a plain clone, on ${date} UTC at commit \`${commit.slice(0, 7)}\`. The figures are what each session reported, per run; input tokens include cached ones.`,
+		`${model} answered ${questions} ${questions === 1 ? 'question' : 'questions'} about this repo ${perQuestion === 1 ? 'once' : `${perQuestion} times`} each in Claude Code, in a clone with chamoji set up and in a plain clone, on ${date} UTC at commit \`${commit.slice(0, 7)}\`. We wrote ${questions === 1 ? 'the question' : `the ${questions} questions`} from this repo’s own cards, so each has a rule that answers it; questions of another kind might show no difference.`,
+		'The figures are what each session reported. A session’s input tokens are summed over every request it made, cached tokens included, so a session that takes three turns sends its standing context three times. That is what each request was billed for, cached tokens at a lower rate, and not a share of a context window.',
 	];
 	if (sides.length > 0) {
 		out.push(
 			table(
-				['', 'Smallest', 'Median', 'Largest'],
+				['', 'Smallest', 'Median', 'Mean', 'Largest', 'Total'],
 				metrics.flatMap(([key, label]) =>
-					sides.map(([side, sideLabel]) => [
-						`${label}, ${sideLabel}`,
-						...cells(summary[side][key]),
-					]),
+					sides.map(([side, sideLabel]) => {
+						const f = summary[side][key];
+						return [
+							`${label}, ${sideLabel}`,
+							...(f
+								? [
+										tokens(f.min),
+										tokens(f.median),
+										decimal(f.mean),
+										tokens(f.max),
+										tokens(total(side, key)),
+									]
+								: Array(5).fill('not measured')),
+						];
+					}),
 				),
 			),
 		);
@@ -294,6 +440,107 @@ export function renderLive(live) {
 		if (!summary[side].inputTokens) {
 			out.push(`No run ${label} succeeded, so that side has no figures.`);
 		}
+	}
+
+	/** The median of a figure over a question's runs on one side, or null. @param {string} side @param {number} question @param {string} key */
+	const median = (side, question, key) => {
+		const values = answered(side, question)
+			.map((/** @type {any} */ r) => r[key])
+			.filter((/** @type {unknown} */ n) => typeof n === 'number');
+		return values.length === 0 ? null : summarize(values).median;
+	};
+	/** @param {number | null} n */
+	const cell = n => (n === null ? 'not measured' : tokens(n));
+	/** @param {boolean | undefined} inBrief */
+	const inBriefCell = inBrief =>
+		inBrief === undefined ? 'not recorded' : inBrief ? 'yes' : 'no';
+	const byQuestion = questionList.map((q, index) => {
+		const number = index + 1;
+		const withTokens = median('with', number, 'inputTokens');
+		const withoutTokens = median('without', number, 'inputTokens');
+		return {
+			q,
+			number,
+			ratio:
+				withTokens === null || withoutTokens === null
+					? null
+					: ratio(withTokens, withoutTokens),
+			row: [
+				q.label ?? q.question,
+				inBriefCell(q.inBrief),
+				cell(withTokens),
+				cell(median('with', number, 'turns')),
+				cell(withoutTokens),
+				cell(median('without', number, 'turns')),
+				withTokens === null || withoutTokens === null
+					? 'not measured'
+					: times(ratio(withTokens, withoutTokens)),
+			],
+		};
+	});
+	if (byQuestion.length > 0) {
+		out.push(
+			'### By question',
+			'The tokens and turns are medians of the question’s runs on each side, and the last column divides one median by the other. The second column says whether the question’s rule was in the default brief that the sessions with chamoji received.',
+			table(
+				[
+					'Question',
+					'Rule in the brief',
+					'With chamoji, input tokens',
+					'With chamoji, turns',
+					'Without, input tokens',
+					'Without, turns',
+					'Without ÷ with',
+				],
+				byQuestion.map(({row}) => row),
+			),
+		);
+		if (questionList.some(q => q.inBrief === undefined)) {
+			out.push(
+				'This sample was run before the runner recorded which rules were in the brief, so that column reads not recorded.',
+			);
+		}
+	}
+
+	const totalWith = total('with', 'inputTokens');
+	const totalWithout = total('without', 'inputTokens');
+	if (answered('with').length > 0 && answered('without').length > 0) {
+		const relating = [];
+		if (replay?.typicalSwitch) {
+			relating.push(
+				`The replay below counts what an agent with git alone would read if it read the whole log and each commit in full, and gets ${times(replay.typicalSwitch.ratio)}.`,
+			);
+		}
+
+		relating.push(
+			`${relating.length > 0 ? 'The sessions without chamoji searched instead, and in total spent' : 'In total the sessions without chamoji spent'} ${tokens(totalWithout)} input tokens against ${tokens(totalWith)} with it: ${times(ratio(totalWith, totalWithout))} as many.`,
+		);
+		const ratios = byQuestion
+			.map(({ratio}) => ratio)
+			.filter(value => value !== null);
+		if (ratios.length > 1) {
+			relating.push(
+				`By question, at the median, the ratio ran from ${times(Math.min(...ratios))} to ${times(Math.max(...ratios))}.`,
+			);
+		}
+
+		const cut = byQuestion.filter(
+			({q, number}) =>
+				q.inBrief === false && answered('with', number).length > 0,
+		);
+		if (cut.length > 0) {
+			const those = cut.length === 1 ? '1 question' : `${cut.length} questions`;
+			const called = cut.every(
+				({number}) => (median('with', number, 'toolCalls') ?? 0) >= 1,
+			);
+			relating.push(
+				called
+					? `On the ${those} whose rule the default brief left out, the sessions with chamoji needed a tool call as well.`
+					: `On the ${those} whose rule the default brief left out, the brief did not hold the answer; the table by question shows what those sessions spent.`,
+			);
+		}
+
+		out.push(relating.join(' '));
 	}
 
 	const unknown =
@@ -312,12 +559,10 @@ export function renderLive(live) {
 
 	if (checked) {
 		const right = (/** @type {string} */ side) => {
-			const answered = runs.filter(
-				(/** @type {any} */ r) => r.side === side && !r.error,
-			);
+			const sideRuns = answered(side);
 			return [
-				answered.filter((/** @type {any} */ r) => r.correct === true).length,
-				answered.length,
+				sideRuns.filter((/** @type {any} */ r) => r.correct === true).length,
+				sideRuns.length,
 			];
 		};
 		const [withRight, withAnswered] = right('with');

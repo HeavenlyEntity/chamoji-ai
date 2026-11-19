@@ -25,11 +25,15 @@ const NO_GLOBAL_CONFIG = path.join(
 	'no-global-gitconfig',
 );
 
-/** Variables that would point git at another repo or add config to it. */
+/**
+ * Variables that would point git at another repo, add config to it, or
+ * change the diffs it prints.
+ */
 const LEAKY_GIT_VARIABLES = new Set([
 	'GIT_CONFIG',
 	'GIT_CONFIG_PARAMETERS',
 	'GIT_CONFIG_COUNT',
+	'GIT_DIFF_OPTS',
 	'GIT_DIR',
 	'GIT_WORK_TREE',
 	'GIT_INDEX_FILE',
@@ -107,14 +111,41 @@ export function assertFullHistory(repo) {
 }
 
 /**
+ * How many of the card lines a brief's text lists: its rows that start with
+ * a state and then one of the ids.
+ * @param {string} text @param {Set<string>} ids
+ */
+function listedLines(text, ids) {
+	let listed = 0;
+	for (const row of text.split('\n')) {
+		const id = /^\s+\S+\s+([cgf]-[0-9a-f]+)\s/.exec(row)?.[1];
+		if (id && ids.has(id)) listed++;
+	}
+
+	return listed;
+}
+
+/**
+ * What stands: the brief as a session gets it, cut to its default budget,
+ * and how many card lines it lists; the brief at `uncutBudget`; the log; a
+ * notes file of every card line; and how many card lines there are, and how
+ * many of them are open.
  * @param {string} repo
  * @param {string} cli
- * @returns {{brief: Size, log: Size, notesFile: Size, cardLines: number, commits: number}}
+ * @param {number} uncutBudget the brief's largest budget
+ * @returns {{brief: Size, briefLines: number, briefUncut: Size & {lines: number}, log: Size, notesFile: Size, cardLines: number, openLines: number, commits: number}}
  */
-export function measureWhatStands(repo, cli) {
+export function measureWhatStands(repo, cli, uncutBudget) {
 	const brief = chamoji(repo, cli, ['memory', 'brief']);
-	/** @type {{lines: Array<{kind: string, text: string}>}} */
+	const uncut = chamoji(repo, cli, [
+		'memory',
+		'brief',
+		'--budget',
+		String(uncutBudget),
+	]);
+	/** @type {{lines: Array<{id: string, kind: string, text: string, state: string}>}} */
 	const {lines} = JSON.parse(chamoji(repo, cli, ['memory', 'brief', '--json']));
+	const ids = new Set(lines.map(({id}) => id));
 	const notesFile = lines
 		.map(({kind, text}) => {
 			const name = KIND_NAMES[kind];
@@ -125,11 +156,72 @@ export function measureWhatStands(repo, cli) {
 	const log = git(repo, ['log', '--no-color']);
 	return {
 		brief: size(brief),
+		briefLines: listedLines(brief, ids),
+		briefUncut: {...size(uncut), lines: listedLines(uncut, ids)},
 		log: size(log),
 		notesFile: size(notesFile),
 		cardLines: lines.length,
+		openLines: lines.filter(({state}) => state === 'open').length,
 		commits: Number(git(repo, ['rev-list', '--count', 'HEAD']).trim()),
 	};
+}
+
+/**
+ * The tool definitions chamoji's MCP server sends: the `tools` of its
+ * `tools/list` reply, as JSON. It speaks to `chamoji mcp` over stdio as a
+ * client does (initialize, initialized, tools/list) and closes its input;
+ * the call returns once the server has exited.
+ * @param {string} repo @param {string} cli
+ * @returns {string}
+ */
+function mcpToolsText(repo, cli) {
+	const messages = [
+		{
+			jsonrpc: '2.0',
+			id: 1,
+			method: 'initialize',
+			params: {
+				protocolVersion: '2025-11-25',
+				capabilities: {},
+				clientInfo: {name: 'memory-benchmark', version: '1'},
+			},
+		},
+		{jsonrpc: '2.0', method: 'notifications/initialized'},
+		{jsonrpc: '2.0', id: 2, method: 'tools/list'},
+	];
+	const out = execFileSync(
+		process.execPath,
+		[cli, 'mcp', '--no-update-check'],
+		{
+			cwd: repo,
+			encoding: 'utf8',
+			env: isolatedGitEnv(),
+			input: `${messages.map(message => JSON.stringify(message)).join('\n')}\n`,
+			maxBuffer: 64 * 1024 * 1024,
+			stdio: ['pipe', 'pipe', 'pipe'],
+		},
+	);
+	/** @type {{result?: {tools?: unknown[]}} | undefined} */
+	const reply = out
+		.split('\n')
+		.filter(Boolean)
+		.map(line => JSON.parse(line))
+		.find(message => message.id === 2);
+	if (!Array.isArray(reply?.result?.tools)) {
+		throw new Error('chamoji mcp gave no tools/list reply.');
+	}
+
+	return JSON.stringify(reply.result.tools);
+}
+
+/**
+ * The size of the tool definitions `chamoji init --agents` adds to every
+ * request of a session, through the MCP server it registers.
+ * @param {string} repo @param {string} cli
+ * @returns {Size}
+ */
+export function measureMcpTools(repo, cli) {
+	return size(mcpToolsText(repo, cli));
 }
 
 /**
@@ -255,11 +347,11 @@ export function locateSample(repo, sample) {
 
 /**
  * Tokens for one line: the card chamoji gives, the commit git blame names
- * shown in full, and the history of the whole file.
+ * shown in full and as its message only, and the history of the whole file.
  * @param {string} repo
  * @param {string} cli
  * @param {{file: string, line: number}} line
- * @returns {{location: string, commit: string, card: number, blameShow: number, fileHistory: number}}
+ * @returns {{location: string, commit: string, card: number, blameShow: number, blameMessage: number, fileHistory: number}}
  */
 export function measureWhy(repo, cli, {file, line}) {
 	const location = `${file}:${line}`;
@@ -279,6 +371,9 @@ export function measureWhy(repo, cli, {file, line}) {
 		commit,
 		card: estimateTokens(chamoji(repo, cli, ['why', location])),
 		blameShow: estimateTokens(git(repo, ['show', '--no-color', commit])),
+		blameMessage: estimateTokens(
+			git(repo, ['show', '-s', '--no-color', commit]),
+		),
 		fileHistory: measureFileHistory(repo, file),
 	};
 }
@@ -331,10 +426,10 @@ export function releaseTags(repo, from = 'v0.11.0') {
  * @param {string} repo the throwaway clone; worktrees are added to it
  * @param {string} cli
  * @param {string[]} tags
- * @param {{onTag?: (tag: string, index: number) => void}} [options]
- * @returns {Array<{tag: string, commits: number, cardLines: number, brief: number, log: number, notesFile: number}>} tokens
+ * @param {{uncutBudget: number, onTag?: (tag: string, index: number) => void}} options
+ * @returns {Array<{tag: string, commits: number, cardLines: number, brief: number, briefUncut: number, log: number, notesFile: number}>} tokens
  */
-export function measureGrowth(repo, cli, tags, {onTag} = {}) {
+export function measureGrowth(repo, cli, tags, {uncutBudget, onTag}) {
 	const folder = mkdtempSync(path.join(tmpdir(), 'chamoji-memory-growth-'));
 	try {
 		return tags.map((tag, index) => {
@@ -342,12 +437,13 @@ export function measureGrowth(repo, cli, tags, {onTag} = {}) {
 			const worktree = path.join(folder, String(index));
 			git(repo, ['worktree', 'add', '--quiet', '--detach', worktree, tag]);
 			try {
-				const stands = measureWhatStands(worktree, cli);
+				const stands = measureWhatStands(worktree, cli, uncutBudget);
 				return {
 					tag,
 					commits: stands.commits,
 					cardLines: stands.cardLines,
 					brief: stands.brief.tokens,
+					briefUncut: stands.briefUncut.tokens,
 					log: stands.log.tokens,
 					notesFile: stands.notesFile.tokens,
 				};
@@ -363,16 +459,18 @@ export function measureGrowth(repo, cli, tags, {onTag} = {}) {
 }
 
 /**
- * The texts the exact column counts: the brief, the log, and for each
- * measured line the `chamoji why` text and the `git show` of its commit.
+ * The texts the exact column counts: the brief, the MCP tool definitions,
+ * the log, and for each measured line the `chamoji why` text and the
+ * `git show` of its commit.
  * @param {string} repo
  * @param {string} cli
  * @param {Array<{location: string, commit: string}>} perLine
- * @returns {{brief: string, log: string, why: string[], blameShow: string[]}}
+ * @returns {{brief: string, mcpTools: string, log: string, why: string[], blameShow: string[]}}
  */
 export function textsForExact(repo, cli, perLine) {
 	return {
 		brief: chamoji(repo, cli, ['memory', 'brief']),
+		mcpTools: mcpToolsText(repo, cli),
 		log: git(repo, ['log', '--no-color']),
 		why: perLine.map(({location}) => chamoji(repo, cli, ['why', location])),
 		blameShow: perLine.map(({commit}) =>

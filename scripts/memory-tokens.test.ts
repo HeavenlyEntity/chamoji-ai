@@ -12,8 +12,10 @@ import {
 	renderLive,
 	renderTables,
 	replaceSection,
+	roundedSummary,
 	sectionBody,
 	summarize,
+	switchFigures,
 	typicalSwitch,
 	windowShares,
 	WINDOWS,
@@ -22,9 +24,13 @@ import {
 	checkProblem,
 	countToolCalls,
 	firstSide,
+	markInBrief,
 	recordFromResult,
 	summarizeSide,
 } from './memory-benchmark-live.mjs';
+
+const LIVE_HEADING = '## What real sessions spent';
+const REPLAY_HEADING = '## The replay: reading everything';
 
 test('estimateTokens rounds up at 4 characters a token', () => {
 	expect(estimateTokens('')).toBe(0);
@@ -101,6 +107,217 @@ test('pickSample does not reorder its input', () => {
 	expect(c).toEqual([{commit: 'b'}, {commit: 'a'}]);
 });
 
+test('roundedSummary is summarize with every figure to one decimal', () => {
+	expect(roundedSummary([1, 2, 2])).toEqual({
+		mean: 1.7,
+		median: 2,
+		min: 1,
+		max: 2,
+	});
+});
+
+const whatStandsParts = {
+	brief: {chars: 5995, tokens: 1499},
+	briefLines: 33,
+	briefUncut: {chars: 9665, tokens: 2417, lines: 57},
+	mcpTools: {chars: 4575, tokens: 1144},
+	log: {chars: 233_999, tokens: 58_500},
+	notesFile: {chars: 7485, tokens: 1872},
+	cardLines: 57,
+	openLines: 57,
+	commits: 454,
+};
+
+test('switchFigures counts the brief and the tool definitions with chamoji, and the log with whys read in full or as messages only', () => {
+	const figures = switchFigures({
+		whatStands: whatStandsParts,
+		why: {
+			sampleSize: 20,
+			card: {mean: 67.8},
+			blameShow: {mean: 3637.2},
+			blameMessage: {mean: 122.3},
+		},
+		lookups: 5,
+	});
+
+	expect(figures).toEqual({
+		with: 2982,
+		without: 76_686,
+		saved: 73_704,
+		ratio: 25.7,
+		messagesOnly: {without: 59_112, saved: 56_130, ratio: 19.8},
+	});
+});
+
+test('switchFigures is null when no line was measured', () => {
+	expect(
+		switchFigures({
+			whatStands: whatStandsParts,
+			why: {
+				sampleSize: 0,
+				card: {mean: 0},
+				blameShow: {mean: 0},
+				blameMessage: {mean: 0},
+			},
+			lookups: 5,
+		}),
+	).toBeNull();
+});
+
+/** A replay results file with made-up figures that agree with each other. */
+function replayResults(overrides: Record<string, unknown> = {}) {
+	const perLine = [
+		{
+			location: 'a.ts:1',
+			commit: 'a'.repeat(40),
+			card: 60,
+			blameShow: 3000,
+			blameMessage: 100,
+			fileHistory: 9000,
+		},
+		{
+			location: 'b.ts:2',
+			commit: 'b'.repeat(40),
+			card: 75,
+			blameShow: 4275,
+			blameMessage: 145,
+			fileHistory: 28_000,
+		},
+	];
+	const of = (key: keyof (typeof perLine)[number]) =>
+		roundedSummary(perLine.map(line => Number(line[key])));
+	const why = {
+		sampleSize: 2,
+		dropped: 0,
+		card: of('card'),
+		blameShow: of('blameShow'),
+		blameMessage: of('blameMessage'),
+		fileHistory: of('fileHistory'),
+		perLine,
+	};
+	const change = switchFigures({whatStands: whatStandsParts, why, lookups: 5});
+	return {
+		version: 2,
+		ranAt: {
+			tag: null,
+			commit: 'de4046f305c717f7822f3626b084a766b19f4226',
+			date: '2026-11-19',
+		},
+		method: {
+			charsPerToken: 4,
+			lookups: 5,
+			refsAsOf: 'HEAD',
+			briefBudget: 1500,
+			uncutBudget: 20_000,
+		},
+		whatStands: whatStandsParts,
+		why,
+		typicalSwitch: change,
+		windows: windowShares({
+			withTokens: change?.with ?? 0,
+			withoutTokens: change?.without ?? 0,
+		}),
+		chatExample: {file: 'a.ts', fileHistory: 9000},
+		growth: [
+			{
+				tag: 'v0.11.0',
+				commits: 175,
+				cardLines: 54,
+				brief: 1478,
+				briefUncut: 2230,
+				log: 22_194,
+				notesFile: 1765,
+			},
+			{
+				tag: 'v0.16.0',
+				commits: 370,
+				cardLines: 57,
+				brief: 1474,
+				briefUncut: 2417,
+				log: 48_141,
+				notesFile: 1872,
+			},
+		],
+		exact: null,
+		...overrides,
+	};
+}
+
+test('renderTables shows the typical switch with the tool definitions and the mean why to one decimal, for both git rows', () => {
+	const text = renderTables(replayResults());
+
+	expect(text).toMatch(
+		/\|\s*With chamoji\s*\|\s*1,499\s*\|\s*1,144\s*\|\s*67\.5\s*\|\s*2,981\s*\|/,
+	);
+	expect(text).toMatch(
+		/\|\s*Git alone, read in full\s*\|\s*58,500\s*\|\s*0\s*\|\s*3,637\.5\s*\|\s*76,688\s*\|/,
+	);
+	expect(text).toMatch(
+		/\|\s*Git alone, messages only\s*\|\s*58,500\s*\|\s*0\s*\|\s*122\.5\s*\|\s*59,113\s*\|/,
+	);
+	expect(text).toContain(
+		'Read in full, git alone comes to 25.7× as many tokens as chamoji, 73,707 more. With only each commit’s message for a why, it comes to 19.8× as many, 56,132 more.',
+	);
+	expect(text).toMatch(/tool definitions/);
+});
+
+test('renderTables says what the brief is: its budget, how many lines it lists, and the uncut brief', () => {
+	const text = renderTables(replayResults());
+
+	expect(text).toContain('a budget of 1,500 tokens');
+	expect(text).toContain('lists 33 of the 57 card lines');
+	expect(text).toContain('each section says how many more it has');
+	expect(text).toContain(
+		'With a budget of 20,000 tokens it lists 57 of them in 2,417 tokens.',
+	);
+	expect(text).toMatch(/\|\s*Tag\s*\|.*\|\s*Brief, uncut\s*\|/);
+	expect(text).toMatch(/\|\s*v0\.16\.0\s*\|.*\|\s*2,417\s*\|\s*48,141\s*\|/);
+});
+
+test('renderTables says whether rule states made a difference', () => {
+	expect(renderTables(replayResults())).toContain(
+		'All 57 card lines are open, so rule states made no difference to any figure here.',
+	);
+	expect(
+		renderTables(
+			replayResults({whatStands: {...whatStandsParts, openLines: 50}}),
+		),
+	).toContain('50 of the 57 card lines are open.');
+});
+
+test('renderTables labels the window table as following from the read-in-full model', () => {
+	const text = renderTables(replayResults());
+
+	expect(text).toContain('read-in-full model');
+	expect(text).toContain('not what a live session used');
+	expect(text).toMatch(
+		/\|\s*Window\s*\|\s*With chamoji\s*\|\s*Git alone, read in full\s*\|/,
+	);
+	expect(text).not.toMatch(/\| Git alone \|/);
+});
+
+test('renderTables says the estimate is unchecked until an exact count is made', () => {
+	expect(renderTables(replayResults())).toContain(
+		'No exact count has been made yet, so the estimate of 4 characters a token has not been checked against a model’s own count.',
+	);
+	expect(
+		renderTables(
+			replayResults({
+				exact: {
+					model: 'claude-sonnet-5-5',
+					typicalSwitch: {with: 3000, without: 70_000},
+				},
+			}),
+		),
+	).not.toContain('No exact count');
+});
+
+test('renderTables has a why row for blame, then the commit’s message', () => {
+	expect(renderTables(replayResults())).toMatch(
+		/\|\s*`git blame`, then the commit’s message\s*\|\s*123\s*\|/,
+	);
+});
+
 const resultsUrl = new URL(
 	'../docs/benchmarks/memory-tokens.json',
 	import.meta.url,
@@ -111,8 +328,46 @@ const pageUrl = new URL(
 );
 const results = () => JSON.parse(readFileSync(resultsUrl, 'utf8'));
 
+test('docs/benchmarks/memory-tokens.json agrees with itself', () => {
+	const file = results();
+	const {why} = file;
+
+	for (const key of ['card', 'blameShow', 'blameMessage', 'fileHistory']) {
+		expect(why[key]).toEqual(
+			roundedSummary(why.perLine.map((line: any) => line[key])),
+		);
+	}
+	expect(why.sampleSize).toBe(why.perLine.length);
+	expect(file.typicalSwitch).toEqual(
+		switchFigures({
+			whatStands: file.whatStands,
+			why,
+			lookups: file.method.lookups,
+		}),
+	);
+	expect(file.windows).toEqual(
+		windowShares({
+			withTokens: file.typicalSwitch.with,
+			withoutTokens: file.typicalSwitch.without,
+		}),
+	);
+
+	let sizes = 0;
+	const walk = (value: unknown) => {
+		if (!value || typeof value !== 'object') return;
+		const record = value as Record<string, unknown>;
+		if (typeof record.chars === 'number') {
+			expect(record.tokens).toBe(Math.ceil(record.chars / 4));
+			sizes++;
+		}
+		Object.values(record).forEach(walk);
+	};
+	walk(file);
+	expect(sizes).toBeGreaterThanOrEqual(5);
+});
+
 test('renderTables shows the three windows as 250k, 500k and 1M with both shares as percentages', () => {
-	const base = results();
+	const base = replayResults();
 	const text = renderTables({
 		...base,
 		windows: [
@@ -146,10 +401,14 @@ test('renderTables shows the three windows as 250k, 500k and 1M with both shares
 });
 
 test('renderTables writes "not measured" for a null ratio and never prints NaN, Infinity or null', () => {
-	const base = results();
+	const base = replayResults();
 	const text = renderTables({
 		...base,
-		typicalSwitch: {...base.typicalSwitch, ratio: null},
+		typicalSwitch: {
+			...base.typicalSwitch,
+			ratio: null,
+			messagesOnly: {...base.typicalSwitch?.messagesOnly, ratio: null},
+		},
 		windows: base.windows.map((w: object) => ({
 			...w,
 			withFits: null,
@@ -163,7 +422,7 @@ test('renderTables writes "not measured" for a null ratio and never prints NaN, 
 });
 
 test('renderTables formats tokens with separators, ratios with a times sign and the date as UTC', () => {
-	const text = renderTables(results());
+	const text = renderTables(replayResults());
 
 	expect(text).toMatch(/\d{1,3},\d{3}/);
 	expect(text).toMatch(/\d+\.\d×/);
@@ -171,7 +430,7 @@ test('renderTables formats tokens with separators, ratios with a times sign and 
 });
 
 test('renderTables rounds half up to whole tokens', () => {
-	const base = results();
+	const base = replayResults();
 	const text = renderTables({
 		...base,
 		why: {...base.why, card: {mean: 67.5, median: 62.5, min: 44, max: 143}},
@@ -180,12 +439,23 @@ test('renderTables rounds half up to whole tokens', () => {
 	expect(text).toMatch(/\|\s+68 \|\s+63 \|\s+44 \|\s+143 \|/);
 });
 
-test('the page between its two markers equals renderTables of docs/benchmarks/memory-tokens.json', () => {
+test('the replay section of the page equals renderTables of docs/benchmarks/memory-tokens.json', () => {
 	const page = readFileSync(pageUrl, 'utf8');
 
-	expect(sectionBody(page, '## The numbers')).toBe(
+	expect(sectionBody(page, REPLAY_HEADING)).toBe(
 		renderTables(results()).trim(),
 	);
+});
+
+test('the page shows what real sessions spent before the replay, and has neither old heading', () => {
+	const page = readFileSync(pageUrl, 'utf8');
+
+	expect(page.indexOf(`${LIVE_HEADING} `)).toBeGreaterThan(0);
+	expect(page.indexOf(`${LIVE_HEADING} `)).toBeLessThan(
+		page.indexOf(`${REPLAY_HEADING} `),
+	);
+	expect(page).not.toContain('## The numbers');
+	expect(page).not.toContain('## A sample of real runs');
 });
 
 test('every whole number of four digits or more in the generated part appears in the results file', () => {
@@ -221,24 +491,34 @@ test('the live section of the page equals renderLive of docs/benchmarks/memory-t
 		? JSON.parse(readFileSync(liveUrl, 'utf8'))
 		: null;
 
-	expect(sectionBody(page, '## A sample of real runs')).toBe(
-		renderLive(live).trim(),
+	expect(sectionBody(page, LIVE_HEADING)).toBe(
+		renderLive(live, results()).trim(),
 	);
+});
+
+test('docs/benchmarks/memory-tokens-live.json agrees with itself: each side’s summary is the one its runs give', () => {
+	const live = JSON.parse(readFileSync(liveUrl, 'utf8'));
+
+	for (const side of ['with', 'without']) {
+		expect(live.summary[side]).toEqual(
+			summarizeSide(live.runs.filter((run: any) => run.side === side)),
+		);
+	}
 });
 
 test('replaceSection leaves other sections alone', () => {
 	const page = readFileSync(pageUrl, 'utf8');
-	const live = sectionBody(page, '## A sample of real runs');
+	const live = sectionBody(page, LIVE_HEADING);
 
 	expect(live).not.toBeNull();
-	const swapped = replaceSection(page, '## The numbers', 'Changed.');
-	expect(sectionBody(swapped ?? '', '## The numbers')).toBe('Changed.');
-	expect(sectionBody(swapped ?? '', '## A sample of real runs')).toBe(live);
+	const swapped = replaceSection(page, REPLAY_HEADING, 'Changed.');
+	expect(sectionBody(swapped ?? '', REPLAY_HEADING)).toBe('Changed.');
+	expect(sectionBody(swapped ?? '', LIVE_HEADING)).toBe(live);
 	expect(replaceSection(page, '## No such heading', 'x')).toBeNull();
 });
 
 test('renderTables rounds a share that lands on a tie half up', () => {
-	const base = results();
+	const base = replayResults();
 	const text = renderTables({
 		...base,
 		windows: [
@@ -255,16 +535,6 @@ test('renderTables rounds a share that lands on a tie half up', () => {
 	expect(text).toMatch(/\|\s*250k\s*\|\s*1\.2%\s*\|\s*1\.3%\s*\|/);
 });
 
-test('renderTables says how many times as many tokens git alone reads', () => {
-	const base = results();
-	const {saved, ratio} = base.typicalSwitch;
-	const text = renderTables(base);
-
-	expect(text).toContain(
-		`chamoji reads ${saved.toLocaleString('en-US')} fewer tokens: git alone reads ${ratio.toFixed(1)}× as many.`,
-	);
-});
-
 const figures = (min: number, median: number, max: number) => ({
 	mean: median,
 	median,
@@ -274,17 +544,22 @@ const figures = (min: number, median: number, max: number) => ({
 
 /** A live results file with made-up figures, as the live runner writes one. */
 function liveResults(overrides: Record<string, unknown> = {}) {
-	const run = (side: string, question: number, correct: boolean | null) => ({
+	const run = (
+		side: string,
+		question: number,
+		inputTokens: number,
+		turns: number,
+	) => ({
 		question,
 		side,
 		run: 1,
-		inputTokens: 20_000,
+		inputTokens,
 		outputTokens: 300,
-		turns: 2,
-		toolCalls: 1,
+		turns,
+		toolCalls: turns - 1,
 		costUsd: 0.05,
 		answer: 'No.',
-		correct,
+		correct: null as boolean | null,
 	});
 	return {
 		version: 1,
@@ -292,11 +567,27 @@ function liveResults(overrides: Record<string, unknown> = {}) {
 		date: '2026-11-19',
 		commit: '0123456789abcdef0123456789abcdef01234567',
 		method: {},
+		questions: [
+			{
+				question: 'May I add a folder?',
+				label: 'A new folder',
+				rule: 'c-00000001',
+				key: 'No: the layout is fixed.',
+				inBrief: true,
+			},
+			{
+				question: 'Should init set the push refspec?',
+				label: 'The push refspec',
+				rule: 'c-00000002',
+				key: 'No: push would break.',
+				inBrief: false,
+			},
+		],
 		runs: [
-			run('with', 1, null),
-			run('with', 2, null),
-			run('without', 1, null),
-			run('without', 2, null),
+			run('with', 1, 10_000, 1),
+			run('with', 2, 30_000, 2),
+			run('without', 1, 60_000, 5),
+			run('without', 2, 20_000, 3),
 		],
 		summary: {
 			with: {
@@ -321,6 +612,103 @@ function liveResults(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+test('renderLive says input tokens are summed over every request, and that this is what was billed', () => {
+	const text = renderLive(liveResults());
+
+	expect(text).toContain(
+		'A session’s input tokens are summed over every request it made, cached tokens included, so a session that takes three turns sends its standing context three times.',
+	);
+	expect(text).toContain(
+		'That is what each request was billed for, cached tokens at a lower rate, and not a share of a context window.',
+	);
+});
+
+test('renderLive shows the mean and the total beside the median', () => {
+	const text = renderLive(liveResults());
+
+	expect(text).toMatch(
+		/\|\s*\|\s*Smallest\s*\|\s*Median\s*\|\s*Mean\s*\|\s*Largest\s*\|\s*Total\s*\|/,
+	);
+	expect(text).toMatch(
+		/\|\s*Input tokens, with chamoji\s*\|\s*12,345\s*\|\s*20,000\s*\|\s*20,000\.0\s*\|\s*40,000\s*\|\s*40,000\s*\|/,
+	);
+	expect(text).toMatch(
+		/\|\s*Turns, without\s*\|\s*4\s*\|\s*9\s*\|\s*9\.0\s*\|\s*15\s*\|\s*8\s*\|/,
+	);
+});
+
+test('renderLive has a table by question: whether its rule was in the brief, and each side’s median input tokens and turns', () => {
+	const text = renderLive(liveResults());
+
+	expect(text).toMatch(
+		/\|\s*A new folder\s*\|\s*yes\s*\|\s*10,000\s*\|\s*1\s*\|\s*60,000\s*\|\s*5\s*\|\s*6\.0×\s*\|/,
+	);
+	expect(text).toMatch(
+		/\|\s*The push refspec\s*\|\s*no\s*\|\s*30,000\s*\|\s*2\s*\|\s*20,000\s*\|\s*3\s*\|\s*0\.7×\s*\|/,
+	);
+});
+
+test('renderLive says the questions were written from this repo’s cards', () => {
+	expect(renderLive(liveResults())).toContain(
+		'We wrote the 2 questions from this repo’s own cards, so each has a rule that answers it; questions of another kind might show no difference.',
+	);
+});
+
+test('a live file that did not record inBrief renders that column as not recorded, and the question text when there is no label', () => {
+	const base = liveResults();
+	const text = renderLive({
+		...base,
+		questions: base.questions.map(({question, rule, key}) => ({
+			question,
+			rule,
+			key,
+		})),
+	});
+
+	expect(text).toMatch(
+		/\|\s*May I add a folder\?\s*\|\s*not recorded\s*\|\s*10,000\s*\|/,
+	);
+	expect(text).not.toContain('left out');
+	expect(text).not.toMatch(/NaN|Infinity|null|undefined/);
+});
+
+test('a table cell with a pipe in it is escaped, so the row keeps its columns', () => {
+	const base = liveResults();
+	const text = renderLive({
+		...base,
+		questions: [
+			{...base.questions[0], label: 'Why `a || true`?'},
+			base.questions[1],
+		],
+	});
+	const row = text.split('\n').find(line => line.startsWith('| Why'));
+
+	expect(row).toContain('Why `a \\|\\| true`?');
+	expect(row?.split(/(?<!\\)\|/)).toHaveLength(9);
+});
+
+test('renderLive relates the live sample to the replay in one sentence built from both files', () => {
+	const text = renderLive(liveResults(), replayResults());
+
+	expect(text).toContain(
+		'The replay below counts what an agent with git alone would read if it read the whole log and each commit in full, and gets 25.7×. The sessions without chamoji searched instead, and in total spent 80,000 input tokens against 40,000 with it: 2.0× as many. By question, at the median, the ratio ran from 0.7× to 6.0×. On the 1 question whose rule the default brief left out, the sessions with chamoji needed a tool call as well.',
+	);
+});
+
+test('without a replay, or with every rule in the brief, the relating sentence leaves that part out', () => {
+	const base = liveResults();
+	const text = renderLive({
+		...base,
+		questions: base.questions.map(q => ({...q, inBrief: true})),
+	});
+
+	expect(text).not.toContain('The replay below');
+	expect(text).toContain(
+		'In total the sessions without chamoji spent 80,000 input tokens against 40,000 with it: 2.0× as many.',
+	);
+	expect(text).not.toContain('left out');
+});
+
 test('renderLive with no results says the live sample has not been run', () => {
 	expect(renderLive(null)).toBe('The live sample has not been run yet.\n');
 });
@@ -332,13 +720,13 @@ test('renderLive names the model and the date and shows the spread (min to max) 
 	expect(text).toContain('2026-11-19 UTC');
 	expect(text).toContain('`0123456`');
 	expect(text).toMatch(
-		/\|\s*Input tokens, with chamoji\s*\|\s*12,345\s*\|\s*20,000\s*\|\s*40,000\s*\|/,
+		/\|\s*Input tokens, with chamoji\s*\|\s*12,345\s*\|\s*20,000\s*\|\s*20,000\.0\s*\|\s*40,000\s*\|/,
 	);
 	expect(text).toMatch(
-		/\|\s*Input tokens, without\s*\|\s*55,000\s*\|\s*90,000\s*\|\s*150,500\s*\|/,
+		/\|\s*Input tokens, without\s*\|\s*55,000\s*\|\s*90,000\s*\|\s*90,000\.0\s*\|\s*150,500\s*\|/,
 	);
 	expect(text).toMatch(
-		/\|\s*Tool calls, without\s*\|\s*3\s*\|\s*8\s*\|\s*14\s*\|/,
+		/\|\s*Tool calls, without\s*\|\s*3\s*\|\s*8\s*\|\s*8\.0\s*\|\s*14\s*\|/,
 	);
 	expect(text).not.toMatch(/NaN|Infinity|null|undefined/);
 });
@@ -348,7 +736,7 @@ test('renderLive says the answers are unchecked while checked is false, and show
 		'The answers have not been checked against the key yet.',
 	);
 
-	const checked = liveResults({checked: true});
+	const checked: ReturnType<typeof liveResults> = liveResults({checked: true});
 	checked.runs = [
 		{...checked.runs[0], correct: true},
 		{...checked.runs[1], correct: true},
@@ -416,12 +804,28 @@ test('questions.json has five questions, each with a well-formed, unique rule id
 	);
 
 	expect(questions).toHaveLength(5);
-	for (const {question, rule, key} of questions) {
+	for (const {question, label, rule, key} of questions) {
 		expect(question).toMatch(/\?$/);
+		expect(label.length).toBeGreaterThan(5);
+		expect(label.length).toBeLessThan(40);
 		expect(rule).toMatch(/^[cgf]-[0-9a-f]{8}$/);
 		expect(key.length).toBeGreaterThan(10);
 	}
 	expect(new Set(questions.map((q: {rule: string}) => q.rule)).size).toBe(5);
+});
+
+test('markInBrief says, for each question, whether its rule’s id is in the text of the brief', () => {
+	const questions = [
+		{question: 'One?', label: 'One', rule: 'c-00000001', key: 'Yes, one.'},
+		{question: 'Two?', label: 'Two', rule: 'g-00000002', key: 'No, two.'},
+	];
+	const brief =
+		'Constraints\n  open       c-00000001  keep it one.  (abc1234)\n  and 6 more: the constraints section lists them.\n';
+
+	expect(markInBrief(questions, brief)).toEqual([
+		{...questions[0], inBrief: true},
+		{...questions[1], inBrief: false},
+	]);
 });
 
 const BRIEF =

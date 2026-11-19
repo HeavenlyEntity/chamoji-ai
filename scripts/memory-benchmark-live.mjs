@@ -29,7 +29,7 @@ import path from 'node:path';
 import process from 'node:process';
 import {fileURLToPath} from 'node:url';
 import {assertFullHistory, isolatedGitEnv} from './lib/memory-measure.mjs';
-import {summarize} from './lib/memory-tokens.mjs';
+import {roundedSummary} from './lib/memory-tokens.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const cli = path.join(root, 'packages/cli/dist/cli.js');
@@ -384,8 +384,21 @@ export function firstSide(question, run) {
 		: 'without';
 }
 
-/** @param {number} n */
-const oneDecimal = n => Math.round(n * 10) / 10;
+/**
+ * Each question with `inBrief`: whether its rule's id is in the text of the
+ * brief the sessions with chamoji receive. A rule can be in the brief's JSON
+ * and still be cut from its text by the budget.
+ * @template {{rule: string}} Q
+ * @param {Q[]} questions
+ * @param {string} brief the text of `chamoji memory brief`
+ * @returns {Array<Q & {inBrief: boolean}>}
+ */
+export function markInBrief(questions, brief) {
+	return questions.map(question => ({
+		...question,
+		inBrief: brief.includes(question.rule),
+	}));
+}
 
 /**
  * Per side: how many runs, how many failed, and each figure summarized over
@@ -397,16 +410,8 @@ const oneDecimal = n => Math.round(n * 10) / 10;
 export function summarizeSide(runs) {
 	const answered = runs.filter(run => !run.error);
 	/** @param {number[]} values */
-	const figures = values => {
-		if (values.length === 0) return null;
-		const {mean, median, min, max} = summarize(values);
-		return {
-			mean: oneDecimal(mean),
-			median: oneDecimal(median),
-			min: oneDecimal(min),
-			max: oneDecimal(max),
-		};
-	};
+	const figures = values =>
+		values.length === 0 ? null : roundedSummary(values);
 	const counted = answered.filter(run => typeof run.toolCalls === 'number');
 	return {
 		runs: runs.length,
@@ -472,7 +477,7 @@ async function main() {
 		return 2;
 	}
 
-	/** @type {Array<{question: string, rule: string, key: string}>} */
+	/** @type {Array<{question: string, label: string, rule: string, key: string}>} */
 	const questions = JSON.parse(readFileSync(QUESTIONS_FILE, 'utf8'));
 	const checkout = git(['rev-parse', '--show-toplevel'], root).trim();
 	try {
@@ -540,6 +545,17 @@ async function main() {
 			);
 			return 2;
 		}
+
+		// Whether each rule is in the brief a session receives: the default
+		// brief, cut to its budget, not every line in its JSON.
+		const asked = markInBrief(
+			questions,
+			execFileSync(
+				process.execPath,
+				[cli, 'memory', 'brief', '--no-update-check'],
+				{cwd: withDir, env: withEnv, encoding: 'utf8'},
+			),
+		);
 
 		const mcpConfig = path.join(withDir, '.mcp.json');
 		let count = 0;
@@ -661,6 +677,8 @@ async function main() {
 				toolCalls:
 					'the distinct toolUseId values on "tool_dispatch_start" lines in the --debug-file log; null when the session took more than one turn and the log has no such line, and such runs are left out of the tool-call figures',
 				order,
+				inBrief:
+					'per question, whether its rule id appears in the text of the default `chamoji memory brief` in the clone with chamoji set up, the brief its sessions receive',
 				costUsd: 'total_cost_usd',
 				flags: {
 					both: claudeArgs({
@@ -671,7 +689,7 @@ async function main() {
 					withOnly: ['--mcp-config', '<clone>/.mcp.json', ...WITH_ALLOWED],
 				},
 			},
-			questions,
+			questions: asked,
 			runs,
 			summary: {
 				with: summarizeSide(runs.filter(run => run.side === 'with')),
@@ -696,7 +714,7 @@ async function main() {
 		mkdirSync(path.dirname(file), {recursive: true});
 		writeFileSync(file, `${JSON.stringify(live, null, '\t')}\n`);
 		console.log(
-			`\nWrote ${LIVE_FILE}. Mark each run's "correct" against its key and set "checked" to true, then run pnpm benchmark:memory --write.`,
+			`\nWrote ${LIVE_FILE}. Mark each run's "correct" against its key and set "checked" to true, then run pnpm benchmark:memory --page-only.`,
 		);
 		return 0;
 	} finally {
