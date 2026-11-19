@@ -219,6 +219,38 @@ test('why: for a one-line commit the three figures are still measured and report
 	});
 });
 
+/** A stand-in CLI whose `why --json` names `commit` and gives it a card. */
+function stubCli(commit: string): string {
+	const file = path.join(scratchFolder('chamoji-stub-cli-'), 'cli.mjs');
+	writeFileSync(
+		file,
+		`process.stdout.write(${JSON.stringify(
+			JSON.stringify({
+				kind: 'commit',
+				commit: {hash: commit},
+				card: {why: ['a reason'], constraint: [], gotcha: [], followUp: []},
+			}),
+		)});\n`,
+	);
+	return file;
+}
+
+test('a line is a candidate only when why names the commit blame found for it', async () => {
+	const dir = await repo([
+		{
+			commit: '✨ Add a',
+			body: 'Why: a is needed',
+			files: {'a.txt': 'a1\n'},
+		},
+	]);
+	const commit = await head(dir);
+
+	expect(sampleCandidates(dir, stubCli('f'.repeat(40)))).toEqual([]);
+	expect(sampleCandidates(dir, stubCli(commit))).toEqual([
+		{commit, file: 'a.txt', line: 1, text: 'a1'},
+	]);
+});
+
 test('a sample line that moved down two lines is found again by its commit and text', async () => {
 	const dir = await repo([
 		{
@@ -398,7 +430,7 @@ test('with --sample the runner measures the lines of that sample, end to end', a
 	expect(stdout).toContain('(1 lines measured, 0 dropped)');
 });
 
-test('the figures are the same when the git config of whoever runs it sets format.pretty and diff.noprefix', async () => {
+test('the figures are the same when the git config of whoever runs it sets format.pretty and diff.noprefix, in a file or in the environment', async () => {
 	const {dir, sampleFile} = await runnerFixture();
 	const configs = scratchFolder('chamoji-gitconfig-');
 	const plain = path.join(configs, 'plain');
@@ -408,7 +440,7 @@ test('the figures are the same when the git config of whoever runs it sets forma
 		noisy,
 		'[format]\n\tpretty = oneline\n[diff]\n\tnoprefix = true\n[log]\n\tdecorate = full\n',
 	);
-	const runWith = async (config: string) =>
+	const runWith = async (config: string, env: NodeJS.ProcessEnv = {}) =>
 		(
 			await execFileAsync(process.execPath, [runner, '--sample', sampleFile], {
 				cwd: dir,
@@ -416,6 +448,7 @@ test('the figures are the same when the git config of whoever runs it sets forma
 					...process.env,
 					GIT_CONFIG_GLOBAL: config,
 					GIT_CONFIG_NOSYSTEM: '1',
+					...env,
 				},
 			})
 		).stdout;
@@ -424,16 +457,54 @@ test('the figures are the same when the git config of whoever runs it sets forma
 
 	expect(withPlain).toContain('(1 lines measured, 0 dropped)');
 	expect(await runWith(noisy)).toBe(withPlain);
+	expect(
+		await runWith(plain, {
+			GIT_CONFIG_COUNT: '2',
+			GIT_CONFIG_KEY_0: 'format.pretty',
+			GIT_CONFIG_VALUE_0: 'oneline',
+			GIT_CONFIG_KEY_1: 'diff.noprefix',
+			GIT_CONFIG_VALUE_1: 'true',
+		}),
+	).toBe(withPlain);
+	expect(
+		await runWith(plain, {
+			GIT_CONFIG_PARAMETERS: "'format.pretty'='oneline'",
+		}),
+	).toBe(withPlain);
 });
 
-test("--pick-sample refuses to run in another repo and leaves this repo's sample alone", async () => {
+test("--pick-sample refuses to run in another repo and leaves the script's own sample alone", async () => {
 	const {dir} = await runnerFixture();
-	const sampleFile = path.join(root, 'scripts/memory-benchmark/sample.json');
-	const before = readFileSync(sampleFile, 'utf8');
+	// A copy of the scripts, so a regression can't overwrite this repo's
+	// sample. The CLI is a stand-in: the refusal comes before any call to it.
+	const copy = scratchFolder('chamoji-runner-');
+	mkdirSync(path.join(copy, 'scripts', 'lib'), {recursive: true});
+	mkdirSync(path.join(copy, 'scripts', 'memory-benchmark'));
+	mkdirSync(path.join(copy, 'packages', 'cli', 'dist'), {recursive: true});
+	for (const file of [
+		'memory-benchmark.mjs',
+		'lib/memory-measure.mjs',
+		'lib/memory-tokens.mjs',
+	]) {
+		copyFileSync(
+			path.join(root, 'scripts', file),
+			path.join(copy, 'scripts', file),
+		);
+	}
+
+	writeFileSync(path.join(copy, 'packages', 'cli', 'dist', 'cli.js'), '');
+	const sampleFile = path.join(
+		copy,
+		'scripts',
+		'memory-benchmark',
+		'sample.json',
+	);
+	const before = '[]\n';
+	writeFileSync(sampleFile, before);
 
 	const error = await execFileAsync(
 		process.execPath,
-		[runner, '--pick-sample'],
+		[path.join(copy, 'scripts', 'memory-benchmark.mjs'), '--pick-sample'],
 		{
 			cwd: dir,
 		},

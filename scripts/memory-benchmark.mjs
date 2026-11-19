@@ -29,6 +29,7 @@ import {fileURLToPath} from 'node:url';
 import {
 	assertFullHistory,
 	exactCounts,
+	isolatedGitEnv,
 	locateSample,
 	measureFileHistory,
 	measureGrowth,
@@ -59,11 +60,16 @@ const CHAT_EXAMPLE = 'packages/core/src/release.ts';
 const EXACT_MODEL = 'claude-sonnet-5-5';
 const RESULTS_FILE = 'docs/benchmarks/memory-tokens.json';
 
-/** @param {string[]} args @param {string} cwd */
+/**
+ * The runner's own git calls (finding the checkout, making the clone), in the
+ * same isolated environment as the measured ones.
+ * @param {string[]} args @param {string} cwd
+ */
 const git = (args, cwd) =>
 	execFileSync('git', args, {
 		cwd,
 		encoding: 'utf8',
+		env: isolatedGitEnv(),
 		maxBuffer: 512 * 1024 * 1024,
 		stdio: ['ignore', 'pipe', 'pipe'],
 	});
