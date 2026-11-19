@@ -1,15 +1,19 @@
 export const metadata = {
 	title: 'What memory costs in tokens',
 	description:
-		'How we measure the tokens an agent reads to recover a project’s context with chamoji and with git alone: the exact commands, the results, what they leave out, and how to run them.',
+		'How we measure the tokens an agent spends recovering a project’s context with chamoji and with git alone: what real sessions spent, a replay that reads everything, what the figures leave out, and how to run them.',
 };
 
 # What memory costs in tokens
 
 <p className="lead">
-	An agent that picks up a project reads before it works. This page shows how we
-	count what it has to read with chamoji and with git alone, gives the numbers
-	from a real run, and says what those numbers don’t tell you.
+	In real Claude Code sessions on this repo, the sessions with chamoji set up
+	used fewer input tokens in total than the sessions without it, and usually
+	answered in one turn. A replay with no model, which assumes that an agent with
+	git alone reads the whole log, gives a far larger gap. Real agents search and
+	don’t read everything, so the replay is a ceiling and not what a session
+	spends. This page shows both, how we measured them, and what they don’t tell
+	you.
 </p>
 
 ## What a context switch is {{ icon: 'arrow-counter-clockwise' }}
@@ -19,81 +23,129 @@ A context switch is the moment an agent starts a session on a project it doesn�
 - **What stands.** The rules and limits that still hold: constraints, gotchas and follow-ups that haven’t ended.
 - **Why a line is the way it is.** The reason behind a line it is about to touch, so it doesn’t undo something on purpose.
 
-With chamoji, what stands is the brief, which [`chamoji memory brief`](/commands/memory) prints. Why is [`chamoji why`](/commands/why) for one line. With git alone, what stands is the whole log, and why is the commit that last wrote the line, read in full.
+With chamoji, what stands is the brief, which [`chamoji memory brief`](/commands/memory) prints and the session hook hands each new session. Why is [`chamoji why`](/commands/why) for one line. In the replay we assume that with git alone, what stands is the whole log, and why is the commit that last wrote the line, read in full or as its message only.
 
-## What is measured {{ icon: 'sliders' }}
+## What real sessions spent {{ icon: 'robot' }}
 
-Four things are measured, each as the text the command prints, counted in estimated tokens:
+claude-sonnet-5-5 answered 5 questions about this repo 3 times each in Claude Code, in a clone with chamoji set up and in a plain clone, on 2026-11-19 UTC at commit `de4046f`. We wrote the 5 questions from this repo’s own cards, so each has a rule that answers it; questions of another kind might show no difference.
 
-- **What stands, with chamoji:** the output of `chamoji memory brief`.
+The figures are what each session reported. A session’s input tokens are summed over every request it made, cached tokens included, so a session that takes three turns sends its standing context three times. That is what each request was billed for, cached tokens at a lower rate, and not a share of a context window.
+
+|                             | Smallest | Median |     Mean | Largest |   Total |
+| --------------------------- | -------: | -----: | -------: | ------: | ------: |
+| Input tokens, with chamoji  |   11,214 | 11,218 | 17,717.9 |  31,205 | 265,768 |
+| Input tokens, without       |   17,855 | 28,264 | 35,672.9 |  73,719 | 535,094 |
+| Output tokens, with chamoji |       92 |    225 |    202.9 |     294 |   3,043 |
+| Output tokens, without      |      422 |    702 |    806.5 |   1,531 |  12,097 |
+| Turns, with chamoji         |        1 |      1 |      1.4 |       2 |      21 |
+| Turns, without              |        3 |      3 |      4.3 |       7 |      65 |
+| Tool calls, with chamoji    |        0 |      0 |      0.4 |       1 |       6 |
+| Tool calls, without         |        2 |      2 |      3.3 |       6 |      50 |
+
+### By question
+
+The tokens and turns are medians of the question’s runs on each side, and the last column divides one median by the other. The second column says whether the question’s rule was in the default brief that the sessions with chamoji received.
+
+| Question                                                                                 | Rule in the brief | With chamoji, input tokens | With chamoji, turns | Without, input tokens | Without, turns | Without ÷ with |
+| ---------------------------------------------------------------------------------------- | ----------------: | -------------------------: | ------------------: | --------------------: | -------------: | -------------: |
+| May I add a new top-level folder to the tree in `refs/chamoji/memory`?                   |      not recorded |                     11,218 |                   1 |                72,122 |              7 |           6.4× |
+| Should `chamoji init` set `remote.origin.push` so a plain `git push` also pushes memory? |      not recorded |                     31,202 |                   2 |                17,949 |              3 |           0.6× |
+| Why does the command in the Claude Code hook entries end in `\|\| true`?                 |      not recorded |                     11,214 |                   1 |                25,032 |              3 |           2.2× |
+| Can I add the official MCP SDK as a dependency for `chamoji mcp`?                        |      not recorded |                     11,218 |                   1 |                40,763 |              5 |           3.6× |
+| Why does `chamoji why` blame the working copy and not HEAD?                              |      not recorded |                     23,844 |                   2 |                27,363 |              3 |           1.1× |
+
+This sample was run before the runner recorded which rules were in the brief, so that column reads not recorded.
+
+The replay below counts what an agent with git alone would read if it read the whole log and each commit in full, and gets 25.8×. The sessions without chamoji searched instead, and in total spent 535,094 input tokens against 265,768 with it: 2.0× as many. By question, at the median, the ratio ran from 0.6× to 6.4×.
+
+The answers have not been checked against the key yet.
+
+## How the replay measures {{ icon: 'sliders' }}
+
+The replay runs no model. It counts the text each command prints, in estimated tokens:
+
+- **What stands, with chamoji:** the output of `chamoji memory brief`, cut to its default budget as a session gets it, and the tool definitions of chamoji’s MCP server: the `tools` of its `tools/list` reply. `chamoji init --agents` registers that server, so its tool definitions are sent with every request of a session, and the chamoji side of the typical switch includes them.
 - **What stands, with git alone:** the output of `git log --no-color`, in git’s default format.
 - **One why, with chamoji:** the output of `chamoji why <file>:<line>`.
-- **One why, with git alone:** `git blame -w -M` names the commit that wrote the line, which is how `chamoji why` finds it, and then `git show --no-color <commit>` is the text read.
+- **One why, with git alone, read in full:** `git blame -w -M` names the commit that wrote the line, which is how `chamoji why` finds it, and then `git show --no-color <commit>` is the text read: the message and the whole diff.
+- **One why, with git alone, messages only:** the same commit read with `git show -s --no-color <commit>`: its header and message, without the diff. The card `chamoji why` prints is read from that message, so this is the like-for-like answer.
 
-Two more figures are there for scale and are not part of the comparison:
+Three more figures are there for scale and are not part of the comparison:
 
+- **The uncut brief:** `chamoji memory brief` at its largest budget, which is what the brief would list without the cut.
 - **The history of the file:** `git log -p --no-color -- <file>`, which is what an agent reads if it asks for everything that happened to the file.
 - **A notes file:** every line in `chamoji memory brief --json`, in every state, written as `Constraint: …`, `Gotcha: …` or `Follow-up: …`, one to a line. It is what you would have if you kept the same rules by hand in a file in the repo. It is never the headline: the headline compares chamoji with git alone.
 
 The why figures come from a fixed sample of lines, each chosen because its commit has a card and the line still stands. The sample is in the repo, so a run measures the same lines every time. A typical switch is what stands plus a few why lookups, each at the mean cost of one why. The tables say how many.
 
-The git commands run with a default git config, so a setting on the machine that runs them, such as a diff or log format, can’t change a figure.
+The git commands run with a default git config and without git’s diff options from the environment, so a setting on the machine that runs them, such as a diff or log format, can’t change a figure.
 
-## The numbers {{ icon: 'hash' }}
+## The replay: reading everything {{ icon: 'hash' }}
 
-Measured at commit `de4046f` on 2026-11-19 UTC. Every figure is an estimate at 4 characters a token, rounded half up to whole tokens.
+Measured at commit `a18a490` on 2026-11-19 UTC. Every figure is an estimate at 4 characters a token, rounded half up to whole tokens. No exact count has been made yet, so the estimate of 4 characters a token has not been checked against a model’s own count.
+
+### What stands
+
+With chamoji, what stands is the brief. `chamoji memory brief` cuts it to a budget of 1,500 tokens by default: on this repo it lists 33 of the 57 card lines, and each section says how many more it has. With a budget of 20,000 tokens it lists 57 of them in 2,416 tokens. All 57 card lines are open, so rule states made no difference to any figure here.
+
+`chamoji init --agents` also registers chamoji’s MCP server, whose tool definitions are sent with every request of a session: 1,144 tokens. The replay counts them on the chamoji side. With git alone, it counts the whole log: 58,625 tokens for 455 commits.
 
 ### A typical switch
 
-A typical switch is what stands, plus 5 why lookups at the mean cost of one. This repo has 454 commits and 57 card lines in its brief.
+A typical switch is what stands, plus 5 why lookups at the mean cost of one. With chamoji a why is `chamoji why`. With git alone it is the commit that last wrote the line, read in full or as its message only.
 
-|              | What stands | One why, mean | Typical switch |
-| ------------ | ----------: | ------------: | -------------: |
-| With chamoji |       1,499 |            68 |          1,838 |
-| Git alone    |      58,500 |         3,637 |         76,686 |
+|                          | What stands | Tool definitions | One why, mean | Typical switch |
+| ------------------------ | ----------: | ---------------: | ------------: | -------------: |
+| With chamoji             |       1,498 |            1,144 |          67.8 |          2,981 |
+| Git alone, read in full  |      58,625 |                0 |       3,637.1 |         76,811 |
+| Git alone, messages only |      58,625 |                0 |         121.7 |         59,234 |
 
-chamoji reads 74,848 fewer tokens: git alone reads 41.7× as many.
+Read in full, git alone comes to 25.8× as many tokens as chamoji, 73,830 more. With only each commit’s message for a why, it comes to 19.9× as many, 56,253 more.
 
 ### Share of a context window
 
-| Window | With chamoji | Git alone | Switches that fit, with chamoji | Switches that fit, git alone |
-| ------ | -----------: | --------: | ------------------------------: | ---------------------------: |
-| 250k   |        0.74% |     30.7% |                             136 |                            3 |
-| 500k   |        0.37% |     15.3% |                             272 |                            6 |
-| 1M     |        0.18% |      7.7% |                             544 |                           13 |
+These shares follow from the replay’s read-in-full model: each is what one typical switch above would take of the window. They are not what a live session used.
+
+| Window | With chamoji | Git alone, read in full | Switches that fit, with chamoji | Switches that fit, git alone, read in full |
+| ------ | -----------: | ----------------------: | ------------------------------: | -----------------------------------------: |
+| 250k   |         1.2% |                   30.7% |                              83 |                                          3 |
+| 500k   |        0.60% |                   15.4% |                             167 |                                          6 |
+| 1M     |        0.30% |                    7.7% |                             335 |                                         13 |
 
 ### One why
 
-20 lines were measured and 0 dropped.
+20 lines were measured and 0 dropped. The message row is `git show -s --no-color <commit>`: the commit’s header and message, without its diff.
 
-|                              |   Mean | Median | Smallest | Largest |
-| ---------------------------- | -----: | -----: | -------: | ------: |
-| `chamoji why`                |     68 |     63 |       44 |     143 |
-| `git blame`, then `git show` |  3,637 |  3,655 |      298 |   9,159 |
-| `git log -p` on the file     | 18,640 |  8,424 |      492 |  84,570 |
+|                                        |   Mean | Median | Smallest | Largest |
+| -------------------------------------- | -----: | -----: | -------: | ------: |
+| `chamoji why`                          |     68 |     63 |       44 |     143 |
+| `git blame`, then `git show`           |  3,637 |  3,655 |      298 |   9,159 |
+| `git blame`, then the commit’s message |    122 |    112 |       95 |     196 |
+| `git log -p` on the file               | 18,640 |  8,424 |      492 |  84,570 |
 
 ### What stands at each release
 
-| Tag     | Commits | Card lines | Brief | Git log | Notes file |
-| ------- | ------: | ---------: | ----: | ------: | ---------: |
-| v0.11.0 |     175 |         54 | 1,478 |  22,194 |      1,765 |
-| v0.12.0 |     202 |         54 | 1,478 |  25,568 |      1,765 |
-| v0.12.1 |     208 |         55 | 1,482 |  26,204 |      1,816 |
-| v0.13.0 |     246 |         57 | 1,472 |  30,309 |      1,872 |
-| v0.14.0 |     273 |         57 | 1,477 |  33,461 |      1,872 |
-| v0.15.0 |     322 |         57 | 1,474 |  40,577 |      1,872 |
-| v0.16.0 |     370 |         57 | 1,474 |  48,141 |      1,872 |
+| Tag     | Commits | Card lines | Brief | Brief, uncut | Git log | Notes file |
+| ------- | ------: | ---------: | ----: | -----------: | ------: | ---------: |
+| v0.11.0 |     175 |         54 | 1,478 |        2,164 |  22,194 |      1,765 |
+| v0.12.0 |     202 |         54 | 1,478 |        2,164 |  25,568 |      1,765 |
+| v0.12.1 |     208 |         55 | 1,482 |        2,222 |  26,204 |      1,816 |
+| v0.13.0 |     246 |         57 | 1,472 |        2,317 |  30,309 |      1,872 |
+| v0.14.0 |     273 |         57 | 1,477 |        2,322 |  33,461 |      1,872 |
+| v0.15.0 |     322 |         57 | 1,474 |        2,319 |  40,577 |      1,872 |
+| v0.16.0 |     370 |         57 | 1,474 |        2,319 |  48,141 |      1,872 |
 
-From v0.11.0 to v0.16.0 the git log went from 22,194 to 48,141 tokens, the brief from 1,478 to 1,474, and the notes file from 1,765 to 1,872.
+From v0.11.0 to v0.16.0 the git log went from 22,194 to 48,141 tokens, the brief from 1,478 to 1,474, the uncut brief from 2,164 to 2,319, and the notes file from 1,765 to 1,872. The brief is cut to its budget, so it can’t grow past it; the uncut brief shows how it would grow without the cut.
 
 ## What the numbers don’t say {{ icon: 'info' }}
 
 - **They are estimates.** A token here is four characters, counted as the text’s length divided by four and rounded up. A model’s own tokenizer gives other counts. Where a table says exact, a model counted them; every other figure is an estimate.
-- **They measure what an agent would have to read,** not whether its answer is right. A smaller read is cheaper and leaves more room, and it can still be the wrong read.
+- **The replay counts what an agent would read if it read all of it.** Real sessions search, and the live sample shows what they spent. Neither says whether an answer was right: a smaller read is cheaper and leaves more room, and it can still be the wrong read.
+- **The replay and the live sample measure different things.** The replay’s typical switch is one read of what stands plus five why lookups; a live session answers one question about a rule. Their ratios can’t be divided into each other.
 - **The tokens saved are the same at any window size.** The window only changes the share: 250k, 500k and 1M tokens give the same saving and a different share of the window.
 - **The older tags are read with the current build,** and the memory and notes refs are today’s at every tag, since they aren’t versioned by tag. The growth table shows how the repo’s history changed what stands, not how old releases of chamoji behaved.
-- **On a young repo a notes file is about the size of the brief.** The difference is not size today. A notes file keeps growing as rules are written, and it has no states: a rule that has ended still reads as true. It also can’t answer why a given line is the way it is, which is what the why figures measure. In this repo few rules were written after the first release that had project memory, so its notes file barely grows in the table, and the log is what grows.
-- **One repo is one repo.** These are this project’s own commits, with its own mix of long and short messages. Run it on yours before you rely on the shape of the result.
+- **On a young repo a notes file is about the size of the brief.** The default brief is the smaller of the two only because it is cut to its budget; the growth table shows the uncut brief beside it. A notes file keeps growing as rules are written, and it has no states: a rule that has ended still reads as true. It also can’t answer why a given line is the way it is, which is what the why figures measure.
+- **One repo is one repo.** These are this project’s own commits, with its own mix of long and short messages. To run it on yours, build a chamoji checkout, then from inside your repo run `node <chamoji>/scripts/memory-benchmark.mjs --pick-sample --sample <file>` to pick a sample of your lines, and `node <chamoji>/scripts/memory-benchmark.mjs --sample <file>` to measure them.
 
 ## Run it yourself {{ icon: 'play' }}
 
@@ -107,8 +159,12 @@ It builds the CLI, measures in a throwaway clone under your temp folder, prints 
 
 <Properties>
 	<Property name="--write" type="flag">
-		Also writes the results to `docs/benchmarks/memory-tokens.json` and the
-		tables on this page.
+		Also writes the results to `docs/benchmarks/memory-tokens.json` and both
+		data sections of this page.
+	</Property>
+	<Property name="--page-only" type="flag">
+		Measures nothing and writes both data sections of this page from the two
+		results files as they are. It can’t be combined with the other flags.
 	</Property>
 	<Property name="--exact" type="flag">
 		Adds exact counts from a model’s token counter. It uses `ANTHROPIC_API_KEY`
@@ -116,8 +172,9 @@ It builds the CLI, measures in a throwaway clone under your temp folder, prints 
 		skips the exact column and carries on.
 	</Property>
 	<Property name="--pick-sample" type="flag">
-		Picks the sample of lines again and rewrites the sample file. It can’t be
-		combined with the other flags.
+		Picks the sample of lines again and rewrites this repo’s sample file. With
+		`--sample <file>` it picks a sample for the repo you run it in and writes it
+		to that file. It can’t be combined with the other flags.
 	</Property>
 	<Property name="--sample <file>" type="path">
 		Reads the sample from another file.
@@ -126,27 +183,10 @@ It builds the CLI, measures in a throwaway clone under your temp folder, prints 
 
 It needs the full history, so a shallow clone is refused with a message that says to fetch the rest.
 
-The figures above count what an agent would have to read. To see what real sessions spend, ask Claude Code itself:
+The replay counts what an agent would read if it read all of it. To see what real sessions spend, ask Claude Code itself:
 
 ```bash {{ title: 'Ask real sessions' }}
 pnpm benchmark:memory:live
 ```
 
-It asks five questions about this repo, each with a known answer, three times in a clone with chamoji set up and three times in a plain clone, and writes what each session reported to `docs/benchmarks/memory-tokens-live.json`. Both sides get `Read`, `Grep`, `Glob` and `git` through Bash, and neither can edit or write files; only the chamoji side has its session hook, `chamoji` through Bash and chamoji’s MCP tools. It needs `claude` on your PATH and signed in, and it spends usage. Add `--dry-run` to ask the first question once on each side and write nothing. We mark each answer against its key by hand, then `pnpm benchmark:memory --write` puts the sample below.
-
-## A sample of real runs {{ icon: 'robot' }}
-
-claude-sonnet-5-5 answered 5 questions about this repo 3 times each in Claude Code, in a clone with chamoji set up and in a plain clone, on 2026-11-19 UTC at commit `de4046f`. The figures are what each session reported, per run; input tokens include cached ones.
-
-|                             | Smallest | Median | Largest |
-| --------------------------- | -------: | -----: | ------: |
-| Input tokens, with chamoji  |   11,214 | 11,218 |  31,205 |
-| Input tokens, without       |   17,855 | 28,264 |  73,719 |
-| Output tokens, with chamoji |       92 |    225 |     294 |
-| Output tokens, without      |      422 |    702 |   1,531 |
-| Turns, with chamoji         |        1 |      1 |       2 |
-| Turns, without              |        3 |      3 |       7 |
-| Tool calls, with chamoji    |        0 |      0 |       1 |
-| Tool calls, without         |        2 |      2 |       6 |
-
-The answers have not been checked against the key yet.
+It asks five questions about this repo, each with a known answer, three times in a clone with chamoji set up and three times in a plain clone, and writes what each session reported to `docs/benchmarks/memory-tokens-live.json`, with whether each question’s rule is in the default brief. Both sides get `Read`, `Grep`, `Glob` and `git` through Bash, and neither has the Edit or Write tools; only the chamoji side has its session hook, `chamoji` through Bash and chamoji’s MCP tools. It needs `claude` on your PATH and signed in, and it spends usage. Add `--dry-run` to ask the first question once on each side and write nothing. We mark each answer against its key by hand, then `pnpm benchmark:memory --page-only` puts the sample on this page without measuring the replay again.
