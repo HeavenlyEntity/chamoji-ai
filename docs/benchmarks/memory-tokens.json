@@ -2,7 +2,7 @@
 	"version": 2,
 	"ranAt": {
 		"tag": null,
-		"commit": "a18a4904aca0945f7fde38f128f80c85b0d91087",
+		"commit": "61f78103afc70eb16e74d535212e5ebb5ff3620a",
 		"date": "2026-11-19"
 	},
 	"method": {
@@ -14,18 +14,18 @@
 	},
 	"whatStands": {
 		"brief": {
-			"chars": 5992,
-			"tokens": 1498
+			"chars": 5934,
+			"tokens": 1484
 		},
-		"briefLines": 33,
+		"briefLines": 32,
 		"briefUncut": {
-			"chars": 9662,
-			"tokens": 2416,
+			"chars": 9697,
+			"tokens": 2425,
 			"lines": 57
 		},
 		"log": {
-			"chars": 234499,
-			"tokens": 58625
+			"chars": 235930,
+			"tokens": 58983
 		},
 		"notesFile": {
 			"chars": 7485,
@@ -33,7 +33,7 @@
 		},
 		"cardLines": 57,
 		"openLines": 57,
-		"commits": 455,
+		"commits": 457,
 		"mcpTools": {
 			"chars": 4575,
 			"tokens": 1144
@@ -230,37 +230,37 @@
 		]
 	},
 	"typicalSwitch": {
-		"with": 2981,
-		"without": 76811,
-		"saved": 73830,
-		"ratio": 25.8,
+		"with": 2967,
+		"without": 77169,
+		"saved": 74202,
+		"ratio": 26,
 		"messagesOnly": {
-			"without": 59234,
-			"saved": 56253,
-			"ratio": 19.9
+			"without": 59592,
+			"saved": 56625,
+			"ratio": 20.1
 		}
 	},
 	"windows": [
 		{
 			"window": 250000,
 			"withShare": 0.0119,
-			"withoutShare": 0.3072,
-			"withFits": 83,
+			"withoutShare": 0.3087,
+			"withFits": 84,
 			"withoutFits": 3
 		},
 		{
 			"window": 500000,
-			"withShare": 0.006,
-			"withoutShare": 0.1536,
-			"withFits": 167,
+			"withShare": 0.0059,
+			"withoutShare": 0.1543,
+			"withFits": 168,
 			"withoutFits": 6
 		},
 		{
 			"window": 1000000,
 			"withShare": 0.003,
-			"withoutShare": 0.0768,
-			"withFits": 335,
-			"withoutFits": 13
+			"withoutShare": 0.0772,
+			"withFits": 337,
+			"withoutFits": 12
 		}
 	],
 	"chatExample": {
