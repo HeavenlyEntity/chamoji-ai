@@ -27,36 +27,34 @@ With chamoji, what stands is the brief, which [`chamoji memory brief`](/commands
 
 ## What real sessions spent {{ icon: 'robot' }}
 
-claude-sonnet-5-5 answered 5 questions about this repo 3 times each in Claude Code, in a clone with chamoji set up and in a plain clone, on 2026-11-19 UTC at commit `de4046f`. We wrote the 5 questions from this repo’s own cards, so each has a rule that answers it; questions of another kind might show no difference.
+claude-sonnet-5-5 answered 5 questions about this repo 3 times each in Claude Code, in a clone with chamoji set up and in a plain clone, on 2026-11-19 UTC at commit `61f7810`. We wrote the 5 questions from this repo’s own cards, so each has a rule that answers it; questions of another kind might show no difference.
 
 The figures are what each session reported. A session’s input tokens are summed over every request it made, cached tokens included, so a session that takes three turns sends its standing context three times. That is what each request was billed for, cached tokens at a lower rate, and not a share of a context window.
 
 |                             | Smallest | Median |     Mean | Largest |   Total |
 | --------------------------- | -------: | -----: | -------: | ------: | ------: |
-| Input tokens, with chamoji  |   11,214 | 11,218 | 17,717.9 |  31,205 | 265,768 |
-| Input tokens, without       |   17,855 | 28,264 | 35,672.9 |  73,719 | 535,094 |
-| Output tokens, with chamoji |       92 |    225 |    202.9 |     294 |   3,043 |
-| Output tokens, without      |      422 |    702 |    806.5 |   1,531 |  12,097 |
+| Input tokens, with chamoji  |   11,200 | 11,204 | 17,771.9 |  31,954 | 266,578 |
+| Input tokens, without       |   17,483 | 29,116 | 31,774.4 |  52,853 | 476,616 |
+| Output tokens, with chamoji |       99 |    163 |    190.1 |     294 |   2,852 |
+| Output tokens, without      |      438 |    633 |    663.5 |   1,004 |   9,952 |
 | Turns, with chamoji         |        1 |      1 |      1.4 |       2 |      21 |
-| Turns, without              |        3 |      3 |      4.3 |       7 |      65 |
+| Turns, without              |        3 |      4 |      4.2 |       6 |      63 |
 | Tool calls, with chamoji    |        0 |      0 |      0.4 |       1 |       6 |
-| Tool calls, without         |        2 |      2 |      3.3 |       6 |      50 |
+| Tool calls, without         |        2 |      3 |      3.2 |       5 |      48 |
 
 ### By question
 
 The tokens and turns are medians of the question’s runs on each side, and the last column divides one median by the other. The second column says whether the question’s rule was in the default brief that the sessions with chamoji received.
 
-| Question                                                                                 | Rule in the brief | With chamoji, input tokens | With chamoji, turns | Without, input tokens | Without, turns | Without ÷ with |
-| ---------------------------------------------------------------------------------------- | ----------------: | -------------------------: | ------------------: | --------------------: | -------------: | -------------: |
-| May I add a new top-level folder to the tree in `refs/chamoji/memory`?                   |      not recorded |                     11,218 |                   1 |                72,122 |              7 |           6.4× |
-| Should `chamoji init` set `remote.origin.push` so a plain `git push` also pushes memory? |      not recorded |                     31,202 |                   2 |                17,949 |              3 |           0.6× |
-| Why does the command in the Claude Code hook entries end in `\|\| true`?                 |      not recorded |                     11,214 |                   1 |                25,032 |              3 |           2.2× |
-| Can I add the official MCP SDK as a dependency for `chamoji mcp`?                        |      not recorded |                     11,218 |                   1 |                40,763 |              5 |           3.6× |
-| Why does `chamoji why` blame the working copy and not HEAD?                              |      not recorded |                     23,844 |                   2 |                27,363 |              3 |           1.1× |
+| Question                               | Rule in the brief | With chamoji, input tokens | With chamoji, turns | Without, input tokens | Without, turns | Without ÷ with |
+| -------------------------------------- | ----------------: | -------------------------: | ------------------: | --------------------: | -------------: | -------------: |
+| A new folder in the memory ref         |               yes |                     11,204 |                   1 |                44,799 |              5 |           4.0× |
+| Init setting the push refspec          |                no |                     31,187 |                   2 |                17,571 |              3 |           0.6× |
+| Why the hooks end in `\|\| true`       |               yes |                     11,200 |                   1 |                27,038 |              4 |           2.4× |
+| Adding the MCP SDK                     |               yes |                     11,204 |                   1 |                29,116 |              4 |           2.6× |
+| Why `chamoji why` blames the work tree |                no |                     23,810 |                   2 |                35,737 |              5 |           1.5× |
 
-This sample was run before the runner recorded which rules were in the brief, so that column reads not recorded.
-
-The replay below counts what an agent with git alone would read if it read the whole log and each commit in full, and gets 25.8×. The sessions without chamoji searched instead, and in total spent 535,094 input tokens against 265,768 with it: 2.0× as many. By question, at the median, the ratio ran from 0.6× to 6.4×.
+The replay below counts what an agent with git alone would read if it read the whole log and each commit in full, and gets 26.0×. The sessions without chamoji searched instead, and in total spent 476,616 input tokens against 266,578 with it: 1.8× as many. By question, at the median, the ratio ran from 0.6× to 4.0×. On the 2 questions whose rule the default brief left out, the sessions with chamoji needed a tool call as well.
 
 The answers have not been checked against the key yet.
 
@@ -82,13 +80,13 @@ The git commands run with a default git config and without git’s diff options 
 
 ## The replay: reading everything {{ icon: 'hash' }}
 
-Measured at commit `a18a490` on 2026-11-19 UTC. Every figure is an estimate at 4 characters a token, rounded half up to whole tokens. No exact count has been made yet, so the estimate of 4 characters a token has not been checked against a model’s own count.
+Measured at commit `61f7810` on 2026-11-19 UTC. Every figure is an estimate at 4 characters a token, rounded half up to whole tokens. No exact count has been made yet, so the estimate of 4 characters a token has not been checked against a model’s own count.
 
 ### What stands
 
-With chamoji, what stands is the brief. `chamoji memory brief` cuts it to a budget of 1,500 tokens by default: on this repo it lists 33 of the 57 card lines, and each section says how many more it has. With a budget of 20,000 tokens it lists 57 of them in 2,416 tokens. All 57 card lines are open, so rule states made no difference to any figure here.
+With chamoji, what stands is the brief. `chamoji memory brief` cuts it to a budget of 1,500 tokens by default: on this repo it lists 32 of the 57 card lines, and each section says how many more it has. With a budget of 20,000 tokens it lists 57 of them in 2,425 tokens. All 57 card lines are open, so rule states made no difference to any figure here.
 
-`chamoji init --agents` also registers chamoji’s MCP server, whose tool definitions are sent with every request of a session: 1,144 tokens. The replay counts them on the chamoji side. With git alone, it counts the whole log: 58,625 tokens for 455 commits.
+`chamoji init --agents` also registers chamoji’s MCP server, whose tool definitions are sent with every request of a session: 1,144 tokens. The replay counts them on the chamoji side. With git alone, it counts the whole log: 58,983 tokens for 457 commits.
 
 ### A typical switch
 
@@ -96,11 +94,11 @@ A typical switch is what stands, plus 5 why lookups at the mean cost of one. Wit
 
 |                          | What stands | Tool definitions | One why, mean | Typical switch |
 | ------------------------ | ----------: | ---------------: | ------------: | -------------: |
-| With chamoji             |       1,498 |            1,144 |          67.8 |          2,981 |
-| Git alone, read in full  |      58,625 |                0 |       3,637.1 |         76,811 |
-| Git alone, messages only |      58,625 |                0 |         121.7 |         59,234 |
+| With chamoji             |       1,484 |            1,144 |          67.8 |          2,967 |
+| Git alone, read in full  |      58,983 |                0 |       3,637.1 |         77,169 |
+| Git alone, messages only |      58,983 |                0 |         121.7 |         59,592 |
 
-Read in full, git alone comes to 25.8× as many tokens as chamoji, 73,830 more. With only each commit’s message for a why, it comes to 19.9× as many, 56,253 more.
+Read in full, git alone comes to 26.0× as many tokens as chamoji, 74,202 more. With only each commit’s message for a why, it comes to 20.1× as many, 56,625 more.
 
 ### Share of a context window
 
@@ -108,9 +106,9 @@ These shares follow from the replay’s read-in-full model: each is what one typ
 
 | Window | With chamoji | Git alone, read in full | Switches that fit, with chamoji | Switches that fit, git alone, read in full |
 | ------ | -----------: | ----------------------: | ------------------------------: | -----------------------------------------: |
-| 250k   |         1.2% |                   30.7% |                              83 |                                          3 |
-| 500k   |        0.60% |                   15.4% |                             167 |                                          6 |
-| 1M     |        0.30% |                    7.7% |                             335 |                                         13 |
+| 250k   |         1.2% |                   30.9% |                              84 |                                          3 |
+| 500k   |        0.59% |                   15.4% |                             168 |                                          6 |
+| 1M     |        0.30% |                    7.7% |                             337 |                                         12 |
 
 ### One why
 
