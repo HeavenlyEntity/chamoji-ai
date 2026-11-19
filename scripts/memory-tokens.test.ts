@@ -18,6 +18,13 @@ import {
 	windowShares,
 	WINDOWS,
 } from './lib/memory-tokens.mjs';
+import {
+	checkProblem,
+	countToolCalls,
+	firstSide,
+	recordFromResult,
+	summarizeSide,
+} from './memory-benchmark-live.mjs';
 
 test('estimateTokens rounds up at 4 characters a token', () => {
 	expect(estimateTokens('')).toBe(0);
@@ -415,4 +422,188 @@ test('questions.json has five questions, each with a well-formed, unique rule id
 		expect(key.length).toBeGreaterThan(10);
 	}
 	expect(new Set(questions.map((q: {rule: string}) => q.rule)).size).toBe(5);
+});
+
+const BRIEF =
+	'2026-11-19T07:21:12.686Z [DEBUG] Hook SessionStart (chamoji agent-hook || true) provided additionalContext (5913 chars)';
+const dispatch = (id: string, tool = 'Bash') =>
+	[
+		`2026-11-19T07:18:01.609Z [INFO] [Stall] tool_dispatch_start tool=${tool} toolUseId=${id} permissionDecisionMs=9`,
+		`2026-11-19T07:18:02.193Z [INFO] [Stall] tool_dispatch_end tool=${tool} toolUseId=${id} outcome=ok durationMs=584`,
+	].join('\n');
+
+/** A result as claude -p --output-format json prints one, trimmed to what is read. */
+function claudeResult(overrides: Record<string, unknown> = {}) {
+	return {
+		type: 'result',
+		subtype: 'success',
+		is_error: false,
+		num_turns: 5,
+		result: ' Probably not. ',
+		total_cost_usd: 0.04,
+		permission_denials: [],
+		usage: {
+			input_tokens: 10,
+			cache_creation_input_tokens: 6952,
+			cache_read_input_tokens: 39_931,
+			output_tokens: 934,
+		},
+		modelUsage: {
+			'claude-sonnet-5-5': {
+				inputTokens: 10,
+				outputTokens: 934,
+				cacheReadInputTokens: 39_931,
+				cacheCreationInputTokens: 6952,
+				costUSD: 0.04,
+			},
+		},
+		...overrides,
+	};
+}
+
+const record = (result: unknown, debug = '') =>
+	recordFromResult({
+		stdout: JSON.stringify(result),
+		stderr: '',
+		error: null,
+		debug,
+	});
+
+test('a check session that failed stops the run, even when its debug log shows the brief', () => {
+	const problem = checkProblem({
+		record: {error: 'error_during_execution: not signed in'},
+		debug: BRIEF,
+	});
+
+	expect(problem).toContain('The check session failed');
+	expect(problem).toContain('not signed in');
+	expect(checkProblem({record: {inputTokens: 1}, debug: 'nothing'})).toContain(
+		'did not hand over the brief',
+	);
+	expect(checkProblem({record: {inputTokens: 1}, debug: BRIEF})).toBeNull();
+});
+
+test('a side with no successful runs has no figures, not zeros, and renderLive says so', () => {
+	const side = summarizeSide([
+		{question: 1, side: 'without', run: 1, error: 'x'},
+		{question: 2, side: 'without', run: 1, error: 'y'},
+	]);
+
+	expect(side.errors).toBe(2);
+	expect(side.inputTokens).toBeNull();
+	expect(side.turns).toBeNull();
+	expect(side.toolCalls).toBeNull();
+
+	const base = liveResults();
+	const text = renderLive({
+		...base,
+		summary: {...base.summary, without: side},
+	});
+	expect(text).toContain(
+		'No run without chamoji succeeded, so that side has no figures.',
+	);
+	expect(text).not.toMatch(/\|\s*Input tokens, without/);
+	expect(text).toMatch(/\|\s*Input tokens, with chamoji/);
+	expect(text).not.toMatch(/NaN|Infinity|null|undefined/);
+});
+
+test('countToolCalls counts distinct dispatched tool use ids, and is null when a session took more than one turn and the log shows none', () => {
+	const debug = [
+		dispatch('toolu_01'),
+		dispatch('toolu_02', 'mcp__chamoji__brief'),
+		dispatch('toolu_01'),
+	].join('\n');
+
+	expect(countToolCalls(debug, 3)).toBe(2);
+	expect(countToolCalls('no dispatch lines', 1)).toBe(0);
+	expect(countToolCalls('no dispatch lines', 5)).toBeNull();
+});
+
+test('a run whose tool calls are unknown is left out of the tool-call figures, and renderLive says how many were', () => {
+	const ok = {inputTokens: 10, outputTokens: 1, turns: 2, toolCalls: 4};
+	const side = summarizeSide([
+		{...ok, question: 1, side: 'without', run: 1},
+		{...ok, question: 1, side: 'without', run: 2, toolCalls: null},
+	]);
+
+	expect(side.toolCalls).toEqual({mean: 4, median: 4, min: 4, max: 4});
+	expect(side.toolCallsUnknown).toBe(1);
+	expect(side.turns).toEqual({mean: 2, median: 2, min: 2, max: 2});
+
+	const base = liveResults();
+	const text = renderLive({
+		...base,
+		summary: {
+			...base.summary,
+			without: {...base.summary.without, toolCallsUnknown: 1},
+		},
+	});
+	expect(text).toContain(
+		'1 run took more than one turn but showed no tool call in the debug log, so it is left out of the tool-call figures.',
+	);
+});
+
+test('input tokens are every input field of every model the result reports, cached ones included', () => {
+	const one = record(claudeResult(), dispatch('toolu_01'));
+
+	expect(one).toMatchObject({
+		inputTokens: 10 + 6952 + 39_931,
+		outputTokens: 934,
+		turns: 5,
+		toolCalls: 1,
+		answer: 'Probably not.',
+	});
+	expect(one).not.toHaveProperty('usageInputTokens');
+
+	const two = record(
+		claudeResult({
+			modelUsage: {
+				...claudeResult().modelUsage,
+				'claude-haiku-4-5': {
+					inputTokens: 500,
+					outputTokens: 20,
+					cacheReadInputTokens: 0,
+					cacheCreationInputTokens: 0,
+					costUSD: 0.001,
+				},
+			},
+		}),
+	);
+	expect(two.inputTokens).toBe(10 + 6952 + 39_931 + 500);
+	expect(two.outputTokens).toBe(954);
+	expect(two.usageInputTokens).toBe(10 + 6952 + 39_931);
+	expect(two.usageOutputTokens).toBe(934);
+	expect(Object.keys(two.usageByModel as object)).toEqual([
+		'claude-sonnet-5-5',
+		'claude-haiku-4-5',
+	]);
+});
+
+test('a result that is not an object, or not JSON, or a failure, is recorded as an error with no figures', () => {
+	for (const stdout of ['null', '42', '"text"', 'not json', '']) {
+		const r = recordFromResult({stdout, stderr: '', error: null, debug: ''});
+		expect(typeof r.error).toBe('string');
+		expect(r).not.toHaveProperty('inputTokens');
+	}
+
+	const failed = record(
+		claudeResult({is_error: true, subtype: 'error_max_turns'}),
+	);
+	expect(failed.error).toContain('error_max_turns');
+	expect(failed).not.toHaveProperty('inputTokens');
+});
+
+test('the side that goes first alternates from one run to the next', () => {
+	const order = [0, 1].flatMap(question =>
+		[1, 2, 3].map(run => firstSide(question, run)),
+	);
+
+	expect(order).toEqual([
+		'with',
+		'without',
+		'with',
+		'without',
+		'with',
+		'without',
+	]);
 });

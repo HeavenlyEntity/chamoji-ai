@@ -254,10 +254,16 @@ export function renderLive(live) {
 		...runs.map((/** @type {any} */ r) => r.run ?? 1),
 	);
 	const failed = runs.filter((/** @type {any} */ r) => r.error).length;
+	// A side with no successful run has no figures, and gets no rows.
 	const sides = /** @type {const} */ ([
 		['with', 'with chamoji'],
 		['without', 'without'],
-	]);
+	]).filter(([side]) => summary[side].inputTokens);
+	/** @param {{min: number, median: number, max: number} | null} f */
+	const cells = f =>
+		f
+			? [tokens(f.min), tokens(f.median), tokens(f.max)]
+			: ['not measured', 'not measured', 'not measured'];
 	const metrics = /** @type {const} */ ([
 		['inputTokens', 'Input tokens'],
 		['outputTokens', 'Output tokens'],
@@ -266,21 +272,38 @@ export function renderLive(live) {
 	]);
 	const out = [
 		`${model} answered ${questions} ${questions === 1 ? 'question' : 'questions'} about this repo ${perQuestion === 1 ? 'once' : `${perQuestion} times`} each in Claude Code, in a clone with chamoji set up and in a plain clone, on ${date} UTC at commit \`${commit.slice(0, 7)}\`. The figures are what each session reported, per run; input tokens include cached ones.`,
-		table(
-			['', 'Smallest', 'Median', 'Largest'],
-			metrics.flatMap(([key, label]) =>
-				sides.map(([side, sideLabel]) => {
-					const f = summary[side][key];
-					return [
-						`${label}, ${sideLabel}`,
-						tokens(f.min),
-						tokens(f.median),
-						tokens(f.max),
-					];
-				}),
-			),
-		),
 	];
+	if (sides.length > 0) {
+		out.push(
+			table(
+				['', 'Smallest', 'Median', 'Largest'],
+				metrics.flatMap(([key, label]) =>
+					sides.map(([side, sideLabel]) => [
+						`${label}, ${sideLabel}`,
+						...cells(summary[side][key]),
+					]),
+				),
+			),
+		);
+	}
+
+	for (const [side, label] of /** @type {const} */ ([
+		['with', 'with chamoji'],
+		['without', 'without chamoji'],
+	])) {
+		if (!summary[side].inputTokens) {
+			out.push(`No run ${label} succeeded, so that side has no figures.`);
+		}
+	}
+
+	const unknown =
+		(summary.with.toolCallsUnknown ?? 0) +
+		(summary.without.toolCallsUnknown ?? 0);
+	if (unknown > 0) {
+		out.push(
+			`${unknown} ${unknown === 1 ? 'run' : 'runs'} took more than one turn but showed no tool call in the debug log, so ${unknown === 1 ? 'it is' : 'they are'} left out of the tool-call figures.`,
+		);
+	}
 	if (failed > 0) {
 		out.push(
 			`${failed} of ${runs.length} runs failed and ${failed === 1 ? 'is' : 'are'} left out of the figures.`,
