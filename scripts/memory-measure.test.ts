@@ -522,6 +522,8 @@ test('with --sample the runner measures the lines of that sample, end to end', a
 	expect(stdout).toContain('(1 lines measured, 0 dropped)');
 });
 
+// It runs the measuring script five times, which took 18.6 s of the usual
+// 20 s on GitHub's Linux runners, so it gets a minute.
 test('the figures are the same when the git config of whoever runs it sets format.pretty and diff.noprefix, in a file or in the environment', async () => {
 	const {dir, sampleFile} = await runnerFixture();
 	const configs = scratchFolder('chamoji-gitconfig-');
@@ -564,7 +566,7 @@ test('the figures are the same when the git config of whoever runs it sets forma
 		}),
 	).toBe(withPlain);
 	expect(await runWith(plain, {GIT_DIFF_OPTS: '--unified=0'})).toBe(withPlain);
-});
+}, 60_000);
 
 test('--pick-sample with --sample writes a sample for the repo being measured, and leaves that repo untouched', async () => {
 	const {dir} = await runnerFixture();
