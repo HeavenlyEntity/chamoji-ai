@@ -1,25 +1,11 @@
-import {existsSync} from 'node:fs';
-import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
-import {homedir, tmpdir} from 'node:os';
-import path from 'node:path';
 import {
 	buildChangelog,
 	CARD_ENDPOINT,
 	cardUrl,
-	clearPendingWhy,
 	ConfigVersionError,
-	getActive,
-	hasMessageContent,
-	loadComposeConfig,
 	loadConfig,
-	readStagedChanges,
 	ReleaseError,
 	repoStats,
-	readPendingWhy,
-	runGit,
-	shouldPrompt,
-	shouldStamp,
-	stampWorkstream,
 	type ComposeConfig,
 	type FetchLike,
 	type NpmRunner,
@@ -28,44 +14,33 @@ import {
 import meow from 'meow';
 import {runAgentHook} from './agent-hook.js';
 import {createCommitAdvisor, type Advice} from './advisor.js';
-import {
-	jevClassifier,
-	readAiSettings,
-	realAdvisor,
-	realAdvisorClient,
-	realReranker,
-	realWhyChecker,
-	type AiSettings,
-} from './ai.js';
+import {jevClassifier, realReranker, realWhyChecker} from './ai.js';
 import {
 	ghIn,
 	PREFLIGHT_FAILED,
 	type CommandContext,
 } from './commands/context.js';
 import {changelogCommand} from './commands/changelog.js';
+import {commit} from './commands/commit.js';
+import {hook} from './commands/hook.js';
 import {nextVersionCommand} from './commands/next-version.js';
 import {publish} from './commands/publish.js';
 import {releaseCommand} from './commands/release.js';
-import {compose, type ComposerProps, type Impact} from './composer.js';
+import {type ComposerProps, type Impact} from './composer.js';
 import {NO_FACE, type Face, type Step} from './face.js';
 import {hasFace} from './face-settings.js';
 import type {Theme} from './foil.js';
-import {uninstallHook} from './hook.js';
 import {jevFace, type JevClient} from './jev-classifier.js';
 import {runInit} from './init.js';
 import {githubRepo} from './setup/advice.js';
 import {runSetup, type SetupScreen} from './setup/setup.js';
-import {isStepName, nothingSetUp, setUpHook} from './setup/steps.js';
+import {isStepName, nothingSetUp} from './setup/steps.js';
 import {runMcp} from './mcp.js';
 import {runMemory} from './memory.js';
 import type {MemoryReranker} from './rerank.js';
 import {stripControlLines} from './text.js';
-import {openTerminal} from './tty.js';
 import type {UpdateCheck} from './update-check.js';
-import {composeImpact} from './impact.js';
 import {startWarmUp} from './session-brief.js';
-import {draftFromSession} from './session-why.js';
-import {draftFrom} from './why-draft.js';
 import {oneLineLogo, playWelcome, SHORT_HELP, TAGLINE} from './welcome.js';
 import {runWhy} from './why.js';
 import type {WhyChecker} from './why-check.js';
@@ -161,17 +136,6 @@ export type ComposerTerminal = {
 		draft?: WhyDraft | Promise<WhyDraft | undefined>,
 	): Promise<string | null>;
 	close(): void;
-};
-
-const realTerminal = (): ComposerTerminal | null => {
-	const terminal = openTerminal();
-	return terminal
-		? {
-				compose: async (config, advice, impact, checkWhy, draft) =>
-					compose(config, terminal, advice, impact, checkWhy, draft),
-				close: () => terminal.close(),
-			}
-		: null;
 };
 
 export type GhRunner = (
@@ -508,11 +472,11 @@ export async function run(argv: string[], given: Io): Promise<number> {
 				}
 
 				case 'hook': {
-					return await hook(cli.input[1]);
+					return await hook(ctx, cli.input[1]);
 				}
 
 				case 'commit': {
-					return await commit();
+					return await commit(ctx);
 				}
 
 				case 'card': {
@@ -638,325 +602,6 @@ export async function run(argv: string[], given: Io): Promise<number> {
 		);
 		return 0;
 	}
-
-	async function commit(): Promise<number> {
-		const root = (
-			await runGit(['rev-parse', '--show-toplevel'], io.cwd)
-		).trim();
-		const config = await loadComposeConfig(root);
-		const terminal = (io.terminal ?? realTerminal)();
-		if (!terminal) {
-			io.stderr(
-				'chamoji: commit needs a terminal to ask on; in scripts, use git commit -m\n',
-			);
-			return PREFLIGHT_FAILED;
-		}
-
-		const settings = await readAiSettings(root);
-		const advice = adviceFor(root, settings, '');
-		const {now, later} = await draftFor(root, settings);
-		let message: string | null;
-		try {
-			message = await terminal.compose(
-				config,
-				advice,
-				await composeImpact(root),
-				await whyCheckFor(root, settings),
-				now ?? later,
-			);
-		} finally {
-			terminal.close();
-		}
-
-		if (message === null) {
-			io.stderr('Cancelled; nothing was committed.\n');
-			return 1;
-		}
-
-		const dir = await mkdtemp(path.join(tmpdir(), 'chamoji-commit-'));
-		const file = path.join(dir, 'COMMIT_EDITMSG');
-		try {
-			await writeFile(file, `${message}\n`);
-			try {
-				const gitDir = (
-					await runGit(['rev-parse', '--absolute-git-dir'], io.cwd)
-				).trim();
-				// `git commit -F` keeps `#` lines like -m does.
-				await stamp(file, gitDir, 'message');
-			} catch (error) {
-				io.stderr(
-					`chamoji: not stamped with a workstream (${(error as Error).message})\n`,
-				);
-			}
-
-			// gitmoji-cli's autoAdd stages everything, as `git add .` does.
-			if (config.autoAdd) await runGit(['add', '--all'], io.cwd);
-			io.stdout(
-				await runGit(
-					['commit', '-F', file, ...(flags.all ? ['--all'] : [])],
-					io.cwd,
-				),
-			);
-			// The reason is spent once a commit carries it.
-			if (now && message.includes(`Why: ${now.text}`)) {
-				await clearPendingWhy(root);
-			}
-
-			return 0;
-		} catch (error) {
-			const {stdout = '', stderr = ''} = error as {
-				stdout?: string;
-				stderr?: string;
-			};
-			io.stderr(`${`${stdout}${stderr}`.trim() || (error as Error).message}\n`);
-			return 1;
-		} finally {
-			await rm(dir, {recursive: true, force: true});
-		}
-	}
-
-	/**
-	 * What the installed prepare-commit-msg hook runs. It opens the composer
-	 * only when shouldPrompt says so, stamps the active workstream on the
-	 * message, and always exits 0 with the message file unchanged when
-	 * anything goes wrong, so it never blocks a commit.
-	 */
-	async function runHook(
-		file: string | undefined,
-		source: string | undefined,
-	): Promise<number> {
-		if (!file) return 0;
-		let terminal: ComposerTerminal | null = null;
-		try {
-			const messageFile = path.resolve(io.cwd, file);
-			const original = await readFile(messageFile, 'utf8');
-			const gitDir = (
-				await runGit(['rev-parse', '--absolute-git-dir'], io.cwd)
-			).trim();
-			terminal = (io.terminal ?? realTerminal)();
-			const decision = shouldPrompt({
-				source,
-				message: original,
-				isTTY: terminal !== null,
-				env: io.env ?? process.env,
-				rebasing: anyExists(gitDir, REBASE_MARKERS),
-			});
-			const composed =
-				decision.prompt && terminal
-					? await composeInto(messageFile, original, terminal)
-					: false;
-			// A message the composer wrote is real, whatever git's source was.
-			await stamp(messageFile, gitDir, composed ? undefined : source);
-			return 0;
-		} catch (error) {
-			io.stderr(`chamoji: hook skipped (${(error as Error).message})\n`);
-			return 0;
-		} finally {
-			terminal?.close();
-		}
-	}
-
-	/**
-	 * Replaces the message in `messageFile` with a composed one. Returns
-	 * whether there was one to write (false when the composer was cancelled).
-	 */
-	async function composeInto(
-		messageFile: string,
-		original: string,
-		terminal: ComposerTerminal,
-	): Promise<boolean> {
-		const root = (
-			await runGit(['rev-parse', '--show-toplevel'], io.cwd)
-		).trim();
-		const settings = await readAiSettings(root);
-		const advice = adviceFor(
-			root,
-			settings,
-			original.split('\n').find(line => line.trim() && !line.startsWith('#')) ??
-				'',
-		);
-		const {now, later} = await draftFor(root, settings);
-		const message = await terminal.compose(
-			await loadComposeConfig(root),
-			advice,
-			await composeImpact(root),
-			await whyCheckFor(root, settings),
-			now ?? later,
-		);
-		if (message === null) return false;
-
-		// Keep git's comment lines, such as the list of changes, below the message.
-		const comments = original.split('\n').filter(line => line.startsWith('#'));
-		await writeFile(
-			messageFile,
-			`${message}\n${comments.length > 0 ? `\n${comments.join('\n')}\n` : ''}`,
-		);
-		return true;
-	}
-
-	/**
-	 * Adds the active workstream's trailer to the message in `file`. The hook
-	 * must never turn a commit git would abort into one that goes through, so
-	 * it leaves alone a message that git or the user already settled (a merge,
-	 * an amend, a cherry-pick or revert), an unedited `commit.template`, and a
-	 * message with no content yet (stampWorkstream checks that): a trailer
-	 * there would count as the message. Editor commits that miss out that way
-	 * get a one-line notice. Throws when the workstreams file is corrupt;
-	 * callers decide how to carry on.
-	 */
-	async function stamp(
-		file: string,
-		gitDir: string,
-		source: string | undefined,
-	): Promise<void> {
-		// Most repos have no active workstream: this is one stat, no git, no parsing.
-		if (!existsSync(path.join(gitDir, 'chamoji', 'active'))) return;
-		if (anyExists(gitDir, [...REBASE_MARKERS, ...SEQUENCE_MARKERS])) return;
-		if (!shouldStamp({source, rebasing: false})) {
-			if (source === 'template') await noticeUnstamped();
-			return;
-		}
-
-		const message = await readFile(file, 'utf8');
-		// A clean `git revert` leaves no REVERT_HEAD and says it's a plain -m
-		// message, so its generated subject is the only sign of it.
-		if (/^(?:Revert|Reapply) "/.test(message)) return;
-		if (
-			(await stampWorkstream(io.cwd, file, source)) === null &&
-			source === undefined &&
-			!(await hasMessageContent(io.cwd, message))
-		) {
-			await noticeUnstamped();
-		}
-	}
-
-	/** Said when an editor commit is left unstamped because its message isn't written yet. */
-	async function noticeUnstamped(): Promise<void> {
-		const slug = await getActive(io.cwd);
-		if (slug !== null) {
-			io.stderr(
-				`chamoji: editor commits aren't stamped; add "Workstream: ${slug}" to the message, or use -m or chamoji commit.\n`,
-			);
-		}
-	}
-
-	/**
-	 * Jev's advice on the staged change, when the user turned it on in git
-	 * config and there's a key; otherwise undefined. It's never awaited here:
-	 * the composer shows it if it arrives in time, and any failure just means
-	 * no advice.
-	 */
-	function adviceFor(
-		root: string,
-		settings: AiSettings,
-		draft: string,
-	): Promise<Advice | null> | undefined {
-		if (!settings.composer) return undefined;
-		const {sendDiffs} = settings;
-		return (async () => {
-			const advise = io.advise ?? (await realAdvisor(root));
-			if (!advise) return null;
-			const staged = await readStagedChanges(root, {sendDiffs});
-			if (staged.files.length === 0) return null;
-			return advise({staged, draft});
-		})().catch(() => null);
-	}
-
-	/**
-	 * The Why the composer may offer on Tab. What an agent handed over with
-	 * `remember_why` comes first, as `now`. Only without one, and only when the
-	 * user turned `chamoji.whyFromSessions` on, a sentence from their own
-	 * Claude Code or Codex session is read, as `later`: a promise the caller
-	 * hands the composer as it is, so the composer opens at once and shows the
-	 * draft if it arrives before the user reaches the Why. The result is a
-	 * plain object so that awaiting it never waits for that read. Jev picks
-	 * among the candidates only with `chamoji.composer` on and a key.
-	 */
-	async function draftFor(
-		root: string,
-		settings: AiSettings,
-	): Promise<{now?: WhyDraft; later?: Promise<WhyDraft | undefined>}> {
-		const now = draftFrom(await readPendingWhy(root));
-		if (now || !settings.whyFromSessions) return {now};
-		const later = (async () => {
-			const staged = await readStagedChanges(root, {sendDiffs: false});
-			const client = settings.composer
-				? await realAdvisorClient(root)
-				: undefined;
-			return draftFromSession({
-				root,
-				home: io.home ?? homedir(),
-				now: new Date(),
-				stagedFiles: staged.files.map(file => file.path),
-				client,
-			});
-		})().catch(() => undefined);
-		return {later};
-	}
-
-	/**
-	 * The composer's Jev check of a Why, when the user turned it on in git
-	 * config and there's a key; otherwise undefined. It sends the title, the
-	 * Why and the staged file paths. The agent hook never gets one.
-	 */
-	async function whyCheckFor(
-		root: string,
-		settings: AiSettings,
-	): Promise<ComposerProps['checkWhy']> {
-		if (!settings.whyCheck) return undefined;
-		const check = io.whyChecker ?? (await realWhyChecker(io, root, true));
-		if (!check) return undefined;
-		let files: Promise<string[]> | undefined;
-		return async (why, title) => {
-			files ??= readStagedChanges(root, {sendDiffs: false}).then(staged =>
-				staged.files.map(file => file.path),
-			);
-			return check({title, why, files: await files});
-		};
-	}
-
-	async function hook(action: string | undefined): Promise<number> {
-		switch (action) {
-			case 'install': {
-				return setUpHook(io);
-			}
-
-			case 'run': {
-				return runHook(cli.input[2], cli.input[3]);
-			}
-
-			case 'uninstall': {
-				const removed = await uninstallHook(io.cwd);
-				io.stdout(
-					removed
-						? 'Removed the chamoji hook.\n'
-						: 'There was no chamoji hook to remove.\n',
-				);
-				return 0;
-			}
-
-			default: {
-				io.stderr(
-					`chamoji: hook needs install, uninstall or run${action ? `, not "${action}"` : ''}\n`,
-				);
-				return PREFLIGHT_FAILED;
-			}
-		}
-	}
-}
-
-/** Files in the git dir that say a rebase is running. */
-const REBASE_MARKERS = ['rebase-merge', 'rebase-apply'];
-
-/**
- * Files in the git dir that say a cherry-pick, revert or merge is waiting for
- * its commit. A `-m` commit that concludes one of them reaches the hook as a
- * plain message, so only these tell it apart; shouldPrompt doesn't use them.
- */
-const SEQUENCE_MARKERS = ['CHERRY_PICK_HEAD', 'REVERT_HEAD', 'MERGE_HEAD'];
-
-function anyExists(gitDir: string, names: string[]): boolean {
-	return names.some(name => existsSync(path.join(gitDir, name)));
 }
 
 const GET_STARTED = 'Run `chamoji setup` to get started.';
