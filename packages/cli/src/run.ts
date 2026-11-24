@@ -14,7 +14,6 @@ import {
 	loadConfig,
 	readStagedChanges,
 	ReleaseError,
-	render,
 	repoStats,
 	readPendingWhy,
 	runGit,
@@ -24,7 +23,6 @@ import {
 	type ComposeConfig,
 	type FetchLike,
 	type NpmRunner,
-	type OutputFormat,
 	type WhyDraft,
 } from '@chamoji/core';
 import meow from 'meow';
@@ -41,22 +39,15 @@ import {
 } from './ai.js';
 import {
 	ghIn,
-	NO_RELEASE_NEEDED,
 	PREFLIGHT_FAILED,
 	type CommandContext,
 } from './commands/context.js';
+import {changelogCommand} from './commands/changelog.js';
+import {nextVersionCommand} from './commands/next-version.js';
 import {publish} from './commands/publish.js';
 import {releaseCommand} from './commands/release.js';
-import {planned} from './commands/release-steps.js';
-import {
-	changelogUnits,
-	monorepoHint,
-	nextVersions,
-	refuseUnitFlags,
-	releasesUnits,
-} from './commands/release-units.js';
 import {compose, type ComposerProps, type Impact} from './composer.js';
-import {NO_FACE, runStep, type Face, type Step} from './face.js';
+import {NO_FACE, type Face, type Step} from './face.js';
 import {hasFace} from './face-settings.js';
 import type {Theme} from './foil.js';
 import {uninstallHook} from './hook.js';
@@ -369,13 +360,6 @@ const HELP = `
 	  $ chamoji setup releases --yes --explain
 `;
 
-const FORMATS: Record<string, OutputFormat> = {
-	markdown: 'markdown',
-	md: 'markdown',
-	json: 'json',
-	html: 'html',
-};
-
 function parse(argv: string[]) {
 	return meow(HELP, {
 		importMeta: import.meta,
@@ -508,88 +492,11 @@ export async function run(argv: string[], given: Io): Promise<number> {
 			};
 			switch (command) {
 				case 'changelog': {
-					const format = Object.hasOwn(FORMATS, flags.format)
-						? FORMATS[flags.format]
-						: undefined;
-					if (!format) {
-						throw new Error(
-							`Unknown format "${flags.format}" (use markdown, json or html)`,
-						);
-					}
-
-					if (froms.length > 1) {
-						throw new Error('--from takes one tag for changelog');
-					}
-
-					const config = await loadConfig(io.cwd, flags.config);
-					if (releasesUnits(config)) {
-						return await changelogUnits(ctx, config, format, classify);
-					}
-
-					refuseUnitFlags(ctx);
-					const changelog = await buildChangelog({
-						cwd: io.cwd,
-						config,
-						to: flags.to,
-						from: froms[0],
-						release: flags.release,
-						since: flags.since,
-						today: io.today,
-						classify,
-					});
-					const output = render(changelog, format);
-					if (flags.output) {
-						await writeFile(path.resolve(io.cwd, flags.output), output);
-						io.stderr(`Wrote ${flags.output}\n`);
-					} else {
-						io.stdout(output);
-					}
-
-					return 0;
+					return await changelogCommand(ctx);
 				}
 
 				case 'next-version': {
-					const config = await loadConfig(io.cwd, flags.config);
-					if (releasesUnits(config)) {
-						return await nextVersions(ctx, config, classify);
-					}
-
-					refuseUnitFlags(ctx);
-					await monorepoHint(ctx, config);
-					// Only --ai has a face here, and Jev's progress shows on this step.
-					const next = await runStep(
-						face,
-						'Working out the next version',
-						async step => {
-							jevHost.step = step;
-							try {
-								const {releases} = await buildChangelog({
-									cwd: io.cwd,
-									config,
-									to: flags.to,
-									classify,
-									classifyReleases: 'unreleased',
-								});
-								return releases.find(release => release.tag === null)
-									?.nextVersion;
-							} finally {
-								jevHost.step = undefined;
-							}
-						},
-						found =>
-							planned(ctx, found ? `Next version is ${found}` : undefined),
-					);
-					if (!next) {
-						// Non-zero and silent on stdout, so `$(chamoji next-version)` in a
-						// release script stops instead of producing a release called "none".
-						io.stderr(
-							'chamoji: no release needed (no commits since the last tag imply a version bump)\n',
-						);
-						return NO_RELEASE_NEEDED;
-					}
-
-					io.stdout(`${next}\n`);
-					return 0;
+					return await nextVersionCommand(ctx);
 				}
 
 				case 'release': {
