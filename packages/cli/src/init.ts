@@ -435,7 +435,7 @@ function sessionHook(viaNpx: boolean): Merge {
 
 /**
  * The PostToolUse entry that, after a `git commit` went through, tells the
- * agent which open lines sit on the files it changed. Claude Code runs it only
+ * agent which open lines' code it changed. Claude Code runs it only
  * after a command that succeeded, so it has no `PostToolUseFailure` twin. The
  * timeout is the session hook's, for the same reason.
  */
