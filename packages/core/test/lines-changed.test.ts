@@ -300,23 +300,29 @@ test('readChangedSources ignores added lines and whitespace-only changes', async
 });
 
 test('readChangedSources follows a renamed or deleted file, and odd file names', async () => {
-	const names = ['x y.txt', 'é.txt', 'q"t.txt', 'gone.txt'];
+	// Windows can't name a file with a double quote, which is what makes git
+	// quote a name, so that one is tried everywhere else.
+	const edited = [
+		'x y.txt',
+		'é.txt',
+		...(process.platform === 'win32' ? [] : ['q"t.txt']),
+	];
 	const changed = await changedBy([
 		{
 			commit: 'one',
-			files: Object.fromEntries(names.map(name => [name, numbered(1, 20)])),
+			files: Object.fromEntries(
+				[...edited, 'gone.txt'].map(name => [name, numbered(1, 20)]),
+			),
 		},
 		{
 			commit: 'two',
-			files: {
-				'x y.txt': numbered(1, 20, '!'),
-				'é.txt': numbered(1, 20, '!'),
-				'q"t.txt': numbered(1, 20, '!'),
-			},
+			files: Object.fromEntries(
+				edited.map(name => [name, numbered(1, 20, '!')]),
+			),
 		},
 	]);
 	const one = await rev(repo!.dir, 'HEAD~1');
-	expect(changed).toEqual(new Map([[one, 60]]));
+	expect(changed).toEqual(new Map([[one, 20 * edited.length]]));
 	await repo!.cleanup();
 
 	repo = await createRepo([
