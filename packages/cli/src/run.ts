@@ -1,4 +1,3 @@
-import {execFile} from 'node:child_process';
 import {existsSync} from 'node:fs';
 import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {homedir, tmpdir} from 'node:os';
@@ -23,7 +22,6 @@ import {
 	loadComposeConfig,
 	loadConfig,
 	mask,
-	openJudgmentCache,
 	readStagedChanges,
 	planPublish,
 	planRelease,
@@ -74,28 +72,26 @@ import {
 	type WhyDraft,
 	type WrittenChanges,
 } from '@chamoji/core';
-import {TypeSafeClient} from '@typesafe-ai/sdk';
 import meow from 'meow';
 import semver from 'semver';
 import {runAgentHook} from './agent-hook.js';
+import {createCommitAdvisor, type Advice} from './advisor.js';
 import {
-	createCommitAdvisor,
-	type Advice,
-	type AdvisorClient,
-} from './advisor.js';
+	jevClassifier,
+	readAiSettings,
+	realAdvisor,
+	realAdvisorClient,
+	realReranker,
+	realWhyChecker,
+	type AiSettings,
+} from './ai.js';
+import {ghIn, NO_RELEASE_NEEDED, PREFLIGHT_FAILED} from './commands/context.js';
 import {compose, type ComposerProps, type Impact} from './composer.js';
-import {MISSING_KEY, readTypesafeKey} from './env.js';
 import {gitStep, NO_FACE, runStep, type Face, type Step} from './face.js';
 import {hasFace} from './face-settings.js';
 import type {Theme} from './foil.js';
 import {uninstallHook} from './hook.js';
-import {
-	createJevClassifier,
-	jevFace,
-	JUDGMENT_VERSION,
-	type JevClassifierOptions,
-	type JevClient,
-} from './jev-classifier.js';
+import {jevFace, type JevClient} from './jev-classifier.js';
 import {runInit} from './init.js';
 import {githubRepo} from './setup/advice.js';
 import {runSetup, type SetupScreen} from './setup/setup.js';
@@ -108,7 +104,7 @@ import {
 	syncOutcome,
 	syncSummary,
 } from './memory.js';
-import {jevReranker, type MemoryReranker, type RerankClient} from './rerank.js';
+import type {MemoryReranker} from './rerank.js';
 import {stripControlLines} from './text.js';
 import {openTerminal} from './tty.js';
 import type {UpdateCheck} from './update-check.js';
@@ -118,8 +114,11 @@ import {draftFromSession} from './session-why.js';
 import {draftFrom} from './why-draft.js';
 import {oneLineLogo, playWelcome, SHORT_HELP, TAGLINE} from './welcome.js';
 import {runWhy} from './why.js';
-import {createWhyChecker, type WhyChecker} from './why-check.js';
+import type {WhyChecker} from './why-check.js';
 import {runWorkstream} from './ws.js';
+
+export type {AiSettings} from './ai.js';
+export {NO_RELEASE_NEEDED, PREFLIGHT_FAILED} from './commands/context.js';
 
 export type Io = {
 	cwd: string;
@@ -226,31 +225,6 @@ export type GhRunner = (
 	/** `timeoutMs` kills gh after that long; the run then fails softly. */
 	options?: {timeoutMs?: number},
 ) => Promise<{ok: boolean; message: string}>;
-
-/**
- * The GitHub CLI, without a shell, run in `cwd`: gh picks the GitHub repo from
- * the git remotes there, so it must be the repo chamoji works on. Missing `gh`
- * is a soft failure.
- */
-const ghIn =
-	(cwd: string): GhRunner =>
-	async (args, options) =>
-		new Promise(resolve => {
-			execFile(
-				'gh',
-				args,
-				{cwd, timeout: options?.timeoutMs ?? 0},
-				(error, stdout, stderr) => {
-					if (!error) {
-						resolve({ok: true, message: stdout.trim()});
-					} else if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-						resolve({ok: false, message: 'no gh CLI, so no GitHub release'});
-					} else {
-						resolve({ok: false, message: stderr.trim() || error.message});
-					}
-				},
-			);
-		});
 
 const HELP = `
 	Release
@@ -432,8 +406,6 @@ const HELP = `
 	  $ chamoji setup releases --yes --explain
 `;
 
-export const NO_RELEASE_NEEDED = 3;
-
 const DEFERRED = 'the GitHub release is created after the publish';
 
 const outcomeText = (outcome: PublishOutcome): string =>
@@ -554,8 +526,8 @@ export async function run(argv: string[], given: Io): Promise<number> {
 	/** `--from`, once per tag. */
 	const froms = flags.from ?? [];
 	/** A step a command is running that Jev's progress shows on, if any. */
-	let jevHost: Step | undefined;
-	const jev = jevFace(face, () => jevHost);
+	const jevHost: {step?: Step} = {};
+	const jev = jevFace(face, () => jevHost.step);
 	try {
 		if (flags.help) {
 			io.stdout(`${oneLineLogo(io.welcome ?? PLAIN_WELCOME)}\n${cli.help}\n`);
@@ -658,7 +630,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 						face,
 						'Working out the next version',
 						async step => {
-							jevHost = step;
+							jevHost.step = step;
 							try {
 								const {releases} = await buildChangelog({
 									cwd: io.cwd,
@@ -670,7 +642,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 								return releases.find(release => release.tag === null)
 									?.nextVersion;
 							} finally {
-								jevHost = undefined;
+								jevHost.step = undefined;
 							}
 						},
 						found => planned(found ? `Next version is ${found}` : undefined),
@@ -1559,7 +1531,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 			face,
 			'Planning the release',
 			async step => {
-				jevHost = step;
+				jevHost.step = step;
 				try {
 					return await plan({
 						anyBranch: flags.anyBranch,
@@ -1573,7 +1545,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 						},
 						async onCredentials() {
 							// Jev, if it runs after this, starts a step of its own.
-							jevHost = undefined;
+							jevHost.step = undefined;
 							step.end('warn', 'git needs your credentials');
 							// A theme question still open would read what is typed at
 							// git's prompt, or its late reply would land there, so the
@@ -1583,7 +1555,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 						...(env ? {env} : {}),
 					});
 				} finally {
-					jevHost = undefined;
+					jevHost.step = undefined;
 				}
 			},
 			result => {
@@ -2244,7 +2216,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 			face,
 			'Working out the next versions',
 			async step => {
-				jevHost = step;
+				jevHost.step = step;
 				try {
 					return await planUnitReleases({
 						cwd: io.cwd,
@@ -2257,7 +2229,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 						classify,
 					});
 				} finally {
-					jevHost = undefined;
+					jevHost.step = undefined;
 				}
 			},
 			result =>
@@ -2561,9 +2533,6 @@ function unsettle<T>(settled: Settled<T>): T {
 	throw settled.error;
 }
 
-/** Exit code for a release check that failed before anything changed. */
-export const PREFLIGHT_FAILED = 2;
-
 /** Files in the git dir that say a rebase is running. */
 const REBASE_MARKERS = ['rebase-merge', 'rebase-apply'];
 
@@ -2695,144 +2664,4 @@ function githubReleases(
 			prerelease: members.some(unit => unit.bump === 'prerelease'),
 		};
 	});
-}
-
-export type AiSettings = {
-	composer: boolean;
-	sendDiffs: boolean;
-	whyCheck: boolean;
-	whyFromSessions: boolean;
-};
-
-/**
- * The composer's AI opt-ins, from git config (`chamoji.composer`,
- * `chamoji.sendDiffs`), never from files in the repository: a cloned repo
- * must not be able to switch on sending your changes anywhere.
- */
-async function readAiSettings(cwd: string): Promise<AiSettings> {
-	const flag = async (key: string) =>
-		(
-			await runGit(['config', '--type=bool', '--get', key], cwd).catch(() => '')
-		).trim() === 'true';
-	return {
-		composer: await flag('chamoji.composer'),
-		sendDiffs: await flag('chamoji.sendDiffs'),
-		whyCheck: await flag('chamoji.whyCheck'),
-		whyFromSessions: await flag('chamoji.whyFromSessions'),
-	};
-}
-
-/**
- * The commit advisor on the TypeSafe API, or null without a key. The key
- * comes from the environment, or a .env file git doesn't track.
- */
-async function realAdvisor(
-	cwd: string,
-): Promise<ReturnType<typeof createCommitAdvisor> | null> {
-	const client = await realAdvisorClient(cwd);
-	return client ? createCommitAdvisor(client) : null;
-}
-
-/** The TypeSafe client for choice and noul questions, or undefined without a usable key. */
-async function realAdvisorClient(
-	cwd: string,
-): Promise<AdvisorClient | undefined> {
-	const key = await readTypesafeKey(cwd, process.env, {untrackedOnly: true});
-	if (!key || /[^\x21-\x7E]/.test(key)) return undefined;
-	const client = new TypeSafeClient({apiKey: key});
-	return {
-		// Only choice and noul questions are asked, so box answers never come back.
-		systemOne: async request =>
-			(await client.systemOne(
-				request as Parameters<typeof client.systemOne>[0],
-			)) as unknown as Awaited<ReturnType<AdvisorClient['systemOne']>>,
-	};
-}
-
-/**
- * Jev's check of a Why on the TypeSafe API, or undefined without a key. For
- * the composer (`untrackedOnly`) a tracked `.env` can't supply the key, as
- * with the advisor. `why --check --ai` uses the same lookup as other `--ai`
- * commands.
- */
-async function realWhyChecker(
-	io: Io,
-	root = io.cwd,
-	untrackedOnly = false,
-): Promise<WhyChecker | undefined> {
-	if (io.whyChecker) return io.whyChecker;
-	if (untrackedOnly) {
-		const key = await readTypesafeKey(root, process.env, {untrackedOnly});
-		if (!key || /[^\x21-\x7E]/.test(key)) return undefined;
-	}
-
-	const client = await typesafeClient({...io, cwd: root}, {untrackedOnly});
-	if (!client) return undefined;
-	// The check asks only a noul question, so box answers never come back.
-	return createWhyChecker({
-		systemOne: async request =>
-			(await client.systemOne(
-				request as Parameters<typeof client.systemOne>[0],
-			)) as unknown as Awaited<ReturnType<AdvisorClient['systemOne']>>,
-	});
-}
-
-/**
- * The TypeSafe client, or undefined without a key. A key that can't go in a
- * header throws. With `untrackedOnly`, a key from a file git tracks is not used.
- */
-async function typesafeClient(
-	io: Io,
-	options: {untrackedOnly?: boolean} = {},
-): Promise<TypeSafeClient | undefined> {
-	const key = await readTypesafeKey(io.cwd, process.env, options);
-	if (!key) return undefined;
-	// Keys copied from a dashboard often end in "…"; headers can't carry it.
-	const invalid = /[^\x21-\x7E]/.exec(key);
-	if (invalid) {
-		throw new Error(
-			invalid[0] === '\u2026'
-				? 'TYPESAFE_API_KEY contains "…", so it looks truncated; copy the full key again'
-				: 'TYPESAFE_API_KEY contains a character that is not plain ASCII; copy the full key again',
-		);
-	}
-
-	return new TypeSafeClient({apiKey: key});
-}
-
-/**
- * `memory search --ai`'s reorder on the TypeSafe API, or undefined without a
- * key. It sends what a repository's commits say, so a tracked `.env` can't
- * supply the key: a cloned repo could name someone else's account.
- */
-async function realReranker(io: Io): Promise<MemoryReranker | undefined> {
-	if (io.rerank) return io.rerank;
-	const client = await typesafeClient(io, {untrackedOnly: true});
-	if (!client) return undefined;
-	return jevReranker(
-		{
-			// The rerank asks only score questions.
-			systemOne: async request =>
-				(await client.systemOne(
-					request as Parameters<typeof client.systemOne>[0],
-				)) as unknown as Awaited<ReturnType<RerankClient['systemOne']>>,
-		},
-		{report: line => io.stderr(`${line}\n`)},
-	);
-}
-
-async function jevClassifier(
-	io: Io,
-	progress: JevClassifierOptions['progress'],
-): Promise<CommitClassifier> {
-	const client = io.jev ?? (await typesafeClient(io));
-	if (!client) throw new Error(MISSING_KEY);
-	// Outside a repository there's nowhere to keep judgments, so none are cached.
-	const cache = await openJudgmentCache(io.cwd, JUDGMENT_VERSION).catch(
-		() => undefined,
-	);
-	return createJevClassifier(
-		{systemOne: async request => client.systemOne(request)},
-		{report: line => io.stderr(`${line}\n`), cache, progress},
-	);
 }
