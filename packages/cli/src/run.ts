@@ -1,11 +1,6 @@
 import {
-	buildChangelog,
-	CARD_ENDPOINT,
-	cardUrl,
 	ConfigVersionError,
-	loadConfig,
 	ReleaseError,
-	repoStats,
 	type ComposeConfig,
 	type FetchLike,
 	type NpmRunner,
@@ -20,19 +15,19 @@ import {
 	PREFLIGHT_FAILED,
 	type CommandContext,
 } from './commands/context.js';
+import {card} from './commands/card.js';
 import {changelogCommand} from './commands/changelog.js';
 import {commit} from './commands/commit.js';
 import {hook} from './commands/hook.js';
 import {nextVersionCommand} from './commands/next-version.js';
 import {publish} from './commands/publish.js';
 import {releaseCommand} from './commands/release.js';
-import {type ComposerProps, type Impact} from './composer.js';
+import type {ComposerProps, Impact} from './composer.js';
 import {NO_FACE, type Face, type Step} from './face.js';
 import {hasFace} from './face-settings.js';
 import type {Theme} from './foil.js';
 import {jevFace, type JevClient} from './jev-classifier.js';
 import {runInit} from './init.js';
-import {githubRepo} from './setup/advice.js';
 import {runSetup, type SetupScreen} from './setup/setup.js';
 import {isStepName, nothingSetUp} from './setup/steps.js';
 import {runMcp} from './mcp.js';
@@ -480,7 +475,7 @@ export async function run(argv: string[], given: Io): Promise<number> {
 				}
 
 				case 'card': {
-					return await card();
+					return await card(ctx);
 				}
 
 				case 'ws': {
@@ -574,33 +569,6 @@ export async function run(argv: string[], given: Io): Promise<number> {
 				? PREFLIGHT_FAILED
 				: 1;
 		}
-	}
-
-	async function card(): Promise<number> {
-		const endpoint = flags.endpoint ?? CARD_ENDPOINT;
-		if (!/^https?:\/\/[^\s/]/i.test(endpoint) || !URL.canParse(endpoint)) {
-			throw new Error(`--endpoint "${endpoint}" is not an http(s) URL`);
-		}
-
-		const repo = flags.repo ?? (await githubRepo(io.cwd));
-		if (!repo) {
-			throw new Error("can't tell the repo; pass --repo owner/name");
-		}
-
-		const stats = repoStats(
-			await buildChangelog({
-				cwd: io.cwd,
-				config: await loadConfig(io.cwd, flags.config),
-				to: flags.to,
-				today: io.today,
-			}),
-		);
-		io.stdout(
-			flags.json
-				? `${JSON.stringify({repo, ...stats}, null, 2)}\n`
-				: `${cardUrl(endpoint, repo, stats)}\n`,
-		);
-		return 0;
 	}
 }
 
