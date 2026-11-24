@@ -1,5 +1,119 @@
 # Changelog
 
+## [v0.17.0](https://github.com/HeavenlyEntity/chamoji-ai/compare/v0.16.0...v0.17.0) - 2026-11-24
+
+### Added
+
+- ✨ Measure what the token replay left out, and record which rules a session's brief holds ([60222b4](https://github.com/HeavenlyEntity/chamoji-ai/commit/60222b42f34c7811a7a947fa3d51aee4dcf6b465))
+- ✨ Check the token replay against a small sample of real agent runs ([8c5e3e7](https://github.com/HeavenlyEntity/chamoji-ai/commit/8c5e3e7f996003bdc2454acaf4070c33ef120bd2))
+- ✨ Measure memory's token cost across releases and keep the results in the repo ([6fcff86](https://github.com/HeavenlyEntity/chamoji-ai/commit/6fcff8662c752f9a69ae48347679c9e161d09557))
+- ✨ Measure what a context switch costs with chamoji and with git alone ([5856098](https://github.com/HeavenlyEntity/chamoji-ai/commit/5856098e5456a51cec14c325ec96cef1a3ea98b6))
+- ✨ Add the arithmetic for the memory token benchmark ([a665aaa](https://github.com/HeavenlyEntity/chamoji-ai/commit/a665aaace08be0e2d285c784bb0d1a98942aa9cb))
+- ✨ Ask about each line once per session, and record HEAD as soon as it is read ([6ea1e1c](https://github.com/HeavenlyEntity/chamoji-ai/commit/6ea1e1c0f05bbfb69891e8c4e329c746755a8220))
+- ✨ Ask an agent whether its commit ended a nearby constraint ([77f6e8f](https://github.com/HeavenlyEntity/chamoji-ai/commit/77f6e8fbbaa46683698a6ad46576d1d5a157429a))
+- ✨ Say in the brief when it comes from a shallow clone ([c0edf71](https://github.com/HeavenlyEntity/chamoji-ai/commit/c0edf715585f85a63b68827e4cebf84905237303))
+- ✨ Hand a new Claude Code session the project brief ([f362b08](https://github.com/HeavenlyEntity/chamoji-ai/commit/f362b0820c58c816dc5a69343fc3df162a2d6c3f))
+- ✨ Add chamoji memory brief and the brief MCP tool ([a0fe3a6](https://github.com/HeavenlyEntity/chamoji-ai/commit/a0fe3a6837236ae72b4d6554c4538f437afeb1fa))
+- ✨ Render a brief of the project's standing notes under a token budget ([3988d67](https://github.com/HeavenlyEntity/chamoji-ai/commit/3988d67330496528dbdd472ce83c5bd6abce4da1))
+- ✨ Show each card line's id and state in why, search and the MCP tools ([9f58907](https://github.com/HeavenlyEntity/chamoji-ai/commit/9f58907351cf90f9f6e6ff61eb6567bef010cb85))
+- ✨ Add chamoji memory resolve, which records that a card line ended ([e8e5c05](https://github.com/HeavenlyEntity/chamoji-ai/commit/e8e5c05c96964dfe1d89f5ef5bc7ffe9532ea73a))
+- ✨ Read card state for a repo, cached under the index's stamp ([627b794](https://github.com/HeavenlyEntity/chamoji-ai/commit/627b794165cfe5866ae4aa67b52c538970cfcefe))
+- ✨ Tell which commits still have lines at HEAD, with a blame cache per file ([4000452](https://github.com/HeavenlyEntity/chamoji-ai/commit/4000452de58dfc2ce59f8e4ea29cd5e686af0e67))
+- ✨ Work out each card line's state from the commits that state and resolve it ([0d7525b](https://github.com/HeavenlyEntity/chamoji-ai/commit/0d7525bf262a3fe84015460bb65c9664f8d1ddc2))
+- ✨ Read Resolves: trailers and git revert lines from a commit ([40d34b2](https://github.com/HeavenlyEntity/chamoji-ai/commit/40d34b20159e27418216b851b7b885c2efe0c2a8))
+- ✨ Give constraint, gotcha and follow-up lines an id from their text ([582ff8c](https://github.com/HeavenlyEntity/chamoji-ai/commit/582ff8c245035602709861f805ad7da8bd901900))
+- ✨ Give chamoji why --json the merged card, as the MCP why tool has ([323d6ae](https://github.com/HeavenlyEntity/chamoji-ai/commit/323d6ae225c814817b01d99bafeaadccd5391f10))
+- 🌐 Count each Chinese, Japanese and Thai character as a word ([c7d6c11](https://github.com/HeavenlyEntity/chamoji-ai/commit/c7d6c11d9833734b31da2cc3c97c1a626bdd0ead))
+- ✨ Draft the Why from your Claude Code or Codex session ([3881bcc](https://github.com/HeavenlyEntity/chamoji-ai/commit/3881bcc45b6ab1b7182a103dc180aa2c304480bd))
+- ✨ Fill the Why with Tab from what you told your agent ([2ae7491](https://github.com/HeavenlyEntity/chamoji-ai/commit/2ae7491945848466cf4fd1b4ee3aaf2d588e8ef6))
+- ✨ Check a Why with Jev when chamoji.whyCheck is on ([79d1480](https://github.com/HeavenlyEntity/chamoji-ai/commit/79d1480f8a7fd38f68d466d9dc5b087c3a406f9a))
+- ✨ List the thin Whys behind a path with chamoji why --thin ([36f4b2a](https://github.com/HeavenlyEntity/chamoji-ai/commit/36f4b2a6fd9ff69ef4b816d9a84523b42cca7f50))
+- ✨ Add a better reason to an old commit with chamoji why --amend ([752b588](https://github.com/HeavenlyEntity/chamoji-ai/commit/752b588626d17e4ffadf6c345e418b8ed8c40ba5))
+- ✨ Flag thin Whys in chamoji why and the MCP why tool ([c01fa4e](https://github.com/HeavenlyEntity/chamoji-ai/commit/c01fa4eec1f507cb159b1805da710962f937188d))
+- ✨ Rank thin Whys lower in memory search ([5d58bcf](https://github.com/HeavenlyEntity/chamoji-ai/commit/5d58bcf0c25966fc1d7400654f9d2f1b851269f6))
+- ✨ Ask agents for a real Why, not just a Why line ([9aa3e11](https://github.com/HeavenlyEntity/chamoji-ai/commit/9aa3e119ade5986dc6e41b822db7f188ada5a075))
+- ✨ Judge whether a Why says why ([6c5da65](https://github.com/HeavenlyEntity/chamoji-ai/commit/6c5da65c68d46fc56a55eccc45fcd12e357793d6))
+
+### Changed
+
+- ⚡️ Hold ancestry as bit sets instead of sets of hashes ([695797c](https://github.com/HeavenlyEntity/chamoji-ai/commit/695797c66e14b7c15ca4d77485369ad085b365f9))
+- ⚡️ Read the cached brief with fewer git calls ([b453b35](https://github.com/HeavenlyEntity/chamoji-ai/commit/b453b35c3d04bbce6c2c39e27947963823970ba7))
+- 🔧 Give the SessionStart entry a 15-second timeout ([ed4a577](https://github.com/HeavenlyEntity/chamoji-ai/commit/ed4a5774146323400d2ece3408a44edaf6d92269))
+- ⚡️ Finish a late session brief in the background and cache what commits added ([bb9b1d3](https://github.com/HeavenlyEntity/chamoji-ai/commit/bb9b1d3373adcf6d684b6dd0c3eba66e158ca3f6))
+- ♻️ Move the line-state helpers out of why.ts ([9367091](https://github.com/HeavenlyEntity/chamoji-ai/commit/9367091098f8ec40316a65ca2782f7012b462232))
+- 🎨 Format the fix wave's code, tests and docs ([ce3744d](https://github.com/HeavenlyEntity/chamoji-ai/commit/ce3744dfe00be92bc1bac627d5c0ed21ed4e969f))
+- ⚡️ Read every chamoji note with one git call ([15b7612](https://github.com/HeavenlyEntity/chamoji-ai/commit/15b7612e95e36dddf9fbf085f0386c230bb88383))
+- 💬 Nudge people when their Why is thin ([45de749](https://github.com/HeavenlyEntity/chamoji-ai/commit/45de7497a7d83b4b069d020bb5869140119facab))
+
+### Fixed
+
+- 🐛 Nudge only when a commit changed three or more lines a card line's commit wrote ([66a2450](https://github.com/HeavenlyEntity/chamoji-ai/commit/66a245082cef10f6c580b131842d3d1a73dc6bda))
+- 🐛 Keep the live sample from recording numbers no session produced ([5b9bfcf](https://github.com/HeavenlyEntity/chamoji-ai/commit/5b9bfcfc58839e07d415f5002033dd48e2cf8ad3))
+- 🐛 Deny only PreToolUse, skip commits that only check, and keep one hook command ([052fdde](https://github.com/HeavenlyEntity/chamoji-ai/commit/052fddef6e798a642f94eb78e28157ab9de92373))
+- 🐛 Write the shared settings file once when adding the agent hooks ([23e4b02](https://github.com/HeavenlyEntity/chamoji-ai/commit/23e4b02130e07a991afdd1c78f056671b7206e5c))
+- 🐛 Give the unmatched lines the room the brief's sections leave ([041af3d](https://github.com/HeavenlyEntity/chamoji-ai/commit/041af3d2795effa6a324b7100d3f733171ea1273))
+- 🐛 Tidy the brief's text, its MCP error and the docs about the tools ([8e59c50](https://github.com/HeavenlyEntity/chamoji-ai/commit/8e59c502aa3bc8e648d46224fc7d75088aae09c4))
+- 🐛 Read a card line that only says none as no line ([fa3157d](https://github.com/HeavenlyEntity/chamoji-ai/commit/fa3157d4d893a9e2e76780e50ae0d02eaa1c2371))
+- 🐛 Give the brief's unused room to the sections that were cut ([6167160](https://github.com/HeavenlyEntity/chamoji-ai/commit/6167160314ae6f5b1ab87142a6a5d33c694d60d9))
+- 🐛 Count tags on one commit as one release in the brief ([408f89d](https://github.com/HeavenlyEntity/chamoji-ai/commit/408f89de8a3f31ceba7466c8ef8f201a66aab254))
+- 🐛 Keep the brief inside its budget when the set-aside lines do not fit ([f1bce92](https://github.com/HeavenlyEntity/chamoji-ai/commit/f1bce92e04af07ccb5ba90bf62f2db97847c7201))
+- 🐛 Print a one-line count for a brief section that has no room ([4f55439](https://github.com/HeavenlyEntity/chamoji-ai/commit/4f554397794a012d161969ac0412a8db97d1816e))
+- 🐛 Read a line restored by a revert of a revert as open ([8ce5013](https://github.com/HeavenlyEntity/chamoji-ai/commit/8ce5013afa2d4b3c143f27a047e43b400992ed93))
+- 🐛 Name only a live, later commit as what replaced a line's code ([a260230](https://github.com/HeavenlyEntity/chamoji-ai/commit/a260230c081620c543c93b91ea12cd5ee492e9e6))
+- 🐛 Rebuild card state and the blame cache when a shallow clone is deepened ([c9a73b9](https://github.com/HeavenlyEntity/chamoji-ai/commit/c9a73b99cfb53677df4d6f3c85280a1094ed0185))
+- 🐛 Say on stderr when memory search --json lists hits without their line states ([15e6115](https://github.com/HeavenlyEntity/chamoji-ai/commit/15e6115a6fb5dec1c2f867b47f634e95966d5b74))
+- 🐛 Show reverted lines, say linesUnavailable when line states can't be read, and stop telling agents to follow card lines ([1e41a8a](https://github.com/HeavenlyEntity/chamoji-ai/commit/1e41a8a1481d70dcbe75fbc3a2bf35e9d2214121))
+- 🐛 Refuse memory resolve during a merge, cherry-pick, revert or rebase, or for a reverted line, and say when a hook filled the commit ([bec1f0a](https://github.com/HeavenlyEntity/chamoji-ai/commit/bec1f0aa5f035dd8ee5de61f912c3825734866e8))
+- 🐛 Keep a reverted line as reverted, void the side a merge revert undid, and tell live commits apart in any order ([e8c1731](https://github.com/HeavenlyEntity/chamoji-ai/commit/e8c173135bb47074fd4bbc5218149e24df2b7e51))
+- 🐛 Read Resolves: with no space after the colon in a body, accept a backticked id, and pin one id per line ([21dfba3](https://github.com/HeavenlyEntity/chamoji-ai/commit/21dfba34eb86e1d8c1316329bb85dd1c2f3ba289))
+- 🐛 Give "fixed ." and "fixed." one id, freeze the hashed kind names, and skip lines of only punctuation ([78c6e80](https://github.com/HeavenlyEntity/chamoji-ai/commit/78c6e802b57b203db4b288d0427d8bfd8bd348fb))
+- 🐛 Blame from the top of the work tree, at the stamped head, and ignore whitespace-only commits ([8f34bda](https://github.com/HeavenlyEntity/chamoji-ai/commit/8f34bdabc9788dce091e8b58e8950241b2743f39))
+- 🐛 Give nearby clue cards their line states, and keep each state beside its capped card line ([032f1c1](https://github.com/HeavenlyEntity/chamoji-ai/commit/032f1c195dcf0486b7826e0178f9fc651c55619b))
+- 🐛 Show resolve in the memory usage sample, and never print "resolved by" with no hash ([d875db6](https://github.com/HeavenlyEntity/chamoji-ai/commit/d875db6291ef75d3c2af0d632093260443c7afa2))
+- 🐛 Follow moved files and distrust blame results after history is rewritten ([5084c6b](https://github.com/HeavenlyEntity/chamoji-ai/commit/5084c6bcd79dd4a204c671723c06e80a5bca627f))
+- 🐛 Keep an off-branch line open when it was stated after the resolve on HEAD ([aa54766](https://github.com/HeavenlyEntity/chamoji-ai/commit/aa547667d4af16ac24cf779963c824a90dd1ac2d))
+- 🐛 Judge the hook's Why like readers do, time out why --check --ai, refuse merges in --amend ([68eb3f3](https://github.com/HeavenlyEntity/chamoji-ai/commit/68eb3f3090a2885c72c3e7a19e43604945a4768f))
+- 🐛 Open the composer without waiting for the session read ([dcd4a6b](https://github.com/HeavenlyEntity/chamoji-ai/commit/dcd4a6b0a52ad906305c131fe3c1357d90d47488))
+- 🐛 Read only the end of a session and skip text the user didn't write ([44eaaec](https://github.com/HeavenlyEntity/chamoji-ai/commit/44eaaecb5159b35491fcdb8025d52902bfd99ef8))
+- 🐛 Refuse absolute paths outside the repo in why --thin ([f22db79](https://github.com/HeavenlyEntity/chamoji-ai/commit/f22db798b99c1257ed5523a452173d277942e897))
+- 🐛 Count the first commit and refuse paths outside the repo in why --thin ([727eee3](https://github.com/HeavenlyEntity/chamoji-ai/commit/727eee36a1e5945c882de318f2053f606bea2db5))
+
+### Security
+
+- 🔒️ Keep git config and repo settings from the environment out of the benchmark ([b37b2ac](https://github.com/HeavenlyEntity/chamoji-ai/commit/b37b2acb30475dfa82209b0ae79c9a79c3e214f1))
+- 🔒️ Mark the nudge's text as a record and keep card text inside its quotes ([ef84803](https://github.com/HeavenlyEntity/chamoji-ai/commit/ef8480378e8965076bcaa4e696829a2d81e1aaf5))
+- 🔒️ Read only this repo's Claude Code lines and drop more kinds of secrets ([9f0e3f5](https://github.com/HeavenlyEntity/chamoji-ai/commit/9f0e3f564a5b6c216e6de2d32390430b8836fd0d))
+- 🔒️ Match staged file names whole and drop key-like runs in session sentences ([6be3760](https://github.com/HeavenlyEntity/chamoji-ai/commit/6be37600d2499fa0bc082f5d5191578b56279ffc))
+- 🔒️ Check a saved Why again before offering it ([140a7c9](https://github.com/HeavenlyEntity/chamoji-ai/commit/140a7c9b0461e672c208a530a8949b6382d32842))
+
+### Documentation
+
+- 📝 Lead the token page with what real sessions spent, and label the replay a ceiling ([665b3ff](https://github.com/HeavenlyEntity/chamoji-ai/commit/665b3ffc04deddfa58468b7aad8c238a9f00ee2a))
+- 📝 Make the token page's wording and rounding match what the runner does ([064211d](https://github.com/HeavenlyEntity/chamoji-ai/commit/064211d7a6b60f5cdeca216fb55b8abfcf29cc69))
+- 📝 Show how memory's token numbers are measured, with the numbers ([a21e53c](https://github.com/HeavenlyEntity/chamoji-ai/commit/a21e53c226a546bf26d8d0a7ee4e332b4ddd5994))
+- 📝 Show the nudge's record line and say it asks each line once per session ([1537aab](https://github.com/HeavenlyEntity/chamoji-ai/commit/1537aab232b43298936586e68120766c3927cfb1))
+- 📝 Record the memory brief milestone and its results ([08286d0](https://github.com/HeavenlyEntity/chamoji-ai/commit/08286d03f8cb8327f9bdc93f4631b8aa2f24022f))
+- 📝 Explain reverted lines, how to undo a resolve, and what reverts and merge commits chamoji can't read ([b7407c1](https://github.com/HeavenlyEntity/chamoji-ai/commit/b7407c1c8c09af37380b7cd778cff8d498300f4f))
+- 📝 Document the thin-Why denial, the merged card and the why exit codes ([9e388d5](https://github.com/HeavenlyEntity/chamoji-ai/commit/9e388d51a20e93eb85695f4468bf714acfe91dae))
+
+### Maintenance
+
+- ✅ Give the memory-measure git-config test a minute instead of 20 seconds ([70da364](https://github.com/HeavenlyEntity/chamoji-ai/commit/70da364ffd3d99525ce8aaef08bcaebe81838d20))
+- ✅ Leave the double-quoted file name out of the blame test on Windows ([0eb7899](https://github.com/HeavenlyEntity/chamoji-ai/commit/0eb7899ea4328500bc1778a9689f937f0e634d20))
+- ✅ Make the replay's figures independent of the runner's git config ([9f30e26](https://github.com/HeavenlyEntity/chamoji-ai/commit/9f30e26d0d25a96098be59d26279708fc3a9b0fe))
+- 💚 Wait for the nudge's git calls before the timeout test removes its repo ([a76b717](https://github.com/HeavenlyEntity/chamoji-ai/commit/a76b7175a8ca50340a5a727c2b67e1b7123273fc))
+- ✅ Make the root-commit nudge test prove the read works ([e89317f](https://github.com/HeavenlyEntity/chamoji-ai/commit/e89317f7df781889b7438a725b09342947cb0038))
+- ✅ Skip the quoted file name blame test on Windows ([a277996](https://github.com/HeavenlyEntity/chamoji-ai/commit/a277996215b5fa830f5501465fae9aecf03aa1f5))
+- ✅ Wait for the new Why question in the hook end-to-end test ([81a8205](https://github.com/HeavenlyEntity/chamoji-ai/commit/81a8205b17a4ec6ebf301a20d2ea84ac191073fa))
+- ✅ Test the stale Jev check and the missing key ([6383cc2](https://github.com/HeavenlyEntity/chamoji-ai/commit/6383cc2216cadeb383672742e0be0aefb1fa1df6))
+
+### Miscellaneous
+
+- 📊 Run the live sample again so each question records whether its rule was in the brief ([463ceb3](https://github.com/HeavenlyEntity/chamoji-ai/commit/463ceb31d00e0546dee705b3e9d54a6ad5c4111a))
+- 📊 Record the live sample of 30 agent runs and refresh the replay's numbers ([2a3152a](https://github.com/HeavenlyEntity/chamoji-ai/commit/2a3152a1b2e77481b5587dfd1290a04556abbe76))
+- 💡 Say the brief's cache version moves with the card state's ([07e5fd8](https://github.com/HeavenlyEntity/chamoji-ai/commit/07e5fd8289d239d4226da3b4fc5d8da880955a89))
+- 🙈 Drop Why fixture rows that name private projects ([521b6cf](https://github.com/HeavenlyEntity/chamoji-ai/commit/521b6cfbed336d1a8d4511ceec3d00642418c958))
+
 ## [v0.16.0](https://github.com/HeavenlyEntity/chamoji-ai/compare/v0.15.0...v0.16.0) - 2026-11-12
 
 ### Highlights
