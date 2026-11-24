@@ -663,10 +663,10 @@ _Could have, later:_
 
 - **Card state.** Every `Constraint:`, `Gotcha:` and `Follow-up:` line gets an id and a state, worked out from git each time: open, resolved, in doubt, off branch or reverted. A line ends only when a commit says so with `Resolves: <id> <reason>`, or with `chamoji memory resolve <id> --because "<reason>"`.
 - **The brief.** `chamoji memory brief`, the MCP `brief` tool and a Claude Code session hook give a new agent session what stands now, under a token budget.
-- **The resolve nudge.** After an agent commits, a second hook tells it which open lines sit on the files it changed, so it can say whether the commit ended one. A line is asked about once per session. The lines are records; the agent decides.
+- **The resolve nudge.** After an agent commits, a second hook tells it which open lines' code it changed, so it can say whether the commit ended one. A line is asked about once per session. The lines are records; the agent decides.
 - **No model, network call or daemon.** Nothing in it needs one.
 
-Built in three pull requests: [#25](https://github.com/HeavenlyEntity/chamoji-ai/pull/25) (card state), [#26](https://github.com/HeavenlyEntity/chamoji-ai/pull/26) (the brief) and a third for the resolve nudge. The first two are merged to `main`. None is in a release.
+Built in three pull requests: [#25](https://github.com/HeavenlyEntity/chamoji-ai/pull/25) (card state), [#26](https://github.com/HeavenlyEntity/chamoji-ai/pull/26) (the brief) and [#27](https://github.com/HeavenlyEntity/chamoji-ai/pull/27) (the resolve nudge). All three are merged to `main`. None is in a release.
 
 **Exit criteria:**
 
@@ -702,7 +702,7 @@ The cached run first measured 302 ms and missed. It made nine git calls one afte
 - Stored checkpoints.
 - Cards by file.
 
-**Known and left:** a `memory resolve` commit can't be undone with `git revert`, since it is empty, and a `chamoji memory reopen <id>` command is undecided. The nudge runs only after a command that succeeded, reads the repo the session is in, and says nothing about a commit older than 10 minutes. It matches on files, not on code, so on a repo with many lines it can ask about lines the commit didn't really touch; whether to match on code is undecided.
+**Known and left:** a `memory resolve` commit can't be undone with `git revert`, since it is empty, and a `chamoji memory reopen <id>` command is undecided. The nudge runs only after a command that succeeded, reads the repo the session is in, and says nothing about a commit older than 10 minutes. It matches on code: it asks about a line only when the commit changed at least three lines that line's commit wrote. Replayed over chamoji-ai's last 150 commits, matching on shared files would have asked after 47% of them; this rule asks after 9% and still catches both commits known to have ended a line. A line that ends without its code changing, such as a check that was finally run, is still resolved by hand.
 
 **Dependencies:** milestone 7.
 

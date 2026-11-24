@@ -2,11 +2,11 @@ import {mkdirSync, readFileSync, writeFileSync} from 'node:fs';
 import path from 'node:path';
 import {
 	cardStatePath,
-	linesNear,
+	linesChanged,
 	nudgeText,
 	parseCommit,
 	readCardState,
-	readCommitFiles,
+	readChangedSources,
 	readCommits,
 	readResolves,
 	runGit,
@@ -31,8 +31,9 @@ export type NudgeOptions = Pick<SessionBriefOptions, 'warmUp' | 'onTimeout'> & {
 
 /**
  * What the PostToolUse hook prints after a `git commit`: the open and in-doubt
- * lines on the files HEAD changed, as `additionalContext`, so the agent can
- * say whether its commit ended one. Each HEAD is asked about once: it is
+ * lines whose commit wrote at least three of the lines HEAD changed or
+ * removed, as `additionalContext`, so the agent can say whether its commit
+ * ended one. Each HEAD is asked about once: it is
  * recorded before anything else is read, so a commit that failed and left
  * HEAD where it was says nothing. Each line is asked about once per session,
  * so a second commit on the same files, or an amend, doesn't repeat it. A
@@ -107,18 +108,20 @@ async function nudge(
 	const commit = parseCommit(raw);
 	if (readResolves(commit.trailers, commit.body).length > 0) return undefined;
 
-	const files = (await readCommitFiles(root, `${head}^!`)).get(head) ?? [];
-	if (files.length === 0) return undefined;
+	// The state is read last, so no git call of the hook's is left running
+	// once it is asked for.
+	const changed = await readChangedSources(root, head);
+	if (changed.size === 0) return undefined;
 	const state = await (options.readCardState ?? readCardState)(root);
 	const shown = new Set(asked);
-	const lines = linesNear(
+	const lines = linesChanged(
 		{
 			...state,
 			lines: state.lines.filter(
 				line => !line.sources.includes(head) && !shown.has(line.id),
 			),
 		},
-		files,
+		changed,
 	);
 	if (lines.length === 0) return undefined;
 	const text = nudgeText(lines);
@@ -127,7 +130,7 @@ async function nudge(
 	writeNudged(file, {
 		head,
 		session,
-		asked: [...asked, ...lines.map(line => line.id)],
+		asked: [...asked, ...lines.map(({line}) => line.id)],
 	});
 	return `${JSON.stringify({
 		hookSpecificOutput: {

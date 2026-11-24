@@ -124,7 +124,13 @@ export {
 	type BriefSection,
 } from './brief.js';
 export {readBrief, type Brief} from './brief-repo.js';
-export {linesNear, nudgeText} from './lines-near.js';
+export {
+	MIN_CHANGED,
+	linesChanged,
+	nudgeText,
+	readChangedSources,
+	type LineChange,
+} from './lines-changed.js';
 export {stripControl, stripControlLines} from './text.js';
 export {ResolveError, isResolveCommit, resolveLine} from './card-resolve.js';
 export {readIntent} from './intent.js';
